@@ -1,0 +1,6 @@
+#!/bin/sh
+# e2e guard: first on PATH in every e2e environment, next to the claude guard. No test may run the user's real GitHub
+# CLI (it would act on the developer's real account); a test that needs gh puts its own fake in front (see
+# foreground-pipeline).
+echo "REAL-GH-BLOCKED" >&2
+exit 97

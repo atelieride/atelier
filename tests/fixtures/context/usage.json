@@ -1,0 +1,85 @@
+{
+  "categories": [
+    { "id": "system_prompt", "name": "System prompt", "tokens": 11800, "color": "promptBorder", "kind": "used" },
+    { "id": "system_tools", "name": "System tools", "tokens": 19600, "color": "inactive", "kind": "used" },
+    { "id": "mcp_tools", "name": "MCP tools", "tokens": 17200, "color": "cyan_FOR_SUBAGENTS_ONLY", "kind": "used" },
+    { "id": "mcp_instructions", "name": "MCP server instructions", "tokens": 2200, "color": "green_FOR_SUBAGENTS_ONLY", "kind": "used" },
+    { "id": "mcp_tools_deferred", "name": "MCP tools (deferred)", "tokens": 128700, "color": "inactive", "isDeferred": true, "kind": "deferred" },
+    { "id": "system_tools_deferred", "name": "System tools (deferred)", "tokens": 25400, "color": "inactive", "isDeferred": true, "kind": "deferred" },
+    { "id": "memory_files", "name": "Memory files", "tokens": 17800, "color": "claude", "kind": "used" },
+    { "id": "skills", "name": "Skills", "tokens": 7400, "color": "warning", "kind": "used" },
+    { "id": "custom_agents", "name": "Custom agents", "tokens": 600, "color": "warning", "kind": "used" },
+    { "id": "messages", "name": "Messages", "tokens": 26700, "color": "purple_FOR_SUBAGENTS_ONLY", "kind": "used" },
+    { "id": "autocompact_buffer", "name": "Autocompact buffer", "tokens": 33000, "color": "inactive", "kind": "buffer" },
+    { "id": "free_space", "name": "Free space", "tokens": 863700, "color": "promptBorder", "kind": "free" }
+  ],
+  "totalTokens": 103300,
+  "maxTokens": 1000000,
+  "rawMaxTokens": 1000000,
+  "autocompactSource": "model-default",
+  "percentage": 10,
+  "gridRows": [],
+  "model": "claude-opus-5-5",
+  "memoryFiles": [
+    { "path": "/Users/dev/.claude/CLAUDE.md", "type": "User", "tokens": 1200 },
+    { "path": "/Users/dev/Code/shop/CLAUDE.md", "type": "Project", "tokens": 9800 },
+    { "path": "/Users/dev/Code/shop/apps/sales/CLAUDE.md", "type": "Project", "tokens": 2100 },
+    { "path": "/Users/dev/.claude/projects/-Users-dev-Code-shop/memory/MEMORY.md", "type": "AutoMem", "tokens": 4700 }
+  ],
+  "mcpTools": [
+    { "name": "mcp__shop-docs__query", "serverName": "shop-docs", "tokens": 2400, "isLoaded": true },
+    { "name": "mcp__shop-docs__search", "serverName": "shop-docs", "tokens": 1300, "isLoaded": true },
+    { "name": "mcp__shop-docs__get_page", "serverName": "shop-docs", "tokens": 3700, "isLoaded": true },
+    { "name": "mcp__shop-docs__update_page", "serverName": "shop-docs", "tokens": 18200, "isLoaded": false },
+    { "name": "mcp__shop-docs__create_page", "serverName": "shop-docs", "tokens": 10000, "isLoaded": false },
+    { "name": "mcp__claude_ai_Tasks__search", "serverName": "claude_ai_Tasks", "tokens": 6100, "isLoaded": true },
+    { "name": "mcp__claude_ai_Tasks__get_task", "serverName": "claude_ai_Tasks", "tokens": 35700, "isLoaded": false },
+    { "name": "mcp__workflows__search_nodes", "serverName": "workflows", "tokens": 2300, "isLoaded": true },
+    { "name": "mcp__workflows__list_nodes", "serverName": "workflows", "tokens": 47000, "isLoaded": false },
+    { "name": "mcp__postgres-readonly__query", "serverName": "postgres-readonly", "tokens": 1400, "isLoaded": true },
+    { "name": "mcp__postgres-readonly__schema", "serverName": "postgres-readonly", "tokens": 900, "isLoaded": false },
+    { "name": "mcp__analytics__exec", "serverName": "analytics", "tokens": 16900, "isLoaded": false }
+  ],
+  "mcpInstructions": [
+    { "serverName": "shop-docs", "tokens": 640 },
+    { "serverName": "claude.ai Tasks", "tokens": 520 },
+    { "serverName": "workflows", "tokens": 410 },
+    { "serverName": "postgres-readonly", "tokens": 180 },
+    { "serverName": "analytics", "tokens": 450 }
+  ],
+  "agents": [
+    { "agentType": "code-reviewer", "source": "projectSettings", "tokens": 400 },
+    { "agentType": "researcher", "source": "userSettings", "tokens": 200 }
+  ],
+  "slashCommands": { "totalCommands": 30, "includedCommands": 30, "tokens": 900 },
+  "skills": {
+    "totalSkills": 6,
+    "includedSkills": 6,
+    "tokens": 7400,
+    "skillFrontmatter": [
+      { "name": "dataviz", "source": "built-in", "tokens": 1900 },
+      { "name": "docs", "source": "syncedSkills", "tokens": 2000 },
+      { "name": "pdf", "source": "syncedSkills", "tokens": 1400 },
+      { "name": "review-tools:brainstorm", "source": "plugin", "pluginName": "review-tools", "pluginId": "review-tools@market", "path": "/Users/dev/.claude/plugins/cache/x/SKILL.md", "tokens": 1600 },
+      { "name": "release", "source": "projectSettings", "path": "/Users/dev/Code/shop/.claude/skills/release/SKILL.md", "tokens": 500 }
+    ]
+  },
+  "autoCompactThreshold": 967000,
+  "isAutoCompactEnabled": true,
+  "messageBreakdown": {
+    "toolCallTokens": 1200,
+    "toolResultTokens": 13000,
+    "attachmentTokens": 3800,
+    "assistantMessageTokens": 3800,
+    "userMessageTokens": 4900,
+    "redirectedContextTokens": 0,
+    "unattributedTokens": 0,
+    "toolCallsByType": [
+      { "name": "Bash", "callTokens": 600, "resultTokens": 5500 },
+      { "name": "Read", "callTokens": 100, "resultTokens": 5200 },
+      { "name": "mcp__shop-docs__query", "callTokens": 300, "resultTokens": 2500 }
+    ],
+    "attachmentsByType": [{ "name": "instructions", "tokens": 3800 }]
+  },
+  "apiUsage": { "input_tokens": 2, "output_tokens": 1414, "cache_creation_input_tokens": 2501, "cache_read_input_tokens": 99351 }
+}

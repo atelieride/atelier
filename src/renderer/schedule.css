@@ -1,0 +1,135 @@
+/* Scheduled prompts: the composer, the chip, the popover, the countdown. */
+
+/* The composer: the quick-input sheet, a little wider for the prompt and the time. */
+.sp-sheet { width: 600px; max-height: calc(100vh - 120px); padding: 14px 16px 12px; gap: 13px; overflow-y: auto; }
+.sp-grow { flex: 1; }
+.sp-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sp-glyph { width: 28px; height: 28px; flex: none; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: var(--on-brand); background: var(--brand); }
+.sp-title { font-weight: 600; font-size: 14.5px; white-space: nowrap; }
+.sp-to { font-size: 11.5px; color: var(--text-4); }
+.sp-target { display: inline-flex; align-items: center; gap: 7px; min-width: 0; max-width: 220px; height: 26px; padding: 0 10px 0 4px; border-radius: 999px; background: var(--bg-3); box-shadow: inset 0 0 0 1px var(--line-strong); font-size: 12px; color: var(--text-2); }
+.sp-target-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-field { position: relative; display: flex; flex-direction: column; border-radius: var(--radius); background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line-strong); transition: box-shadow var(--t-fast) var(--ease); }
+.sp-field:focus-within { box-shadow: inset 0 0 0 1px var(--edge-violet), 0 0 0 3px var(--tint-violet); }
+.sp-text { min-height: 84px; max-height: 190px; resize: none; border: 0; outline: none; background: none; padding: 10px 12px 4px; color: var(--text); font: inherit; font-size: 13px; line-height: 1.55; }
+.sp-text:focus-visible { box-shadow: none; }
+.sp-field-foot { display: flex; align-items: center; gap: 6px; padding: 2px 12px 7px; font-size: 10.5px; color: var(--text-4); }
+.sp-when { display: flex; flex-direction: column; gap: 9px; }
+.sp-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.sp-preset { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 999px; font-size: 12px; color: var(--text-2); box-shadow: inset 0 0 0 1px var(--line-strong); transition: background var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.sp-preset:hover { color: var(--text); background: var(--bg-3); box-shadow: inset 0 0 0 1px var(--edge-violet); }
+.sp-preset.is-on { color: var(--text); background: var(--seg-on); box-shadow: var(--seg-on-shadow); }
+.sp-preset.is-reset { box-shadow: inset 0 0 0 1px var(--edge-pink); }
+.sp-preset.is-reset svg { color: var(--md-code); }
+.sp-preset.is-reset.is-on { box-shadow: var(--seg-on-shadow); }
+.sp-preset-time { font-size: 10.5px; color: var(--text-3); }
+.sp-preset.is-on .sp-preset-time { color: var(--text-2); }
+.sp-preset.is-taken .sp-preset-time { color: var(--text-3); }
+.sp-pick { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; }
+.sp-seg { display: inline-flex; padding: 2px; border-radius: 9px; background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.sp-seg-opt { height: 26px; padding: 0 11px; border-radius: 7px; font-size: 12px; color: var(--text-3); transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.sp-seg-opt:hover { color: var(--text); }
+.sp-seg-opt.is-on { color: var(--text); background: var(--seg-on); box-shadow: var(--seg-on-shadow); }
+.sp-at { font-size: 12px; color: var(--text-4); }
+.sp-time, .sp-date { height: 30px; border: 0; outline: none; border-radius: 8px; padding: 0 8px; color: var(--text); background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line-strong); transition: box-shadow var(--t-fast) var(--ease); }
+.sp-time { width: 76px; text-align: center; font-size: 14px; font-weight: 600; }
+.sp-date { font-size: 12px; color-scheme: dark; }
+.sp-time:hover, .sp-date:hover { box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.sp-time:focus, .sp-date:focus { box-shadow: inset 0 0 0 1px var(--edge-violet), 0 0 0 3px var(--tint-violet); }
+.sp-time.is-bad { box-shadow: inset 0 0 0 1px var(--edge-error), 0 0 0 3px var(--tint-error); }
+.sp-summary { font-size: 12px; color: var(--text-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sp-summary.is-ok { color: var(--text-meet); }
+.sp-rail { position: relative; height: 30px; margin: 2px 6px 0; }
+.sp-rail-line { position: absolute; left: 0; right: 0; top: 9px; height: 2px; border-radius: 2px; background: var(--line-strong); }
+.sp-rail-tick { position: absolute; top: 17px; transform: translateX(-50%); font-size: 10px; color: var(--text-4); white-space: nowrap; }
+.sp-rail-tick:first-of-type { transform: none; }
+.sp-rail-reset { position: absolute; top: 3px; width: 2px; height: 14px; margin-left: -1px; border-radius: 1px; background: var(--pink); opacity: .8; }
+.sp-rail-dot { position: absolute; top: 5px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--line-strong); box-shadow: inset 0 0 0 2px var(--text-4); transition: left var(--t-med) var(--ease); }
+.sp-rail-dot.is-this { background: var(--brand); box-shadow: 0 0 0 3px var(--tint-violet); animation: atl-pop var(--t-med) var(--ease) both; }
+.sp-rail-dot.is-clash { background: var(--error); box-shadow: 0 0 0 3px var(--tint-error-strong); }
+.sp-error { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; color: var(--text-error); animation: atl-fade var(--t-med) var(--ease) both; }
+.sp-error svg { flex: none; }
+.sp-error-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-fix { flex: none; height: 24px; padding: 0 9px; border-radius: 7px; font-size: 11.5px; color: var(--text); box-shadow: inset 0 0 0 1px var(--edge-error); }
+.sp-fix:hover { background: var(--tint-error-strong); }
+.sp-busy { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; font-size: 12px; color: var(--text-3); }
+.sp-busy-label { margin-right: 4px; }
+.sp-radio { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 7px; font-size: 12px; color: var(--text-3); }
+.sp-radio:hover { color: var(--text); background: var(--bg-3); }
+.sp-radio i { width: 12px; height: 12px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--text-4); transition: box-shadow var(--t-fast) var(--ease); }
+.sp-radio.is-on { color: var(--text); }
+.sp-radio.is-on i { box-shadow: inset 0 0 0 4px var(--violet); }
+.sp-foot { display: flex; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.sp-delete, .sp-send-now { height: 30px; padding: 0 10px; border-radius: var(--radius); font-size: 12.5px; }
+.sp-delete { color: var(--text-error); }
+.sp-delete:hover { background: var(--tint-error-strong); }
+.sp-send-now { color: var(--text-meet); }
+.sp-send-now:hover { background: var(--tint-violet); }
+.sp-kbd { font-size: 10px; color: var(--text-4); padding: 0 4px; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--line-strong); line-height: 15px; }
+.sp-kbd.is-on-brand { color: var(--on-brand); box-shadow: inset 0 0 0 1px var(--on-brand-ring); }
+.sp-sheet .btn-primary:disabled { opacity: .45; filter: none; box-shadow: none; cursor: default; }
+
+/* The chip: a thin outline; its send-clock is violet, amber when missed, pink when a usage
+   limit moved it, sky when due. */
+.sp-chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font-size: 10.5px; line-height: 16px; padding: 0 7px 0 5px; border-radius: 999px; color: var(--text-3); background: none; box-shadow: inset 0 0 0 1px var(--line-strong); transition: color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), background var(--t-fast) var(--ease); animation: atl-pop var(--t-med) var(--ease) both; cursor: pointer; }
+.sp-chip svg { flex: none; color: var(--violet-light); }
+.sp-chip:hover, .sp-chip.is-open { color: var(--text); background: var(--bg-3); }
+.sp-chip-more { font-size: 9.5px; color: var(--text-3); padding: 0 4px; border-radius: 999px; background: var(--sheen); }
+.sp-chip.tone-missed svg { color: var(--waiting); }
+.sp-chip.tone-moved svg { color: var(--md-code); }
+.sp-chip.tone-due svg { color: var(--working); }
+.session-bar .sp-chip { flex-shrink: 0; }
+.session-sub .sp-chip { font-size: 10px; line-height: 15px; }
+
+/* The popover: like Background's, rows with their actions on hover or focus. */
+.sp-popover { position: fixed; z-index: 60; display: flex; flex-direction: column; border-radius: var(--r-lg); background: var(--bg-float-strong); backdrop-filter: blur(18px); border: 1px solid var(--line-strong); box-shadow: var(--shadow-float); overflow: hidden; animation: atl-pop var(--t-med) var(--ease) both; }
+.spp-head { display: flex; align-items: center; gap: 6px; padding: 11px 10px 8px 14px; min-width: 0; }
+.spp-title { font-weight: 600; font-size: 13px; white-space: nowrap; }
+.spp-session { font-size: 12px; color: var(--text-3); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spp-new { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border-radius: 7px; font-size: 11.5px; color: var(--text-meet); }
+.spp-new:hover { background: var(--tint-violet); color: var(--text); }
+.spp-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 0 4px; }
+.spp-empty { padding: 10px 14px 14px; font-size: 12px; color: var(--text-4); }
+.spp-row { position: relative; display: flex; align-items: stretch; min-width: 0; }
+.spp-row:hover, .spp-row:focus-within { background: var(--bg-hover); }
+.spp-main { flex: 1; min-width: 0; display: grid; grid-template-columns: 54px minmax(0, 1fr); column-gap: 10px; padding: 8px 14px; text-align: left; border-radius: 0; }
+.spp-main:focus-visible { box-shadow: inset 2px 0 0 var(--violet); border-radius: 0; background: var(--tint-violet-soft); }
+.spp-when { display: flex; flex-direction: column; gap: 1px; }
+.spp-clock { font-size: 14px; font-weight: 600; color: var(--text); }
+.spp-day { font-size: 10.5px; color: var(--text-3); }
+.spp-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.spp-text { font-size: 12.5px; line-height: 1.45; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.spp-status { font-size: 11px; color: var(--text-4); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spp-row.tone-due .spp-status { color: var(--working); }
+.spp-row.tone-moved .spp-status { color: var(--md-code); }
+.spp-row.tone-missed .spp-clock, .spp-row.tone-missed .spp-status { color: var(--waiting); }
+.spp-row.tone-done .spp-clock, .spp-row.tone-done .spp-text { color: var(--text-3); }
+.spp-actions { position: absolute; right: 8px; top: 6px; display: flex; align-items: center; gap: 2px; padding-left: 18px; background: linear-gradient(90deg, transparent, var(--bg-float-strong) 26%); opacity: 0; transition: opacity var(--t-fast) var(--ease); }
+.spp-row:hover .spp-actions, .spp-row:focus-within .spp-actions, .spp-row.tone-missed .spp-actions { opacity: 1; }
+.spp-row.tone-missed .spp-actions, .spp-row.tone-moved .spp-actions { position: static; align-self: center; padding: 0 8px 0 0; background: none; }
+.spp-row.tone-moved .spp-actions { opacity: 1; }
+.spp-icon { width: 26px; height: 26px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-3); }
+.spp-icon:hover { color: var(--text); background: var(--bg-3); }
+.spp-icon.is-danger:hover { color: var(--text-error); background: var(--tint-error-strong); }
+.spp-btn { height: 24px; padding: 0 9px; border-radius: 7px; font-size: 11.5px; color: var(--text-2); box-shadow: inset 0 0 0 1px var(--line-strong); white-space: nowrap; }
+.spp-btn:hover { color: var(--text); background: var(--bg-3); box-shadow: inset 0 0 0 1px var(--edge-violet); }
+.spp-btn.is-primary { color: var(--on-brand); background: var(--brand); box-shadow: none; font-weight: 600; }
+.spp-btn.is-primary:hover { box-shadow: inset 0 0 0 99px var(--on-brand-lift); }
+.spp-fold { display: flex; align-items: center; gap: 6px; width: 100%; padding: 8px 14px 4px; font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-4); }
+.spp-fold:hover { color: var(--text-2); }
+.spp-count { font-size: 10px; letter-spacing: 0; color: var(--text-4); }
+.spp-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; padding: 7px 10px 7px 14px; border-top: 1px solid var(--line); font-size: 11px; color: var(--text-4); }
+.spp-all { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 6px; border-radius: 6px; font-size: 11px; color: var(--text-3); }
+.spp-all:hover { color: var(--text); background: var(--bg-3); }
+
+/* The countdown over the session's terminal, bottom center like the dictation pill. */
+.sp-countdown { position: absolute; left: calc((100% - var(--ask-room)) / 2); bottom: 56px; transform: translateX(-50%); z-index: 10; display: flex; align-items: center; gap: 10px; max-width: calc(100% - 32px - var(--ask-room)); padding: 6px 6px 6px 8px; border-radius: 999px; font-size: 12px; color: var(--text); background: var(--bg-float); backdrop-filter: blur(18px); box-shadow: var(--shadow-float), inset 0 0 0 1px var(--edge-violet); animation: atl-pop var(--t-med) var(--ease) both; }
+.sp-countdown-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-ring { flex: none; }
+.sp-ring-track { fill: none; stroke: var(--line-strong); stroke-width: 2.4; }
+.sp-ring-fill { fill: none; stroke: var(--violet); stroke-width: 2.4; stroke-linecap: round; transition: stroke-dashoffset 250ms linear; }
+.sp-countdown-send, .sp-countdown-later { flex: none; height: 24px; padding: 0 10px; border-radius: 999px; font-size: 11.5px; white-space: nowrap; }
+.sp-countdown-send { color: var(--on-brand); background: var(--brand); font-weight: 600; }
+.sp-countdown-send:hover { box-shadow: inset 0 0 0 99px var(--on-brand-lift); }
+.sp-countdown-later { color: var(--text-2); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.sp-countdown-later:hover { color: var(--text); background: var(--bg-3); }

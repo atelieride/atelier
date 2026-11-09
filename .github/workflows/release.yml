@@ -1,0 +1,895 @@
+# Release pipeline.
+#
+# A tag vX.Y.Z (stable) or vX.Y.Z-beta.N (beta) pushed by `npm run release` builds Atelier on Apple Silicon, signs it
+# with the maintainer's Developer ID, has Apple notarize it, runs the packaged checks, then (job `publish`, environment
+# `release`) signs the update feed and creates a DRAFT release in this repository. The maintainer publishes the
+# draft after a smoke test: only a published release reaches the in-app updater.
+#
+# Four jobs, so that no key ever meets third-party code:
+#   build    npm ci, tests, whisper, the app packed and left unsigned (fuses flipped). No secret.
+#   sign     tags only, environment `release`, installs nothing (Node built-ins, codesign, notarytool, stapler): the
+#            Developer ID signs the app inside-out (scripts/sign-app.mjs), Apple notarizes it, the ticket is stapled;
+#            then the ZIP and the DMG, the DMG signed, notarized and stapled too. It waits for build-win: a Windows
+#            red stops the run before the macOS minutes of sign and check are spent.
+#   check    npm ci, no secret: packaged checks and the full release verification on the very files that ship (a
+#            branch dry run checks the unsigned build instead), the feed signed with a throwaway key made in the job.
+#   publish  environment `release`, installs nothing: signs the feed with UPDATE_SIGNING_KEY, verifies with the keys
+#            embedded in the app (notarized files only), creates the draft with the Mac files and the Windows MSIX.
+# Then `cleanup` (no secret, nothing installed) deletes the hand-off artifacts this run no longer needs.
+#
+# Windows x64, two more jobs, no secret:
+#   build-win  windows-latest, the build job's commit: npm ci, tests, whisper, the app folder (electron-builder) packed
+#              by scripts/win/pack-msix.mjs into Atelier-<version>-x64.msix, unsigned (the Store signs it).
+#   check-win  the packaged smoke on the MSIX unpacked, a copy signed with a throwaway certificate made in the job,
+#              installed and started once, then the Windows App Certification Kit on it.
+# A release is published only when both platforms pass: `publish` needs `check` and `check-win`. The MSIX in the draft
+# is the package uploaded to the Microsoft Store once the release is published. The Mac feed and the site's update
+# endpoints never name it.
+#
+# Manual runs (Actions › Release › Run workflow): from a branch they are dry runs (the branch's package.json version, or
+# the "tag" input's sources; assets attached to the run). To rebuild and publish a release, choose its tag in
+# "Use workflow from" and tick "publish". Untick "windows" for a Mac-only run (the escape hatch when only Windows
+# fails: that release then has no MSIX and the Store gets nothing); a tag push always builds both.
+#
+# Secrets (environment `release`): DEVELOPER_ID_P12 + DEVELOPER_ID_PASSWORD (the Developer ID identity), NOTARY_KEY +
+# NOTARY_KEY_ID + NOTARY_ISSUER (App Store Connect API key), UPDATE_SIGNING_KEY (Ed25519 PKCS8 PEM, must match a key
+# embedded in the app). The draft is created with the job's own token (contents: write, publish job only).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Dry run of this tag's sources (vX.Y.Z or vX.Y.Z-beta.N). Empty = the selected branch. To publish, pick the tag in "Use workflow from".
+        type: string
+        required: false
+        default: ''
+      publish:
+        description: Create the draft release (only when run from a tag).
+        type: boolean
+        default: false
+      windows:
+        description: Build and check Windows too. Off = a Mac-only run (escape hatch); a tag push always builds both.
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_type == 'tag' && github.ref_name || inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+  HOMEBREW_NO_INSTALL_CLEANUP: '1'
+
+jobs:
+  build:
+    name: Build (unsigned)
+    # macOS 26: actool's Icon Composer compiler loads a macOS 26 runtime and crashes on macOS 15 (missing CoreMedia
+    # symbols). Native binaries still target the app's minimum macOS (scripts/build-whisper.mjs).
+    runs-on: macos-26
+    timeout-minutes: 120
+    outputs:
+      publish: ${{ steps.mode.outputs.publish }}
+      sha: ${{ steps.mode.outputs.sha }}
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      channel: ${{ steps.meta.outputs.channel }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      zip: ${{ steps.meta.outputs.zip }}
+      dmg: ${{ steps.meta.outputs.dmg }}
+      msix: ${{ steps.meta.outputs.msix }}
+      windows: ${{ steps.mode.outputs.windows }}
+    env:
+      RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref_type == 'tag' && github.ref || inputs.tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # Publishing only from a tag (the `release` environment's deployment rule matches tags v*).
+      - name: Run mode
+        id: mode
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_PUBLISH: ${{ inputs.publish }}
+          INPUT_WINDOWS: ${{ inputs.windows }}
+        run: |
+          windows=true
+          if [ "$EVENT" != push ] && [ "$INPUT_WINDOWS" = false ]; then
+            windows=false
+            echo "::warning::Windows left out (input windows: false): no MSIX in this run, nothing for the Store."
+          fi
+          publish=false
+          if [ "$EVENT" = push ]; then
+            publish=true
+          elif [ "$INPUT_PUBLISH" = true ]; then
+            if [ "$REF_TYPE" != tag ]; then
+              echo "::error::To publish, run the workflow from the tag (Use workflow from › Tags › vX.Y.Z), not from a branch."
+              exit 1
+            fi
+            publish=true
+          fi
+          if [ "$REF_TYPE" = tag ] && [ -n "$INPUT_TAG" ] && [ "$INPUT_TAG" != "$REF_NAME" ]; then
+            echo "::error::The run is on tag $REF_NAME but the tag input says $INPUT_TAG."
+            exit 1
+          fi
+          {
+            echo "publish=$publish"
+            echo "windows=$windows"
+            echo "sha=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+          echo "PUBLISH=$publish" >> "$GITHUB_ENV"
+
+      # Fails fast: the tag must be v + package.json's version, with a CHANGELOG.md section (the release notes).
+      - name: Release metadata
+        id: meta
+        run: |
+          args=(meta --tag "$RELEASE_TAG" --notes-out "$RUNNER_TEMP/release-notes.md" --changelog-out "$RUNNER_TEMP/CHANGELOG.dry-run.md")
+          if [ "$PUBLISH" != "true" ]; then args+=(--dry-run); fi
+          node scripts/release-ci.mjs "${args[@]}"
+
+      - name: Releases come from main
+        if: env.PUBLISH == 'true'
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          git merge-base --is-ancestor HEAD origin/main || { echo "::error::$TAG is not on main: release from main only."; exit 1; }
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Install tmux (integration tests)
+        run: command -v tmux >/dev/null || brew install tmux
+
+      - name: Unit and integration tests
+        run: npm test
+
+      - name: Cache the whisper.cpp build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # Source + static libraries; the cmake venv is recreated (it points at the image's Python).
+          path: |
+            vendor/whisper.cpp-*
+            vendor/bin
+          key: whisper-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-whisper.mjs') }}
+
+      - name: Build atelier-whisper
+        run: npm run build:whisper
+
+      # The app icon is an Icon Composer package (build/AppIcon.icon): electron-builder compiles it with actool, which
+      # needs Xcode 26+. The runner's default Xcode may be older: the newest 26+ serves the rest of the job (the
+      # /usr/bin/actool shim follows DEVELOPER_DIR).
+      - name: Select Xcode 26
+        run: |
+          dev=""
+          best=0
+          for app in /Applications/Xcode*.app; do
+            [ -f "$app/Contents/Info.plist" ] || continue
+            v=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist" 2>/dev/null || echo 0)
+            major=${v%%.*}
+            rest=${v#*.}
+            minor=${rest%%.*}
+            [ "$rest" = "$v" ] && minor=0
+            key=$(( major * 1000 + minor ))
+            if [ "$major" -ge 26 ] && [ "$key" -gt "$best" ]; then
+              best=$key
+              dev="$app/Contents/Developer"
+            fi
+          done
+          if [ -z "$dev" ]; then
+            echo "::error::No Xcode 26 or newer on this runner: actool can't compile the Icon Composer app icon."
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$dev" >> "$GITHUB_ENV"
+          DEVELOPER_DIR="$dev" xcrun actool --version
+
+      # electron-builder packs: fuses flipped, an ad-hoc seal, scripts/after-pack.cjs stamps the update channel. The real
+      # signature comes in the sign job.
+      - name: Build Atelier.app (unsigned)
+        env:
+          ATELIER_RELEASE_CHANNEL: ${{ steps.meta.outputs.channel }}
+        run: npm run dist:unsigned -- --publish never
+
+      # ditto keeps the bundle's symlinks and modes (an artifact upload alone would flatten them).
+      - name: Archive the app
+        run: |
+          mkdir -p "$RUNNER_TEMP/unsigned"
+          ditto -c -k --keepParent release/mac-arm64/Atelier.app "$RUNNER_TEMP/unsigned/Atelier-unsigned.zip"
+
+      - name: Attach the unsigned app to the run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: atelier-unsigned
+          path: ${{ runner.temp }}/unsigned
+          # Only a hand-off to the next jobs (Actions storage is billed by the hour): job `cleanup` deletes it once
+          # `check` passed, and a failed run keeps it one day.
+          retention-days: 1
+          if-no-files-found: error
+
+  sign:
+    name: Sign, notarize and staple
+    # After the Windows build too (or without it: the escape hatch, input windows: false): a Windows red then stops the
+    # run before sign and check spend their macOS minutes. The Windows path is the longer one, so this costs no time.
+    needs: [build, build-win]
+    # The Developer ID key exists only behind the `release` environment's tag rule: branch dry runs never sign.
+    if: ${{ !cancelled() && github.ref_type == 'tag' && needs.build.result == 'success' && (needs.build-win.result == 'success' || needs.build.outputs.windows == 'false') }}
+    runs-on: macos-26
+    # Two notarizations (up to an hour each), signing and packaging.
+    timeout-minutes: 150
+    environment: release
+    permissions:
+      contents: read
+      # gh run download: the build job's app, from this run.
+      actions: read
+    env:
+      IDENTITY: 'Developer ID Application: Francesco Musso (AFMH6BSX52)'
+      KEYCHAIN_NAME: atelier-signing.keychain-db
+      VERSION: ${{ needs.build.outputs.version }}
+      CHANNEL: ${{ needs.build.outputs.channel }}
+      ZIP: ${{ needs.build.outputs.zip }}
+      DMG: ${{ needs.build.outputs.dmg }}
+    steps:
+      # The scripts at the commit the build job built (Node built-ins only: nothing is installed).
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Download the unsigned app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name atelier-unsigned --dir "$RUNNER_TEMP/unsigned"
+          rm -rf release
+          mkdir -p release/mac-arm64
+          ditto -x -k "$RUNNER_TEMP/unsigned/Atelier-unsigned.zip" release/mac-arm64
+
+      # The passwords reach `security` through stdin (`security -i`), never as arguments: nothing in `ps`.
+      - name: Import the signing identity into a temporary keychain
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_PASSWORD: ${{ secrets.DEVELOPER_ID_PASSWORD }}
+        run: |
+          # One `security` command whose arguments hold secrets, read by `security -i` from a pipe (printf is a shell
+          # builtin: no process carries the line). Every argument is double-quoted with \ and " escaped.
+          sec() {
+            local line="" a
+            for a in "$@"; do
+              case "$a" in *$'\n'* | *$'\r'*) echo "::error::A keychain argument contains a line break."; return 1 ;; esac
+              a="${a//\\/\\\\}"
+              a="${a//\"/\\\"}"
+              line+="\"$a\" "
+            done
+            printf '%s\n' "$line" | security -i
+          }
+          keychain="$RUNNER_TEMP/$KEYCHAIN_NAME"
+          p12="$RUNNER_TEMP/atelier-signing.p12"
+          kc_pass="$(openssl rand -hex 24)"
+          echo "::add-mask::$kc_pass"
+          umask 077
+          existing="$(security list-keychains -d user | tr -d '"' | xargs)"
+          printf '%s' "$DEVELOPER_ID_P12" | tr -d '\r\n ' | base64 --decode > "$p12"
+          sec create-keychain -p "$kc_pass" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          sec unlock-keychain -p "$kc_pass" "$keychain"
+          if ! sec import "$p12" -k "$keychain" -f pkcs12 -P "$DEVELOPER_ID_PASSWORD" -T /usr/bin/codesign >/dev/null; then
+            rm -f "$p12"
+            echo "::error::Could not import DEVELOPER_ID_P12: wrong DEVELOPER_ID_PASSWORD, or a .p12 exported by OpenSSL 3 without -legacy."
+            exit 1
+          fi
+          rm -f "$p12"
+          # codesign may use the key without a prompt (there is nobody to answer it).
+          sec set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kc_pass" "$keychain" >/dev/null
+          # The temporary keychain first, then the runner's own: codesign finds the identity by name.
+          # shellcheck disable=SC2086
+          security list-keychains -d user -s "$keychain" $existing
+          if ! security find-identity -v -p codesigning "$keychain" | grep -qF "\"$IDENTITY\""; then
+            echo "::error::DEVELOPER_ID_P12 holds no valid \"$IDENTITY\" identity."
+            exit 1
+          fi
+
+      - name: Sign Atelier.app inside-out (hardened runtime, timestamp)
+        run: node scripts/sign-app.mjs --identity "$IDENTITY" release/mac-arm64/Atelier.app
+
+      - name: Check the signed app (identity, version, channel)
+        run: node scripts/release-ci.mjs check-app --app release/mac-arm64/Atelier.app --version "$VERSION" --channel "$CHANNEL"
+
+      - name: Notarize and staple the app
+        env:
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+        run: |
+          ditto -c -k --keepParent release/mac-arm64/Atelier.app "$RUNNER_TEMP/notarize.zip"
+          node scripts/release-ci.mjs notarize --file "$RUNNER_TEMP/notarize.zip" --staple release/mac-arm64/Atelier.app
+          rm -f "$RUNNER_TEMP/notarize.zip"
+
+      # The ZIP holds the stapled app: what the in-app updater installs.
+      - name: Package the ZIP and the DMG
+        run: node scripts/release-ci.mjs package --app release/mac-arm64/Atelier.app --zip "release/$ZIP" --dmg "release/$DMG"
+
+      - name: Sign, notarize and staple the DMG
+        env:
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+        run: |
+          codesign --force --sign "$IDENTITY" --timestamp "release/$DMG"
+          node scripts/release-ci.mjs notarize --file "release/$DMG" --staple "release/$DMG"
+
+      - name: Check the notarized app (ticket, Gatekeeper)
+        run: node scripts/release-ci.mjs check-app --app release/mac-arm64/Atelier.app --version "$VERSION" --channel "$CHANNEL" --notarized
+
+      - name: Delete the temporary keychain
+        if: always()
+        run: |
+          keychain="$RUNNER_TEMP/$KEYCHAIN_NAME"
+          rm -f "$RUNNER_TEMP/atelier-signing.p12" "$RUNNER_TEMP/notarize.zip"
+          if [ -f "$keychain" ]; then security delete-keychain "$keychain"; fi
+
+      - name: Attach the signed files to the run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: atelier-signed
+          path: |
+            release/${{ needs.build.outputs.zip }}
+            release/${{ needs.build.outputs.dmg }}
+          # A hand-off to `check`, like atelier-unsigned.
+          retention-days: 1
+          if-no-files-found: error
+
+  check:
+    name: Packaged checks and release verification
+    needs: [build, sign]
+    # After sign, or without it on a branch dry run (sign skipped); never after a failed sign. On a tag a skipped sign
+    # means build-win failed: check waits too, so cleanup keeps atelier-unsigned and "Re-run failed jobs" can sign it.
+    if: ${{ !cancelled() && needs.build.result == 'success' && (needs.sign.result == 'success' || (needs.sign.result == 'skipped' && github.ref_type != 'tag')) }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      # gh run download: the files of this run.
+      actions: read
+    env:
+      RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
+      PUBLISH: ${{ needs.build.outputs.publish }}
+      SIGNED: ${{ needs.sign.result == 'success' }}
+      VERSION: ${{ needs.build.outputs.version }}
+      CHANNEL: ${{ needs.build.outputs.channel }}
+      ZIP: ${{ needs.build.outputs.zip }}
+      DMG: ${{ needs.build.outputs.dmg }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The same notes and changelog the build job checked (deterministic, from the same commit).
+      - name: Release metadata
+        id: meta
+        run: |
+          args=(meta --tag "$RELEASE_TAG" --notes-out "$RUNNER_TEMP/release-notes.md" --changelog-out "$RUNNER_TEMP/CHANGELOG.dry-run.md")
+          if [ "$PUBLISH" != "true" ]; then args+=(--dry-run); fi
+          node scripts/release-ci.mjs "${args[@]}"
+
+      # A tag: the notarized ZIP and DMG from the sign job. A branch dry run: the unsigned app, packaged here.
+      - name: Get the files that ship
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm -rf release
+          mkdir -p release/mac-arm64
+          if [ "$SIGNED" = "true" ]; then
+            gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name atelier-signed --dir release
+            echo "MODE=--notarized" >> "$GITHUB_ENV"
+          else
+            gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name atelier-unsigned --dir "$RUNNER_TEMP/unsigned"
+            ditto -x -k "$RUNNER_TEMP/unsigned/Atelier-unsigned.zip" "$RUNNER_TEMP/unsigned/app"
+            node scripts/release-ci.mjs package --app "$RUNNER_TEMP/unsigned/app/Atelier.app" --zip "release/$ZIP" --dmg "release/$DMG"
+            echo "MODE=--unsigned" >> "$GITHUB_ENV"
+          fi
+          # The app exactly as the updater installs it: extracted from the ZIP.
+          ditto -x -k "release/$ZIP" release/mac-arm64
+
+      - name: Check the app (identity, version, channel)
+        run: node scripts/release-ci.mjs check-app --app release/mac-arm64/Atelier.app --version "$VERSION" --channel "$CHANNEL" "$MODE"
+
+      - name: Install tmux (packaged checks)
+        run: command -v tmux >/dev/null || brew install tmux
+
+      # Temporary ATELIER_HOME, fake Claude, nothing of a user's environment (tests/e2e/env.ts).
+      - name: Packaged checks
+        run: npx playwright test --config playwright.manual.config.ts tests/e2e/packaged.manual.ts
+
+      - name: Keep the packaged-check results
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packaged-check-results
+          path: test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Write the update feed
+        env:
+          CHANGELOG_FILE: ${{ steps.meta.outputs.changelog }}
+        run: |
+          node scripts/make-feed.mjs --zip "release/$ZIP" --app release/mac-arm64/Atelier.app --version "$VERSION" \
+            --changelog "$CHANGELOG_FILE" --out release/latest-mac.yml
+
+      # The whole release check before anything is published, with a key made here: UPDATE_SIGNING_KEY never enters
+      # this job. The publish job signs again with the real key and verifies with the app's keys.
+      - name: Throwaway feed key
+        id: throwaway
+        run: node scripts/release-ci.mjs throwaway-key --out "$RUNNER_TEMP/throwaway-feed-key.pem"
+
+      - name: Verify the release with the throwaway key
+        env:
+          THROWAWAY_PUBLIC_KEY: ${{ steps.throwaway.outputs.public-key }}
+        run: |
+          UPDATE_SIGNING_KEY="$(cat "$RUNNER_TEMP/throwaway-feed-key.pem")" node scripts/sign-feed.mjs release/latest-mac.yml --public-key "$THROWAWAY_PUBLIC_KEY"
+          rm -f "$RUNNER_TEMP/throwaway-feed-key.pem"
+          node scripts/release-ci.mjs verify --dir release --version "$VERSION" --channel "$CHANNEL" --zip "$ZIP" --dmg "$DMG" --public-key "$THROWAWAY_PUBLIC_KEY" "$MODE"
+          # Nobody can install with that signature: it is not part of the build.
+          rm -f release/latest-mac.yml.sig
+
+      - name: Collect the release files
+        run: |
+          out="$RUNNER_TEMP/release-files"
+          rm -rf "$out"
+          mkdir -p "$out"
+          cp "release/$DMG" "release/$ZIP" release/latest-mac.yml "$out/"
+          cp "$RUNNER_TEMP/release-notes.md" "$out/release-notes.md"
+
+      - name: Attach the release files to the run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: atelier-release-files
+          path: ${{ runner.temp }}/release-files
+          # What a dry run delivers, and what `publish` downloads (also on "Re-run failed jobs" after a token renewal).
+          # Job `cleanup` deletes it once the draft exists; otherwise it lasts three days.
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Job summary
+        run: |
+          {
+            echo "## Atelier $VERSION ($CHANNEL)"
+            echo
+            if [ "$SIGNED" = "true" ]; then
+              echo "Signed with the Developer ID, notarized and stapled, verified. The publish job (environment \`release\`) signs the feed and creates the draft."
+            else
+              echo "Dry run: not signed, nothing published. The files are attached to this run (unsigned feed: never install them)."
+            fi
+            echo
+            echo "| File | Bytes | SHA-256 |"
+            echo "|---|---:|---|"
+            for f in "$DMG" "$ZIP" latest-mac.yml; do
+              echo "| \`$f\` | $(stat -f %z "release/$f") | \`$(shasum -a 256 "release/$f" | cut -d' ' -f1)\` |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Windows x64: the commit the build job built, its tests on Windows, the MSIX the Store receives. No secret, no
+  # environment.
+  build-win:
+    name: Build for Windows (MSIX, unsigned)
+    needs: build
+    if: needs.build.outputs.windows == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      MSIX: ${{ needs.build.outputs.msix }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        shell: pwsh
+        run: npm ci
+
+      - name: Typecheck
+        shell: pwsh
+        run: npm run typecheck
+
+      # atelier-bridge.exe and atelier-procs.exe (MSVC): the Windows tests run them; `npm run build` below rebuilds them.
+      - name: Build the bridge and atelier-procs
+        shell: pwsh
+        run: npm run build:bridge
+
+      # The portable tests (the POSIX-only ones are left out on Windows: tests/support/posix-only.ts).
+      - name: Unit and integration tests
+        shell: pwsh
+        run: npm test
+
+      # whisper.cpp's static libraries and our binary only: atelier-bridge.exe and atelier-procs.exe come from
+      # `npm run build` below, never from a cache.
+      - name: Cache the whisper.cpp build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            vendor/whisper.cpp-*
+            vendor/bin/atelier-whisper.exe
+          key: whisper-win-${{ runner.arch }}-${{ hashFiles('scripts/build-whisper.mjs') }}
+
+      - name: Build atelier-whisper (MSVC, CPU)
+        shell: pwsh
+        run: npm run build:whisper
+
+      # The bridge Claude's hooks run and atelier-procs (MSVC, scripts/build-bridge.mjs), then the bundles.
+      - name: Build the app
+        shell: pwsh
+        run: npm run build
+
+      # scripts/after-pack.cjs stamps the update channel into resources/atelier-build.json, as on macOS.
+      - name: Pack the app folder (electron-builder)
+        shell: pwsh
+        env:
+          ATELIER_RELEASE_CHANNEL: ${{ needs.build.outputs.channel }}
+        run: npx electron-builder --config electron-builder.yml --win dir --x64 --publish never
+
+      # release/win-unpacked + build/appx (manifest, logos) → Atelier-<version>-x64.msix, unsigned: the Store signs it.
+      - name: Pack the MSIX
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $out = Join-Path $env:RUNNER_TEMP 'windows'
+          node scripts/win/pack-msix.mjs --version $env:VERSION --out $out
+          node scripts/release-ci.mjs check-msix --file (Join-Path $out $env:MSIX) --version $env:VERSION
+
+      - name: Attach the MSIX to the run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: atelier-windows
+          path: ${{ runner.temp }}/windows/${{ needs.build.outputs.msix }}
+          # What check-win checks and publish attaches (also on "Re-run failed jobs"): as long as the release files.
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Job summary
+        shell: pwsh
+        run: |
+          $f = Get-Item (Join-Path $env:RUNNER_TEMP "windows/$env:MSIX")
+          $sha = (Get-FileHash -Algorithm SHA256 $f.FullName).Hash.ToLower()
+          @("## Atelier $env:VERSION for Windows", '', 'Unsigned MSIX (the Store signs it); check-win installs a signed copy.', '',
+            '| File | Bytes | SHA-256 |', '|---|---:|---|', "| ``$($f.Name)`` | $($f.Length) | ``$sha`` |") |
+            Add-Content -Encoding utf8 $env:GITHUB_STEP_SUMMARY
+
+  # The MSIX as it ships: the packaged smoke on its files (makeappx unpacks it: no second artifact of the app folder),
+  # then a copy signed with a throwaway certificate made here (subject = the Store publisher, trusted only on this
+  # runner), installed, started once through its package identity, and the Windows App Certification Kit on it. No
+  # secret, like the Mac check job's throwaway feed key; the Store signs the real package.
+  check-win:
+    name: Windows checks (packaged smoke, install, WACK)
+    needs: [build, build-win]
+    runs-on: windows-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      # gh run download: the MSIX of this run.
+      actions: read
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      MSIX: ${{ needs.build.outputs.msix }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        shell: pwsh
+        run: npm ci
+
+      # Before anything long: a runner image without the kit fails here, never skips the check.
+      - name: Find the Windows SDK tools and the certification kit
+        shell: pwsh
+        run: |
+          $kits = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10'
+          $bin = Get-ChildItem (Join-Path $kits 'bin') -Directory -ErrorAction SilentlyContinue |
+            Where-Object Name -match '^\d+(\.\d+)+$' | Sort-Object { [version]$_.Name } -Descending |
+            ForEach-Object { Join-Path $_.FullName 'x64' } |
+            Where-Object { (Test-Path (Join-Path $_ 'makeappx.exe')) -and (Test-Path (Join-Path $_ 'signtool.exe')) } |
+            Select-Object -First 1
+          if (-not $bin) { Write-Output "::error::No Windows SDK with makeappx.exe and signtool.exe under $kits\bin."; exit 1 }
+          $appcert = Join-Path $kits 'App Certification Kit\appcert.exe'
+          if (-not (Test-Path $appcert)) {
+            Write-Output "::error::This runner image has no Windows App Certification Kit ($appcert): the release can't be checked. Install the kit in this job (Windows SDK, feature WindowsAppCertificationKit) or run the workflow with windows unticked."
+            exit 1
+          }
+          "SDK_BIN=$bin" | Add-Content -Encoding utf8 $env:GITHUB_ENV
+          "APPCERT=$appcert" | Add-Content -Encoding utf8 $env:GITHUB_ENV
+          Write-Output "SDK tools: $bin; WACK: $appcert"
+
+      - name: Download the MSIX
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          gh run download $env:GITHUB_RUN_ID --repo $env:GITHUB_REPOSITORY --name atelier-windows --dir (Join-Path $env:RUNNER_TEMP 'windows')
+          node scripts/release-ci.mjs check-msix --file (Join-Path $env:RUNNER_TEMP "windows/$env:MSIX") --version $env:VERSION
+
+      - name: Unpack the MSIX (the app folder as it ships)
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $app = Join-Path $env:RUNNER_TEMP 'app'
+          & "$env:SDK_BIN\makeappx.exe" unpack /p (Join-Path $env:RUNNER_TEMP "windows\$env:MSIX") /d $app /o | Select-Object -Last 2
+          if (-not (Test-Path (Join-Path $app 'Atelier.exe'))) { throw "makeappx unpacked no Atelier.exe into $app" }
+
+      # Temporary ATELIER_HOME, fake Claude, nothing of a user's environment (tests/e2e/env.ts).
+      - name: Packaged smoke (the unpacked MSIX)
+        shell: pwsh
+        env:
+          ATELIER_WIN_APP: ${{ runner.temp }}/app
+          ATELIER_RELEASE_CHANNEL: ${{ needs.build.outputs.channel }}
+        run: npx playwright test --config playwright.manual.config.ts tests/e2e/packaged-win.manual.ts
+
+      # The password exists only in this step (masked); the pfx is deleted after signing. signtool takes it as an
+      # argument, as scripts/win/pack-msix.mjs does: a key made a minute ago that no machine but this runner trusts.
+      - name: Sign a copy with a throwaway certificate
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $pw = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(24))
+          Write-Output "::add-mask::$pw"
+          $env:ATL_TEST_PFX_PASSWORD = $pw
+          $pfx = Join-Path $env:RUNNER_TEMP 'throwaway-test.pfx'
+          $test = Join-Path $env:RUNNER_TEMP 'windows-test\Atelier-test.msix'
+          New-Item -ItemType Directory -Force (Split-Path -Parent $test) | Out-Null
+          try {
+            powershell -NoProfile -ExecutionPolicy Bypass -File scripts/win/test-cert.ps1 -Out $pfx -PasswordEnv ATL_TEST_PFX_PASSWORD
+            Copy-Item (Join-Path $env:RUNNER_TEMP "windows\$env:MSIX") $test
+            & "$env:SDK_BIN\signtool.exe" sign /fd SHA256 /f $pfx /p $pw $test | Select-Object -Last 1
+          } finally {
+            Remove-Item -Force $pfx -ErrorAction SilentlyContinue
+          }
+          "TEST_MSIX=$test" | Add-Content -Encoding utf8 $env:GITHUB_ENV
+
+      # Windows PowerShell: its Appx module (PowerShell 7 reaches it only through a compatibility session). The
+      # installed app runs with the runner's own %USERPROFILE%\.atelier: a throwaway machine.
+      - name: Install the signed copy and start it once
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $manifest = [xml](Get-Content -Raw build\appx\AppxManifest.xml)
+          $name = $manifest.Package.Identity.Name
+          $appId = $manifest.Package.Applications.Application.Id
+          Add-AppxPackage -Path $env:TEST_MSIX
+          $pkg = Get-AppxPackage -Name $name
+          if (-not $pkg) { throw "$name is not installed after Add-AppxPackage." }
+          Write-Output "Installed $($pkg.PackageFullName) at $($pkg.InstallLocation)"
+          [IO.File]::AppendAllText($env:GITHUB_ENV, "PACKAGE_FULL_NAME=$($pkg.PackageFullName)`n")
+          # Started through its package identity (as the Start menu does), not as a plain exe.
+          Start-Process "shell:AppsFolder\$($pkg.PackageFamilyName)!$appId"
+          $deadline = (Get-Date).AddSeconds(120)
+          $main = $null
+          $failure = $null
+          try {
+            while (-not $main -and (Get-Date) -lt $deadline) {
+              Start-Sleep -Seconds 2
+              $main = Get-Process -Name Atelier -ErrorAction SilentlyContinue |
+                Where-Object { $_.Path -and $_.Path.StartsWith($pkg.InstallLocation, [StringComparison]::OrdinalIgnoreCase) -and $_.MainWindowHandle -ne 0 } |
+                Select-Object -First 1
+            }
+            if (-not $main) {
+              Get-Process -Name Atelier -ErrorAction SilentlyContinue | Format-Table Id, Path, MainWindowTitle -AutoSize | Out-String | Write-Output
+              $failure = 'The installed app showed no window within 120 s of its activation.'
+            } else {
+              Start-Sleep -Seconds 10
+              $main.Refresh()
+              if ($main.HasExited) { $failure = 'The installed app quit within 10 s of showing its window.' }
+              else { Write-Output "Running: $($main.Path) (pid $($main.Id), window '$($main.MainWindowTitle)')" }
+            }
+          } finally {
+            # The GUI and the atelierd it started (its runtime copy under %USERPROFILE%\.atelier): WACK wants them gone.
+            Get-Process -Name Atelier -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+          if ($failure) { Write-Output "::error::$failure"; exit 1 }
+
+      # appcert's exit code is not the verdict: the report is (required tests passed; the optional "Blocked
+      # executables" fails by design, the app starts shells). Its paths must be absolute.
+      - name: Windows App Certification Kit
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'wack'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $report = Join-Path $dir 'report.xml'
+          # From the kit's folder, as Microsoft's command-line instructions run it.
+          Push-Location (Split-Path -Parent $env:APPCERT)
+          & $env:APPCERT reset
+          & $env:APPCERT test -packagefullname $env:PACKAGE_FULL_NAME -reportoutputpath $report
+          Write-Output "appcert exited with $LASTEXITCODE"
+          Pop-Location
+          if (-not (Test-Path $report)) { Write-Output "::error::appcert wrote no report ($report)."; exit 1 }
+          node scripts/release-ci.mjs wack --report $report --version $env:VERSION
+
+      - name: Keep the Windows check results
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-check-results
+          path: |
+            test-results
+            ${{ runner.temp }}/wack
+          retention-days: 7
+          if-no-files-found: ignore
+
+  publish:
+    name: Sign the feed and create the draft release
+    needs: [build, check, check-win]
+    # Both platforms passed, or Windows was left out on purpose (input windows: false; never on a tag push).
+    if: ${{ !cancelled() && needs.build.outputs.publish == 'true' && needs.check.result == 'success' && (needs.check-win.result == 'success' || needs.build.outputs.windows == 'false') }}
+    runs-on: macos-15
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      # gh release create: the draft in this repository.
+      contents: write
+      # gh run download: the build job's files, from this run.
+      actions: read
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      TAG: ${{ needs.build.outputs.tag }}
+      CHANNEL: ${{ needs.build.outputs.channel }}
+      PRERELEASE: ${{ needs.build.outputs.prerelease }}
+      ZIP: ${{ needs.build.outputs.zip }}
+      DMG: ${{ needs.build.outputs.dmg }}
+      MSIX: ${{ needs.build.outputs.msix }}
+      WINDOWS: ${{ needs.build.outputs.windows }}
+    steps:
+      # The scripts at the commit the build job built (Node built-ins only: nothing is installed).
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Download the build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm -rf release
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name atelier-release-files --dir release
+          if [ "$WINDOWS" = "true" ]; then
+            gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name atelier-windows --dir release
+          fi
+          ls -l release
+
+      - name: Sign the update feed
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: node scripts/sign-feed.mjs release/latest-mac.yml
+
+      # The signature verifies with the app's embedded keys, the feed describes this ZIP, and the app in the ZIP and in
+      # the DMG carries the release identity, version and channel, notarized and stapled.
+      - name: Verify the release
+        run: node scripts/release-ci.mjs verify --dir release --version "$VERSION" --channel "$CHANNEL" --zip "$ZIP" --dmg "$DMG" --notarized
+
+      # The MSIX check-win installed and certified (unsigned: the Store signs it): this release's identity and version.
+      - name: Check the MSIX
+        if: env.WINDOWS == 'true'
+        run: node scripts/release-ci.mjs check-msix --file "release/$MSIX" --version "$VERSION"
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          repo="$GITHUB_REPOSITORY"
+          if gh release view "$TAG" --repo "$repo" >/dev/null 2>&1; then
+            echo "::error::$repo already has a release $TAG (maybe a draft): delete it there before re-running."
+            exit 1
+          fi
+          # The tag that started this run, in this repository: never a new one made by gh.
+          flags=(--draft --verify-tag --title "Atelier $VERSION" --notes-file release/release-notes.md)
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          assets=("release/$DMG" "release/$ZIP" release/latest-mac.yml release/latest-mac.yml.sig)
+          if [ "$WINDOWS" = "true" ]; then assets+=("release/$MSIX"); fi
+          gh release create "$TAG" --repo "$repo" "${flags[@]}" "${assets[@]}"
+          url="$(gh release view "$TAG" --repo "$repo" --json url --jq .url)"
+          {
+            echo "## Atelier $VERSION ($CHANNEL)"
+            echo
+            echo "Draft created: $url — publish it after a smoke test."
+            echo
+            echo "| Asset | Bytes | SHA-256 |"
+            echo "|---|---:|---|"
+            for p in "${assets[@]}"; do
+              f="${p#release/}"
+              echo "| \`$f\` | $(stat -f %z "$p") | \`$(shasum -a 256 "$p" | cut -d' ' -f1)\` |"
+            done
+            if [ "$WINDOWS" = "true" ]; then
+              echo
+              echo "Once the release is published, upload \`$MSIX\` to the Microsoft Store in Partner Center."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The artifacts only carry the app from job to job (each run carries several hundred MB): once `check` has used
+  # them the unsigned and signed apps go, and the release files (the MSIX with them) go once the draft exists. A dry run keeps its release files (they are what it delivers), and so
+  # does a failed publish, for "Re-run failed jobs"; the retention days end them anyway. No secret, nothing installed,
+  # only this run's artifacts.
+  cleanup:
+    name: Delete the hand-off artifacts
+    needs: [check, publish]
+    if: ${{ !cancelled() && needs.check.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    env:
+      PUBLISHED: ${{ needs.publish.result == 'success' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Delete them
+        run: |
+          names=(atelier-unsigned atelier-signed)
+          if [ "$PUBLISHED" = "true" ]; then names+=(atelier-release-files atelier-windows); fi
+          for name in "${names[@]}"; do
+            for id in $(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --paginate \
+                --jq ".artifacts[] | select(.name == \"$name\") | .id"); do
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+              echo "Deleted $name ($id)"
+            done
+          done

@@ -1,0 +1,38 @@
+---
+import Icon from './Icon.astro';
+// On every page: once a button hands over the DMG (/download/mac…, not the header's link to /download), a quiet note
+// floats in at the bottom pointing to /support. It never blocks or delays the download.
+---
+<div class="support-toast" role="status" hidden>
+  <Icon name="heart" size={20} />
+  <p><strong>Your download has started.</strong> Atelier is free and made by one person <em>(Claude watches, furious, as I take all the credit)</em>. If it helps you, <a href="/support">consider supporting it →</a></p>
+  <button type="button" class="close" aria-label="Close"><Icon name="close" size={14} /></button>
+</div>
+<script>
+  const toast = document.querySelector<HTMLElement>('.support-toast')!;
+  document.addEventListener('click', (e) => {
+    const a = (e.target as Element).closest?.('a[data-download]');
+    if (a && /^\/download\/mac(\/|$)/.test(a.getAttribute('href') ?? '')) toast.hidden = false;
+  });
+  toast.querySelector('.close')!.addEventListener('click', () => { toast.hidden = true; });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') toast.hidden = true; });
+</script>
+<style>
+  .support-toast { position: fixed; z-index: 50; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+    width: min(560px, calc(100% - 32px)); display: flex; gap: 12px; align-items: flex-start; padding: 14px 14px 14px 16px;
+    border-radius: var(--r-lg); background: var(--bg-float); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+    border: 1px solid var(--edge-violet-soft); box-shadow: var(--shadow-float);
+    color: var(--text-2); font-size: 13.5px; line-height: 1.5; animation: toast-in var(--t-slow) var(--ease); }
+  .support-toast[hidden] { display: none; }
+  .support-toast > :global(svg) { flex: none; margin-top: 1px; color: var(--pink); }
+  p { margin: 0; flex: 1; min-width: 0; }
+  strong { color: var(--text); }
+  em { color: var(--text-3); }
+  a { color: var(--link); white-space: nowrap; transition: color var(--t-fast) var(--ease); }
+  a:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+  .close { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: var(--r-sm); background: none; color: var(--text-3); cursor: pointer; transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+  .close:hover { background: var(--bg-hover); color: var(--text); }
+  .close:focus-visible { outline: 2px solid var(--violet); outline-offset: 1px; }
+  @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  @media (prefers-reduced-motion: reduce) { .support-toast { animation: none; } }
+</style>

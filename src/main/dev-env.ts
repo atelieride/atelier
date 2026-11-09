@@ -1,0 +1,33 @@
+import * as electron from 'electron';
+
+type DevVar = 'ATELIER_TEST_URL_LOG' | 'ELECTRON_RENDERER_URL' | 'ATELIER_TEST_TRASH_DIR' | 'ATELIER_TEST_UNSAVED_ANSWER' | 'ATELIER_TEST_BACKGROUND' | 'ATELIER_TEST_CURSOR'
+  | 'ATELIER_TEST_WHISPER_BIN' | 'ATELIER_TEST_MODEL_SPEC' | 'ATELIER_TEST_POLISH' | 'ATELIER_TEST_FAKE_MIC'
+  | 'ATELIER_TEST_NO_PROFILES' | 'ATELIER_TEST_CLAUDE_PROJECTS' | 'ATELIER_TEST_CLIPBOARD_LOG' | 'ATELIER_TEST_NOTIFY_LOG' | 'ATELIER_TEST_TRAY_LOG'
+  | 'ATELIER_TEST_RENDER_ERROR' | 'ATELIER_TEST_UPDATE' | 'ATELIER_TEST_GH' | 'ATELIER_TEST_PR_INTERVAL_MS'
+  | 'ATELIER_TEST_CLICKUP_URL' | 'ATELIER_TEST_NOTION_URL' | 'ATELIER_TEST_JIRA_URL' | 'ATELIER_TEST_JIRA_AUTH_URL' | 'ATELIER_TEST_FOLLOW_AUTH' | 'ATELIER_TEST_FAKE_SAFE_STORAGE' | 'ATELIER_TEST_CLAUDE_HOME'
+  | 'ATELIER_TEST_APP_SCHEMES' | 'ATELIER_TEST_FETCH_ISOLATED' | 'ATELIER_TEST_CLAUDE_TMP'
+  | 'ATELIER_TEST_PICK_FILES' | 'ATELIER_TEST_PICK_DIR' | 'ATELIER_TEST_SAVE_PATH' | 'ATELIER_TEST_DOCKER_SOCKET' | 'ATELIER_TEST_DOCKER_PROBE_MS' | 'ATELIER_TEST_MUTED' | 'ATELIER_TEST_DROP_PATHS'
+  | 'ATELIER_TEST_REDIS_PORTS' | 'ATELIER_TEST_REDIS_PROBE_MS' | 'ATELIER_TEST_REDIS_BREW' | 'ATELIER_TEST_ATTACH_DELAY_MS'
+  | 'ATELIER_TEST_GIT_ISOLATED' | 'ATELIER_TEST_TRACE2_DIR' | 'ATELIER_TEST_MESSAGE_CLAUDE'
+  | 'ATELIER_TEST_PORTS_POLL_MS' | 'ATELIER_TEST_SERVER_LISTEN_MS' | 'ATELIER_TEST_BG_MISSING_MS' | 'ATELIER_TEST_OUTSIDE_GRACE_MS'
+  | 'ATELIER_TEST_ASK_SHOWN_MS' | 'ATELIER_TEST_CLOSE_SESSIONS' | 'ATELIER_TEST_STORE' | 'ATELIER_TEST_STORE_DELAY_MS' | 'ATELIER_TEST_RELAUNCH_LOG' | 'ATELIER_TEST_MCP_POLL_MS'
+  | 'ATELIER_TEST_COMPANION_CLAUDE' | 'ATELIER_TEST_COMPANION_LOG' | 'ATELIER_TEST_GIT_WRITE_DELAY_MS' | 'ATELIER_TEST_APP_ICON_LOG'
+  | 'ATELIER_TEST_STATUS_DELAY_MS' | 'ATELIER_TEST_SSH_BIN' | 'ATELIER_TEST_DB_OVERVIEW_MS' | 'ATELIER_TEST_CONTEXT_CLAUDE';
+
+/**
+ * Environment variables for development and tests only: they don't exist in the packaged app.
+ * This way nobody can use the environment to load an external page with the preload or divert links.
+ */
+export function devEnv(name: DevVar): string | undefined {
+  let packaged = false;
+  // Outside Electron (unit tests, mocks without app) we are always in development.
+  try { packaged = !!(electron as unknown as { app?: { isPackaged: boolean } }).app?.isPackaged; } catch { packaged = false; }
+  if (packaged) return undefined;
+  return process.env[name] || undefined;
+}
+
+/** A test timing in ms: a positive number from a devEnv variable, else undefined (the app's own). */
+export function testMs(name: DevVar): number | undefined {
+  const n = Number(devEnv(name));
+  return n > 0 ? n : undefined;
+}

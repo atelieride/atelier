@@ -1,0 +1,89 @@
+appId: app.atelier.desktop
+productName: Atelier
+directories:
+  output: release
+files:
+  - out/**/*
+  - package.json
+# Licenses for the fonts (OFL) and file icons (MIT), shipped next to the app.
+extraResources:
+  - from: assets/licenses
+    to: licenses
+  # Local dictation transcription (npm run build:whisper).
+  - from: vendor/bin/atelier-whisper
+    to: bin/atelier-whisper
+  # Each terminal's shell is started by its own launchd job through this host.
+  - from: vendor/bin/atelier-pty-host
+    to: bin/atelier-pty-host
+  # The `atelier` shell command; "Install 'atelier' Command" links it from /usr/local/bin.
+  - from: assets/bin/atelier
+    to: bin/atelier
+  # The app icon of Docsy's themes: the Dock's while Atelier runs, and the bundle's in Finder.
+  - from: assets/brand/app-icon-docsy.png
+    to: app-icon-docsy.png
+  # Aurora's, the bundle's own icon as an image: the Dock's when a run goes back from Docsy.
+  - from: assets/brand/app-icon-aurora.png
+    to: app-icon-aurora.png
+asarUnpack:
+  - node_modules/node-pty/**
+# node-pty binaries are N-API: they work with Electron without rebuilding.
+npmRebuild: false
+mac:
+  target:
+    - target: dir
+      arch: [arm64]
+  category: public.app-category.developer-tools
+  # Icon Composer package: actool (Xcode 26+) compiles Assets.car for macOS 26 and the icns for older systems.
+  icon: build/AppIcon.icon
+  # Ad-hoc signature here (a valid seal even for an unsigned build); scripts/sign-app.mjs re-signs everything after.
+  identity: '-'
+  # sign-app.mjs adds the hardened runtime with a Developer ID (an ad-hoc runtime rejects Electron's frameworks).
+  hardenedRuntime: false
+  extendInfo:
+    NSMicrophoneUsageDescription: Atelier uses the microphone only while you dictate to Claude.
+    # Finder's Open With: offered for text, code, images and folders, never the default app.
+    CFBundleDocumentTypes:
+      - CFBundleTypeName: Text and source files
+        CFBundleTypeRole: Editor
+        LSHandlerRank: Alternate
+        LSItemContentTypes: [public.text, public.plain-text, public.source-code, public.script, public.json, public.xml, public.yaml, net.daringfireball.markdown]
+      - CFBundleTypeName: Images
+        CFBundleTypeRole: Viewer
+        LSHandlerRank: Alternate
+        LSItemContentTypes: [public.image]
+      - CFBundleTypeName: Folders
+        CFBundleTypeRole: Viewer
+        LSHandlerRank: Alternate
+        LSItemContentTypes: [public.folder]
+# Windows x64: a folder scripts/win/pack-msix.mjs packs as the Store's MSIX (with our manifest
+# and logos, build/appx). The bridge Claude's hooks run, atelier-procs (ports, background work), atelier-git (the git
+# of automated sessions) and atelier-store (the Microsoft Store's updates; npm run build makes the four on Windows),
+# atelier-whisper (npm run build:whisper, CPU).
+win:
+  target:
+    - target: dir
+      arch: [x64]
+  extraResources:
+    - from: vendor/bin/atelier-bridge.exe
+      to: bin/atelier-bridge.exe
+    - from: vendor/bin/atelier-procs.exe
+      to: bin/atelier-procs.exe
+    - from: vendor/bin/atelier-git.exe
+      to: bin/atelier-git.exe
+    - from: vendor/bin/atelier-store.exe
+      to: bin/atelier-store.exe
+    - from: vendor/bin/atelier-whisper.exe
+      to: bin/atelier-whisper.exe
+afterPack: scripts/after-pack.cjs
+# The real signature comes after packaging from scripts/sign-app.mjs (npm run dist; CI's sign job): Developer ID with
+# the hardened runtime when available. The fuses are flipped here, before any signature. runAsNode stays on: atelierd
+# is this binary in node mode.
+electronFuses:
+  runAsNode: true
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  # On while runAsNode is on: Playwright's packaged checks attach with --inspect, and ELECTRON_RUN_AS_NODE already
+  # runs code as Atelier. Both go off together when atelierd moves to its own helper.
+  enableNodeCliInspectArguments: true
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true

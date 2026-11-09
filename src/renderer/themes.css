@@ -1,0 +1,303 @@
+/* The app's theme tokens beyond theme.css, loaded by the app only (styles.ts); the
+   website imports theme.css alone. First Aurora's app-only tokens, then the other themes, each redefining the palette
+   and, for Minimal, the finish. Every block also matches [data-theme-preview], so Settings' cards draw each theme in
+   its own colors. */
+
+/* Aurora's tokens only the app reads (the website imports theme.css and stays light): terminals, code, logs, file
+   icons, the finish, and the colors layout.css used to write by hand. */
+:root, [data-theme-preview="aurora"] {
+  /* The colors layout.css used to write by hand: on-colors, softer and stronger texts, the Settings sheet, switches,
+     keys, the terminal preview. */
+  --text-bright: #fff; --text-violet: #DDD6FE; --text-error-soft: #FECDD3; --text-error-strong: #FFE4E6;
+  --on-done: #06281C; --on-done-deep: #052E1F; --done-light: #A7F3D0; --edge-waiting-dim: #5A4520;
+  --bg-sheet: #11111E; --switch-off: #262640; --kbd-top: #23233A; --kbd-bottom: #1A1A2C; --kbd-edge: #0B0B14;
+  --preview-violet: #C4B5FD; --preview-pink: #F9A8D4; --preview-sky: #93C5FD; --preview-amber: #FCD34D;
+  /* Terminal (xterm reads these through shared/theme-resolve.ts): the work area's background, text, cursor, selection,
+     scrollbar, and the 16 ANSI colors (black red green yellow blue magenta cyan white, then their bright ones). */
+  --term-bg: var(--bg-2); --term-fg: #E4E2F7; --term-cursor: #C4B5FD; --term-cursor-accent: var(--term-bg);
+  --term-sel: color-mix(in srgb, var(--violet) 35%, transparent); --term-sel-inactive: color-mix(in srgb, var(--violet) 18%, transparent);
+  --term-scroll: color-mix(in srgb, var(--text-3) 18%, transparent); --term-scroll-hover: color-mix(in srgb, var(--text-3) 32%, transparent);
+  --term-scroll-active: color-mix(in srgb, var(--text-3) 45%, transparent);
+  /* The overview ruler's left edge (Find's ticks over the scrollbar): no line. */
+  --term-ruler-edge: transparent;
+  --ansi-0: #24243A; --ansi-1: #FB7185; --ansi-2: #34D399; --ansi-3: #FBBF24; --ansi-4: #60A5FA; --ansi-5: #C084FC; --ansi-6: #22D3EE; --ansi-7: #C9C7E6;
+  --ansi-8: #7E7CA3; --ansi-9: #FDA4AF; --ansi-10: #6EE7B7; --ansi-11: #FDE68A; --ansi-12: #93C5FD; --ansi-13: #F0ABFC; --ansi-14: #67E8F9; --ansi-15: #F5F4FF;
+  /* Code (editor/theme.ts, Shiki's colors as these variables) and the editor around it (editor/cmTheme.ts). The JSON
+     tree's --syn-key/-string/-number/-literal/-punct above are shared. */
+  --syn-comment: #6E6C94; --syn-keyword: #F472B6; --syn-operator: #F9A8D4; --syn-type: #7DD3FC; --syn-function: #FDE68A;
+  --syn-tag: #C4B5FD; --syn-variable: #FCD34D; --syn-heading: #F472B6; --syn-link: #A5B4FC;
+  --syn-inserted: var(--done); --syn-deleted: var(--error);
+  --editor-fg: #E4E2F7; --editor-gutter: #4F4D70; --editor-caret: var(--violet-light);
+  --editor-active-line: color-mix(in srgb, var(--violet) 6%, transparent); --editor-sel: color-mix(in srgb, var(--violet) 32%, transparent);
+  --editor-sel-match: color-mix(in srgb, var(--violet) 16%, transparent); --editor-bracket: color-mix(in srgb, var(--violet) 22%, transparent);
+  --editor-bracket-edge: color-mix(in srgb, var(--violet-soft) 45%, transparent);
+  /* The Diff view: a row's tint, its numbers and signs columns a step fuller, its changed words
+     fuller still. GitHub-like strengths, not louder. */
+  --editor-diff-add: color-mix(in srgb, var(--done) 14%, transparent); --editor-diff-del: color-mix(in srgb, var(--error) 14%, transparent);
+  --editor-diff-add-gutter: color-mix(in srgb, var(--done) 26%, transparent); --editor-diff-del-gutter: color-mix(in srgb, var(--error) 26%, transparent);
+  --editor-diff-add-word: color-mix(in srgb, var(--done) 30%, transparent); --editor-diff-del-word: color-mix(in srgb, var(--error) 30%, transparent);
+  /* Service and Docker logs (shared/logline.ts): the 16 named ANSI colors. */
+  --log-0: #1B1F28; --log-1: #F07B74; --log-2: #3FB68B; --log-3: #EBC77A; --log-4: #5B8DEF; --log-5: #B794F6; --log-6: #4FC3D9; --log-7: #C9C7C1;
+  --log-8: #6F7682; --log-9: #F4A3A3; --log-10: #A3D977; --log-11: #F5B544; --log-12: #9DB8F5; --log-13: #E8A0E8; --log-14: #7FD3F7; --log-15: #E7E5DF;
+  /* File icons (icons/seti.ts): Seti's own colors. */
+  --seti-blue: #519ABA; --seti-grey: #4D5A5E; --seti-grey-light: #6D8086; --seti-green: #8DC149; --seti-orange: #E37933; --seti-pink: #F55385;
+  --seti-purple: #A074C4; --seti-red: #CC3E44; --seti-white: #D4D7D6; --seti-yellow: #CBCB41; --seti-ignore: #41535B;
+  /* The Λ mark inside the window: the theme's brand pair, the Λ in on-brand (a theme may set its own). */
+  --mark-a: var(--brand); --mark-b: var(--brand); --mark-lambda: var(--on-brand);
+  /* The quiet finish, for every theme. Fills, the mark in the window, the
+     usage ring and the tab crown are the brand: the middle of the theme's pair, solid, the logo's own color (the
+     website and the Dock icon keep the gradient). A selection is a flat tint; a chosen segment is a neutral step. */
+  --brand: color-mix(in srgb, var(--violet) 50%, var(--pink)); --bg-sel: var(--tint-violet);
+  --tab-crown: linear-gradient(var(--brand), var(--brand));
+  --seg-on: var(--bg-3); --seg-on-shadow: inset 0 0 0 1px var(--line-strong); --seg-on-text: var(--text);
+  /* A brand-filled button under the pointer (pressed: --on-brand-press); the keyboard focus ring of pills and cards. */
+  --on-brand-lift: color-mix(in srgb, var(--light) 10%, transparent);
+  --focus-ring: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet);
+  /* Behind the palette and Settings; how much of a session's identity color avatars keep (the rest is --text). */
+  --backdrop: color-mix(in srgb, var(--abyss) 45%, transparent); --backdrop-strong: color-mix(in srgb, var(--abyss) 55%, transparent);
+  --id-mix: 100%;
+  /* A barely-there lift (keys, a log row under the pointer): white on dark; light themes shade instead. */
+  --sheen-faint: color-mix(in srgb, var(--light) 2%, transparent);
+}
+
+/* Ember: warm charcoal, coral to rose; Aurora's finish. Logs and file icons keep Aurora's colors. */
+:root[data-theme="ember"], [data-theme-preview="ember"] {
+  color-scheme: dark;
+  /* Context usage: the chart's group hues, validated on dark sheets. */
+  --ctx-messages: #9085E9; --ctx-mcp: #199E70; --ctx-memory: #C98500; --ctx-skills: #D55181; --ctx-system: #6E6C8F;
+  /* The brand stays the ember orange: the middle of orange and rose falls back on the coral the error red sits on
+     (themes.test: brand and error told apart). */
+  --brand: var(--violet);
+  --bg-0: #0E0A08; --bg-1: #140F0C; --bg-2: #18120F; --bg-3: #261C17; --bg-tabs: #110C0A;
+  --bg-float: rgba(26,19,15,.86); --bg-float-strong: rgba(26,19,15,.97); --bg-control: rgba(22,16,13,.7); --bg-sheet: #15100D;
+  --line: #2C211B; --line-soft: #211914; --line-strong: #3B2D25;
+  --text: #F6EEE7; --text-2: #DDCDBF; --text-3: #B5A090; --text-4: #7A685B;
+  /* An ember orange rather than coral (#F97362): apart from the error red, and white on it keeps 3:1 even
+     brightened on hover. Links lavender: a warm one read as error text. */
+  --violet: #DC6228; --pink: #E8457E; --violet-soft: #F59A5E; --violet-light: #FDBA8C; --link: #C7B2F0;
+  --waiting: #FCD34D; --working: #7DD3FC; --done: #86E0A8; --error: #FB7185;
+  --ws-1: #A78BFA; --ws-2: #5EEAD4; --ws-3: #BEF264; --ws-4: #E8A0E8; --ws-5: #818CF8; --ws-6: #FDBA74; --ws-7: #7DD3FC; --ws-8: #FDA4AF;
+  --on-brand: #fff; --text-bright: #fff;
+  --text-error: #FDA4AF; --text-error-soft: #FECDD3; --text-error-strong: #FFE4E6; --text-violet: #FFD9C2; --text-meet: #FFD3B8;
+  --abyss: #060403;
+  --on-done: #0A2A18; --on-done-deep: #072414; --done-light: #C2F0D2; --edge-waiting-dim: #5A4520;
+  --switch-off: #33261F; --kbd-top: #2B201A; --kbd-bottom: #201813; --kbd-edge: #0B0705;
+  --preview-violet: #FDBA8C; --preview-pink: #F5A3BE; --preview-sky: #A5D8F5; --preview-amber: #FCD34D;
+  --worktree: #5EEAD4; --worktree-text: #C4F5EC;
+  --md-code: #F5A3BE; --ty-string: #8FCBF2; --ty-hash: #FDBA8C; --ty-stream: #7FD8C4; --ty-list: #FCD34D; --ty-json: #A7E0B0;
+  --tint-teal: rgba(127,216,196,.12); --tint-indigo: rgba(199,178,240,.12); --line-num: #4A3B32;
+  --syn-key: #F9A27A; --syn-string: #A7DD9A; --syn-number: #C7B2F0; --syn-literal: #F47A8C; --syn-punct: #9A8578;
+  --syn-comment: #85705F; --syn-keyword: #F47A8C; --syn-operator: #F5A3B4; --syn-type: #8CCBE8; --syn-function: #F5D98B;
+  --syn-tag: #F9A27A; --syn-variable: #F7C66B; --syn-heading: #F47A8C; --syn-link: #C7B2F0;
+  --fold: #FDBA8C; --hit-text: #FDE68A;
+  --csv-col-0: #F9A27A; --csv-col-1: #8CCBE8; --csv-col-2: #A7DD9A; --csv-col-3: #F2D27A;
+  --csv-col-4: #F5A3BE; --csv-col-5: #C7B2F0; --csv-col-6: #FDBA8C; --csv-col-7: #7FD8C4;
+  --csv-tint-0: #A7DD9A; --csv-tint-1: #8CCBE8; --csv-tint-2: #F2D27A; --csv-tint-3: #C7B2F0;
+  --csv-tint-4: #FDA4AF; --csv-tint-5: #7FD8C4; --csv-tint-6: #F5A3BE; --csv-tint-7: #F9A27A;
+  --lane-1: #DC6228; --lane-2: #E8457E; --lane-3: #7DD3FC; --lane-4: #86E0A8; --lane-5: #C7B2F0; --lane-6: #FCD34D;
+  --person-1: #F9A27A; --person-2: #8CCBE8; --person-3: #E8A0C8; --person-4: #9FD3B0; --person-5: #F2D27A; --person-6: #C7B2F0; --person-7: #F59E9E; --person-8: #B8D98A;
+  --term-fg: #EFE4DA; --term-cursor: #FDBA8C;
+  --ansi-0: #2E231D; --ansi-1: #F87171; --ansi-2: #86E0A8; --ansi-3: #FCD34D; --ansi-4: #6FB2F2; --ansi-5: #E28FD0; --ansi-6: #5FD4DE; --ansi-7: #DDCDBF;
+  --ansi-8: #8C786A; --ansi-9: #FCA5A5; --ansi-10: #B5EDC8; --ansi-11: #FDE68A; --ansi-12: #A5CDF8; --ansi-13: #F0B5E0; --ansi-14: #A5F0F7; --ansi-15: #FBF5EF;
+  --editor-fg: #EFE4DA; --editor-gutter: #5C4A3F;
+  --log-0: #1B1F28; --log-1: #F07B74; --log-2: #3FB68B; --log-3: #EBC77A; --log-4: #5B8DEF; --log-5: #B794F6; --log-6: #4FC3D9; --log-7: #C9C7C1;
+  --log-8: #6F7682; --log-9: #F4A3A3; --log-10: #A3D977; --log-11: #F5B544; --log-12: #9DB8F5; --log-13: #E8A0E8; --log-14: #7FD3F7; --log-15: #E7E5DF;
+  --seti-blue: #519ABA; --seti-grey: #4D5A5E; --seti-grey-light: #6D8086; --seti-green: #8DC149; --seti-orange: #E37933; --seti-pink: #F55385;
+  --seti-purple: #A074C4; --seti-red: #CC3E44; --seti-white: #D4D7D6; --seti-yellow: #CBCB41; --seti-ignore: #41535B;
+}
+
+/* Tide: deep sea, teal to indigo; Aurora's finish. Logs and file icons keep Aurora's colors. */
+:root[data-theme="tide"], [data-theme-preview="tide"] {
+  color-scheme: dark;
+  /* Context usage: the chart's group hues, validated on dark sheets. */
+  --ctx-messages: #9085E9; --ctx-mcp: #199E70; --ctx-memory: #C98500; --ctx-skills: #D55181; --ctx-system: #6E6C8F;
+  --bg-0: #050B0E; --bg-1: #081116; --bg-2: #0B151B; --bg-3: #132229; --bg-tabs: #070E12;
+  --bg-float: rgba(11,22,28,.86); --bg-float-strong: rgba(11,22,28,.97); --bg-control: rgba(9,18,23,.7); --bg-sheet: #091318;
+  --line: #182A31; --line-soft: #12212A; --line-strong: #223A43;
+  --text: #E4F3F6; --text-2: #BCD6DC; --text-3: #8FB0B8; --text-4: #557580;
+  /* A deeper teal than #14B8A6, so white on a brand fill keeps 3:1 even brightened on hover. */
+  --violet: #0D9488; --pink: #6366F1; --violet-soft: #2DD4BF; --violet-light: #5EEAD4; --link: #7DD3FC;
+  --waiting: #FBBF24; --working: #60A5FA; --done: #4ADE80; --error: #FB7185;
+  --ws-1: #A78BFA; --ws-2: #5EEAD4; --ws-3: #BEF264; --ws-4: #E8A0E8; --ws-5: #818CF8; --ws-6: #FDBA74; --ws-7: #7DD3FC; --ws-8: #FDA4AF;
+  --on-brand: #fff; --text-bright: #fff;
+  --text-error: #FDA4AF; --text-error-soft: #FECDD3; --text-error-strong: #FFE4E6; --text-violet: #B2F5EA; --text-meet: #CCFBF1;
+  --abyss: #010406;
+  --on-done: #052E16; --on-done-deep: #03230F; --done-light: #BBF7D0; --edge-waiting-dim: #5A4520;
+  --switch-off: #1C3038; --kbd-top: #1A2D35; --kbd-bottom: #12222A; --kbd-edge: #03080A;
+  --preview-violet: #5EEAD4; --preview-pink: #A5B4FC; --preview-sky: #93C5FD; --preview-amber: #FCD34D;
+  --worktree: #A3E635; --worktree-text: #D9F99D;
+  --md-code: #F0ABFC; --ty-string: #93C5FD; --ty-hash: #5EEAD4; --ty-stream: #A5B4FC; --ty-list: #FCD34D; --ty-json: #86EFAC;
+  --tint-teal: rgba(45,212,191,.12); --tint-indigo: rgba(129,140,248,.12); --line-num: #24404A;
+  --syn-key: #7DD3FC; --syn-string: #86EFAC; --syn-number: #FDBA74; --syn-literal: #F0ABFC; --syn-punct: #6F909A;
+  --syn-comment: #5F8691; --syn-keyword: #5EEAD4; --syn-operator: #99F6E4; --syn-type: #A5B4FC; --syn-function: #FDE68A;
+  --syn-tag: #C4B5FD; --syn-variable: #FCD34D; --syn-heading: #5EEAD4; --syn-link: #7DD3FC;
+  --fold: #5EEAD4; --hit-text: #FDE68A;
+  --csv-col-0: #A5B4FC; --csv-col-1: #7DD3FC; --csv-col-2: #86EFAC; --csv-col-3: #FCD34D;
+  --csv-col-4: #F0ABFC; --csv-col-5: #FDBA74; --csv-col-6: #5EEAD4; --csv-col-7: #C4B5FD;
+  --csv-tint-0: #86EFAC; --csv-tint-1: #7DD3FC; --csv-tint-2: #FCD34D; --csv-tint-3: #5EEAD4;
+  --csv-tint-4: #FDA4AF; --csv-tint-5: #A5B4FC; --csv-tint-6: #F0ABFC; --csv-tint-7: #C4B5FD;
+  --lane-1: #2DD4BF; --lane-2: #818CF8; --lane-3: #60A5FA; --lane-4: #4ADE80; --lane-5: #F0ABFC; --lane-6: #FBBF24;
+  --person-1: #5EEAD4; --person-2: #A5B4FC; --person-3: #7DD3FC; --person-4: #F0ABFC; --person-5: #FCD34D; --person-6: #86EFAC; --person-7: #FDA4AF; --person-8: #FDBA74;
+  --term-fg: #DCEFF3; --term-cursor: #5EEAD4;
+  --ansi-0: #1A2C33; --ansi-1: #FB7185; --ansi-2: #4ADE80; --ansi-3: #FBBF24; --ansi-4: #60A5FA; --ansi-5: #C084FC; --ansi-6: #2DD4BF; --ansi-7: #BCD6DC;
+  --ansi-8: #5F8691; --ansi-9: #FDA4AF; --ansi-10: #86EFAC; --ansi-11: #FDE68A; --ansi-12: #93C5FD; --ansi-13: #F0ABFC; --ansi-14: #5EEAD4; --ansi-15: #F0FAFB;
+  --editor-fg: #DCEFF3; --editor-gutter: #335660;
+  --log-0: #1B1F28; --log-1: #F07B74; --log-2: #3FB68B; --log-3: #EBC77A; --log-4: #5B8DEF; --log-5: #B794F6; --log-6: #4FC3D9; --log-7: #C9C7C1;
+  --log-8: #6F7682; --log-9: #F4A3A3; --log-10: #A3D977; --log-11: #F5B544; --log-12: #9DB8F5; --log-13: #E8A0E8; --log-14: #7FD3F7; --log-15: #E7E5DF;
+  --seti-blue: #519ABA; --seti-grey: #4D5A5E; --seti-grey-light: #6D8086; --seti-green: #8DC149; --seti-orange: #E37933; --seti-pink: #F55385;
+  --seti-purple: #A074C4; --seti-red: #CC3E44; --seti-white: #D4D7D6; --seti-yellow: #CBCB41; --seti-ignore: #41535B;
+}
+
+/* Daylight: Aurora by day — lavender paper, the same gradient, deeper states. */
+:root[data-theme="daylight"], [data-theme-preview="daylight"] {
+  color-scheme: light;
+  /* Context usage: the chart's group hues, validated on white. */
+  --ctx-messages: #6250D6; --ctx-mcp: #199E70; --ctx-memory: #C98500; --ctx-skills: #D55181; --ctx-system: #85839E;
+  --bg-0: #F4F3FA; --bg-1: #EEECF7; --bg-2: #FFFFFF; --bg-3: #E6E3F4; --bg-tabs: #ECEAF5;
+  --bg-float: rgba(255,255,255,.9); --bg-float-strong: rgba(255,255,255,.98); --bg-control: rgba(255,255,255,.75); --bg-sheet: #FBFAFE;
+  --bg-field: #FFFFFF;
+  --line: #E0DDEE; --line-soft: #EAE8F4; --line-strong: #CFCBE3;
+  --text: #1A1830; --text-2: #3B3858; --text-3: #5E5B80; --text-4: #7A7798;
+  --violet: #7C3AED; --pink: #DB2777; --violet-soft: #8B5CF6; --violet-light: #6D28D9; --link: #4F46E5;
+  --waiting: #B45309; --working: #2563EB; --done: #047857; --error: #BE123C;
+  --ws-1: #7C3AED; --ws-2: #0F766E; --ws-3: #4D7C0F; --ws-4: #A21CAF; --ws-5: #4338CA; --ws-6: #C2410C; --ws-7: #0369A1; --ws-8: #BE123C;
+  --on-brand: #fff; --text-bright: #1A1830;
+  --backdrop: color-mix(in srgb, var(--abyss) 18%, transparent); --backdrop-strong: color-mix(in srgb, var(--abyss) 26%, transparent); --id-mix: 55%;
+  --text-error: #BE123C; --text-error-soft: #9F1239; --text-error-strong: #881337; --text-violet: #5B21B6; --text-meet: #5B21B6;
+  --abyss: #1A1830;
+  --shadow-float: 0 18px 48px -14px color-mix(in srgb, var(--abyss) 22%, transparent), 0 0 0 1px var(--line-strong);
+  --shadow-drawer: 0 -14px 32px -22px color-mix(in srgb, var(--abyss) 30%, transparent);
+  --on-done: #fff; --on-done-deep: #fff; --done-light: #6EE7B7; --edge-waiting-dim: #E7C9A0;
+  --switch-off: #D9D6EA; --kbd-top: #FFFFFF; --kbd-bottom: #F1EFF8; --kbd-edge: #CFCBE3;
+  --preview-violet: #6D28D9; --preview-pink: #BE185D; --preview-sky: #1D4ED8; --preview-amber: #B45309;
+  --worktree: #0E7490; --worktree-text: #155E75;
+  --md-code: #BE185D; --ty-string: #1D4ED8; --ty-hash: #6D28D9; --ty-stream: #0F766E; --ty-list: #A16207; --ty-json: #15803D;
+  --tint-teal: rgba(15,118,110,.1); --tint-indigo: rgba(79,70,229,.1); --line-num: #B4B0CC;
+  --syn-key: #4338CA; --syn-string: #15803D; --syn-number: #C2410C; --syn-literal: #BE185D; --syn-punct: #6E6B8C;
+  --syn-comment: #85829F; --syn-keyword: #BE185D; --syn-operator: #9D174D; --syn-type: #0369A1; --syn-function: #A16207;
+  --syn-tag: #6D28D9; --syn-variable: #B45309; --syn-heading: #BE185D; --syn-link: #4338CA;
+  --fold: #6D28D9; --hit-text: #78350F;
+  --csv-col-0: #4338CA; --csv-col-1: #1D4ED8; --csv-col-2: #047857; --csv-col-3: #A16207;
+  --csv-col-4: #BE185D; --csv-col-5: #C2410C; --csv-col-6: #6D28D9; --csv-col-7: #0E7490;
+  --csv-tint-0: #047857; --csv-tint-1: #1D4ED8; --csv-tint-2: #A16207; --csv-tint-3: #6D28D9;
+  --csv-tint-4: #BE123C; --csv-tint-5: #0F766E; --csv-tint-6: #BE185D; --csv-tint-7: #4338CA;
+  --lane-1: #7C3AED; --lane-2: #DB2777; --lane-3: #2563EB; --lane-4: #0D9488; --lane-5: #4F46E5; --lane-6: #D97706;
+  --person-1: #7C3AED; --person-2: #0E7490; --person-3: #BE185D; --person-4: #4D7C0F; --person-5: #C2410C; --person-6: #1D4ED8; --person-7: #A21CAF; --person-8: #A16207;
+  --term-fg: #24223A; --term-cursor: #7C3AED;
+  --term-sel: color-mix(in srgb, var(--violet) 22%, transparent); --term-sel-inactive: color-mix(in srgb, var(--violet) 12%, transparent);
+  --ansi-0: #3B3858; --ansi-1: #BE123C; --ansi-2: #047857; --ansi-3: #A16207; --ansi-4: #1D4ED8; --ansi-5: #7E22CE; --ansi-6: #0E7490; --ansi-7: #6E6B8C;
+  --ansi-8: #5E5B80; --ansi-9: #E11D48; --ansi-10: #059669; --ansi-11: #B45309; --ansi-12: #2563EB; --ansi-13: #9333EA; --ansi-14: #0891B2; --ansi-15: #85829F;
+  --editor-fg: #24223A; --editor-gutter: #B4B0CC;
+  --seti-blue: #2F7BA0; --seti-grey: #8A969A; --seti-grey-light: #5E6F75; --seti-green: #5E8A1F; --seti-orange: #C25E14; --seti-pink: #D6336C;
+  --seti-purple: #7E4FA8; --seti-red: #B3262D; --seti-white: #6E7578; --seti-yellow: #8F8F14; --seti-ignore: #8A969A;
+  --log-0: var(--ansi-0); --log-1: var(--ansi-1); --log-2: var(--ansi-2); --log-3: var(--ansi-3); --log-4: var(--ansi-4); --log-5: var(--ansi-5); --log-6: var(--ansi-6); --log-7: var(--ansi-7);
+  --log-8: var(--ansi-8); --log-9: var(--ansi-9); --log-10: var(--ansi-10); --log-11: var(--ansi-11); --log-12: var(--ansi-12); --log-13: var(--ansi-13); --log-14: var(--ansi-14); --log-15: var(--ansi-15);
+  --sheen-faint: color-mix(in srgb, var(--shade) 3%, transparent);
+}
+
+/* Minimal · Ink: graphite and white. No gradients, glows, blur or washes; color only for state. */
+:root[data-theme="ink"], [data-theme-preview="ink"] {
+  color-scheme: dark;
+  /* Context usage: the chart's group hues, validated on dark sheets. */
+  --ctx-messages: #9085E9; --ctx-mcp: #199E70; --ctx-memory: #C98500; --ctx-skills: #D55181; --ctx-system: #6E6C8F;
+  --r-sm: 4px; --radius: 6px; --r-lg: 8px;
+  --avatar-color: var(--text-3);
+  --bg-0: #0C0C0D; --bg-1: #111112; --bg-2: #141415; --bg-3: #1E1E20; --bg-tabs: #0F0F10;
+  --bg-float: #18181A; --bg-float-strong: #18181A; --bg-control: #141415; --bg-sheet: #141415;
+  --line: #232325; --line-soft: #1B1B1D; --line-strong: #303033;
+  --text: #EDEDEE; --text-2: #C2C2C5; --text-3: #98989D; --text-4: #707076;
+  --violet: #EDEDEE; --pink: #EDEDEE; --violet-soft: #EDEDEE; --violet-light: #EDEDEE; --link: #A9B8C8;
+  --waiting: #D9B061; --working: #8AA8CF; --done: #7DBF9E; --error: #D98A93;
+  --ws-1: #B6A6E0; --ws-2: #8CCFC4; --ws-3: #B8CF8A; --ws-4: #D3A9D3; --ws-5: #9AA3D9; --ws-6: #D9B48C; --ws-7: #93BFD9; --ws-8: #D9A0A8;
+  --on-brand: #111112; --text-bright: #EDEDEE;
+  --text-error: #E3A1A8; --text-error-soft: #EBC0C5; --text-error-strong: #F3DADD; --text-violet: #D6D6D8; --text-meet: #D6D6D8;
+  --abyss: #000;
+  --bg-sel: var(--bg-3); --edge-sel: var(--line-strong);
+  --shadow-float: 0 0 0 1px var(--line-strong), 0 12px 32px -16px color-mix(in srgb, var(--shade) 60%, transparent);
+  --on-done: #0C0C0D; --on-done-deep: #0C0C0D; --done-light: #A9D6BF; --edge-waiting-dim: #4A3F28;
+  --switch-off: #2A2A2D; --kbd-top: #1E1E20; --kbd-bottom: #18181A; --kbd-edge: #0A0A0B;
+  --preview-violet: #C2C2C5; --preview-pink: #D9A3B0; --preview-sky: #9FB7D4; --preview-amber: #D9C08A;
+  --worktree: #8FB8C0; --worktree-text: #C9DDE1;
+  --md-code: #D9A3B0; --ty-string: #9FB7D4; --ty-hash: #C2C2C5; --ty-stream: #8FC2B5; --ty-list: #D9C08A; --ty-json: #9CC5A8;
+  --tint-teal: rgba(143,194,181,.1); --tint-indigo: rgba(159,183,212,.1); --line-num: #3A3A3E;
+  --syn-key: #B3BFCF; --syn-string: #A9C9A4; --syn-number: #D4B48C; --syn-literal: #D6A3B5; --syn-punct: #7A7A80;
+  --syn-comment: #707076; --syn-keyword: #D6A3B5; --syn-operator: #B0B0B5; --syn-type: #9FB7D4; --syn-function: #E2D3A6;
+  --syn-tag: #C2C2C5; --syn-variable: #D9C08A; --syn-heading: #EDEDEE; --syn-link: #A9B8C8;
+  --fold: #C2C2C5; --hit-text: #EBD9A8;
+  --csv-col-0: #B3BFCF; --csv-col-1: #9FB7D4; --csv-col-2: #A9C9A4; --csv-col-3: #D9C08A;
+  --csv-col-4: #D6A3B5; --csv-col-5: #D4B48C; --csv-col-6: #C2C2C5; --csv-col-7: #9CC9D1;
+  --csv-tint-0: #A9C9A4; --csv-tint-1: #9FB7D4; --csv-tint-2: #D9C08A; --csv-tint-3: #C2C2C5;
+  --csv-tint-4: #E3A1A8; --csv-tint-5: #8FC2B5; --csv-tint-6: #D6A3B5; --csv-tint-7: #B3BFCF;
+  --lane-1: #EDEDEE; --lane-2: #98989D; --lane-3: #8AA8CF; --lane-4: #7DBF9E; --lane-5: #707076; --lane-6: #D9B061;
+  /* Also the Claude accounts' colors: told apart, quietly (session avatars are the mono ones, --avatar-color). */
+  --person-1: #B3A6CF; --person-2: #8FBFC9; --person-3: #D6A3B5; --person-4: #A9C9A4; --person-5: #D4B48C; --person-6: #9FB7D4; --person-7: #CDA6CD; --person-8: #D9C98A;
+  --term-fg: #DADADC; --term-cursor: #EDEDEE;
+  --term-sel: color-mix(in srgb, var(--text) 22%, transparent); --term-sel-inactive: color-mix(in srgb, var(--text) 12%, transparent);
+  --ansi-0: #2A2A2D; --ansi-1: #D98A93; --ansi-2: #8FC5A8; --ansi-3: #D9B061; --ansi-4: #8AA8CF; --ansi-5: #BBA3CF; --ansi-6: #8FC2C9; --ansi-7: #C2C2C5;
+  --ansi-8: #76767C; --ansi-9: #E6A8AF; --ansi-10: #A9D6BF; --ansi-11: #E6C98A; --ansi-12: #A9C0DE; --ansi-13: #D2BDE2; --ansi-14: #A9D3D9; --ansi-15: #EDEDEE;
+  --editor-fg: #DADADC; --editor-gutter: #4A4A4F;
+  --editor-active-line: color-mix(in srgb, var(--text) 4%, transparent); --editor-sel: color-mix(in srgb, var(--text) 18%, transparent);
+  --editor-sel-match: color-mix(in srgb, var(--text) 10%, transparent); --editor-bracket: color-mix(in srgb, var(--text) 14%, transparent);
+  --editor-bracket-edge: color-mix(in srgb, var(--text) 30%, transparent);
+  /* Muted greens and reds: the diff's tints a few points fuller than the other themes'. */
+  --editor-diff-add: color-mix(in srgb, var(--done) 16%, transparent); --editor-diff-del: color-mix(in srgb, var(--error) 15%, transparent);
+  --editor-diff-add-gutter: color-mix(in srgb, var(--done) 28%, transparent); --editor-diff-del-gutter: color-mix(in srgb, var(--error) 27%, transparent);
+  --editor-diff-add-word: color-mix(in srgb, var(--done) 34%, transparent); --editor-diff-del-word: color-mix(in srgb, var(--error) 32%, transparent);
+  --seti-blue: #519ABA; --seti-grey: #4D5A5E; --seti-grey-light: #6D8086; --seti-green: #8DC149; --seti-orange: #E37933; --seti-pink: #F55385;
+  --seti-purple: #A074C4; --seti-red: #CC3E44; --seti-white: #D4D7D6; --seti-yellow: #CBCB41; --seti-ignore: #41535B;
+  --log-0: #1B1F28; --log-1: #F07B74; --log-2: #3FB68B; --log-3: #EBC77A; --log-4: #5B8DEF; --log-5: #B794F6; --log-6: #4FC3D9; --log-7: #C9C7C1;
+  --log-8: #6F7682; --log-9: #F4A3A3; --log-10: #A3D977; --log-11: #F5B544; --log-12: #9DB8F5; --log-13: #E8A0E8; --log-14: #7FD3F7; --log-15: #E7E5DF;
+}
+
+/* Minimal · Paper: white paper, black ink, hairlines instead of shadows; color only for state. */
+:root[data-theme="paper"], [data-theme-preview="paper"] {
+  color-scheme: light;
+  /* Context usage: the chart's group hues, validated on white. */
+  --ctx-messages: #6250D6; --ctx-mcp: #199E70; --ctx-memory: #C98500; --ctx-skills: #D55181; --ctx-system: #85839E;
+  --r-sm: 4px; --radius: 6px; --r-lg: 8px;
+  --avatar-color: var(--text-3);
+  --bg-0: #F7F7F6; --bg-1: #F1F1EF; --bg-2: #FFFFFF; --bg-3: #EAEAE8; --bg-tabs: #EFEFED;
+  --bg-float: #FFFFFF; --bg-float-strong: #FFFFFF; --bg-control: #FFFFFF; --bg-sheet: #FFFFFF; --bg-field: #FFFFFF;
+  --line: #E4E4E1; --line-soft: #EDEDEB; --line-strong: #D4D4D0;
+  --text: #161617; --text-2: #3A3A3D; --text-3: #5E5E63; --text-4: #808085;
+  --violet: #161617; --pink: #161617; --violet-soft: #161617; --violet-light: #161617; --link: #2F62A3;
+  --waiting: #9A6200; --working: #2F62A3; --done: #2D7A55; --error: #B3404D;
+  --ws-1: #7C3AED; --ws-2: #0F766E; --ws-3: #4D7C0F; --ws-4: #A21CAF; --ws-5: #4338CA; --ws-6: #C2410C; --ws-7: #0369A1; --ws-8: #BE123C;
+  --on-brand: #FFFFFF; --text-bright: #161617;
+  --backdrop: color-mix(in srgb, var(--abyss) 14%, transparent); --backdrop-strong: color-mix(in srgb, var(--abyss) 22%, transparent);
+  --text-error: #B3404D; --text-error-soft: #8F2F3A; --text-error-strong: #7A2530; --text-violet: #3A3A3D; --text-meet: #3A3A3D;
+  --abyss: #161617;
+  --bg-sel: var(--bg-3); --edge-sel: var(--line-strong);
+  --shadow-float: 0 0 0 1px var(--line-strong), 0 12px 28px -18px color-mix(in srgb, var(--shade) 25%, transparent);
+  --shadow-drawer: 0 -10px 24px -18px color-mix(in srgb, var(--shade) 20%, transparent);
+  --on-done: #FFFFFF; --on-done-deep: #FFFFFF; --done-light: #7FB89A; --edge-waiting-dim: #E2CFA6;
+  --switch-off: #D4D4D0; --kbd-top: #FFFFFF; --kbd-bottom: #F4F4F2; --kbd-edge: #D4D4D0;
+  --preview-violet: #3A3A3D; --preview-pink: #A3385F; --preview-sky: #2F62A3; --preview-amber: #9A6200;
+  --worktree: #2F6F7A; --worktree-text: #24565F;
+  --md-code: #A3385F; --ty-string: #2F62A3; --ty-hash: #3A3A3D; --ty-stream: #2F6F6A; --ty-list: #8A5A00; --ty-json: #2D7A55;
+  --tint-teal: rgba(47,111,106,.08); --tint-indigo: rgba(47,98,163,.08); --line-num: #C4C4C0;
+  --syn-key: #2F4F8A; --syn-string: #2D7A55; --syn-number: #9A5200; --syn-literal: #A3385F; --syn-punct: #808085;
+  --syn-comment: #85858A; --syn-keyword: #A3385F; --syn-operator: #5E5E63; --syn-type: #1F5F8B; --syn-function: #7A5A00;
+  --syn-tag: #3A3A3D; --syn-variable: #8A5A00; --syn-heading: #161617; --syn-link: #2F62A3;
+  --fold: #3A3A3D; --hit-text: #5C3D00;
+  --csv-col-0: #2F4F8A; --csv-col-1: #2F62A3; --csv-col-2: #2D7A55; --csv-col-3: #8A5A00;
+  --csv-col-4: #A3385F; --csv-col-5: #9A5200; --csv-col-6: #5E5E63; --csv-col-7: #1F6F7A;
+  --csv-tint-0: #2D7A55; --csv-tint-1: #2F62A3; --csv-tint-2: #8A5A00; --csv-tint-3: #5E5E63;
+  --csv-tint-4: #B3404D; --csv-tint-5: #2F6F6A; --csv-tint-6: #A3385F; --csv-tint-7: #2F4F8A;
+  --lane-1: #161617; --lane-2: #808085; --lane-3: #2F62A3; --lane-4: #2D7A55; --lane-5: #5E5E63; --lane-6: #9A6200;
+  /* Also the Claude accounts' colors: told apart, quietly (session avatars are the mono ones, --avatar-color). */
+  --person-1: #6B5A9A; --person-2: #2F6F7A; --person-3: #A3385F; --person-4: #4E7A3A; --person-5: #9A5200; --person-6: #2F62A3; --person-7: #8A4E8A; --person-8: #7A6A10;
+  --term-fg: #1F1F21; --term-cursor: #161617;
+  --term-sel: color-mix(in srgb, var(--text) 16%, transparent); --term-sel-inactive: color-mix(in srgb, var(--text) 8%, transparent);
+  --ansi-0: #3A3A3D; --ansi-1: #B3404D; --ansi-2: #2D7A55; --ansi-3: #8A5A00; --ansi-4: #2F62A3; --ansi-5: #7A4E9A; --ansi-6: #1F6F7A; --ansi-7: #6E6E73;
+  --ansi-8: #5E5E63; --ansi-9: #C4505D; --ansi-10: #3A8A64; --ansi-11: #9A6A10; --ansi-12: #3A72B8; --ansi-13: #8A5EAA; --ansi-14: #2A7F8A; --ansi-15: #85858A;
+  --editor-fg: #1F1F21; --editor-gutter: #B4B4B0;
+  --editor-active-line: color-mix(in srgb, var(--text) 3%, transparent); --editor-sel: color-mix(in srgb, var(--text) 14%, transparent);
+  --editor-sel-match: color-mix(in srgb, var(--text) 8%, transparent); --editor-bracket: color-mix(in srgb, var(--text) 10%, transparent);
+  --editor-bracket-edge: color-mix(in srgb, var(--text) 30%, transparent);
+  --seti-blue: #2F7BA0; --seti-grey: #8A969A; --seti-grey-light: #5E6F75; --seti-green: #5E8A1F; --seti-orange: #C25E14; --seti-pink: #D6336C;
+  --seti-purple: #7E4FA8; --seti-red: #B3262D; --seti-white: #6E7578; --seti-yellow: #8F8F14; --seti-ignore: #8A969A;
+  --log-0: var(--ansi-0); --log-1: var(--ansi-1); --log-2: var(--ansi-2); --log-3: var(--ansi-3); --log-4: var(--ansi-4); --log-5: var(--ansi-5); --log-6: var(--ansi-6); --log-7: var(--ansi-7);
+  --log-8: var(--ansi-8); --log-9: var(--ansi-9); --log-10: var(--ansi-10); --log-11: var(--ansi-11); --log-12: var(--ansi-12); --log-13: var(--ansi-13); --log-14: var(--ansi-14); --log-15: var(--ansi-15);
+  --sheen-faint: color-mix(in srgb, var(--shade) 3%, transparent);
+}

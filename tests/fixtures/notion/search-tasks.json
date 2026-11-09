@@ -1,0 +1,52 @@
+{
+  "results": [
+    {
+      "id": "00000006-0000-4000-8000-000000000006",
+      "title": "Sprint Tasks",
+      "url": "https://app.notion.com/p/00000006000040008000000000000006?pvs=204",
+      "type": "database",
+      "highlight": "",
+      "timestamp": "2026-10-16T23:46:00.000Z",
+      "path": "Engineering",
+      "verification": {
+        "state": "unverified"
+      }
+    },
+    {
+      "id": "00000003-0000-4000-8000-000000000003",
+      "title": "Engineering",
+      "url": "https://app.notion.com/p/00000003000040008000000000000003?pvs=204",
+      "type": "page",
+      "highlight": "",
+      "timestamp": "2026-10-16T23:46:00.000Z",
+      "verification": {
+        "state": "unverified"
+      }
+    },
+    {
+      "id": "00000007-0000-4000-8000-000000000007",
+      "title": "Write onboarding checklist",
+      "url": "https://app.notion.com/p/00000007000040008000000000000007?pvs=204",
+      "type": "page",
+      "highlight": "",
+      "timestamp": "2026-10-16T23:46:00.000Z",
+      "path": "Engineering / Sprint Tasks",
+      "verification": {
+        "state": "unverified"
+      }
+    },
+    {
+      "id": "00000005-0000-4000-8000-000000000005",
+      "title": "Engineering Backlog",
+      "url": "https://app.notion.com/p/00000005000040008000000000000005?pvs=204",
+      "type": "database",
+      "highlight": "",
+      "timestamp": "2026-10-16T23:46:00.000Z",
+      "path": "Engineering",
+      "verification": {
+        "state": "unverified"
+      }
+    }
+  ],
+  "type": "workspace_search"
+}

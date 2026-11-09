@@ -1,0 +1,36 @@
+#!/bin/sh
+# atelier: open files and folders in Atelier.
+#   atelier             bring Atelier to the front
+#   atelier <path>...   each file in a tab, each folder as a project (paths relative to this folder)
+# Shipped in Atelier.app/Contents/Resources/bin; "Install 'atelier' Command" links it from /usr/local/bin.
+
+# The app this script belongs to, through the link (so it follows the installed app across updates).
+self=$0
+while [ -L "$self" ]; do
+  target=$(readlink "$self")
+  case $target in
+    /*) self=$target ;;
+    *) self=$(dirname "$self")/$target ;;
+  esac
+done
+bin=$(cd "$(dirname "$self")" && pwd -P)
+app=${bin%/Contents/Resources/bin}
+case $app in
+  *.app) ;;
+  *) echo "atelier: run the copy inside Atelier.app" >&2; exit 1 ;;
+esac
+
+if [ "$#" -eq 0 ]; then exec /usr/bin/open -a "$app"; fi
+
+# Absolute paths, checked first: nothing opens if one is missing; a name starting with "-" is never an option.
+for p in "$@"; do
+  shift
+  if [ ! -e "$p" ]; then echo "atelier: no such file: $p" >&2; exit 1; fi
+  case $p in
+    .) p=$PWD ;;
+    /*) ;;
+    *) p=$PWD/$p ;;
+  esac
+  set -- "$@" "$p"
+done
+exec /usr/bin/open -a "$app" "$@"

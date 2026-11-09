@@ -1,0 +1,2 @@
+lint: 2 problems (1 error, 1 warning)
+  src/a.ts:3  no-unused-vars

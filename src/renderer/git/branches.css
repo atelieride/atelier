@@ -1,0 +1,70 @@
+/* Branches and stashes in Source Control, and their sheets. Tokens only (theme.css). */
+
+/* ── Section heads: the write action (New Branch…, Stash Changes…) shows on hover or focus ─────────── */
+/* The + takes no room: every count lines up on the right, as Tags' does; on hover it shows
+   just left of its count, in the head's free room, and nothing moves. Its font is the count's (10.5px mono), so
+   --count-ch (the count's digits, RefSections.tsx) in ch is the count's width; 14px is the head's right padding. */
+.scm-section-top { position: relative; display: flex; align-items: center; min-width: 0; }
+.scm-section-top > .scm-section-head { flex: 1; min-width: 0; }
+.scm-section-add { position: absolute; top: 50%; right: calc(14px + var(--count-ch, 1) * 1ch + 6px); width: 20px; height: 20px; margin-top: -10px; font: 10.5px var(--mono); opacity: 0; transition: opacity var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.scm-section-top:hover .scm-section-add, .scm-section-add:focus-visible { opacity: 1; }
+.scm-section-add:hover { color: var(--text); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.scm-section-add:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); }
+
+/* ── A branch row: switch on hover (⇄), over the counts ─────────── */
+.ref-line { position: relative; display: flex; flex-direction: column; }
+.ref-act { position: absolute; right: 4px; top: 50%; width: 22px; height: 20px; display: flex; align-items: center; justify-content: center; border-radius: var(--r-sm); color: var(--text-2); background: var(--bg-control); box-shadow: inset 0 0 0 1px var(--line-strong); opacity: 0; transform: translateY(-50%) scale(.92); transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.ref-line:hover .ref-act, .ref-act:focus-visible { opacity: 1; transform: translateY(-50%); }
+.ref-line:hover .ref-row .ref-track, .ref-line:hover .ref-row .ref-age { visibility: hidden; }
+.ref-act:hover { color: var(--text); background: var(--seg-on); box-shadow: var(--seg-on-shadow); }
+.ref-act:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); }
+
+/* ── Inline rename ─────────── */
+.ref-rename { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 26px; padding: 2px 6px 2px 10px; border-radius: var(--r-sm); background: var(--tint-violet-soft); animation: atl-fade var(--t-fast) var(--ease) both; }
+.ref-rename-input { flex: 1; min-width: 0; height: 22px; padding: 0 7px; border-radius: var(--r-sm); font-size: 12px; color: var(--text); background: var(--bg-field); border: none; box-shadow: inset 0 0 0 1px var(--edge-violet); outline: none; }
+.ref-rename-input.is-invalid { box-shadow: inset 0 0 0 1px var(--edge-error); }
+.ref-rename-error { flex-basis: 100%; padding: 0 0 2px 16px; font-size: 11px; color: var(--text-error); }
+
+/* ── A stash row: Apply on hover ─────────── */
+.stash-row { position: relative; }
+.stash-act { margin-left: auto; flex-shrink: 0; height: 20px; padding: 0 9px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--text-2); background: var(--bg-control); box-shadow: inset 0 0 0 1px var(--line-strong); opacity: 0; transition: opacity var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.stash-row:hover .stash-act, .stash-act:focus-visible { opacity: 1; }
+.stash-act:hover { color: var(--text); background: var(--seg-on); box-shadow: var(--seg-on-shadow); }
+.stash-act:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); }
+
+/* ── Sheet fields ─────────── */
+.git-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.git-input { width: 100%; height: 30px; padding: 0 10px; border: none; border-radius: var(--r-sm); font-size: 12.5px; color: var(--text); background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line); outline: none; transition: box-shadow var(--t-fast) var(--ease); }
+.git-input::placeholder { color: var(--text-4); }
+.git-input:hover { box-shadow: inset 0 0 0 1px var(--line-strong); }
+.git-input:focus { box-shadow: inset 0 0 0 1px var(--edge-violet), 0 0 0 3px var(--tint-violet); }
+.git-input.is-invalid, .git-input.is-invalid:focus { box-shadow: inset 0 0 0 1px var(--edge-error), 0 0 0 3px var(--tint-error); }
+.git-field-error { font-size: 11px; color: var(--text-error); animation: atl-fade var(--t-fast) var(--ease) both; }
+.git-notice.git-notice-wrap { height: auto; padding: 6px 8px; align-items: flex-start; }
+.git-notice.git-notice-wrap > svg { margin-top: 2px; }
+.git-notice.git-notice-wrap .git-notice-text { white-space: normal; overflow-wrap: anywhere; line-height: 1.45; }
+.git-sheet-body.is-clash { color: var(--text-error); }
+
+/* ── The switch sheet's choices: a radio group of cards ─────────── */
+.git-choices { display: flex; flex-direction: column; gap: 6px; }
+.git-choice { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: var(--radius); text-align: left; background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line); transition: background-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), transform var(--t-fast) var(--ease); }
+.git-choice:hover:not(:disabled) { background: var(--tint-violet-soft); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.git-choice.is-on { background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet); }
+.git-choice:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--edge-violet), 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); }
+.git-choice:disabled { opacity: .45; cursor: not-allowed; }
+.git-choice-icon { width: 26px; height: 26px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: var(--r-sm); color: var(--text-3); background: var(--bg-control); box-shadow: inset 0 0 0 1px var(--line-strong); transition: color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); }
+.git-choice.is-on .git-choice-icon { color: var(--on-brand); background: var(--brand); }
+.git-choice-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.git-choice-label { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.git-choice-sub { font-size: 11.5px; color: var(--text-3); }
+.git-choice-mark { width: 14px; height: 14px; flex-shrink: 0; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--line-strong); transition: box-shadow var(--t-fast) var(--ease); }
+.git-choice.is-on .git-choice-mark { box-shadow: inset 0 0 0 4px var(--violet); }
+
+/* ── The stash sheet ─────────── */
+.git-stash-opts { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.git-sheet-check.is-off { color: var(--text-4); cursor: default; }
+.git-stash-count { height: 22px; display: inline-flex; align-items: center; padding: 0 9px; border-radius: 999px; font-size: 11px; color: var(--text-2); background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line); }
+.git-stash-count.is-empty { color: var(--text-4); }
+
+:root[data-motion="reduced"] :is(.ref-rename, .git-field-error) { animation: none; }
+:root[data-motion="reduced"] :is(.ref-act, .stash-act, .scm-section-add, .git-choice, .git-input) { transition: none; }

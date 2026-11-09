@@ -1,0 +1,5 @@
+On branch main
+Untracked files:
+	untracked.txt
+
+nothing added to commit but untracked files present

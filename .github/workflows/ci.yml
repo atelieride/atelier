@@ -1,0 +1,162 @@
+# Continuous integration.
+#
+# Pull requests to main (Dependabot's included), a weekly run when main moved since the last one, and manual runs.
+# Not on every push: the tests run locally before each commit, and again in the release workflow on the tag.
+#
+#   changes  ubuntu: is there anything new for the weekly run?
+#   app      macOS (as the release build): npm ci, typecheck, unit + integration tests.
+#   app-windows  Windows: the same, without the POSIX-only tests.
+#   site     ubuntu: the website's unit tests, build (live demo included) and dist guard.
+#
+# No secrets, read-only token, actions pinned by commit SHA (Dependabot keeps them current: .github/dependabot.yml).
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  # Monday 02:17 UTC: the week's work, weekend included, ready on Monday morning.
+  schedule:
+    - cron: '17 2 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a pull request replaces its run; a manual run and the weekly run queue instead of killing each other.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+  HOMEBREW_NO_INSTALL_CLEANUP: '1'
+
+jobs:
+  changes:
+    name: Anything to test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The run history only: no checkout, no contents.
+    permissions:
+      actions: read
+    outputs:
+      needed: ${{ steps.decide.outputs.needed }}
+    steps:
+      # Pull requests and manual runs always test. The weekly run tests main unless the last scheduled run that ran
+      # (failed included, cancelled not) already tested this very commit: commit dates would miss old commits pushed late.
+      - name: Decide
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          needed=true
+          if [ "$EVENT" = schedule ]; then
+            last=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --event schedule --status completed --limit 20 \
+              --json headSha,conclusion --jq '[.[] | select(.conclusion != "cancelled")][0].headSha // ""') || last=""
+            if [ "$last" = "$GITHUB_SHA" ]; then
+              needed=false
+              echo "main is still at ${GITHUB_SHA:0:7}, already tested by the last weekly run: nothing new to test." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          echo "needed=$needed" >> "$GITHUB_OUTPUT"
+
+  app:
+    name: App — typecheck and tests
+    needs: changes
+    if: needs.changes.outputs.needed == 'true'
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Install tmux (integration tests)
+        run: command -v tmux >/dev/null || brew install tmux
+
+      - name: Unit and integration tests
+        run: npm test
+
+  # Windows: the same suite, where the tests that need POSIX are left out (tests/support/posix-only.ts) or tag
+  # themselves. It fails the run like the others: the release build tests on Windows too, so a red that waited here
+  # would only stop a release later.
+  app-windows:
+    name: App on Windows — typecheck and tests
+    needs: changes
+    if: needs.changes.outputs.needed == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # atelier-bridge.exe and atelier-procs.exe (MSVC): the Windows tests run them.
+      - name: Build the bridge and atelier-procs
+        run: npm run build:bridge
+
+      - name: Unit and integration tests
+        run: npm test
+
+  site:
+    name: Website — tests and build
+    needs: changes
+    if: needs.changes.outputs.needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            site/package-lock.json
+
+      # The site build runs the app's build:demo first (the live demo: vite and the renderer's packages from the root).
+      # No lifecycle scripts: node-pty's native build and Electron's download are not needed to bundle the renderer.
+      - name: Install the app's dependencies (live demo build)
+        run: npm ci --ignore-scripts
+
+      - name: Install the site's dependencies
+        run: npm --prefix site ci
+
+      - name: Unit tests, build and dist guard
+        run: npm --prefix site test

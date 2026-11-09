@@ -1,0 +1,240 @@
+/* A table tab: the toolbar, the rows loaded as you scroll, the footer, the
+   states. Loaded with the table's lazy chunk (TableView.tsx), never the first paint. Colors only through
+   Aurora's tokens. Every width holds (a split pane is ~430 px): names ellipsize, chips and buttons never shrink or wrap,
+   labels fold to icons (their names stay in the tooltips). The tab's 2 px production hairline is databases.css's
+   `.db-tab.is-prod`: nothing here paints a background over the top of the tab. */
+
+.dbt { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; outline: none; }
+.dbt-sp { flex: 1; min-width: 0; }
+
+/* —— the toolbar —— */
+/* Narrower than anything fits, it clips rather than spill over the next pane (the SQL popover sits beside it). */
+.dbt-bar { flex: none; display: flex; align-items: center; gap: 10px; min-width: 0; height: 46px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; overflow: hidden; }
+.dbt-crumb { flex: 0 1 auto; display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--text-4); }
+/* The connection gives way first, then the schema; the table's name last. */
+.dbt-crumb-conn { flex: 0 3 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbt-crumb-schema { flex: 0 2 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbt-crumb-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 500; }
+.dbt-crumb-sep { flex: none; color: var(--line-strong); }
+.dbt-ro { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 11.5px; font-weight: 500; color: var(--text-3); background: var(--bg-control); box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; }
+.dbt-ro > svg { flex: none; }
+.dbt-est { flex: none; font-size: 11.5px; color: var(--text-4); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dbt-views { flex: none; }
+.dbt-views button { white-space: nowrap; }
+.dbt-views button > svg { flex: none; }
+/* Data's Grid / Record: a segmented pair as the views'; icons only unless the pane is wide. */
+.dbt-rv { flex: none; }
+.dbt-rv button { white-space: nowrap; }
+.dbt-rv button > svg { flex: none; }
+.dbt-ib { flex: none; width: 26px; height: 26px; border-radius: 7px; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbt-ib:hover { color: var(--text); background: var(--bg-hover); }
+.dbt-ib:focus-visible { outline: none; box-shadow: 0 0 0 1.5px var(--violet); }
+.dbt-ib.is-on { color: var(--violet-light); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet); }
+.dbt-sql { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border-radius: 7px; font-size: 12px; font-weight: 500; color: var(--text-3); white-space: nowrap; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbt-sql > svg { flex: none; }
+.dbt-sql:hover, .dbt-sql[aria-expanded="true"] { color: var(--text); background: var(--bg-hover); }
+.dbt-sql:focus-visible { outline: none; box-shadow: 0 0 0 1.5px var(--violet); }
+.dbt-sql:disabled { opacity: .45; cursor: default; color: var(--text-3); background: none; }
+/* ⋯: the Grid / Record toggle, then Mask, Refresh and SQL, once the pane is too narrow for them (the same menu as a
+   right-click on the bar). */
+.dbt-bar .dbt-fold { flex: none; display: none; width: 26px; height: 26px; border-radius: 7px; }
+.dbt-fold:hover, .dbt-fold.is-open { color: var(--text); background: var(--bg-hover); }
+.dbt-fold:focus-visible { outline: none; box-shadow: 0 0 0 1.5px var(--violet); }
+
+/* Narrower panes: the Grid / Record labels go first, then the estimate, then the chip's word and the view labels, then
+   SQL's word (names in tooltips). */
+@container dkv (max-width: 1000px) { .dbt-rv-label { display: none; } .dbt-rv button { padding: 0 8px; } }
+@container dkv (max-width: 860px) { .dbt-est { display: none; } }
+@container dkv (max-width: 760px) { .dbt-ro-label { display: none; } .dbt-ro { padding: 0 6px; } }
+@container dkv (max-width: 700px) { .dbt-views-label { display: none; } .dbt-views button { padding: 0 8px; } }
+/* The path gives way from its start (all of it in the tooltip): the connection's name, then the schema — three names in
+   ~100 px shrank to nothing between their slashes, and cut the table's. */
+@container dkv (max-width: 560px) { .dbt-sql-label { display: none; } .dbt-bar { gap: 6px; padding: 0 8px 0 12px; } .dbt-crumb-conn, .dbt-crumb-conn + .dbt-crumb-sep { display: none; } }
+/* Narrower still, every fold into ⋯ (the same menu as a right-click on the bar), which shows with the first: the Grid /
+   Record toggle (Record View there), then Mask, Refresh and SQL; then the view switch goes too (its views are there). */
+@container dkv (max-width: 460px) { .dbt-bar .dbt-rv { display: none; } .dbt-bar .dbt-fold { display: flex; } }
+@container dkv (max-width: 400px) { .dbt-crumb-schema, .dbt-crumb-sep { display: none; } }
+@container dkv (max-width: 380px) { .dbt-ro { display: none; } }
+@container dkv (max-width: 340px) { .dbt-bar .dbt-ib, .dbt-bar .dbt-sql { display: none; } }
+@container dkv (max-width: 220px) { .dbt-views { display: none; } }
+
+/* The SQL popover: the statement as main ran it, values inlined for reading; under the bar, at its right. */
+.dbt-pop { position: absolute; top: 52px; right: 12px; z-index: 30; width: min(560px, calc(100% - 24px)); max-height: 340px; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px; border-radius: var(--r-lg); background: var(--bg-float); backdrop-filter: blur(18px); box-shadow: var(--shadow-float); white-space: normal; animation: atl-pop var(--t-med) var(--ease) both; }
+.dbt-pop-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dbt-pop-head > button { flex: none; }
+.dbt-pop-sql { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line-soft); color: var(--md-code); font-size: 11.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.dbt-pop-note { margin: 0; font-size: 11px; color: var(--text-4); }
+
+/* —— the body —— */
+/* Data's rows and footer: hidden, not unmounted, on Structure and Relations (the place in the rows stays). */
+.dbt-data { flex: 1; min-height: 0; flex-direction: column; }
+/* The rows' box (under the filter bar, over the footer): the rows and the row inspector — beside them, or over them
+   when the tab is too narrow for both (inspector.css .dbi.is-over) — one place for it; the bar, the filters, the footer
+   and every popover stay above it. */
+.dbt-rows { position: relative; flex: 1; min-height: 0; display: flex; }
+.dbt-rows > .dbt-body, .dbt-rows > .dbt-center { min-width: 0; }
+.dbt-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.dbt-center { flex: 1; min-height: 0; display: grid; place-items: center; padding: 24px; overflow: auto; }
+.dbt-problem { max-width: 460px; }
+.dbt-problem .dk-state-icon { color: var(--text-error); box-shadow: inset 0 0 0 1px var(--edge-error); }
+.dbt-problem .dk-state-title { overflow-wrap: anywhere; }
+.dbt-problem-detail { margin: 0; max-width: 420px; font-size: 12px; line-height: 1.5; color: var(--text-error); overflow-wrap: anywhere; }
+.dbt-problem-code { margin: 0; font-size: 10.5px; color: var(--text-4); }
+/* Try Again, and Clear Filters beside it when a filter may be what fails. */
+.dbt-problem-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.dbt-problem-actions > button { flex: none; white-space: nowrap; }
+
+/* A Refresh with rows on screen: they stay, dimmed after a beat, under a thin bar (nothing for a quick one). The bar
+   crosses for as long as the query timeout allows (--dbt-cycles, set by the view: table-view.ts progressCycles), so it
+   never looks stuck while a query runs — a finite count all the same (the idle motion budget); Reduce motion: still. */
+.dbt-progress { position: absolute; left: 0; right: 0; top: 0; z-index: 4; height: 2px; overflow: hidden; pointer-events: none; animation: atl-fade var(--t-fast) var(--ease) 150ms both; }
+.dbt-progress > i { display: block; width: 40%; height: 100%; background: var(--brand); animation: atl-indeterminate 1.1s linear var(--dbt-cycles); }
+.dbt-body.is-busy .dbt-grid { opacity: .55; transition: opacity var(--t-med) var(--ease) 150ms; }
+
+/* Loading: skeleton rows after 150 ms; they breathe a few times, then rest. */
+.dbt-skel { gap: 18px; padding: 60px 16px 16px; overflow: hidden; animation: atl-fade var(--t-med) var(--ease) both; }
+.dbt-skel-bar { flex: none; height: 12px; border-radius: 6px; background: var(--bg-3); animation: atl-breathe 1.4s var(--ease) var(--cue-cycles-long); }
+.dbt-skel-bar:nth-child(3n + 2) { width: 86%; }
+.dbt-skel-bar:nth-child(3n) { width: 72%; }
+
+/* —— the grid —— */
+/* The rows scroll inside; the header and the row numbers stay; widths come from one colgroup (Grid.tsx), fixed 30 px
+   rows (Wrap Cells: a fixed six lines). At every width: names, types and values one line with an ellipsis
+   (Wrap Cells aside), icons and chips never squeeze, a narrow pane scrolls sideways. */
+.dbt-gridbox { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.dbt-grid { position: relative; flex: 1; min-height: 0; overflow: auto; outline: none; transition: opacity var(--t-fast) var(--ease); }
+.dbt-grid:focus-visible { box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.dbt-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; font: 12px var(--mono); font-variant-ligatures: none; white-space: nowrap; }
+
+/* The header: the name (key and foreign-key icons, the sort), the type line under it; a click sorts, the edge resizes. */
+.dbt-table thead th { position: sticky; top: 0; z-index: 2; height: 44px; padding: 0; text-align: left; vertical-align: middle; background: var(--bg-2); border-bottom: 1px solid var(--line); border-right: 1px solid var(--line-soft); overflow: hidden; }
+.dbt-table thead th.dbt-rn { left: 0; z-index: 4; }
+.dbt-th.is-drv { background: color-mix(in srgb, var(--violet) 10%, var(--bg-2)); }
+/* Its box is measured by grid-model.ts (HEAD_PAD, HEAD_ICON): a column starts wide enough for name + icons + sort arrow. */
+.dbt-th-btn { display: flex; flex-direction: column; justify-content: center; gap: 5px; width: 100%; height: 100%; min-width: 0; padding: 0 14px 0 10px; color: var(--text-2); transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbt-th-btn:hover { color: var(--text); background: var(--bg-hover); }
+.dbt-th.is-sorted .dbt-th-btn { color: var(--text); }
+.dbt-th-line { display: flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; }
+.dbt-th.is-num .dbt-th-line { justify-content: flex-end; }
+.dbt-th-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 12px/1.2 var(--font); }
+.dbt-th-pk, .dbt-th-fk, .dbt-th-drv, .dbt-th-sort { flex: none; display: inline-flex; align-items: center; }
+.dbt-th-pk { color: var(--waiting); }
+.dbt-th-fk { color: var(--link); }
+.dbt-th-drv { color: var(--violet-light); }
+.dbt-th-sort { gap: 1px; color: var(--violet-light); }
+.dbt-th-sort sup { font: 600 9px/1 var(--mono); }
+.dbt-th-type { display: block; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 10px/1.2 var(--mono); color: var(--text-4); }
+.dbt-th.is-num .dbt-th-type { text-align: right; }
+.dbt-th.is-drv .dbt-th-type { color: var(--violet-light); }
+/* The edge: over the header's right side, a thin bar on hover (never under the right fade: that one goes at the end). */
+/* The column menu's button: over the name's tail while the pointer is on the header, always on a JSON column
+   (its key profile lives there) — whose name keeps room for it —, and while its menu is open. Left of the resize edge. */
+.dbt-th-menu { position: absolute; top: 6px; right: 9px; z-index: 1; display: none; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 4px; color: var(--text-4); background: var(--bg-3); transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbt-th:hover .dbt-th-menu, .dbt-th.is-json .dbt-th-menu, .dbt-th.is-menu .dbt-th-menu { display: flex; }
+.dbt-th.is-json .dbt-th-menu { background: transparent; }
+.dbt-th-menu:hover { color: var(--text); background: var(--bg-hover); }
+.dbt-th.is-menu .dbt-th-menu { color: var(--violet-light); }
+.dbt-th.is-json .dbt-th-btn { padding-right: 30px; }
+.dbt-th.is-menu { box-shadow: inset 0 -2px 0 var(--violet-light); }
+.dbt-th-rs { position: absolute; top: 0; right: 0; bottom: 0; z-index: 1; width: 7px; cursor: col-resize; }
+.dbt-th-rs::after { content: ''; position: absolute; top: 10px; bottom: 10px; right: 2px; width: 2px; border-radius: 1px; background: transparent; transition: background var(--t-fast) var(--ease); }
+.dbt-th-rs:hover::after { background: var(--violet-soft); }
+
+/* The cells: one line, cut with an ellipsis. */
+.dbt-table td { height: 30px; padding: 0 10px; border-bottom: 1px solid var(--line-soft); border-right: 1px solid var(--line-soft); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; user-select: none; }
+.dbt-table td.is-num { text-align: right; font-variant-numeric: tabular-nums; }
+.dbt-table td.is-drv { background: color-mix(in srgb, var(--violet) 4%, transparent); }
+.dbt-table tbody tr:hover td { background: var(--tint-violet-soft); }
+.dbt-table tbody tr.is-sel td { color: var(--text); background: var(--tint-violet); }
+.dbt-table td.is-focus { box-shadow: inset 0 0 0 1.5px var(--edge-violet); }
+.dbt-grid:focus td.is-focus { box-shadow: inset 0 0 0 1.5px var(--violet); }
+.dbt-table tbody tr.dbt-spacer td { padding: 0; border: 0; background: none; }
+/* The row numbers: sticky on the left, opaque (cells scroll under them), the selection's bar. */
+.dbt-table .dbt-rn { position: sticky; left: 0; z-index: 1; padding: 0 8px; text-align: right; font-size: 10.5px; color: var(--text-4); background: var(--bg-2); border-right: 1px solid var(--line); }
+.dbt-table tbody tr:hover td.dbt-rn { color: var(--text-3); background: linear-gradient(var(--tint-violet-soft), var(--tint-violet-soft)), var(--bg-2); }
+.dbt-table tbody tr.is-sel td.dbt-rn { color: var(--violet-light); background: linear-gradient(var(--tint-violet), var(--tint-violet)), var(--bg-2); box-shadow: inset 2px 0 0 var(--violet-soft); }
+
+/* Wrap Cells (⌥Z): rows of six lines, every one the same height (nothing measured). */
+/* A cell's height counts its padding and its 1 px border: 6 + 108 + 5 + 1 = 120 (WRAP_ROW_H), never 121. */
+.dbt-table.is-wrap td { height: 120px; padding: 6px 10px 5px; vertical-align: top; white-space: normal; }
+.dbt-table.is-wrap td.dbt-rn { padding-top: 8px; }
+.dbt-wrapc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; max-height: 108px; overflow: hidden; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dbt-wrapc .dbt-chips { display: flex; flex-wrap: wrap; row-gap: 2px; }
+
+/* More columns past the right edge: a fade (the tab's color, shaped by a mask as the tab strip's fades), letting the
+   pointer through; gone at the end. */
+.dbt-fade { position: absolute; top: 0; right: 0; bottom: 0; z-index: 5; width: 48px; pointer-events: none; background: var(--bg-1); -webkit-mask-image: linear-gradient(90deg, transparent, black); mask-image: linear-gradient(90deg, transparent, black); animation: atl-fade var(--t-fast) var(--ease) both; }
+
+/* —— the values —— */
+.dbt-nul { flex: none; display: inline-block; padding: 3px 5px; border-radius: 4px; font: italic 10px/1 var(--mono); letter-spacing: .04em; color: var(--text-4); box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; vertical-align: middle; }
+.dbt-emp { flex: none; display: inline-block; padding: 2px 5px; border-radius: 4px; font: italic 10px/1 var(--mono); color: var(--text-4); border: 1px dashed var(--line-strong); white-space: nowrap; vertical-align: middle; }
+.dbt-blank { color: var(--text-4); }
+.dbt-blank-n { margin-left: 6px; font: 11px var(--font); }
+.dbt-mask { color: var(--text-4); letter-spacing: .14em; }
+.dbt-num.is-neg { color: var(--text-error); }
+.dbt-bool { flex: none; display: inline-flex; align-items: center; gap: 6px; font: 11.5px var(--mono); white-space: nowrap; vertical-align: middle; }
+.dbt-bool > i { flex: none; width: 8px; height: 8px; border-radius: 50%; }
+.dbt-bool.is-t { color: color-mix(in srgb, var(--done) 70%, var(--text)); }
+.dbt-bool.is-t > i { background: var(--done); }
+.dbt-bool.is-f { color: var(--text-4); }
+.dbt-bool.is-f > i { box-shadow: inset 0 0 0 1.5px var(--text-4); }
+.dbt-rel { margin-left: 8px; font: 11px var(--font); color: var(--text-4); }
+.dbt-uu-h { color: var(--text-2); }
+.dbt-uu-t { color: var(--text-4); }
+/* JSON: the JSON navigation colors. */
+.dbt-jp { color: var(--syn-punct); }
+.dbt-jk { color: var(--syn-key); }
+.dbt-js { color: var(--syn-string); }
+.dbt-jn { color: var(--syn-number); }
+.dbt-jl { color: var(--syn-literal); }
+.dbt-jfo { color: var(--fold); }
+/* Arrays and lexemes: chips, "+N" past the width. */
+.dbt-chips { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; vertical-align: middle; }
+.dbt-ach { flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 5px; font: 10.5px var(--mono); color: var(--text-2); background: var(--bg-3); white-space: nowrap; }
+.dbt-ach > i { margin-left: 4px; font-style: normal; color: var(--text-4); }
+.dbt-ach.is-more { color: var(--text-4); background: none; box-shadow: inset 0 0 0 1px var(--line); }
+.dbt-ach.is-null { font-style: italic; color: var(--text-4); }
+/* Enums: the value's tint from its place among the values (the CSV viewer's eight). */
+.dbt-en { flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; font: 500 11.5px/1 var(--font); white-space: nowrap; vertical-align: middle; --c: var(--csv-tint-7); color: var(--c); background: color-mix(in srgb, var(--c) 13%, transparent); }
+.dbt-en.t0 { --c: var(--csv-tint-0); } .dbt-en.t1 { --c: var(--csv-tint-1); } .dbt-en.t2 { --c: var(--csv-tint-2); } .dbt-en.t3 { --c: var(--csv-tint-3); }
+.dbt-en.t4 { --c: var(--csv-tint-4); } .dbt-en.t5 { --c: var(--csv-tint-5); } .dbt-en.t6 { --c: var(--csv-tint-6); } .dbt-en.t7 { --c: var(--csv-tint-7); }
+.dbt-bytes { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; vertical-align: middle; }
+.dbt-hex { color: var(--text-2); }
+.dbt-size { flex: none; font: 11px var(--font); color: var(--text-4); }
+/* A foreign key's value: the arrow to its table. The value gives way, the arrow (and a bytea's size) never. */
+.dbt-fkv { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; vertical-align: middle; }
+.dbt-fkv > svg { flex: none; color: var(--link); opacity: .75; }
+.dbt-fkv > span, .dbt-bytes > .dbt-hex { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A value main cut at 64 KB: marked (Copy Value and the inspector read the rest). The mark keeps its room: the value
+   ellipsizes in its own box before it — wrapped, the value wraps there and the mark stays at the top. */
+.dbt-cutbox { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; vertical-align: middle; }
+.dbt-cutv { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbt-cut { flex: none; padding: 0 4px; border-radius: 4px; color: var(--waiting); background: var(--tint-waiting); }
+.dbt-wrapc .dbt-cutbox { display: flex; align-items: flex-start; }
+.dbt-wrapc .dbt-cutv { max-height: 108px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* The grid's last row: the next fetch loading, its error with Retry, the cap. Kept in view when scrolled sideways. */
+.dbt-more { position: sticky; left: 0; display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; height: 36px; padding: 0 16px; font-size: 12px; color: var(--text-3); white-space: nowrap; animation: atl-fade var(--t-med) var(--ease) both; }
+.dbt-more > svg { flex: none; }
+.dbt-more-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbt-more.is-error { color: var(--text-error); background: var(--tint-error); box-shadow: inset 2px 0 0 var(--error); }
+.dbt-more.is-cap { color: var(--text-3); background: var(--bg-2); border-top: 1px solid var(--line-soft); }
+
+/* —— links (Count exactly, Retry) —— */
+.dbt-link { flex: none; font-size: inherit; color: var(--link); white-space: nowrap; border-radius: 4px; transition: color var(--t-fast) var(--ease); }
+.dbt-link:hover { color: var(--text); text-decoration: underline; }
+.dbt-link:focus-visible { outline: none; box-shadow: 0 0 0 1.5px var(--violet); }
+.dbt-link:disabled { color: var(--text-4); text-decoration: none; cursor: progress; }
+
+/* —— the footer: its label gives way before Count exactly and the time do —— */
+.dbt-foot { flex: none; display: flex; align-items: center; gap: 14px; min-width: 0; height: 34px; padding: 0 12px 0 16px; border-top: 1px solid var(--line-soft); font-size: 11.5px; color: var(--text-4); white-space: nowrap; }
+.dbt-foot-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.dbt-count { flex: none; white-space: nowrap; }
+.dbt-ms { flex: none; white-space: nowrap; font-size: 11px; color: var(--text-4); }
+.dbt-foot-hint { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbt-foot-hint > svg { flex: none; }
+.dbt-foot-hint > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* After the footer's own rules (a container query adds no specificity): under 640 px the label keeps the hint's room,
+   under 560 px the gaps narrow. */
+@container dkv (max-width: 640px) { .dbt-foot-hint { display: none; } }
+@container dkv (max-width: 560px) { .dbt-foot { gap: 10px; padding: 0 10px 0 12px; } }

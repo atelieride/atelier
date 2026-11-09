@@ -1,0 +1,123 @@
+/* The row inspector: beside the grid on the tab's right, or over it
+   when the tab is too narrow for both (Inspector.tsx: inspectorLayout). Loaded with the table's lazy chunk (Inspector.tsx),
+   never the first paint. Colors only through Aurora's tokens; the quiet finish (no gradient fills, no
+   halos). Every width holds: names and type lines one
+   line with an ellipsis (tooltips whole), values wrap inside their area and long unbroken ones break there, chips and
+   "Open ›" never wrap, a card that runs out of room stacks (below ~300 px its chip goes to the line under it), a narrow
+   panel stacks each field's name over its value. */
+
+.dbi { position: relative; flex: none; min-width: 0; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--line-soft); background: color-mix(in srgb, var(--bg-0) 55%, var(--bg-1)); outline: none; container: dbi / inline-size; animation: atl-fade var(--t-med) var(--ease) both; }
+/* A tab too narrow for both: over the right side of the rows' box (table.css .dbt-rows) — the grid keeps its width;
+   the toolbar, the filter bar, the footer and every popover (z-index 30) stay above it, the grid's fade (5) under. */
+.dbi.is-over { position: absolute; top: 0; right: 0; bottom: 0; z-index: 6; border-left: 0; background: var(--bg-float); backdrop-filter: blur(18px); box-shadow: var(--shadow-float); }
+.dbi:focus-visible { box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.dbi.is-over:focus-visible { box-shadow: var(--shadow-float), inset 0 0 0 1px var(--edge-violet-soft); }
+/* Its edge: the app's splitter (layout.css .resizer) on the panel's left side. */
+.dbi-rs { position: absolute; top: 0; bottom: 0; left: 0; z-index: 3; }
+
+/* —— the head: Row and its key, Fields · JSON, previous / next, close —— */
+.dbi-head { flex: none; display: flex; align-items: center; gap: 6px; min-width: 0; height: 46px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; overflow: hidden; }
+.dbi-head > .section-label { flex: none; }
+.dbi-key { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--text); }
+.dbi-sp { flex: 1 1 0; min-width: 4px; }
+.dbi-views { flex: none; padding: 2px; }
+.dbi-views button { height: 22px; padding: 0 9px; font-size: 11.5px; white-space: nowrap; }
+.dbi-ib { flex: none; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbi-ib:focus-visible { outline: none; box-shadow: 0 0 0 1.5px var(--violet); }
+
+/* —— the body: fields, "N more fields", Referenced by; selectable text —— */
+.dbi-body { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding-bottom: 14px; user-select: text; }
+.dbi-empty { margin: 0; padding: 28px 16px; text-align: center; font-size: 12px; color: var(--text-4); }
+.dbi-dim { font: 11.5px/1.4 var(--font); color: var(--text-4); }
+
+/* A field: name and type line, the value beside them (stacked when the panel is narrow); a card spans the row. */
+.dbi-f { display: grid; grid-template-columns: minmax(0, clamp(92px, 36%, 150px)) minmax(0, 1fr); column-gap: 12px; row-gap: 6px; align-items: start; padding: 9px 16px; border-bottom: 1px solid var(--line-soft); }
+/* JSON: the name line with its actions, the tree under it across the row. */
+.dbi-f.is-wide { grid-template-columns: minmax(0, 1fr) auto; }
+.dbi-f.is-wide > .dbi-fv { grid-column: 1 / -1; }
+.dbi-fk { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dbi-fn { display: block; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font: 500 12px/1.3 var(--mono); color: var(--text-3); }
+.dbi-fn > svg { margin-right: 5px; vertical-align: -1px; color: var(--waiting); }
+.dbi-ft { display: block; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font: 10px/1.3 var(--mono); color: var(--text-4); }
+.dbi-facts { display: flex; align-items: center; gap: 2px; align-self: center; }
+/* The value: wraps inside its area only; a hash, a URL, base64 break there and never widen the panel. */
+.dbi-fv { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; font: 12px/1.45 var(--mono); color: var(--text); overflow-wrap: anywhere; }
+.dbi-fv > * { max-width: 100%; }
+.dbi-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.dbi-hex { font-size: 11px; color: var(--text-3); }
+.dbi-sub { font: 11px/1.4 var(--font); color: var(--text-4); overflow-wrap: anywhere; }
+.dbi-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.dbi-bytes { display: inline-flex; align-items: center; gap: 6px; }
+.dbi-img { display: block; max-width: 100%; max-height: 220px; border-radius: var(--r-sm); background: var(--bg-3); box-shadow: inset 0 0 0 1px var(--line-soft); }
+/* JSON as a tree (the Redis view's): its lines wrap inside the panel instead of running out of it. */
+.dbi-json { width: 100%; min-width: 0; padding: 2px 0 6px; border-radius: var(--r-sm); background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line-soft); }
+.dbi-json .rd-json { padding-top: 4px; font-size: 11.5px; line-height: 18px; }
+.dbi-json .rd-jl { padding: 0 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dbi-json .rd-jn { width: 30px; padding-right: 8px; }
+/* A folded line's one-line preview ellipsizes inside the field; its "▸ 2 keys" chip stays whole. */
+.dbi-json .rd-jfold { flex: 0 1 auto; display: inline-flex; align-items: baseline; min-width: 0; max-width: 100%; }
+.dbi-json .rd-jtext { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.dbi-json .rd-jchip { flex: none; white-space: nowrap; }
+
+/* A value main cut at 64 KB: how much shows, Load full value (or why it can't). */
+.dbi-cut { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font: 11px/1.4 var(--font); color: var(--text-4); }
+.dbi-cut-t { color: var(--waiting); }
+.dbi-cut > .dbt-link { flex: none; white-space: nowrap; font-size: 11.5px; }
+
+/* A section's read failed: why, and Retry — in its place, never for the whole panel. */
+.dbi-err { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 10px; border-radius: var(--r-sm); font: 11.5px/1.4 var(--font); color: var(--text-error); background: var(--tint-error); }
+.dbi-err > svg { flex: none; }
+.dbi-err-t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbi-err > .dbt-link { flex: none; white-space: nowrap; }
+
+/* —— the FK peek card: label · chip · Open ›, then a line each —— */
+.dbi-peek { grid-column: 1 / -1; min-width: 0; padding: 9px 12px; border-radius: var(--radius); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--line); font-family: var(--font); container: dbi-peek / inline-size; }
+.dbi-peek.is-err { box-shadow: inset 0 0 0 1px var(--edge-error); }
+.dbi-peek-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* The label gives way first (an ellipsis, its tooltip whole), the chip last; Open › never, at the right. */
+.dbi-peek-label { flex: 0 1000 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; font-weight: 600; color: var(--text); }
+.dbi-peek.is-wait .dbi-peek-label, .dbi-peek.is-none .dbi-peek-label { font-weight: 400; font-size: 12px; color: var(--text-4); }
+.dbi-peek.is-err .dbi-peek-label { font-weight: 500; font-size: 12px; color: var(--text-error); }
+.dbi-peek .dbi-peek-chip { display: inline-block; flex: 0 1 auto; min-width: 0; max-width: 100%; height: 18px; padding: 0 7px; line-height: 18px; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A masked enum's chip: no tint of its hidden value. */
+.dbi-peek .dbi-peek-chip.is-masked { --c: var(--text-4); letter-spacing: .14em; }
+.dbi-peek-open { flex: none; margin-left: auto; padding: 2px 4px; border-radius: 4px; font-size: 11.5px; color: var(--link); white-space: nowrap; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbi-peek-open:hover:not(:disabled) { color: var(--text); background: var(--bg-hover); }
+.dbi-peek-open:focus-visible { outline: none; box-shadow: 0 0 0 1.5px var(--violet); }
+.dbi-peek-open:disabled { color: var(--text-4); cursor: default; }
+.dbi-peek-sub { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--text-4); }
+.dbi-peek-head + .dbi-peek-sub { font-family: var(--mono); color: var(--text-3); }
+.dbi-peek-subt { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dbi-peek-sub > .dbi-peek-chip { display: none; }
+@container dbi-peek (max-width: 300px) { .dbi-peek-head > .dbi-peek-chip { display: none; } .dbi-peek-sub > .dbi-peek-chip { display: inline-block; } }
+
+/* —— "N more fields · a, b, c": folded under the grid's fields —— */
+.dbi-more { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; padding: 8px 16px; border-bottom: 1px solid var(--line-soft); font-size: 11.5px; color: var(--text-4); text-align: left; white-space: nowrap; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbi-more:hover { color: var(--text-2); background: var(--bg-hover); }
+.dbi-more:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+.dbi-more > svg, .dbi-more-n { flex: none; }
+.dbi-more-names { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+.dbi-morelist { animation: atl-fade var(--t-fast) var(--ease) both; }
+.dbi-morelist > .dbi-err, .dbi-note { margin: 8px 16px 0; }
+
+/* —— Referenced by: a row per foreign key pointing here, its count, a click opens them —— */
+.dbi-refs { padding-top: 2px; }
+.dbi-sec { margin: 0; padding: 12px 16px 6px; }
+.dbi-refs > .dbi-err { margin: 0 16px 6px; }
+.dbi-ref { display: flex; align-items: center; gap: 9px; width: 100%; min-width: 0; height: 30px; padding: 0 16px; font: 12px var(--mono); color: var(--text-2); text-align: left; white-space: nowrap; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbi-ref > svg { flex: none; color: var(--text-4); }
+.dbi-ref:hover:not([aria-disabled="true"]) { color: var(--text); background: var(--bg-hover); }
+.dbi-ref:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+/* Nothing to open (none, counting, not countable): it stays, with its name in the tooltip. */
+.dbi-ref[aria-disabled="true"] { cursor: default; }
+.dbi-ref-t { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dbi-ref-c { color: var(--text-4); }
+.dbi-ref-n { flex: none; margin-left: auto; padding-left: 8px; font: 11.5px var(--font); color: var(--link); }
+.dbi-ref.is-none, .dbi-ref.is-none .dbi-ref-n, .dbi-ref.is-wait .dbi-ref-n { color: var(--text-4); }
+
+/* —— the JSON view: the whole row as a tree —— */
+.dbi-rowjson { padding: 8px 12px 0 16px; }
+.dbi-rowjson-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+
+/* A narrow panel: each field's name over its value; the head keeps its controls. */
+@container dbi (max-width: 330px) { .dbi-f { grid-template-columns: minmax(0, 1fr); row-gap: 4px; } .dbi-f.is-wide { grid-template-columns: minmax(0, 1fr) auto; } .dbi-head > .section-label { display: none; } .dbi-views button { padding: 0 7px; } }

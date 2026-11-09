@@ -1,0 +1,3 @@
+error: the branch 'feat/x' is not fully merged
+hint: If you are sure you want to delete it, run 'git branch -D feat/x'
+hint: Disable this message with "git config set advice.forceDeleteBranch false"

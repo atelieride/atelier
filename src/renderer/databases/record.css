@@ -1,0 +1,50 @@
+/* The record view: one row, every column, in the rows' place. Loaded with the table's lazy chunk (RecordView.tsx), never the first paint. Its fields
+   are the inspector's rows (inspector.css .dbi-f) laid out across the tab: name and type line on the left (one line each,
+   ellipsized, their tooltips whole), the value on the right — whole, wrapping inside its area, long unbroken ones breaking
+   there —, Copy JSON under the name, a foreign key's card under the value; a narrow pane stacks each name over its value.
+   Colors only through Aurora's tokens; the inspector's quiet finish (no gradient fills, no halos). */
+
+.dbrv { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; container: dbrv / inline-size; animation: atl-fade var(--t-med) var(--ease) both; }
+
+/* —— the head: the record icon, "Row N of M loaded", the row's key, previous / next —— */
+.dbrv-head { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; height: 40px; padding: 0 10px 0 20px; border-bottom: 1px solid var(--line); background: var(--bg-2); white-space: nowrap; overflow: hidden; }
+.dbrv-icon { flex: none; display: inline-flex; color: var(--violet-light); }
+.dbrv-pos { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; color: var(--text-2); font-variant-numeric: tabular-nums; }
+/* The key gives way first (an ellipsis, its tooltip whole). */
+.dbrv-key { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; color: var(--text); background: var(--bg-control); box-shadow: inset 0 0 0 1px var(--line); }
+.dbrv-sp { flex: 1 1 0; min-width: 4px; }
+.dbrv-ib { flex: none; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbrv-ib:focus-visible { outline: none; box-shadow: 0 0 0 1.5px var(--violet); }
+
+/* —— the body: it has the keyboard (↑/↓ the rows; PageUp, PageDown, Space scroll it); selectable text —— */
+.dbrv-body { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding-bottom: 24px; outline: none; user-select: text; transition: opacity var(--t-fast) var(--ease); }
+.dbrv-body:focus-visible { box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+/* A Refresh: the record stays, dimmed after a beat, under the refresh bar (as the grid: table.css .dbt-body.is-busy). */
+.dbrv.is-busy .dbrv-body { opacity: .55; transition: opacity var(--t-med) var(--ease) 150ms; }
+
+/* A field across the tab: the name column bounded, the value taking the rest; a quiet hover follows the line. The value
+   spans the name's row and the one under it (Copy JSON): that second row takes what a tall value adds (1fr), so Copy
+   JSON stays right under the name. */
+.dbrv-body .dbi-f, .dbrv-body .dbi-f.is-wide { grid-template-columns: minmax(0, clamp(140px, 24%, 280px)) minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 24px; row-gap: 0; padding: 10px 20px; transition: background var(--t-fast) var(--ease); }
+.dbrv-body .dbi-f:hover { background: color-mix(in srgb, var(--bg-hover) 55%, transparent); }
+.dbrv-body .dbi-f > .dbi-fk { grid-column: 1; grid-row: 1; }
+.dbrv-body .dbi-f > .dbi-facts { grid-column: 1; grid-row: 2; justify-self: start; align-self: start; margin-top: 6px; }
+.dbrv-body .dbi-f > .dbi-fv, .dbrv-body .dbi-f.is-wide > .dbi-fv { grid-column: 2; grid-row: 1 / span 2; }
+.dbrv-body .dbi-f > .dbi-peek { grid-column: 2; grid-row: 3; max-width: 560px; margin-top: 8px; }
+
+/* The columns the grid's chooser hides, after the others: their label, and why some can't be read. */
+.dbrv-sec { margin: 0; padding: 18px 20px 7px; border-bottom: 1px solid var(--line-soft); }
+.dbrv-note { margin: 8px 20px 0; }
+
+/* A narrow pane: each name over its value (Copy JSON beside the name), the card under them. */
+@container dbrv (max-width: 520px) {
+  .dbrv-body .dbi-f { grid-template-columns: minmax(0, 1fr); row-gap: 4px; padding: 9px 16px; }
+  .dbrv-body .dbi-f.is-wide { grid-template-columns: minmax(0, 1fr) auto; }
+  .dbrv-body .dbi-f > .dbi-fk { grid-column: 1; grid-row: 1; }
+  .dbrv-body .dbi-f > .dbi-facts { grid-column: 2; grid-row: 1; align-self: center; margin-top: 0; }
+  .dbrv-body .dbi-f > .dbi-fv, .dbrv-body .dbi-f.is-wide > .dbi-fv { grid-column: 1 / -1; grid-row: 2; }
+  .dbrv-body .dbi-f > .dbi-peek { grid-column: 1 / -1; grid-row: 3; max-width: none; margin-top: 4px; }
+  .dbrv-head { gap: 6px; padding: 0 6px 0 14px; }
+  .dbrv-sec { padding: 14px 16px 6px; }
+  .dbrv-note { margin: 8px 16px 0; }
+}

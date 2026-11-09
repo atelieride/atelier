@@ -1,0 +1,3 @@
+error: Committing is not possible because you have unmerged files.
+fatal: Exiting because of an unresolved conflict.
+U	a.txt

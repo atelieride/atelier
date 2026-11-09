@@ -1,0 +1,45 @@
+---
+import { config } from '../config';
+import { yourMac } from '../content/features';
+import Icon from './Icon.astro';
+// "Your Claude. Your Mac." (replaces the promise strip): what Atelier runs and
+// what it keeps to itself, as four cells, then three checks. The lead matches the privacy page's wording.
+const checks = ['Free and open source', ...(config.notarized ? ['Notarized by Apple'] : []), 'Updates without closing sessions'];
+---
+<div class="block">
+  <section class="container section mac">
+    <div class="head" data-reveal>
+      <h2 class="h2">Your Claude.<br /><span class="dim">Your Mac.</span></h2>
+      <p class="lead">Atelier runs the claude you already use, signed in with your own subscription. No account, no tracking, and nothing about your work is sent to us.</p>
+    </div>
+    <ul class="strip" data-reveal>
+      {yourMac.map((c) => <li><strong>{c.title}</strong><code>{c.mono}</code><span>{c.text}</span></li>)}
+    </ul>
+    <ul class="checks" data-reveal>
+      {checks.map((c) => <li><Icon name="check" size={16} />{c}</li>)}
+    </ul>
+  </section>
+</div>
+<style>
+  .mac { display: flex; flex-direction: column; gap: 44px; }
+  .head { display: flex; flex-direction: column; gap: 20px; max-width: 680px; }
+  .h2 { text-wrap: balance; }
+  .strip { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--bg-1); overflow: hidden; }
+  .strip li { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 22px 24px; }
+  .strip li + li { border-left: 1px solid var(--line); }
+  strong { font-weight: 600; font-size: 15.5px; }
+  code { font: 500 12.5px var(--mono); color: var(--violet-soft); }
+  .strip span { color: var(--text-3); font-size: 14px; line-height: 1.5; }
+  .checks { list-style: none; padding: 24px 0 0; display: flex; flex-wrap: wrap; gap: 12px 32px; border-top: 1px solid var(--line-soft); color: var(--text-2); font-size: 14.5px; }
+  .checks li { display: inline-flex; align-items: center; gap: 8px; }
+  .checks :global(svg) { color: var(--done); stroke-width: 2; }
+  @media (max-width: 1000px) {
+    .strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .strip li:nth-child(3) { border-left: 0; }
+    .strip li:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  }
+  @media (max-width: 560px) {
+    .strip { grid-template-columns: minmax(0, 1fr); }
+    .strip li + li { border-left: 0; border-top: 1px solid var(--line); }
+  }
+</style>

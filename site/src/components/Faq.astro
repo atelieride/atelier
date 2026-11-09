@@ -1,0 +1,42 @@
+---
+import { config } from '../config';
+import { faq } from '../content/features';
+// The home's questions: one <details> each, so no script, and keyboards and
+// screen readers get the disclosure for free. The first is open; the + / − follows the state.
+---
+<div class="block">
+  <section class="container section questions">
+    <div class="head" data-reveal>
+      <h2 class="h2">Questions</h2>
+      <p class="ask">Something else? <a href={`mailto:${config.contactEmail}`}>{config.contactEmail}</a></p>
+    </div>
+    <div class="list" data-reveal>
+      {faq.map((f, i) => (
+        <details open={i === 0}>
+          <summary>{f.q}</summary>
+          <p>{f.a.map((part) => (typeof part === 'string' ? part : <a href={part.href}>{part.text}</a>))}</p>
+        </details>
+      ))}
+    </div>
+  </section>
+</div>
+<style>
+  .questions { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 64px; align-items: start; }
+  .head { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .ask { color: var(--text-3); font-size: 15px; }
+  .ask a, details a { color: var(--text-2); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px;
+    transition: color var(--t-fast) var(--ease), text-decoration-color var(--t-fast) var(--ease); }
+  .ask a:hover, details a:hover { color: var(--text); text-decoration-color: var(--edge-violet); }
+  .ask a:focus-visible, details a:focus-visible { border-radius: var(--r-sm); }
+  .list { min-width: 0; border-top: 1px solid var(--line); }
+  details { border-bottom: 1px solid var(--line); }
+  summary { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 20px 0; list-style: none; cursor: pointer;
+    color: var(--text); font-size: 17px; font-weight: 500; transition: color var(--t-fast) var(--ease); }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: '+'; flex: none; width: 18px; text-align: center; color: var(--text-3); font: 400 18px var(--mono); transition: color var(--t-fast) var(--ease); }
+  details[open] summary::after { content: '−'; }
+  summary:hover, summary:hover::after { color: var(--text); }
+  summary:focus-visible { outline: none; border-radius: var(--r-sm); box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); }
+  details p { max-width: 62ch; margin: -4px 0 22px; color: var(--text-2); font-size: 15.5px; line-height: 1.6; }
+  @media (max-width: 860px) { .questions { grid-template-columns: minmax(0, 1fr); gap: 32px; } }
+</style>

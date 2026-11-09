@@ -1,0 +1,88 @@
+---
+import type { ImageMetadata } from 'astro';
+import type { FeatureRowData } from '../content/features';
+import Window, { type LiveSpots } from './Window.astro';
+import LiveDemo from './LiveDemo.astro';
+// One feature on /features, in README form: its title with the shortcut beside
+// it, the words, and the shot in a 640 px column, drawn 1:1. No callouts. A row the live demo can show (features.ts ›
+// demo) gets "Try it live" (desktop only: .demo-gate), and its window opens the
+// same demo on the row's view: "Try it live" is the keyboard's way in, so the window is not a second tab stop.
+interface Props { row: FeatureRowData }
+const { row } = Astro.props;
+const shots = import.meta.glob<{ default: ImageMetadata }>('../assets/shots/*.png', { eager: true });
+const src = shots[`../assets/shots/${row.shot}.png`]!.default;
+// The tighter crop a phone shows (tests/e2e/site-shots.manual.ts, MOBILE).
+const phone = shots[`../assets/shots/${row.shot}.mobile.png`]?.default;
+// Shots with live spots (tests/e2e/site-shots.manual.ts) replay the app's animations on top of the image.
+const lives = import.meta.glob<{ default: LiveSpots }>('../assets/shots/*.live.json', { eager: true });
+const live = lives[`../assets/shots/${row.shot}.live.json`]?.default;
+const win = { src, mobile: phone, alt: row.alt, lights: row.corner, mobileLights: row.phoneCorner, width: 640, live };
+const demo = row.demo;
+---
+<article class="feature" id={row.id}>
+  <div class="head" data-reveal>
+    <p class="eyebrow">{row.eyebrow}</p>
+    <div class="title-line">
+      <h2>{row.title}</h2>
+      {row.shortcut && <span class="shortcut">{row.shortcut}</span>}
+    </div>
+  </div>
+  <div class="body">
+    <div class="text" data-reveal>
+      <p>{row.text}</p>
+      <ul>{row.bullets.map((b) => <li>{b}</li>)}</ul>
+      {demo && (
+        <a class="try-live demo-gate" href="/demo" data-live-demo-for={row.id} aria-haspopup="dialog" aria-label={`Try it live: ${row.eyebrow}, in your browser`}>
+          <span class="play" aria-hidden="true"><svg width="8" height="8" viewBox="0 0 10 10"><path fill="currentColor" d="M2.5 1.3v7.4a.5.5 0 0 0 .76.43l6-3.7a.5.5 0 0 0 0-.86l-6-3.7a.5.5 0 0 0-.76.43z" /></svg></span>
+          Try it live<span class="arrow" aria-hidden="true">→</span>
+        </a>
+      )}
+    </div>
+    <div class:list={['media', { demo }]} data-reveal>
+      {demo
+        ? <LiveDemo id={row.id} view={demo.view} label={`Try ${row.eyebrow} live in your browser`} tabStop={false} pill={false} {...win} />
+        : <Window {...win} />}
+    </div>
+  </div>
+</article>
+<style>
+  /* An article measures its own width (the index takes the rest of the page): its text and its 640 px shot sit side by
+     side only where the text keeps 340 px, otherwise the text goes above the shot. */
+  .feature { container-type: inline-size; padding: 40px 0 48px; border-top: 1px solid var(--line-soft);
+    /* A link to the article puts its top edge just under the header (html's scroll-padding leaves 28 px). */
+    scroll-margin-top: -20px; }
+  .feature:first-child { padding-top: 0; border-top: 0; }
+  .head { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
+  .title-line { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 16px; }
+  h2 { font-size: 28px; font-weight: 700; letter-spacing: -.025em; line-height: 1.15; text-wrap: balance; }
+  /* "⌘J  next waiting": the key, two spaces, what it does (features.ts › shortcut). Line height 1: its box sits inside
+     the title's, so the mono font arriving (another baseline than its fallback's) never moves the article. */
+  .shortcut { font: 500 12.5px/1 var(--mono); color: var(--text-3); white-space: pre; }
+  .body { display: grid; grid-template-columns: minmax(0, 1fr) 640px; gap: 40px; align-items: start; }
+  .text { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .text p { color: var(--text-2); font-size: 16px; }
+  ul { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; color: var(--text-3); font-size: 14.5px; line-height: 1.5; }
+  li { display: flex; gap: 11px; align-items: baseline; }
+  li::before { content: ''; flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--brand); transform: translateY(-2px); }
+  /* Never wider than its shot's 1:1 size, also when the text goes above it. */
+  .media { min-width: 0; max-width: 640px; }
+  /* A live window lifts as one: its frame does not add the hero's own lift. */
+  .media.demo :global(.demo-hit:hover ~ .window .frame) { transform: none; }
+
+  /* "Try it live": the row's way into the live demo, a quiet pill under the bullets. In the flow and server-rendered,
+     so its space is there from the first paint (no layout shift); .demo-gate hides it below the desktop gate. */
+  .try-live { align-self: flex-start; display: inline-flex; align-items: center; gap: 9px; height: 34px; margin-top: 4px; padding: 0 14px 0 5px;
+    border-radius: 999px; background: var(--tint-violet); border: 1px solid var(--edge-violet-soft); color: var(--text-2); font-size: 14px; font-weight: 600;
+    transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); }
+  .try-live .play { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--brand); color: var(--on-brand); }
+  .try-live .play svg { margin-left: 1.5px; }
+  .try-live .arrow { color: var(--text-4); transition: color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease); }
+  /* data-hot: the pointer is on the row's window (live-demo.ts), which opens the same demo: the button says so. */
+  .try-live:hover, .try-live[data-hot] { color: var(--text); border-color: var(--edge-violet); background: var(--tint-violet-hover); }
+  .try-live:hover .arrow, .try-live[data-hot] .arrow { color: var(--text-2); transform: translateX(2px); }
+  .try-live:active { filter: brightness(.94); }
+
+  @container (max-width: 1019px) {
+    .body { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  }
+</style>

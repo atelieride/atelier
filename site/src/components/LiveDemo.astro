@@ -1,0 +1,61 @@
+---
+import type { ComponentProps } from 'astro/types';
+import Window from './Window.astro';
+// A screenshot that comes alive: the Window as it is (poster, lights, live
+// layers), with a control over it that opens the real app, running in the browser, from this very frame (the launch:
+// live-demo-stage.ts).
+// The control is a link to /demo, the demo's own page: a modified click opens it in a new tab, and without the script
+// (not loaded yet, or a screen the gate turned away) a click still lands on a working demo. scripts/live-demo.ts turns
+// a plain click into the in-place opening.
+// `id`: other controls name it (data-live-demo-for, e.g. the hero's text link). `view`: the demo starts on this view
+// (a MenuCommand, e.g. view-docker, or a demo view: feature rows). `auto`: opens on load (the /demo page).
+// data-demo-timeout: how long the demo may take to say it is ready (lib/live-demo.ts › readyTimeout; e2e shorten it).
+// `label`: the control's name. `tabStop={false}`: another control is the keyboard's way in (a feature row's "Try it"),
+// so the window is not a second tab stop. `pill={false}`: no pill over the screenshot on hover (a feature row: its shot's
+// bottom bar is content, and the row's own "Try it" lights up instead, live-demo.ts › data-hot). The slot goes to the
+// Window (the hero's bar and film controls).
+type Props = ComponentProps<typeof Window> & { id?: string; view?: string; auto?: boolean; label?: string; tabStop?: boolean; pill?: boolean };
+const { id = 'hero', view, auto = false, label = 'Try Atelier live in your browser', tabStop = true, pill = true, ...win } = Astro.props;
+---
+<div class="live-demo" data-live-demo={id} data-demo-view={view} data-demo-auto={auto ? '' : undefined} data-demo-timeout="10000">
+  <a class="demo-hit demo-gate" href="/demo" aria-label={label} aria-haspopup="dialog" tabindex={tabStop ? undefined : -1}>
+    {pill && (
+      <span class="demo-pill" aria-hidden="true">
+        <span class="play"><svg width="10" height="10" viewBox="0 0 10 10"><path fill="currentColor" d="M2.5 1.3v7.4a.5.5 0 0 0 .76.43l6-3.7a.5.5 0 0 0 0-.86l-6-3.7a.5.5 0 0 0-.76.43z" /></svg></span>
+        Try it live<span class="sep">·</span><span class="soft">in your browser</span>
+      </span>
+    )}
+  </a>
+  <Window {...win}><slot /></Window>
+</div>
+<script src="../scripts/live-demo.ts"></script>
+<style>
+  .live-demo { position: relative; }
+  /* The whole frame is the control; the pill is its visible label, shown on hover and keyboard focus. */
+  /* A column ending at the pill: the pill is sticky, so when the window runs past the fold (most laptop screens, at the
+     top of the page) it rides the screen's bottom edge instead of hiding under it, and settles in the frame. */
+  .demo-hit { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-bottom: 28px;
+    border-radius: var(--r-lg); cursor: pointer; }
+  /* A light from below, where the pill rises: the frame reads as pressable without covering the screenshot. */
+  .demo-hit::before { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0;
+    background: none; box-shadow: inset 0 0 0 1px var(--edge-violet-soft);
+    transition: opacity var(--t-slow) var(--ease); }
+  .demo-hit:hover::before, .demo-hit:focus-visible::before { opacity: 1; }
+  .demo-hit:focus-visible { outline: none; border-radius: var(--r-lg); box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 4px var(--violet); }
+  /* The frame lifts a little: a 2D move by whole pixels keeps the screenshot sharp at rest (Window.astro). */
+  .live-demo :global(.frame) { transition: transform var(--t-slow) var(--ease), box-shadow var(--t-slow) var(--ease); }
+  /* The control comes first in the markup so a sibling selector can lift the frame: a relational (has) selector
+     would weigh on every style pass of the page. */
+  .demo-hit:hover ~ :global(.window .frame) { box-shadow: var(--shot-shadow), 0 0 0 1px var(--edge-violet-soft); }
+
+  .demo-pill { position: sticky; bottom: 28px; display: inline-flex; align-items: center; gap: 9px; height: 44px; padding: 0 20px 0 8px;
+    border-radius: 999px; background: var(--bg-float); -webkit-backdrop-filter: blur(16px) saturate(150%); backdrop-filter: blur(16px) saturate(150%);
+    border: 1px solid var(--edge-violet); box-shadow: var(--shadow-float);
+    color: var(--text); font-size: 14.5px; font-weight: 600; letter-spacing: -.005em; white-space: nowrap; pointer-events: none;
+    opacity: 0; transform: translateY(8px); transition: opacity var(--t-med) var(--ease), transform var(--t-slow) var(--ease); }
+  .demo-hit:hover .demo-pill, .demo-hit:focus-visible .demo-pill { opacity: 1; transform: none; }
+  .play { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--brand); color: var(--on-brand); }
+  .play svg { margin-left: 2px; }
+  .sep { color: var(--text-4); margin: 0 -2px; }
+  .soft { color: var(--text-3); font-weight: 500; }
+</style>

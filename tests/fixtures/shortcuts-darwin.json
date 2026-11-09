@@ -1,0 +1,546 @@
+[
+  {
+    "title": "Sessions & Terminals",
+    "items": [
+      {
+        "keys": "⌘N",
+        "label": "New Claude session"
+      },
+      {
+        "keys": "⌥⏎",
+        "label": "In New Session: start without your launch flags"
+      },
+      {
+        "keys": "⌘T",
+        "label": "New terminal"
+      },
+      {
+        "keys": "⌘⌥⇧N",
+        "label": "New session in a folder"
+      },
+      {
+        "keys": "⌘⇧N",
+        "label": "Resume a session"
+      },
+      {
+        "keys": "⌘⌥⏎",
+        "label": "Schedule a prompt for the session in front"
+      },
+      {
+        "keys": "task:",
+        "label": "Your tasks (in the palette, when connected): Enter starts a session with the task typed in"
+      },
+      {
+        "keys": "⌘⏎",
+        "label": "On a task in the palette: start the session and send the task"
+      },
+      {
+        "keys": "⌘J",
+        "label": "Next session needing attention (needs you, then ready for review)"
+      },
+      {
+        "keys": "⌘⇧J",
+        "label": "Notifications"
+      },
+      {
+        "keys": "⌥Space",
+        "label": "Dictate (hold to talk, tap for hands-free; when enabled)"
+      },
+      {
+        "keys": "⌥⇧Space",
+        "label": "Dictate without polishing"
+      },
+      {
+        "keys": "⌘0",
+        "label": "Back to the terminal"
+      },
+      {
+        "keys": "⌘← ⌘→",
+        "label": "Start or end of the line (in terminals)"
+      },
+      {
+        "keys": "⌘↑ ⌘↓",
+        "label": "Previous or next command (Atelier-profile terminals, command blocks on)"
+      },
+      {
+        "keys": "⌘F",
+        "label": "Find in the terminal (⏎ older match, ⇧⏎ newer)"
+      },
+      {
+        "keys": "⇧-right-click",
+        "label": "Atelier’s terminal menu when a program uses the mouse (tmux, vim): a plain right-click is the program’s"
+      }
+    ]
+  },
+  {
+    "title": "Tabs",
+    "items": [
+      {
+        "keys": "⌃Tab",
+        "label": "Next tab"
+      },
+      {
+        "keys": "⌃⇧Tab",
+        "label": "Previous tab"
+      },
+      {
+        "keys": "⌘1…9",
+        "label": "Go to tab (⌘9: last)"
+      },
+      {
+        "keys": "⌘W",
+        "label": "Close tab"
+      },
+      {
+        "keys": "⌃⌘N",
+        "label": "New window (another project)"
+      },
+      {
+        "keys": "⌘⇧W",
+        "label": "Close window"
+      }
+    ]
+  },
+  {
+    "title": "Workspaces",
+    "items": [
+      {
+        "keys": "⌘⌥1…9",
+        "label": "Go to workspace (in the sidebar’s order)"
+      },
+      {
+        "keys": "⌘⌥T",
+        "label": "New workspace"
+      },
+      {
+        "keys": "#",
+        "label": "Workspaces in the palette: ⏎ goes there, ⌥⏎ moves the tab in front there, ⌘⏎ starts a session in it"
+      }
+    ]
+  },
+  {
+    "title": "Files & Editor",
+    "items": [
+      {
+        "keys": "⌘⌥N",
+        "label": "New file"
+      },
+      {
+        "keys": "⌘S",
+        "label": "Save"
+      },
+      {
+        "keys": "⌘⌥S",
+        "label": "Save all"
+      },
+      {
+        "keys": "⌘O",
+        "label": "Open folder"
+      },
+      {
+        "keys": "⌘⌥O",
+        "label": "Open file"
+      },
+      {
+        "keys": "⌘⌥R",
+        "label": "Reveal in Finder (a terminal: the folder it is in now)"
+      },
+      {
+        "keys": "⌘F",
+        "label": "Find in file"
+      },
+      {
+        "keys": "⌥⌘F",
+        "label": "Find and replace"
+      },
+      {
+        "keys": "⏎ ⇧⏎",
+        "label": "Next or previous match (in Find)"
+      },
+      {
+        "keys": "⌥⏎",
+        "label": "Select all matches (in Find)"
+      },
+      {
+        "keys": "⌘⏎",
+        "label": "Replace all (in Replace)"
+      },
+      {
+        "keys": "⌥C ⌥W ⌥R",
+        "label": "Match case, whole word, regular expression (in Find)"
+      },
+      {
+        "keys": "⌥Z",
+        "label": "Word wrap on or off (in the editor and diffs; also View › Word Wrap)"
+      },
+      {
+        "keys": "⌘/",
+        "label": "Toggle comment"
+      },
+      {
+        "keys": "⌘D",
+        "label": "Select next occurrence"
+      },
+      {
+        "keys": "⌘⇧L",
+        "label": "Select all matches"
+      },
+      {
+        "keys": "⌘L",
+        "label": "Mention the selected lines in the Claude session"
+      },
+      {
+        "keys": "⌘⌥C",
+        "label": "Comment on the selected lines (editor, diff and review)"
+      },
+      {
+        "keys": "⌥F5",
+        "label": "Next change in the file (Diff view or margin marks)"
+      },
+      {
+        "keys": "⌥⇧F5",
+        "label": "Previous change in the file"
+      },
+      {
+        "keys": "⌘⇧V",
+        "label": "Toggle Markdown preview, JSON tree or CSV table"
+      },
+      {
+        "keys": "⌥⌘[ ⌥⌘]",
+        "label": "Fold or unfold the block at the cursor (JSON)"
+      },
+      {
+        "keys": "⌃⌥[ ⌃⌥]",
+        "label": "Fold or unfold everything (JSON)"
+      },
+      {
+        "keys": "⌥⇧⌘C",
+        "label": "Copy the JSON path of the value at the cursor or selected in the tree"
+      },
+      {
+        "keys": ":n",
+        "label": "Go to line (in the palette)"
+      }
+    ]
+  },
+  {
+    "title": "JSON Tree",
+    "items": [
+      {
+        "keys": "↑ ↓",
+        "label": "Previous or next row"
+      },
+      {
+        "keys": "← →",
+        "label": "Collapse or go to the parent, expand or go to the first child"
+      },
+      {
+        "keys": "⌥← ⌥→",
+        "label": "Collapse or expand everything inside (also ⌥-click)"
+      },
+      {
+        "keys": "⏎",
+        "label": "Collapse or expand (also double-click)"
+      },
+      {
+        "keys": "⌥⏎",
+        "label": "Show in Source"
+      },
+      {
+        "keys": "⌘C",
+        "label": "Copy the value"
+      },
+      {
+        "keys": "⌘F",
+        "label": "Filter keys and values"
+      }
+    ]
+  },
+  {
+    "title": "CSV Table",
+    "items": [
+      {
+        "keys": "↑ ↓ ← →",
+        "label": "Move the selected cell (⇧ extends the range)"
+      },
+      {
+        "keys": "⌘↑ ⌘↓",
+        "label": "First or last row"
+      },
+      {
+        "keys": "⌘A",
+        "label": "Select every cell"
+      },
+      {
+        "keys": "⌘C",
+        "label": "Copy the cells (as TSV: they paste as cells)"
+      },
+      {
+        "keys": "⌥⏎",
+        "label": "Show in Source (also double-click)"
+      },
+      {
+        "keys": "Space",
+        "label": "Peek at the whole value of the cell"
+      },
+      {
+        "keys": "⌃G",
+        "label": "Go to a row or a cell"
+      },
+      {
+        "keys": "F8 ⇧F8",
+        "label": "Next or previous row that doesn't match the header"
+      },
+      {
+        "keys": "⌥-click",
+        "label": "Add a column to the sort (on its header)"
+      },
+      {
+        "keys": "⌘F",
+        "label": "Filter rows"
+      },
+      {
+        "keys": "⌘L",
+        "label": "Mention the selected rows in the Claude session"
+      }
+    ]
+  },
+  {
+    "title": "Databases",
+    "items": [
+      {
+        "keys": "⌘R",
+        "label": "Refresh a table tab (its rows again, from the top)"
+      },
+      {
+        "keys": "↑ ↓",
+        "label": "Previous or next row (more rows load at the end)"
+      },
+      {
+        "keys": "⇧↑ ⇧↓",
+        "label": "Extend the selected rows (also ⇧-click; ⌘-click adds or removes one)"
+      },
+      {
+        "keys": "⌘A",
+        "label": "Select every row loaded"
+      },
+      {
+        "keys": "Esc",
+        "label": "Clear the selected rows"
+      },
+      {
+        "keys": "⏎",
+        "label": "Show or hide the row inspector (also double-click)"
+      },
+      {
+        "keys": "⇥",
+        "label": "Open the row as a record (there ↑ ↓ move the rows); Tab or Esc returns"
+      },
+      {
+        "keys": "⌘C",
+        "label": "Copy the cell’s value (one row selected), or the rows as TSV"
+      },
+      {
+        "keys": "⌥↩",
+        "label": "Send the selected rows (or the focused one) to the session, typed into its prompt"
+      },
+      {
+        "keys": "⌥Z",
+        "label": "Wrap cells on or off (six lines a row)"
+      },
+      {
+        "keys": "⇧-click",
+        "label": "Add a column to the sort (on its header; a click sorts by it alone)"
+      },
+      {
+        "keys": "⌘⏎",
+        "label": "On a table in the palette: open it as a kept tab (⏎: a preview)"
+      }
+    ]
+  },
+  {
+    "title": "Review",
+    "items": [
+      {
+        "keys": "↑ ↓",
+        "label": "Previous or next hunk (also k and j)"
+      },
+      {
+        "keys": "n p",
+        "label": "Next or previous file"
+      },
+      {
+        "keys": "⏎",
+        "label": "Open the file at that change"
+      },
+      {
+        "keys": "⌥-click",
+        "label": "Collapse or expand every file"
+      }
+    ]
+  },
+  {
+    "title": "View",
+    "items": [
+      {
+        "keys": "⌘K",
+        "label": "Search sessions, files and commands"
+      },
+      {
+        "keys": "F1",
+        "label": "Command palette"
+      },
+      {
+        "keys": "⌘⇧P",
+        "label": "Command palette"
+      },
+      {
+        "keys": "⌘⇧1",
+        "label": "Sessions"
+      },
+      {
+        "keys": "⌘⇧2",
+        "label": "Files"
+      },
+      {
+        "keys": "⌘⇧3",
+        "label": "Services"
+      },
+      {
+        "keys": "⌃⇧G",
+        "label": "Source Control"
+      },
+      {
+        "keys": "⌃⇧D",
+        "label": "Docker (read-only containers, logs and engine)"
+      },
+      {
+        "keys": "⌃⇧R",
+        "label": "Redis (keys, queues, live monitor of local instances)"
+      },
+      {
+        "keys": "⌃⇧B",
+        "label": "Databases (read-only PostgreSQL: tables, structure, activity)"
+      },
+      {
+        "keys": "⌘⇧A",
+        "label": "Automations (start Claude from new tasks)"
+      },
+      {
+        "keys": "⌥↩",
+        "label": "Redis: send the open key or job to the session"
+      },
+      {
+        "keys": "⌘⇧M",
+        "label": "Changes panel"
+      },
+      {
+        "keys": "⌘B",
+        "label": "Sidebar (also: click the view in front in the activity bar)"
+      },
+      {
+        "keys": "⌘⌥B",
+        "label": "Background of the session (agents, shells, monitors, scheduled)"
+      },
+      {
+        "keys": "⌘I",
+        "label": "Ask about the focused session (read-only)"
+      },
+      {
+        "keys": "⌘\\",
+        "label": "Split right (up to three panes)"
+      },
+      {
+        "keys": "⌘⇧O",
+        "label": "Move the tab to a window of its own (in that window: move it back)"
+      },
+      {
+        "keys": "⌘⌥→",
+        "label": "Focus next pane"
+      },
+      {
+        "keys": "⌘⌥←",
+        "label": "Focus previous pane"
+      },
+      {
+        "keys": "⌃⌘←",
+        "label": "Move the tab to the left pane (from the first pane: a new pane)"
+      },
+      {
+        "keys": "⌃⌘→",
+        "label": "Move the tab to the right pane (from the last pane: a new pane)"
+      },
+      {
+        "keys": "⇧F10",
+        "label": "Context menu of the focused item"
+      }
+    ]
+  },
+  {
+    "title": "Source Control",
+    "items": [
+      {
+        "keys": "⌃⇧G",
+        "label": "Source Control (history, branches, sync)"
+      },
+      {
+        "keys": "⌘F",
+        "label": "Filter commits (History tab focused)"
+      },
+      {
+        "keys": "↑ ↓",
+        "label": "Move between commits (also j and k)"
+      },
+      {
+        "keys": "⏎",
+        "label": "To the changed files"
+      },
+      {
+        "keys": "n p",
+        "label": "Next or previous changed file of the commit"
+      },
+      {
+        "keys": "⌘C",
+        "label": "Copy the commit SHA (list focused)"
+      },
+      {
+        "keys": "⌥-click",
+        "label": "On a branch: compare with the default branch"
+      }
+    ]
+  },
+  {
+    "title": "Git",
+    "items": [
+      {
+        "keys": "⌘⌥K",
+        "label": "Commit (opens the commit drawer in Changes)"
+      },
+      {
+        "keys": "⌘⏎",
+        "label": "Commit (in the commit drawer)"
+      },
+      {
+        "keys": "⌘⌥M",
+        "label": "Write the commit message with Claude (Esc stops it)"
+      },
+      {
+        "keys": "Esc",
+        "label": "Close the commit drawer (the message is kept)"
+      }
+    ]
+  },
+  {
+    "title": "App",
+    "items": [
+      {
+        "keys": "⌘,",
+        "label": "Settings"
+      },
+      {
+        "keys": "⌘[",
+        "label": "Settings › Connectors: from a connector’s details, back to the list"
+      }
+    ]
+  }
+]

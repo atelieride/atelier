@@ -1,0 +1,152 @@
+/* Aurora: brand tokens. The values live only here. */
+:root, [data-theme-preview="aurora"] {
+  --bg-0: #08080F; --bg-1: #0D0D18; --bg-2: #10101C; --bg-3: #1B1B2E;
+  --bg-hover: color-mix(in srgb, var(--violet) 7%, transparent);
+  --bg-sel: linear-gradient(90deg, color-mix(in srgb, var(--violet) 18%, transparent), color-mix(in srgb, var(--pink) 6%, transparent));
+  --bg-float: rgba(18,18,32,.86);
+  --line: #22223A; --line-soft: #1A1A2C; --line-strong: #2E2E4A;
+  --text: #EEEDFF; --text-2: #C9C7E6; --text-3: #A3A1C4; --text-4: #646285;
+  --brand: linear-gradient(135deg, var(--violet), var(--pink));
+  --brand-x: linear-gradient(90deg, var(--violet), var(--pink));
+  /* The active tab's crown: the brand gradient, unless a theme draws one of its own. */
+  --tab-crown: var(--brand-x);
+  /* Tab bar: a step below the content, so the active tab reads as lifted from it. */
+  --bg-tabs: #0A0A13;
+  --violet: #8B5CF6; --pink: #EC4899; --link: #A5B4FC;
+  --waiting: #FBBF24; --working: #60A5FA; --done: #34D399; --error: #FB7185;
+  /* What paints the waiting state where it isn't text: dots, rings, bars, edges, tints, glows. */
+  --waiting-mark: var(--waiting);
+  /* Workspace colors: a workspace's glyph, head and card. */
+  --ws-1: #A78BFA; --ws-2: #5EEAD4; --ws-3: #BEF264; --ws-4: #E8A0E8; --ws-5: #818CF8; --ws-6: #FDBA74; --ws-7: #7DD3FC; --ws-8: #FDA4AF;
+  --glow: 0 0 0 1px color-mix(in srgb, var(--violet-soft) 45%, transparent), 0 8px 24px -6px color-mix(in srgb, var(--pink) 45%, transparent);
+  --shadow-float: 0 24px 60px -12px color-mix(in srgb, var(--shade) 70%, transparent), 0 0 0 1px color-mix(in srgb, var(--violet) 8%, transparent);
+  /* Header controls and violet tints/edges/glows (bell, notification center, chips). */
+  --bg-control: rgba(16,16,28,.7);
+  --tint-violet: color-mix(in srgb, var(--violet) 12%, transparent); --tint-violet-soft: color-mix(in srgb, var(--violet) 6%, transparent);
+  --edge-violet: color-mix(in srgb, var(--violet-soft) 35%, transparent); --edge-violet-soft: color-mix(in srgb, var(--violet-soft) 22%, transparent); --edge-sel: color-mix(in srgb, var(--violet-soft) 28%, transparent);
+  --glow-pink: color-mix(in srgb, var(--pink) 55%, transparent); --glow-violet: color-mix(in srgb, var(--violet) 50%, transparent);
+  --on-brand: #fff;
+  /* On a brand-filled button (the commit split button): hover, press, the divider; the commit drawer's lift. */
+  --on-brand-press: color-mix(in srgb, var(--shade) 12%, transparent); --on-brand-edge: color-mix(in srgb, var(--light) 24%, transparent); --shadow-drawer: 0 -18px 40px -24px color-mix(in srgb, var(--shade) 80%, transparent);
+  /* One-bar header: the chip's + seam and open ring, the veil the Windows menu unfolds on. */
+  --on-brand-seam: color-mix(in srgb, var(--light) 18%, transparent); --on-brand-ring: color-mix(in srgb, var(--light) 35%, transparent); --bg-veil: color-mix(in srgb, var(--bg-0) 80%, transparent);
+  /* Review and line comments (v1.9): warning tint/edge, frosted sticky headers. */
+  --tint-waiting: color-mix(in srgb, var(--waiting-mark) 8%, transparent); --edge-waiting: color-mix(in srgb, var(--waiting-mark) 32%, transparent);
+  --bg-sticky: color-mix(in srgb, var(--bg-1) 88%, transparent);
+  /* Output triggers (v2.0): highlighted matches in terminals, invalid fields. */
+  --hit-bg: color-mix(in srgb, var(--waiting-mark) 24%, transparent); --hit-edge: color-mix(in srgb, var(--waiting-mark) 85%, transparent);
+  /* The selected match in the editor's find. */
+  --hit-strong: color-mix(in srgb, var(--waiting-mark) 50%, transparent);
+  --tint-error: color-mix(in srgb, var(--error) 7%, transparent); --edge-error: color-mix(in srgb, var(--error) 55%, transparent);
+  --bg-field: color-mix(in srgb, var(--shade) 28%, transparent);
+  /* In-app updates (Settings › About): ok and busy tints next to the waiting and error ones. */
+  --tint-done: color-mix(in srgb, var(--done) 7%, transparent); --edge-done: color-mix(in srgb, var(--done) 30%, transparent); --glow-done: color-mix(in srgb, var(--done) 70%, transparent);
+  --tint-working: color-mix(in srgb, var(--working) 7%, transparent); --edge-working: color-mix(in srgb, var(--working) 30%, transparent); --glow-working: color-mix(in srgb, var(--working) 70%, transparent);
+  --glow-waiting: color-mix(in srgb, var(--waiting-mark) 60%, transparent); --glow-error: color-mix(in srgb, var(--error) 60%, transparent);
+  /* A pane waiting for you: a calm hairline, and a bright one that breathes over it. */
+  --wait-ring: inset 0 0 0 1px color-mix(in srgb, var(--waiting-mark) 45%, transparent);
+  --wait-ring-bright: inset 0 0 0 1px color-mix(in srgb, var(--waiting-mark) 85%, transparent);
+  /* Connectors (v2.2): the confirm's destructive button, and the card's lift on hover. */
+  --tint-error-strong: color-mix(in srgb, var(--error) 16%, transparent); --tint-error-hover: color-mix(in srgb, var(--error) 26%, transparent); --text-error: #FDA4AF;
+  --shadow-card: 0 12px 32px -20px color-mix(in srgb, var(--shade) 85%, transparent); --sheen: color-mix(in srgb, var(--light) 10%, transparent);
+  /* A chosen segment (Settings' segmented controls, the Session panel's models). */
+  --seg-on: linear-gradient(135deg, color-mix(in srgb, var(--violet) 55%, transparent), color-mix(in srgb, var(--pink) 38%, transparent));
+  --seg-on-shadow: inset 0 1px 0 color-mix(in srgb, var(--light) 14%, transparent), 0 0 0 1px color-mix(in srgb, var(--violet-soft) 45%, transparent), 0 4px 14px -6px color-mix(in srgb, var(--pink) 60%, transparent);
+  /* Source Control: graph lanes (the current branch on lane 1), author avatars (the session
+     avatar colors), the layer that dims the sidebar under the repository switcher. */
+  --lane-1: #8B5CF6; --lane-2: #EC4899; --lane-3: #60A5FA; --lane-4: #2DD4BF; --lane-5: #818CF8; --lane-6: #FBBF24;
+  --person-1: #B794F6; --person-2: #4FC3D9; --person-3: #F28FAD; --person-4: #A3D977; --person-5: #F2A766; --person-6: #7CC4FF; --person-7: #E8A0E8; --person-8: #E6D06E;
+  --dim-layer: color-mix(in srgb, var(--bg-0) 55%, transparent); --bg-float-strong: rgba(18,18,32,.97);
+  /* Worktrees in Changes: a linked worktree's cyan (its lane, glyph and pill) and the violet "same file on two
+     branches" card (amber stays for two sessions on one working tree). */
+  --worktree: #4FC3D9; --worktree-text: #BFEFF7; --tint-worktree: color-mix(in srgb, var(--worktree) 10%, transparent); --edge-worktree: color-mix(in srgb, var(--worktree) 28%, transparent);
+  --lane-worktree: linear-gradient(180deg, var(--line-strong), color-mix(in srgb, var(--worktree) 55%, transparent) 30%, color-mix(in srgb, var(--worktree) 15%, transparent));
+  --tint-meet: color-mix(in srgb, var(--violet) 10%, transparent); --edge-meet: color-mix(in srgb, var(--violet-soft) 24%, transparent); --text-meet: #D9CCFF;
+  --tint-pink: color-mix(in srgb, var(--pink) 12%, transparent); --tint-sky: color-mix(in srgb, var(--working) 12%, transparent);
+  /* Scheduled prompts: the usage reset's preset and a prompt a limit moved. */
+  --edge-pink: color-mix(in srgb, var(--pink) 40%, transparent);
+  /* Markdown preview: inline code. */
+  --md-code: #F9A8D4;
+  /* Redis view: key types and JSON syntax (zset reuses --md-code, set --link). */
+  --ty-string: #93C5FD; --ty-hash: #C4B5FD; --ty-stream: #5EEAD4; --ty-list: #FCD34D; --ty-json: #86EFAC;
+  --tint-teal: rgba(45,212,191,.12); --tint-indigo: rgba(129,140,248,.12); --tint-green: color-mix(in srgb, var(--done) 12%, transparent);
+  --line-num: #3E3D5C;
+  /* JSON navigation: the editor's syntax colors for the tree and the table, the folded
+     block's violet, a stronger violet tint on hover. */
+  --syn-key: #A5B4FC; --syn-string: #86EFAC; --syn-number: #FDBA74; --syn-literal: #F472B6; --syn-punct: #8A88AD;
+  --fold: #C4B5FD; --tint-violet-hover: color-mix(in srgb, var(--violet) 20%, transparent); --edge-error-soft: color-mix(in srgb, var(--error) 22%, transparent); --hit-text: #FDE68A;
+  /* CSV viewer: the source's rainbow columns, and the tints of a category's values (by
+     frequency: the last one also for values the profile doesn't list). */
+  --csv-col-0: #A5B4FC; --csv-col-1: #93C5FD; --csv-col-2: #6EE7B7; --csv-col-3: #FCD34D;
+  --csv-col-4: #F9A8D4; --csv-col-5: #FDBA74; --csv-col-6: #C4B5FD; --csv-col-7: #67E8F9;
+  --csv-tint-0: #6EE7B7; --csv-tint-1: #93C5FD; --csv-tint-2: #FCD34D; --csv-tint-3: #C4B5FD;
+  --csv-tint-4: #FDA4AF; --csv-tint-5: #5EEAD4; --csv-tint-6: #F9A8D4; --csv-tint-7: #A5B4FC;
+  --csv-hatch: color-mix(in srgb, var(--error) 6%, transparent); --csv-edge: color-mix(in srgb, var(--violet-soft) 90%, transparent);
+  /* Context usage: one hue per group, in the donut's order (Messages, MCP servers,
+     Memory files, Skills; System neutral), validated on the dark sheet (CVD ≥ 8 between neighbours, contrast ≥ 3:1).
+     Light themes step Messages and System for paper. */
+  --ctx-messages: #9085E9; --ctx-mcp: #199E70; --ctx-memory: #C98500; --ctx-skills: #D55181; --ctx-system: #6E6C8F;
+  /* Themes: the base hues tints and shadows are mixed from. */
+  --violet-soft: #A78BFA; --violet-light: #C4B5FD; --shade: #000; --light: #fff; --abyss: #04040A;
+  --font: 'Instrument Sans', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --r-sm: 6px; --radius: 10px; --r-lg: 14px;
+  --ease: cubic-bezier(.2,.8,.2,1); --t-fast: 120ms; --t-med: 180ms; --t-slow: 240ms;
+  /* Idle motion budget: an attention cue plays this many cycles, then rests. */
+  --cue-cycles: 3; --cue-cycles-long: 8;
+  color-scheme: dark;
+}
+/* A theme's card (Settings, Change Theme…) resolves the mark from its own waiting color, not the one :root inherited
+; a theme with a mark of its own sets it in its block, which comes later. */
+[data-theme-preview] { --waiting-mark: var(--waiting); }
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--bg-0); color: var(--text); font: 13px/1.4 var(--font); -webkit-font-smoothing: antialiased; overflow: hidden; user-select: none; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), transform var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease); }
+/* Pressed, a button darkens; nothing shrinks or shifts. */
+button:active:not(:disabled) { filter: brightness(.94); }
+button:focus-visible, input:focus-visible, [tabindex]:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); border-radius: var(--r-sm); }
+input::placeholder { color: var(--text-4); }
+::selection { background: color-mix(in srgb, var(--violet) 35%, transparent); }
+.mono { font-family: var(--mono); font-variant-ligatures: none; }
+.section-label { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-4); }
+
+/* Thin scrollbars, visible on hover. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+/* Where a vertical and a horizontal scrollbar meet: no white square. */
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: transparent; border: 3px solid transparent; background-clip: padding-box; border-radius: 10px; }
+*:hover::-webkit-scrollbar-thumb { background-color: color-mix(in srgb, var(--text-3) 22%, transparent); }
+::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--text-3) 40%, transparent) !important; }
+
+/* Motion */
+/* Waiting cues: what waits for you breathes --cue-cycles times, then rests; a waiting avatar's
+   ring does the same. No halo, nothing grows. */
+@keyframes atl-breathe-cue { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@keyframes atl-ring-cue { 0%, 100% { box-shadow: 0 0 0 1.5px var(--ring, var(--waiting-mark)); } 50% { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--ring, var(--waiting-mark)) 40%, transparent); } }
+@keyframes atl-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes atl-pop { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes atl-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes atl-wait-ring { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+@keyframes atl-fade-target { from { background-color: color-mix(in srgb, var(--waiting-mark) 22%, transparent); } to { background-color: color-mix(in srgb, var(--violet) 8%, transparent); } }
+@keyframes atl-drop { from { opacity: 0; transform: translateY(-8px) scaleY(.94); } to { opacity: 1; transform: none; } }
+/* atl-drop mirrored: the commit drawer rises from the bottom of the Changes panel. */
+@keyframes atl-rise { from { opacity: 0; transform: translateY(8px) scaleY(.94); } to { opacity: 1; transform: none; } }
+/* A label taking another's place (the commit drawer's target chip): a short cross-fade. */
+@keyframes atl-swap { from { opacity: 0; filter: blur(2px); transform: translateY(3px); } to { opacity: 1; filter: none; transform: none; } }
+@keyframes atl-row-in { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: none; } }
+/* An in-app confirm opening inside its row: the row grows to hold the question. */
+@keyframes atl-unfold { from { max-height: 46px; } to { max-height: 220px; } }
+/* Something running, length unknown (a git write while quitting): a bar that sweeps; and dots that breathe. */
+@keyframes atl-indeterminate { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@keyframes atl-breathe { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+@keyframes atl-check { 0% { transform: scale(.4); opacity: 0; } 70% { transform: scale(1.15); opacity: 1; } 100% { transform: none; } }
+.enter { animation: atl-enter var(--t-med) var(--ease) both; }
+.pop { animation: atl-pop var(--t-med) var(--ease) both; }
+.pulse { animation: atl-breathe-cue 1.8s ease-in-out var(--cue-cycles); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}
+/* Settings › Reduce motion › Always: the same rules even if the system doesn't ask. */
+:root[data-motion="reduced"] *, :root[data-motion="reduced"] *::before, :root[data-motion="reduced"] *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }

@@ -1,0 +1,12 @@
+{
+  "workspace": {
+    "id": "00000009-0000-4000-8000-000000000009",
+    "name": "Acme"
+  },
+  "user": {
+    "type": "person",
+    "id": "11111111-2222-4333-8444-555555555555",
+    "name": "Ada Lovelace",
+    "email": "ada@example.test"
+  }
+}

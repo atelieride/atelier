@@ -1,0 +1,154 @@
+/* A connection's overview tab: the header with its chips, the tiles, the biggest
+   tables, schemas and extensions, Now running, the slowest statements, the states. Loaded with the table tab's lazy
+   chunk (OverviewView.tsx), never the first paint. Colors only through Aurora's tokens, flat (the
+   quiet finish: solid fills, no glow, no lift). Production's 2 px top hairline is the tab's own (databases.css
+   `.db-tab.is-prod`): the view leaves it uncovered — no background of its own, and its scrolling content clips under
+   a transparent 2 px border.
+   Layout at every width (overview.ts ovLayout decides the columns from the measured width): values, names and
+   lines ellipsize (their full text in a tooltip), numbers and chips never wrap, the header's chips wrap as a group and
+   go under the name in a narrow pane, Now running scrolls sideways inside its card. */
+
+.dbo { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 16px; padding: 18px 24px 24px; border-top: 2px solid transparent; overflow-x: hidden; overflow-y: auto; outline: none; }
+.dbo-sp { flex: 1; min-width: 0; }
+
+/* —— the header —— */
+.dbo-head { flex: none; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "glyph title chips"; align-items: center; column-gap: 14px; row-gap: 10px; min-width: 0; }
+/* Narrow: the chips go under the name, as a group. */
+.dbo-head.is-stacked { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "glyph title" ". chips"; }
+.dbo-glyph { grid-area: glyph; flex: none; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: var(--violet-light); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet); }
+.dbo.is-prod .dbo-glyph { color: var(--text-error); background: var(--tint-error); box-shadow: inset 0 0 0 1px var(--edge-error); }
+.dbo-title { grid-area: title; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.dbo-name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dbo-name { flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; font-weight: 600; line-height: 22px; color: var(--text); }
+.dbo-name-row > .db-env { flex: none; }
+.dbo-provider { flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 11px; font-weight: 500; color: var(--text-2); background: var(--bg-control); box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; }
+.dbo-sub { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--text-4); }
+.dbo-chips { grid-area: chips; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.dbo-head.is-stacked .dbo-chips { justify-content: flex-start; }
+/* Green when the role can only read, amber when it can write. */
+.dbo-role { flex: none; max-width: 100%; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 9px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.dbo-role > svg { flex: none; }
+.dbo-role > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbo-role.is-read { color: var(--done); background: var(--tint-done); box-shadow: inset 0 0 0 1px var(--edge-done); }
+.dbo-role.is-write { color: var(--waiting); background: var(--tint-waiting); box-shadow: inset 0 0 0 1px var(--edge-waiting); }
+.dbo-mask { flex: none; display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 11px 0 8px; border-radius: 9px; font-size: 12px; font-weight: 500; color: var(--text-2); background: var(--bg-control); box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbo-mask:hover { color: var(--text); background: var(--bg-hover); }
+.dbo-mask:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--line), 0 0 0 1.5px var(--violet); }
+.dbo-switch { flex: none; position: relative; width: 26px; height: 16px; border-radius: 999px; background: var(--line-strong); transition: background var(--t-med) var(--ease); }
+.dbo-switch > i { position: absolute; top: 3px; left: 3px; width: 10px; height: 10px; border-radius: 50%; background: var(--text-3); transition: transform var(--t-med) var(--ease), background var(--t-med) var(--ease); }
+.dbo-mask.is-on { color: var(--text); }
+.dbo-mask.is-on .dbo-switch { background: var(--brand); }
+.dbo-mask.is-on .dbo-switch > i { transform: translateX(10px); background: var(--on-brand); }
+
+/* —— a read that failed with the numbers on screen: they stay, paused —— */
+.dbo-paused { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 8px 6px 12px; border-radius: var(--radius); font-size: 12px; color: var(--text-2); background: var(--tint-waiting); box-shadow: inset 0 0 0 1px var(--edge-waiting); animation: atl-fade var(--t-med) var(--ease) both; }
+.dbo-paused > svg { flex: none; color: var(--waiting); }
+.dbo-paused > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbo-paused > button { flex: none; white-space: nowrap; }
+
+/* —— the tiles: --dbo-cols columns (5, 3, 2 or 1), the last filling its row —— */
+.dbo-tiles { flex: none; display: grid; grid-template-columns: repeat(var(--dbo-cols), minmax(0, 1fr)); gap: 12px; }
+.dbo-tile { min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: var(--r-lg); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--line-soft); }
+.dbo-tile.is-long { box-shadow: inset 0 0 0 1px var(--edge-waiting); }
+.dbo-tile.is-long .section-label { color: var(--waiting); }
+.dbo-tile.is-long .dbo-v { color: color-mix(in srgb, var(--waiting) 70%, var(--text)); }
+.dbo-v { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 22px; font-weight: 600; line-height: 28px; letter-spacing: -.02em; color: var(--text); font-variant-numeric: tabular-nums; }
+.dbo-of { margin-left: 4px; font-size: 14px; font-weight: 500; letter-spacing: 0; color: var(--text-4); }
+.dbo-s { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--text-4); }
+.dbo-tiles[aria-busy="true"] .dbo-v { color: var(--text-4); }
+.dbo-spark { display: block; width: 100%; height: 22px; margin-top: 2px; overflow: visible; }
+.dbo-spark polyline, .dbo-spark line { fill: none; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.dbo-spark polyline { stroke: var(--person-1); }
+.dbo-spark .is-flat { stroke: var(--line-strong); }
+
+/* —— the cards —— */
+.dbo-mid { flex: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; }
+.dbo-mid.is-split { grid-template-columns: minmax(0, 1fr) minmax(260px, 360px); }
+.dbo-card { min-width: 0; display: flex; flex-direction: column; padding: 14px 18px; border-radius: var(--r-lg); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--line-soft); }
+.dbo-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 8px; }
+.dbo-card-head > .section-label { flex: none; white-space: nowrap; }
+.dbo-count { flex: none; font-family: var(--mono); font-size: 11px; color: var(--text-4); white-space: nowrap; }
+.dbo-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 11px; color: var(--text-4); }
+.dbo-empty { margin: 4px 0; font-size: 12px; color: var(--text-4); }
+
+/* The biggest tables: name, bar, size; each row opens its table. */
+.dbo-bar { display: grid; grid-template-columns: minmax(64px, 160px) minmax(32px, 1fr) auto; align-items: center; gap: 12px; min-width: 0; height: 28px; margin: 0 -8px; padding: 0 8px; border-radius: 7px; font-family: var(--mono); font-size: 12px; color: var(--text-2); text-align: left; transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.dbo-bar:hover { background: var(--bg-hover); color: var(--text); }
+.dbo-bar:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+.dbo-bar-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbo-bar-track { position: relative; height: 6px; border-radius: 3px; background: var(--bg-3); overflow: hidden; }
+.dbo-bar-track > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--brand); }
+.dbo-bar-size { flex: none; text-align: right; white-space: nowrap; font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* Schemas and extensions: name at the start, what it holds at the end. */
+.dbo-kv { display: flex; flex-direction: column; min-width: 0; }
+.dbo-kv-row { display: flex; align-items: baseline; gap: 12px; min-width: 0; padding: 4px 0; font-family: var(--mono); font-size: 12px; }
+.dbo-kv-row.is-first { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.dbo-kv-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.dbo-kv-row.is-ext .dbo-kv-name { color: var(--text-3); }
+.dbo-kv-val { flex: 0 1 auto; min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; color: var(--text-4); }
+.dbo-hint { margin: 10px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--text-4); }
+.dbo-hint code { font-family: var(--mono); font-size: 11.5px; color: var(--md-code); }
+
+/* Now running and the slowest statements: a table that scrolls sideways inside its card, one line a row. */
+.dbo-running, .dbo-slowest { padding: 12px 8px 6px; }
+.dbo-running > .dbo-card-head, .dbo-slowest > .dbo-card-head { padding: 0 10px; }
+.dbo-scroll { min-width: 0; overflow-x: auto; overflow-y: hidden; }
+.dbo-act { width: 100%; min-width: 760px; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+.dbo-act.dbo-slow { min-width: 420px; }
+.dbo-c-pid { width: 72px; }
+.dbo-c-role { width: 140px; }
+.dbo-c-app { width: 150px; }
+.dbo-c-state { width: 150px; }
+.dbo-c-for { width: 84px; }
+.dbo-c-calls { width: 96px; }
+.dbo-act th { height: 28px; padding: 0 10px; text-align: left; font: 600 10px var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--text-4); border-bottom: 1px solid var(--line-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dbo-act td { height: 32px; padding: 0 10px; border-bottom: 1px solid var(--line-soft); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dbo-act tbody tr:last-child td { border-bottom: none; }
+.dbo-act tbody tr { transition: background var(--t-fast) var(--ease); }
+.dbo-act tbody tr:hover { background: var(--bg-hover); }
+/* The keyboard's row (one in the Tab order, the arrows between; its menu on Shift+F10): ringed inside its edges — a
+   table row draws no box-shadow, an outline it does. */
+.dbo-act tbody tr { outline: none; }
+.dbo-act tbody tr:focus-visible { outline: 1.5px solid var(--violet); outline-offset: -1.5px; }
+.dbo-act .dbo-for { text-align: right; font-variant-numeric: tabular-nums; }
+/* Over 30 s active or idle in a transaction: amber. This view's own session: quiet. */
+.dbo-act tr.is-long { background: var(--tint-waiting); }
+.dbo-act tr.is-long .dbo-for { color: var(--waiting); }
+.dbo-act tr.is-ours td { color: var(--text-4); }
+.dbo-act tr.is-ours .dbo-app { color: var(--violet-light); }
+.dbo-st { flex: none; display: inline-flex; align-items: center; max-width: 100%; height: 20px; padding: 0 8px; border-radius: 999px; font: 500 11.5px/1 var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.dbo-st.is-sky { color: var(--working); background: var(--tint-sky); }
+.dbo-st.is-amber { color: var(--waiting); background: var(--tint-waiting); }
+.dbo-st.is-grey { color: var(--text-3); background: var(--bg-3); }
+.dbo-st.is-ours { color: var(--violet-light); background: var(--tint-violet-soft); }
+.dbo-q-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dbo-q-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbo-act tr.is-ours .dbo-q-text { opacity: .75; }
+.dbo-q.is-hidden { font-family: var(--font); font-style: italic; color: var(--text-4); }
+.dbo-kw { color: var(--syn-literal); }
+.dbo-str { color: var(--syn-string); }
+.dbo-num { color: var(--syn-number); }
+.dbo-ask { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 7px; font: 500 11.5px var(--font); color: var(--link); white-space: nowrap; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbo-ask > svg { flex: none; }
+.dbo-ask:hover { color: var(--text); background: var(--bg-hover); }
+.dbo-ask:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+
+/* —— the states: Disconnected, a first read that failed —— */
+.dbo-center { flex: 1; min-height: 0; display: grid; place-items: center; padding: 24px 0; }
+.dbo-center > .dk-state { max-width: 100%; min-width: 0; }
+.dbo-problem { max-width: 460px; }
+.dbo-problem .dk-state-icon { color: var(--text-error); box-shadow: inset 0 0 0 1px var(--edge-error); }
+.dbo-problem .dk-state-title { overflow-wrap: anywhere; }
+.dbo-problem-detail { margin: 0; max-width: 420px; font-size: 12px; line-height: 1.5; color: var(--text-error); overflow-wrap: anywhere; }
+.dbo-problem-code { margin: 0; font-size: 10.5px; color: var(--text-4); }
+
+/* A narrow pane: a little tighter. */
+@container dkv (max-width: 560px) {
+  .dbo { gap: 12px; padding: 14px 14px 18px; }
+  .dbo-tiles { gap: 10px; }
+  .dbo-tile { padding: 12px 14px; }
+  .dbo-card { padding: 12px 14px; }
+  .dbo-running, .dbo-slowest { padding: 10px 4px 4px; }
+  .dbo-v { font-size: 19px; line-height: 24px; }
+}

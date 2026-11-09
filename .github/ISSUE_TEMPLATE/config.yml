@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security problem
+    url: https://github.com/atelieride/atelier/blob/main/SECURITY.md
+    about: Report it privately, never in a public issue.
+  - name: Try Atelier in your browser
+    url: https://useatelier.dev/demo
+    about: The real app with scripted sessions, before you install it.

@@ -1,0 +1,52 @@
+---
+import type { ImageMetadata } from 'astro';
+import type { FeatureRowData } from '../content/features';
+import type { LiveSpots } from './Window.astro';
+import LiveDemo from './LiveDemo.astro';
+// A home block: a two-line title, a few words and what goes under them (the
+// slot: the state legend, Ask's note), beside a feature's window. The window is the row's shot (features.ts), drawn
+// 1:1 in a 640 px column, and opens the live demo on the row's view as the row on /features does. No pill over it,
+// and a tab stop of its own: nothing else in the block opens the demo, and `label` names what opens.
+interface Props { row: FeatureRowData; title: [string, string]; text: string; label: string; reverse?: boolean }
+const { row, title, text, label, reverse = false } = Astro.props;
+const shots = import.meta.glob<{ default: ImageMetadata }>('../assets/shots/*.png', { eager: true });
+const src = shots[`../assets/shots/${row.shot}.png`]!.default;
+const phone = shots[`../assets/shots/${row.shot}.mobile.png`]?.default;
+const lives = import.meta.glob<{ default: LiveSpots }>('../assets/shots/*.live.json', { eager: true });
+const live = lives[`../assets/shots/${row.shot}.live.json`]?.default;
+const win = { src, mobile: phone, alt: row.alt, lights: row.corner, mobileLights: row.phoneCorner, width: 640, live };
+---
+<div class="block">
+  <section class="container section">
+    <div class:list={['split', { reverse }]}>
+      <div class="copy" data-reveal>
+        <h2 class="h2">{title[0]}<br /><span class="dim">{title[1]}</span></h2>
+        <p class="lead">{text}</p>
+        <slot />
+      </div>
+      <div class="media" data-reveal>
+        <LiveDemo id={`home-${row.id}`} view={row.demo?.view} label={label} pill={false} {...win} />
+      </div>
+    </div>
+  </section>
+</div>
+<style>
+  /* The words take what the 640 px window leaves, the window drawn 1:1. Where the page has room beyond the column,
+     the window reaches up to 96 px past its edge on its own side (the words stay lined up with the other blocks), so
+     the words keep about 5 : 7. */
+  .split { --bleed: min(96px, max(0px, (100vw - var(--site-max)) / 2));
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 640px); gap: clamp(40px, 5vw, 64px); align-items: center;
+    margin-right: calc(-1 * var(--bleed)); }
+  .split.reverse { grid-template-columns: minmax(0, 640px) minmax(0, 1fr); margin-right: 0; margin-left: calc(-1 * var(--bleed)); }
+  .split.reverse .copy { order: 2; }
+  .copy { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+  .h2 { text-wrap: balance; }
+  /* Never wider than its shot's 1:1 size, also stacked under the words. */
+  .media { min-width: 0; max-width: 640px; }
+  /* Stacked below 1180 px (tablets, half-screen windows): side by side there, the 640 px window would leave the words
+     150–340 px. */
+  @media (max-width: 1180px) {
+    .split, .split.reverse { grid-template-columns: minmax(0, 1fr); gap: 40px; margin: 0; }
+    .split.reverse .copy { order: 0; }
+  }
+</style>

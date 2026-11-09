@@ -1,0 +1,186 @@
+/* The JSON tools: the JSON view in the row inspector's place and the
+   column menu with its key profile. Loaded with the table's lazy chunk (JsonInspector.tsx, ColumnMenu.tsx), never the
+   first paint. Colors only through Aurora's tokens; the quiet finish (no gradient fills, no halos).
+   Every width holds — the inspector's 280 px, a 430 px split pane: the head and every line one line; the breadcrumb cut
+   from the left (its leaf stays); keys and values ellipsized (whole in their tooltips); a line's actions take the value's
+   tail, never sit over it; the bottom bar's code ellipsized, its Copy never shrinking; the Table view scrolls sideways. */
+
+.dbj { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; outline: none; container: dbj / inline-size; animation: atl-fade var(--t-fast) var(--ease) both; }
+
+/* —— the head: Back, the column and its row, Tree · Table · Raw, Close —— */
+.dbj-head { flex: none; display: flex; align-items: center; gap: 6px; min-width: 0; height: 46px; padding: 0 8px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; overflow: hidden; }
+.dbj-ib { flex: none; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbj-ib:focus-visible { outline: none; box-shadow: 0 0 0 1.5px var(--violet); }
+.dbj-glyph { flex: none; color: var(--violet-light); }
+.dbj-title { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dbj-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; line-height: 1.2; color: var(--text); }
+.dbj-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; line-height: 1.2; color: var(--text-4); }
+.dbj-views { flex: none; padding: 2px; }
+.dbj-views button { height: 22px; padding: 0 8px; font-size: 11.5px; white-space: nowrap; }
+.dbj-views button:disabled { color: var(--text-4); cursor: default; }
+
+/* —— the body: one view and its bars —— */
+.dbj-body { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+
+/* —— find: a key or value, its hits, ↑/↓, Expand all —— */
+.dbj-findbar { flex: none; display: flex; align-items: center; gap: 4px; min-width: 0; padding: 8px 10px 8px 12px; border-bottom: 1px solid var(--line-soft); }
+.dbj-find.db-input { flex: 1 1 auto; height: 28px; padding: 0 8px 0 9px; gap: 7px; }
+.dbj-find.db-input > input { font-family: var(--font); font-size: 12px; }
+.dbj-count { flex: none; white-space: nowrap; font-size: 10.5px; color: var(--text-4); }
+.dbj-expand { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 28px; white-space: nowrap; }
+.dbj-expand[aria-pressed="true"] { color: var(--violet-light); }
+
+/* A json value repeated a key: one line, the tree keeps the last. */
+.dbj-note { flex: none; margin: 0; padding: 5px 12px; border-bottom: 1px solid var(--line-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--waiting); background: var(--tint-waiting); }
+
+/* —— the breadcrumb: laid out from the right (row-reverse, its steps ordered leaf first), so a narrow panel cuts its
+   start, never the leaf; a filler before the leaf takes what is left, so a short path still starts at the left —— */
+.dbj-crumbs { flex: none; display: flex; flex-direction: row-reverse; align-items: center; min-width: 0; height: 30px; padding: 0 12px; border-bottom: 1px solid var(--line-soft); overflow: hidden; white-space: nowrap; font-size: 11.5px; color: var(--text-4); }
+.dbj-crumbs::before { content: ''; order: -1; flex: 1 1 0; min-width: 0; }
+.dbj-ci { flex: none; display: inline-flex; align-items: center; min-width: 0; }
+/* The leaf alone wider than the bar: it ellipsizes at its end. */
+.dbj-ci.is-leaf { max-width: 100%; }
+.dbj-ci > .dbj-crumb { flex: 0 1 auto; }
+.dbj-csep { flex: none; padding: 0 4px; color: var(--line-strong); }
+.dbj-crumb { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 1px 3px; border-radius: 4px; font: inherit; color: var(--text-4); transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbj-crumb:hover { color: var(--text-2); background: var(--bg-hover); }
+.dbj-crumb:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+.dbj-ci.is-leaf .dbj-crumb { color: var(--text); }
+
+/* —— the tree: line numbers, folds, the JSON navigation colors; only the lines on screen are drawn —— */
+.dbj-tree { position: relative; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; outline: none; padding: 4px 0; font: 11.5px/20px var(--mono); }
+.dbj-tree:focus-visible { box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.dbj-lines { position: relative; min-width: 0; }
+.dbj-win { position: absolute; top: 0; left: 0; right: 0; }
+.dbj-row { display: flex; align-items: center; height: 20px; min-width: 0; padding-right: 6px; white-space: nowrap; overflow: hidden; color: var(--text-2); cursor: default; }
+.dbj-row:hover { background: var(--bg-hover); }
+.dbj-row.is-sel { background: var(--bg-sel); box-shadow: inset 2px 0 0 var(--violet); }
+.dbj-row.is-hit .dbj-k, .dbj-row.is-hit .dbj-v { background: var(--hit-bg); border-radius: 3px; }
+.dbj-row.is-cur .dbj-k, .dbj-row.is-cur .dbj-v { background: var(--hit-strong); color: var(--hit-text); }
+.dbj-row.is-parsed { background: color-mix(in srgb, var(--violet) 5%, transparent); }
+.dbj-no { flex: none; width: var(--dbj-no, 4ch); padding-right: 8px; text-align: right; color: var(--line-num); user-select: none; }
+.dbj-row.is-sel .dbj-no { color: var(--violet-light); }
+.dbj-ind { flex: none; }
+.dbj-tw { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-right: 2px; border-radius: 3px; color: var(--text-4); }
+.dbj-tw.is-btn { transition: color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease); }
+.dbj-tw.is-btn:hover { color: var(--text); background: var(--bg-3); }
+.dbj-tw.is-open > svg { transform: rotate(90deg); }
+/* A key gives way after the value (its min-width, JsonLine.tsx: whole up to 10 characters): the value shrinks a
+   thousand times faster, then the key down to that floor. */
+.dbj-k { flex: 0 1 auto; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--syn-key); }
+.dbj-p { flex: none; color: var(--syn-punct); white-space: pre; }
+.dbj-v { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbj-v.is-s { color: var(--syn-string); }
+.dbj-v.is-n { color: var(--syn-number); }
+.dbj-v.is-l { color: var(--syn-literal); }
+.dbj-v.is-p { flex: none; color: var(--syn-punct); }
+.dbj-v.is-fo { flex: none; color: var(--fold); }
+.dbj-v.is-mask { color: var(--text-4); letter-spacing: .14em; }
+.dbj-url { padding: 0; font: inherit; text-align: left; color: var(--link); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--link) 35%, transparent); text-underline-offset: 2px; transition: color var(--t-fast) var(--ease); }
+.dbj-url:hover { color: var(--text); }
+.dbj-hint { flex: 0 1000 auto; min-width: 0; margin-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 10.5px/20px var(--font); color: var(--text-4); }
+.dbj-chip { flex: none; display: inline-flex; align-items: center; height: 17px; margin-left: 8px; padding: 0 7px; border-radius: 999px; white-space: nowrap; font: 10.5px var(--font); color: var(--violet-light); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbj-chip:hover { color: var(--text); background: var(--tint-violet-hover); }
+.dbj-chip.is-parsed { color: var(--text-3); background: var(--bg-3); box-shadow: none; }
+.dbj-more { flex: none; padding: 0 4px; border-radius: 4px; font: inherit; color: var(--link); white-space: nowrap; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbj-more:hover { color: var(--text); background: var(--bg-3); }
+/* A line's actions: on hover and on the selected line, at its right; they take the value's tail (its ellipsis), never cover it. */
+.dbj-acts { flex: none; display: none; align-items: center; gap: 1px; margin-left: auto; padding-left: 6px; }
+.dbj-row:hover .dbj-acts, .dbj-row.is-sel .dbj-acts { display: flex; }
+.dbj-act { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 18px; border-radius: 4px; color: var(--text-3); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--line); transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbj-act:hover { color: var(--text); background: var(--bg-3); }
+.dbj-act[aria-disabled="true"] { color: var(--text-4); background: transparent; box-shadow: none; cursor: default; }
+/* A narrow tree (the inspector at 280–360 px): each level steps 8 px, the actions pack closer — the keys keep their
+   room. After the rules above (a container query adds no specificity). */
+.dbj-tree { container: dbjt / inline-size; }
+@container dbjt (max-width: 360px) {
+  .dbj-row { --dbj-indent: 8px; padding-right: 4px; }
+  .dbj-acts { padding-left: 4px; }
+  .dbj-act { width: 17px; }
+}
+
+/* —— the bottom bar: Path and SQL, each one line and Copy —— */
+.dbj-bar { flex: none; display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 7px 8px 8px 12px; border-top: 1px solid var(--line-soft); background: color-mix(in srgb, var(--bg-0) 50%, transparent); }
+.dbj-bar-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dbj-bar-l { flex: none; width: 30px; font: 600 10px var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--text-4); }
+.dbj-bar-code { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--text-2); }
+.dbj-bar-code.is-sql { color: var(--md-code); }
+.dbj-bar-copy { flex: none; white-space: nowrap; width: 22px; height: 22px; }
+.dbj-dim { color: var(--text-4); font-family: var(--font); }
+
+/* —— the Table view: the array's items, the union of their keys; it scrolls both ways —— */
+.dbj-table { flex: 1; min-height: 0; min-width: 0; overflow: auto; outline: none; }
+.dbj-tt { table-layout: fixed; border-collapse: separate; border-spacing: 0; font: 11.5px var(--mono); }
+.dbj-tt th, .dbj-tt td { height: 26px; padding: 0 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; border-bottom: 1px solid var(--line-soft); border-right: 1px solid var(--line-soft); }
+.dbj-tt th { position: sticky; top: 0; z-index: 1; font: 600 11.5px var(--font); color: var(--text-2); background: var(--bg-2); border-bottom-color: var(--line); }
+.dbj-tt td { color: var(--text-2); cursor: default; }
+.dbj-tt td:hover { background: var(--bg-hover); }
+.dbj-tt .dbj-tt-i { position: sticky; left: 0; z-index: 2; color: var(--line-num); background: var(--bg-1); text-align: right; }
+.dbj-tt th.dbj-tt-i { z-index: 3; background: var(--bg-2); }
+.dbj-tt tr.is-sel > td { background: var(--bg-sel); }
+.dbj-tt td.is-cur { box-shadow: inset 0 0 0 1.5px var(--violet); }
+.dbj-tt td.is-s { color: var(--syn-string); }
+.dbj-tt td.is-n { color: var(--syn-number); text-align: right; }
+.dbj-tt td.is-l { color: var(--syn-literal); }
+.dbj-tt td.is-fo { color: var(--fold); }
+.dbj-tt td.is-mask { color: var(--text-4); letter-spacing: .14em; }
+.dbj-tt td.is-none { background: var(--bg-0); }
+.dbj-tt-sp td { padding: 0; border: 0; }
+
+/* —— the Raw view: pretty-printed, selectable, Copy all —— */
+.dbj-raw { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+.dbj-raw-head { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 10px 8px 12px; border-bottom: 1px solid var(--line-soft); }
+.dbj-raw-note { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--waiting); }
+.dbj-sp { flex: 1 1 0; min-width: 4px; }
+.dbj-raw-copy { flex: none; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.dbj-raw-pre { flex: 1; min-height: 0; margin: 0; padding: 8px 12px 12px; overflow: auto; outline: none; font-size: 11.5px; line-height: 18px; color: var(--text-2); white-space: pre; user-select: text; }
+
+/* —— the value's states: no row, NULL, masked, cut (Load full value), reading, not JSON —— */
+.dbj-state { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px 18px; text-align: center; overflow: auto; }
+.dbj-state-t { margin: 0; max-width: 100%; font-size: 12px; line-height: 1.45; color: var(--text-4); overflow-wrap: anywhere; }
+.dbj-state-t.is-cut { color: var(--waiting); }
+.dbj-state-t.is-err { color: var(--text-error); }
+.dbj-state > button { flex: none; white-space: nowrap; }
+.dbj-state-raw { align-self: stretch; max-height: 50%; margin: 0; padding: 8px 10px; overflow: auto; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; color: var(--text-3); border-radius: var(--r-sm); background: var(--bg-field); }
+
+/* A narrow panel: Expand all and the head's glyph give their room. */
+@container dbj (max-width: 360px) { .dbj-expand-l { display: none; } .dbj-head > .dbj-glyph { display: none; } .dbj-views button { padding: 0 6px; } }
+
+/* —— the column menu: the key profile first for a JSON column, then the column's items —— */
+.dbj-cm { position: absolute; z-index: 30; display: flex; flex-direction: column; min-height: 0; overflow: hidden; border-radius: var(--r-lg); background: var(--bg-float); backdrop-filter: blur(18px); box-shadow: var(--shadow-float); white-space: normal; animation: atl-pop var(--t-med) var(--ease) both; outline: none; }
+.dbj-cm-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px; }
+.dbj-cm-head { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 8px 4px; font: 600 10.5px var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--text-4); white-space: nowrap; }
+.dbj-cm-head > span:first-child { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dbj-cm-present { flex: none; margin-left: auto; letter-spacing: 0; text-transform: none; font-weight: 500; }
+.dbj-cm-note { margin: 0; padding: 6px 8px 8px; font-size: 12px; color: var(--text-4); }
+/* A key: its path (the prefix dim; ellipsized), its kind (on hover or focus "+ Column"), its presence. */
+.dbj-cm-key { display: grid; grid-template-columns: minmax(0, 1fr) auto 56px; align-items: center; gap: 10px; width: 100%; min-width: 0; height: 28px; padding: 0 8px; border-radius: 6px; font: 11.5px var(--mono); color: var(--text-2); text-align: left; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbj-cm-key:hover, .dbj-cm-key:focus-visible { outline: none; color: var(--text); background: var(--tint-violet); }
+.dbj-cm-key[aria-disabled="true"] { cursor: default; }
+.dbj-cm-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbj-cm-pre { color: var(--text-4); }
+.dbj-cm-kind, .dbj-cm-add { flex: none; white-space: nowrap; font: 10px var(--mono); color: var(--text-4); text-align: right; }
+.dbj-cm-kind.is-shown { color: var(--violet-light); }
+.dbj-cm-add { display: none; color: var(--text); }
+.dbj-cm-key:not([aria-disabled="true"]):hover .dbj-cm-kind, .dbj-cm-key:not([aria-disabled="true"]):focus-visible .dbj-cm-kind { display: none; }
+.dbj-cm-key:not([aria-disabled="true"]):hover .dbj-cm-add, .dbj-cm-key:not([aria-disabled="true"]):focus-visible .dbj-cm-add { display: inline; }
+.dbj-cm-bar { position: relative; height: 4px; border-radius: 2px; overflow: hidden; background: var(--bg-3); }
+.dbj-cm-bar > i { position: absolute; top: 0; left: 0; bottom: 0; border-radius: 2px; background: var(--violet); }
+.dbj-cm-sep { height: 1px; margin: 5px 6px; background: var(--line-soft); }
+.dbj-cm-item { display: flex; align-items: center; gap: 9px; width: 100%; min-width: 0; height: 28px; padding: 0 8px; border-radius: 6px; font: 12.5px var(--font); color: var(--text-2); text-align: left; white-space: nowrap; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbj-cm-item > svg { flex: none; color: var(--text-4); }
+.dbj-cm-item:hover:not(:disabled), .dbj-cm-item:focus-visible { outline: none; color: var(--text); background: var(--bg-hover); }
+.dbj-cm-item:disabled { color: var(--text-4); cursor: default; }
+.dbj-cm-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dbj-cm-hint { flex: none; font: 11px var(--mono); color: var(--text-4); }
+.dbj-cm-check { flex: none; width: 14px; color: var(--violet-light); }
+/* Sort by Key…: a key typed (or picked from the profile), then which way. */
+.dbj-cm-form { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 6px 6px 4px; }
+.dbj-cm-form .db-input { height: 30px; }
+.dbj-cm-err { margin: 0; font-size: 11.5px; color: var(--text-error); }
+.dbj-cm-picks { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.dbj-cm-pick { flex: 0 1 auto; min-width: 0; max-width: 100%; height: 22px; padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 999px; font: 11px var(--mono); color: var(--text-3); box-shadow: inset 0 0 0 1px var(--line); transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbj-cm-pick:hover { color: var(--text); background: var(--bg-hover); }
+.dbj-cm-pick:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+.dbj-cm-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.dbj-cm-foot > button { flex: none; white-space: nowrap; }

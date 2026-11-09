@@ -1,0 +1,44 @@
+---
+import Base from '../layouts/Base.astro';
+import Hero from '../components/Hero.astro';
+import HomeSplit from '../components/HomeSplit.astro';
+import Tiles from '../components/Tiles.astro';
+import YourMac from '../components/YourMac.astro';
+import Faq from '../components/Faq.astro';
+import Cta from '../components/Cta.astro';
+import { rows } from '../content/features';
+import { config } from '../config';
+import { softwareJsonLd } from '../lib/seo';
+// The home in six blocks; every feature is on /features.
+const description = 'A workbench for many Claude Code sessions: live states, one key to the one waiting for you, and your editor, terminals, Git, Docker and Redis beside them.';
+const row = (id: string) => rows.find((r) => r.id === id)!;
+const states = [['Needs you', 'waiting'], ['Working', 'working'], ['Done', 'done'], ['Failed', 'error']] as const;
+// The home's old anchors: the rows, the bento and the keys live on /features now, and links to them are out
+// there. Hashes never reach the server, so this runs first in the head and replaces the address before anything paints
+// (Back never bounces through the home). #film and any other hash stay here.
+const moved = [...rows.map((r) => r.id), 'features', 'more', 'shortcuts'];
+---
+<Base title="Atelier | Many Claude Code sessions, never lose track" description={description} path="/" jsonLd={softwareJsonLd({ ...config, description })}>
+  <script is:inline slot="head" define:vars={{ moved }}>var h = location.hash.slice(1); if (moved.indexOf(h) >= 0) location.replace('/features' + location.search + (h === 'features' ? '' : '#' + h));</script>
+  <Hero />
+  <HomeSplit row={row('sessions')} title={['Know who needs you.', '⌘J takes you there.']} label="Try Sessions live in your browser"
+    text="Every session shows what it is doing. When one asks for permission or has a question, the sidebar, the Dock and a banner tell you, and one key opens it.">
+    <ul class="states">
+      {states.map(([label, tone]) => <li><span class="dot" style={`--tone: var(--${tone})`}></span>{label}</li>)}
+    </ul>
+  </HomeSplit>
+  <HomeSplit row={row('ask')} reverse title={['Ask a session where it is.', 'It keeps working.']} label="Try Ask live in your browser"
+    text="A side chat answers from the session's conversation and your code: what you asked, what is done, the choices it made, what is left. ⌘I opens it beside the session.">
+    <p class="note">Read-only · never edits files or runs commands · runs on your Claude account</p>
+  </HomeSplit>
+  <Tiles />
+  <YourMac />
+  <Faq />
+  <Cta />
+</Base>
+<style>
+  .states { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(2, max-content); gap: 12px 32px; color: var(--text-2); font-size: 14.5px; }
+  .states li { display: flex; align-items: center; gap: 10px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone); }
+  .note { font: 12.5px var(--mono); color: var(--text-3); line-height: 1.6; }
+</style>

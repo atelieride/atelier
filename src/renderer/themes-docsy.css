@@ -1,0 +1,104 @@
+/* Docsy's two themes, apart from themes.css: the website's live demo swaps this file
+   for an empty one (src/demo/compile/build.ts), so the company's name never reaches the site. Loaded after
+   themes.css wherever it is (styles.ts, the ghost, theme-source.ts, main's theme-chrome.ts). */
+
+/* Docsy: Docsy's light system — ice grey ground, white work area, cobalt for every action, gold only where
+   a session needs you (its marks; the readable gold is --waiting) and on the tab's crown. Poppins and near-opaque
+   floats: surfaces stand apart by tone. */
+:root[data-theme="docsy"], [data-theme-preview="docsy"] {
+  color-scheme: light;
+  /* Context usage: the chart's group hues, validated on white. */
+  --ctx-messages: #6250D6; --ctx-mcp: #199E70; --ctx-memory: #C98500; --ctx-skills: #D55181; --ctx-system: #85839E;
+  --r-sm: 8px; --radius: 10px;
+  --font: 'Poppins', system-ui, sans-serif;
+  --bg-0: #F5F6F8; --bg-1: #EEF0F3; --bg-2: #FFFFFF; --bg-3: #E6E9EE; --bg-tabs: #EEF0F3;
+  --bg-float: rgba(255,255,255,.96); --bg-float-strong: rgba(255,255,255,.99); --bg-control: #FFFFFF; --bg-sheet: #FFFFFF;
+  --bg-field: #FFFFFF;
+  --line: #D9DCE3; --line-soft: #E6E9EE; --line-strong: #CACFD8;
+  --text: #222222; --text-2: #3D434E; --text-3: #5D636F; --text-4: #767D89;
+  --violet: #305BAB; --pink: #274C94; --violet-soft: #4C79CD; --violet-light: #274C94; --link: #305BAB;
+  --waiting: #8F5E00; --waiting-mark: #FFB224; --working: #0F7493; --done: #1E7F4C; --error: #D93A3E;
+  --tab-crown: linear-gradient(90deg, var(--waiting-mark), var(--violet));
+  /* The mark's Λ in Docsy's gold, as in Docsy's own logo. */
+  --mark-lambda: #FFB224;
+  --ws-1: #7C3AED; --ws-2: #0F766E; --ws-3: #4D7C0F; --ws-4: #A21CAF; --ws-5: #4338CA; --ws-6: #C2410C; --ws-7: #0369A1; --ws-8: #BE123C;
+  --on-brand: #fff; --text-bright: #222222;
+  --backdrop: color-mix(in srgb, var(--abyss) 18%, transparent); --backdrop-strong: color-mix(in srgb, var(--abyss) 26%, transparent); --id-mix: 55%;
+  --text-error: #B8282D; --text-error-soft: #9B1C21; --text-error-strong: #821519; --text-violet: #274C94; --text-meet: #274C94;
+  --abyss: #1A2236;
+  --shadow-float: 0 18px 44px -16px color-mix(in srgb, var(--abyss) 22%, transparent), 0 0 0 1px var(--line-strong);
+  --shadow-drawer: 0 -12px 28px -20px color-mix(in srgb, var(--abyss) 26%, transparent);
+  --on-done: #fff; --on-done-deep: #fff; --done-light: #7FCFA3; --edge-waiting-dim: #F2CF8A;
+  --switch-off: #D3D7DF; --kbd-top: #FFFFFF; --kbd-bottom: #F1F3F6; --kbd-edge: #CACFD8;
+  --preview-violet: #305BAB; --preview-pink: #A23B72; --preview-sky: #0F7493; --preview-amber: #8F5E00;
+  --worktree: #8B3DA6; --worktree-text: #6E2D86;
+  --md-code: #A23B72; --ty-string: #305BAB; --ty-hash: #6D3FB0; --ty-stream: #0F7493; --ty-list: #8F5E00; --ty-json: #1E7F4C;
+  --tint-teal: rgba(15,116,147,.1); --tint-indigo: rgba(48,91,171,.1); --line-num: #AEB4BF;
+  --syn-key: #305BAB; --syn-string: #1E7F4C; --syn-number: #B4510F; --syn-literal: #A23B72; --syn-punct: #6B7280;
+  --syn-comment: #767D89; --syn-keyword: #A23B72; --syn-operator: #7E2F5A; --syn-type: #0F7493; --syn-function: #8F5E00;
+  --syn-tag: #6D3FB0; --syn-variable: #9A5A00; --syn-heading: #305BAB; --syn-link: #305BAB;
+  --fold: #305BAB; --hit-text: #5C3B00;
+  --csv-col-0: #305BAB; --csv-col-1: #0F7493; --csv-col-2: #1E7F4C; --csv-col-3: #8F5E00;
+  --csv-col-4: #A23B72; --csv-col-5: #B4510F; --csv-col-6: #6D3FB0; --csv-col-7: #2F6F7A;
+  --csv-tint-0: #1E7F4C; --csv-tint-1: #305BAB; --csv-tint-2: #8F5E00; --csv-tint-3: #6D3FB0;
+  --csv-tint-4: #B8282D; --csv-tint-5: #0F7493; --csv-tint-6: #A23B72; --csv-tint-7: #274C94;
+  --lane-1: #305BAB; --lane-2: #C2850C; --lane-3: #0F7493; --lane-4: #1E7F4C; --lane-5: #6D3FB0; --lane-6: #A23B72;
+  --person-1: #305BAB; --person-2: #0F7493; --person-3: #A23B72; --person-4: #4D7C0F; --person-5: #B4510F; --person-6: #6D3FB0; --person-7: #8F5E00; --person-8: #2F6F7A;
+  --term-fg: #222222; --term-cursor: #305BAB;
+  --term-sel: color-mix(in srgb, var(--violet) 20%, transparent); --term-sel-inactive: color-mix(in srgb, var(--violet) 10%, transparent);
+  --ansi-0: #3D434E; --ansi-1: #B8282D; --ansi-2: #1E7F4C; --ansi-3: #8F5E00; --ansi-4: #305BAB; --ansi-5: #8B3DA6; --ansi-6: #0F7493; --ansi-7: #6B7280;
+  --ansi-8: #5D636F; --ansi-9: #D93A3E; --ansi-10: #23935A; --ansi-11: #A86F00; --ansi-12: #3F6FC4; --ansi-13: #A04BBE; --ansi-14: #1388AC; --ansi-15: #7A818D;
+  --editor-fg: #222222; --editor-gutter: #AEB4BF;
+  --seti-blue: #2F7BA0; --seti-grey: #8A969A; --seti-grey-light: #5E6F75; --seti-green: #5E8A1F; --seti-orange: #C25E14; --seti-pink: #D6336C;
+  --seti-purple: #7E4FA8; --seti-red: #B3262D; --seti-white: #6E7578; --seti-yellow: #8F8F14; --seti-ignore: #8A969A;
+  --log-0: var(--ansi-0); --log-1: var(--ansi-1); --log-2: var(--ansi-2); --log-3: var(--ansi-3); --log-4: var(--ansi-4); --log-5: var(--ansi-5); --log-6: var(--ansi-6); --log-7: var(--ansi-7);
+  --log-8: var(--ansi-8); --log-9: var(--ansi-9); --log-10: var(--ansi-10); --log-11: var(--ansi-11); --log-12: var(--ansi-12); --log-13: var(--ansi-13); --log-14: var(--ansi-14); --log-15: var(--ansi-15);
+  --sheen-faint: color-mix(in srgb, var(--shade) 3%, transparent);
+}
+
+/* Docsy Night: the Docsy app's dark mode — deep navy, a brighter cobalt, the same gold. Docsy's finish and
+   type. Logs and file icons keep Aurora's colors. */
+:root[data-theme="docsy-night"], [data-theme-preview="docsy-night"] {
+  color-scheme: dark;
+  /* Context usage: the chart's group hues, validated on dark sheets. */
+  --ctx-messages: #9085E9; --ctx-mcp: #199E70; --ctx-memory: #C98500; --ctx-skills: #D55181; --ctx-system: #6E6C8F;
+  --r-sm: 8px; --radius: 10px;
+  --font: 'Poppins', system-ui, sans-serif;
+  --bg-0: #0A1324; --bg-1: #0E182A; --bg-2: #111A2C; --bg-3: #1A263D; --bg-tabs: #0C1527;
+  --bg-float: rgba(17,26,44,.95); --bg-float-strong: rgba(17,26,44,.98); --bg-control: rgba(14,24,42,.8); --bg-sheet: #0F192B;
+  --line: #232E43; --line-soft: #19243A; --line-strong: #2E3B55;
+  --text: #E8EAEE; --text-2: #C3C9D4; --text-3: #A4AAB7; --text-4: #748099;
+  --violet: #3369CC; --pink: #274C94; --violet-soft: #6F95DD; --violet-light: #A9C1EE; --link: #8FB0EA;
+  --waiting: #FFB224; --working: #4FC3E3; --done: #3FC27F; --error: #F0595D;
+  --tab-crown: linear-gradient(90deg, var(--waiting-mark), var(--violet));
+  /* The mark's Λ in Docsy's gold, as in Docsy's own logo. */
+  --mark-lambda: #FFB224;
+  --ws-1: #A78BFA; --ws-2: #5EEAD4; --ws-3: #BEF264; --ws-4: #E8A0E8; --ws-5: #818CF8; --ws-6: #FDBA74; --ws-7: #7DD3FC; --ws-8: #FDA4AF;
+  --on-brand: #fff; --text-bright: #fff;
+  --text-error: #FF8A8D; --text-error-soft: #FFB3B5; --text-error-strong: #FFD6D7; --text-violet: #C9D8F5; --text-meet: #D3E0F7;
+  --abyss: #030812;
+  --on-done: #062414; --on-done-deep: #041C0F; --done-light: #A6EBC4; --edge-waiting-dim: #5A4520;
+  --switch-off: #24324B; --kbd-top: #1C2840; --kbd-bottom: #152036; --kbd-edge: #050A14;
+  --preview-violet: #A9C1EE; --preview-pink: #F5A3C7; --preview-sky: #7DD3FC; --preview-amber: #FFC95C;
+  --worktree: #B794F6; --worktree-text: #E2D4FC;
+  --md-code: #F5A3C7; --ty-string: #8FB0EA; --ty-hash: #C4B5FD; --ty-stream: #5EEAD4; --ty-list: #FFC95C; --ty-json: #86EFAC;
+  --tint-teal: rgba(79,195,227,.12); --tint-indigo: rgba(111,149,221,.14); --line-num: #3A4862;
+  --syn-key: #FFC95C; --syn-string: #86E0A8; --syn-number: #FDBA74; --syn-literal: #F5A3C7; --syn-punct: #8B97AE;
+  --syn-comment: #7584A0; --syn-keyword: #8FB0EA; --syn-operator: #A9C1EE; --syn-type: #7DD3FC; --syn-function: #FFD98A;
+  --syn-tag: #C4B5FD; --syn-variable: #FFC95C; --syn-heading: #8FB0EA; --syn-link: #8FB0EA;
+  --fold: #8FB0EA; --hit-text: #FFE3A3;
+  --csv-col-0: #8FB0EA; --csv-col-1: #7DD3FC; --csv-col-2: #86E0A8; --csv-col-3: #FFC95C;
+  --csv-col-4: #F5A3C7; --csv-col-5: #FDBA74; --csv-col-6: #C4B5FD; --csv-col-7: #5EEAD4;
+  --csv-tint-0: #86E0A8; --csv-tint-1: #7DD3FC; --csv-tint-2: #FFC95C; --csv-tint-3: #C4B5FD;
+  --csv-tint-4: #FDA4AF; --csv-tint-5: #5EEAD4; --csv-tint-6: #F5A3C7; --csv-tint-7: #8FB0EA;
+  --lane-1: #6F95DD; --lane-2: #FFB224; --lane-3: #4FC3E3; --lane-4: #3FC27F; --lane-5: #C4B5FD; --lane-6: #F5A3C7;
+  --person-1: #8FB0EA; --person-2: #5EEAD4; --person-3: #F5A3C7; --person-4: #A3D977; --person-5: #FFC95C; --person-6: #C4B5FD; --person-7: #FDA4AF; --person-8: #FDBA74;
+  --term-fg: #E1E6EE; --term-cursor: #FFB224;
+  --ansi-0: #24304A; --ansi-1: #F0595D; --ansi-2: #3FC27F; --ansi-3: #FFB224; --ansi-4: #6F95DD; --ansi-5: #C792EA; --ansi-6: #4FC3E3; --ansi-7: #C3C9D4;
+  --ansi-8: #748099; --ansi-9: #FF8A8D; --ansi-10: #86E0A8; --ansi-11: #FFD27A; --ansi-12: #9DB8F0; --ansi-13: #DDB2F5; --ansi-14: #8EDDF0; --ansi-15: #F3F5F8;
+  --editor-fg: #E1E6EE; --editor-gutter: #3E4C66;
+  --log-0: #1B1F28; --log-1: #F07B74; --log-2: #3FB68B; --log-3: #EBC77A; --log-4: #5B8DEF; --log-5: #B794F6; --log-6: #4FC3D9; --log-7: #C9C7C1;
+  --log-8: #6F7682; --log-9: #F4A3A3; --log-10: #A3D977; --log-11: #F5B544; --log-12: #9DB8F5; --log-13: #E8A0E8; --log-14: #7FD3F7; --log-15: #E7E5DF;
+  --seti-blue: #519ABA; --seti-grey: #4D5A5E; --seti-grey-light: #6D8086; --seti-green: #8DC149; --seti-orange: #E37933; --seti-pink: #F55385;
+  --seti-purple: #A074C4; --seti-red: #CC3E44; --seti-white: #D4D7D6; --seti-yellow: #CBCB41; --seti-ignore: #41535B;
+}

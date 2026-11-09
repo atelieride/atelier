@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Atelier's MSIX manifest, packed by scripts/win/pack-msix.mjs, which fills in the version
+  (scripts/win/msix-version.mjs: four numbers, the last 0 as the Store wants). The Store's identity: the name and
+  publisher Partner Center reserved for "Atelier IDE". UpdateWhileInUse=defer (Windows 11 24H2+, ignored before): an
+  update waits for the window to close instead of closing it; atelierd runs from its own copy outside the package, so
+  updates never touch it. The logos are build/appx/assets (scripts/render-store-logos.cjs), named here without their
+  qualifiers: resources.pri (makepri) picks the scale or target size. No App Execution Alias: the bridge Claude's
+  hooks run lives in ATELIER_HOME\bin, outside the package.
+-->
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+         xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:uap17="http://schemas.microsoft.com/appx/manifest/uap/windows10/17"
+         xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+         IgnorableNamespaces="uap uap17 rescap">
+  <Identity Name="FrancescoMusso.AtelierIDE" Publisher="CN=F5719CFD-083A-4791-AA97-9440062FF386" Version="__VERSION__" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>Atelier IDE</DisplayName>
+    <PublisherDisplayName>Francesco Musso</PublisherDisplayName>
+    <Logo>assets\StoreLogo.png</Logo>
+    <uap17:UpdateWhileInUse>defer</uap17:UpdateWhileInUse>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26200.0" />
+  </Dependencies>
+  <Resources><Resource Language="en-us" /></Resources>
+  <Applications>
+    <Application Id="Atelier" Executable="Atelier.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="Atelier" Description="Many Claude Code sessions in parallel: terminals, editor and Source Control in one window."
+                          BackgroundColor="transparent" Square150x150Logo="assets\Square150x150Logo.png" Square44x44Logo="assets\Square44x44Logo.png" />
+    </Application>
+  </Applications>
+  <Capabilities><rescap:Capability Name="runFullTrust" /></Capabilities>
+</Package>

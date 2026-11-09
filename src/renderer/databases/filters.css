@@ -1,0 +1,146 @@
+/* The filter bar, its popover and the Columns chip.
+   Loaded with the table's lazy chunk (FilterBar.tsx), never the first paint. Colors only through
+   Aurora's tokens. At every width: chips never wrap inside (their value ellipsizes first, then the column; the whole
+   filter in the tooltip), the row wraps to two lines at most (then "+N more"), never over the toolbar; the popovers fit
+   their tab (a 430 px pane, a 600 px window) and scroll inside. */
+
+/* —— the bar —— */
+.dbt-fbar { flex: none; display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 7px 12px 7px 16px; border-bottom: 1px solid var(--line-soft); }
+.dbt-fbar-icon { flex: none; display: flex; align-items: center; height: 26px; color: var(--text-4); }
+.dbt-fchips { position: relative; flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+/* A chip: the column, the operator, the value; × at its end. */
+.dbt-fchip { flex: 0 1 auto; display: inline-flex; align-items: stretch; height: 26px; min-width: 0; max-width: min(360px, 100%); border-radius: 8px; background: var(--tint-violet-soft); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); overflow: hidden; white-space: nowrap; font-size: 12px; transition: background var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); animation: atl-pop var(--t-med) var(--ease) both; }
+.dbt-fchip:hover, .dbt-fchip.is-open { background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet); }
+.dbt-fchip-main { flex: 1 1 auto; display: flex; align-items: center; gap: 5px; min-width: 0; padding: 0 8px 0 9px; color: var(--text); border-radius: 8px 0 0 8px; }
+.dbt-fchip-main:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+/* The value gives way first (its shrink weighs a hundred times the column's), then the column; the operator never. */
+.dbt-fchip-col { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 11.5px var(--mono); color: var(--text); }
+.dbt-fchip-op { flex: none; color: var(--text-4); }
+.dbt-fchip-val { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 11.5px var(--mono); color: var(--violet-light); }
+.dbt-fchip-x { flex: none; display: flex; align-items: center; justify-content: center; width: 24px; color: var(--text-4); border-left: 1px solid var(--edge-violet-soft); transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbt-fchip-x:hover { color: var(--text); background: var(--tint-violet-hover); }
+
+/* "+N more" and "+ Filter" (a quiet outlined button). */
+.dbt-fmore, .dbt-fadd { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border-radius: 8px; font-size: 12px; white-space: nowrap; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+.dbt-fmore { color: var(--violet-light); background: var(--tint-violet-soft); font-family: var(--mono); font-size: 11.5px; }
+.dbt-fmore:hover, .dbt-fmore.is-open { background: var(--tint-violet); }
+.dbt-fadd { color: var(--text-3); box-shadow: inset 0 0 0 1px var(--line); }
+.dbt-fadd > svg { flex: none; }
+.dbt-fadd:hover:not(:disabled), .dbt-fadd.is-open { color: var(--text); background: var(--bg-hover); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.dbt-fadd:disabled { opacity: .5; cursor: default; }
+.dbt-fmore:focus-visible, .dbt-fadd:focus-visible, .dbt-cchip:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+
+/* The measuring copies: laid out on one line, never seen, never in the way. */
+.dbt-fmeasure { position: absolute; left: 0; top: 0; display: flex; gap: 6px; width: max-content; height: 0; overflow: hidden; visibility: hidden; pointer-events: none; }
+.dbt-fmeasure > .dbt-fchip { flex: none; max-width: 360px; animation: none; }
+
+/* The Columns chip ("9 of 12"): tinted while some are hidden. */
+.dbt-cchip { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 8px; font-size: 11.5px; font-weight: 500; color: var(--text-2); background: var(--bg-control); box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; font-variant-numeric: tabular-nums; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+.dbt-cchip > svg { flex: none; }
+.dbt-cchip:hover, .dbt-cchip.is-open { color: var(--text); background: var(--bg-hover); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.dbt-cchip.is-on { color: var(--violet-light); background: var(--tint-violet-soft); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.dbt-cchip.is-on:hover, .dbt-cchip.is-on.is-open { background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet); }
+/* A narrow pane: the chip keeps its count, its glyph goes. */
+@container dkv (max-width: 380px) { .dbt-cchip > svg { display: none; } .dbt-cchip { padding: 0 8px; } .dbt-fbar { padding: 7px 8px 7px 12px; gap: 6px; } }
+
+/* —— the popovers: inside the tab, under their anchor (placed by FilterPopover.tsx usePlaced) —— */
+.dbt-fpop { position: absolute; z-index: 30; display: flex; flex-direction: column; min-height: 0; overflow: hidden; border-radius: var(--r-lg); background: var(--bg-float); backdrop-filter: blur(18px); box-shadow: var(--shadow-float); white-space: normal; animation: atl-pop var(--t-med) var(--ease) both; }
+/* Fields are databases.css's `.db-input` (it comes later in the chunk's stylesheet: these compound selectors win). */
+.db-input.dbt-fpop-find { flex: none; height: 32px; margin: 10px 10px 6px; }
+.db-input.dbt-fpop-find > input { font-family: var(--font); font-size: 12.5px; }
+.dbt-fpop-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px 6px 8px; }
+.dbt-fpop-empty { padding: 14px 10px; font-size: 12px; color: var(--text-4); text-align: center; }
+
+/* The column list: name (mono, ellipsized), its short type at the right. */
+.dbt-fcol { display: flex; align-items: center; gap: 7px; min-width: 0; height: 28px; padding: 0 8px; border-radius: 7px; cursor: default; color: var(--text-2); }
+.dbt-fcol.is-active { color: var(--text); background: var(--tint-violet); }
+.dbt-fcol-icon { flex: none; display: inline-flex; width: 12px; color: var(--text-4); }
+.dbt-fcol-icon.is-key { color: var(--waiting); }
+.dbt-fcol-icon.is-fkArrow { color: var(--link); }
+.dbt-fcol-icon.is-jsonBranch { color: var(--violet-light); }
+.dbt-fcol-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px var(--mono); }
+.dbt-fcol-type { flex: 0 1 auto; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 10.5px var(--mono); color: var(--text-4); }
+.dbt-fcol.is-drv .dbt-fcol-type { color: var(--violet-light); }
+
+/* The editor: the column (back to the list), the operator, the value, the problem, the actions. */
+.dbt-fpop-head { flex: none; display: flex; align-items: center; min-width: 0; padding: 8px 8px 0; }
+.dbt-fpop-col { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; height: 28px; padding: 0 8px 0 4px; border-radius: 7px; color: var(--text-3); transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbt-fpop-col > svg { flex: none; }
+.dbt-fpop-col:hover { color: var(--text); background: var(--bg-hover); }
+.dbt-fpop-col:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+.dbt-fpop-colname { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 12.5px var(--mono); color: var(--text); }
+.dbt-fpop-coltype { flex: 0 2 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 10.5px var(--mono); color: var(--text-4); }
+.dbt-fpop-body { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding: 8px 12px 10px; }
+/* The operator: a native select (its list is the system's, keyboard and all), drawn as the fields are, a chevron over it. */
+.dbt-fpop-opbox { position: relative; flex: none; }
+.dbt-fpop-opbox > svg { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--text-4); pointer-events: none; }
+.dbt-fpop-op { width: 100%; height: 32px; padding: 0 30px 0 10px; border: 0; border-radius: 8px; font: 12.5px var(--font); color: var(--text); background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line); appearance: none; transition: box-shadow var(--t-fast) var(--ease); }
+.dbt-fpop-op:hover { box-shadow: inset 0 0 0 1px var(--line-strong); }
+.dbt-fpop-op:focus { outline: none; box-shadow: inset 0 0 0 1px var(--violet-soft), 0 0 0 3px var(--tint-violet); }
+.db-input.dbt-fpop-input { flex: none; height: 32px; }
+/* Mask values: a masked column's value is typed as dots. */
+.db-input.dbt-fpop-input > input.is-masked { -webkit-text-security: disc; }
+.dbt-fpop-tag { flex: none; font: 10.5px var(--font); color: var(--text-4); text-transform: uppercase; letter-spacing: .06em; }
+.dbt-fpop-sql { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; font-size: 11px; color: var(--md-code); }
+.dbt-fpop-two { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dbt-fpop-two > .db-input.dbt-fpop-input { flex: 1 1 0; min-width: 0; }
+.dbt-fpop-dash { flex: none; color: var(--text-4); }
+.dbt-fpop-count { display: flex; align-items: center; gap: 8px; }
+.db-input.dbt-fpop-n { width: 96px; }
+.dbt-fpop-unit { font-size: 12.5px; color: var(--text-3); }
+.dbt-fpop-picks { display: flex; flex-wrap: wrap; gap: 6px; }
+.dbt-fpop-pick { flex: none; min-width: 34px; height: 24px; padding: 0 8px; border-radius: 999px; font: 11.5px var(--mono); color: var(--text-3); box-shadow: inset 0 0 0 1px var(--line); transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+.dbt-fpop-pick:hover { color: var(--text); background: var(--bg-hover); }
+.dbt-fpop-pick.is-on { color: var(--violet-light); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet); }
+.dbt-fpop-pick:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+.dbt-fpop-seg { align-self: flex-start; }
+.dbt-fpop-checks { min-height: 0; max-height: 240px; overflow: auto; margin: 0 -4px; }
+.dbt-fpop-tokens { display: flex; flex-wrap: wrap; gap: 5px; max-height: 120px; overflow: auto; }
+.dbt-fpop-token { display: inline-flex; align-items: center; max-width: 100%; height: 22px; padding-left: 8px; border-radius: 6px; font: 11.5px var(--mono); color: var(--text-2); background: var(--bg-3); white-space: nowrap; }
+.dbt-fpop-token-v { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dbt-fpop-token-x { flex: none; display: flex; align-items: center; justify-content: center; width: 20px; height: 100%; color: var(--text-4); border-radius: 0 6px 6px 0; }
+.dbt-fpop-token-x:hover { color: var(--text); background: var(--bg-hover); }
+.dbt-fpop-err { margin: 0; }
+/* A calm line: Mask values hiding a choice, a column the table no longer has. */
+.dbt-fpop-note { display: flex; align-items: flex-start; gap: 7px; margin: 0; font-size: 12px; line-height: 1.45; color: var(--text-3); }
+.dbt-fpop-note > svg { flex: none; margin-top: 2px; color: var(--text-4); }
+/* The actions: Remove at the start, Cancel and Apply at the end; a very narrow tab wraps them rather than clip one. */
+.dbt-fpop-foot { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; padding: 10px 12px; border-top: 1px solid var(--line-soft); }
+.dbt-fpop-foot > button { flex: none; white-space: nowrap; }
+.dbt-fpop-remove { color: var(--text-error); border-color: transparent; }
+.dbt-fpop-remove:hover { color: var(--text-error); background: var(--tint-error); border-color: var(--edge-error-soft); }
+
+/* A checklist (an enum's values, the Columns chip): a box, the name, a dim type. */
+.dbt-check { display: flex; flex-direction: column; gap: 1px; padding: 0 4px; }
+.dbt-check-item { display: flex; align-items: center; gap: 8px; min-width: 0; height: 28px; padding: 0 8px; border-radius: 7px; color: var(--text-2); text-align: left; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.dbt-check-item:hover { color: var(--text); background: var(--bg-hover); }
+.dbt-check-item:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+.dbt-check-box { flex: none; display: flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 4px; color: var(--on-brand); box-shadow: inset 0 0 0 1.5px var(--line-strong); transition: background var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+.dbt-check-item.is-on .dbt-check-box { background: var(--violet); box-shadow: none; }
+.dbt-check-icon { flex: none; display: inline-flex; color: var(--text-4); }
+.dbt-check-icon.is-key { color: var(--waiting); }
+.dbt-check-icon.is-fkArrow { color: var(--link); }
+.dbt-check-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px var(--mono); }
+.dbt-check-sub { flex: 0 1 auto; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 10.5px var(--mono); color: var(--text-4); }
+
+/* The Columns popover. */
+.dbt-cpop-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px 4px 14px; }
+.dbt-cpop-list { padding-top: 4px; }
+.dbt-cpop-count { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--text-4); font-variant-numeric: tabular-nums; }
+.dbt-cpop .dbt-fpop-err { padding: 0 14px 6px; }
+
+:root[data-motion="reduced"] :is(.dbt-fchip, .dbt-fpop) { animation: none; }
+
+/* The narrowest panes (three in a small window, ≤ 220 px, as the view switch folds): the funnel goes, "+ Filter" and the
+   Columns chip keep their icons (their names in the tooltips) — nothing reaches past the bar. After the rules above:
+   a container query adds no specificity. */
+@container dkv (max-width: 220px) {
+  .dbt-fbar { gap: 6px; padding: 7px 8px; }
+  .dbt-fbar-icon, .dbt-fadd-label, .dbt-cchip-label { display: none; }
+  .dbt-fadd, .dbt-cchip { padding: 0 7px; }
+  /* Its label gone, the Columns chip shows its glyph again (≤ 380 px hid it for the label): never an empty pill. */
+  .dbt-cchip > svg { display: block; }
+  /* "+3 more" no wider than the row: it ellipsizes ("+3…"), its menu still lists them. */
+  .dbt-fmore { display: inline-block; max-width: 100%; padding: 0 7px; overflow: hidden; text-overflow: ellipsis; line-height: 26px; }
+}

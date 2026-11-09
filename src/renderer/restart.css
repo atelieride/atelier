@@ -1,0 +1,31 @@
+/* Restart Session and new MCP servers: the chips, the Session panel's notice and tags. */
+
+.rs-chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; font: inherit; font-size: 10.5px; line-height: 16px; padding: 0 7px 0 5px; border: 0; border-radius: 999px; cursor: pointer; transition: color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), background var(--t-fast) var(--ease); animation: atl-pop var(--t-med) var(--ease) both; color: var(--text-3); background: none; box-shadow: inset 0 0 0 1px var(--line-strong); }
+.rs-chip svg { flex: none; }
+.rs-chip:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.rs-chip:hover { color: var(--text); background: var(--bg-3); }
+.rs-chip.is-new svg { color: var(--violet-light); }
+.rs-chip.is-armed svg { color: var(--working); }
+.session-sub .rs-chip { font-size: 10px; line-height: 15px; }
+.session-bar .rs-chip { flex-shrink: 0; }
+
+/* The row's question: amber, not rose — nothing is lost, the conversation continues. */
+.session-row.is-confirming.is-restart-ask { background: var(--tint-waiting); box-shadow: inset 0 0 0 1px var(--edge-waiting); }
+.is-restart-ask .confirm-stops { color: var(--waiting); white-space: normal; }
+.confirm-actions.is-restart .btn-ghost.is-later { color: var(--working); border-color: var(--edge-working); background: var(--tint-working); }
+/* The safe answer on its own line, then Restart now and Cancel side by side: each label fits a narrow sidebar. */
+.confirm-actions.is-restart .btn-ghost.is-later { grid-column: 1 / -1; }
+.confirm-actions.is-restart .btn-ghost.is-later:hover { color: var(--text); }
+
+/* The Session panel: what was added since the session started, and the button that loads it. */
+.spanel-mcp { display: flex; flex-direction: column; gap: 8px; margin: 12px 14px 0; padding: 10px 12px; border-radius: var(--radius); background: var(--tint-meet); box-shadow: inset 0 0 0 1px var(--edge-meet); animation: atl-pop var(--t-fast) var(--ease) both; }
+.spanel-mcp-text { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.45; color: var(--text-meet); }
+.spanel-mcp-text svg { flex: none; margin-top: 2px; color: var(--fold); }
+.spanel-mcp-text b { font-family: var(--mono); font-weight: 500; font-size: 11.5px; color: var(--text); }
+.spanel-mcp-note { display: block; font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.spanel-mcp-go { align-self: flex-end; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 12px; border-radius: 999px; font-size: 12px; font-weight: 500; color: var(--on-brand); background: var(--brand); transition: box-shadow var(--t-fast) var(--ease); }
+.spanel-mcp-go:hover:not([aria-disabled="true"]) { box-shadow: inset 0 0 0 99px var(--on-brand-lift); }
+.spanel-chip.is-new i { background: var(--violet); }
+.spanel-chip.is-new em { color: var(--text-meet); }
+.spanel-confirm.is-restart { background: var(--tint-waiting); box-shadow: inset 0 0 0 1px var(--edge-waiting); }
+.spanel-confirm.is-restart .spanel-btn.is-later { color: var(--working); background: var(--tint-working); box-shadow: inset 0 0 0 1px var(--edge-working); }

@@ -1,0 +1,136 @@
+---
+import overview from '../assets/shots/overview.png';
+import overviewPhone from '../assets/shots/overview.mobile.png';
+import overviewLive from '../assets/shots/overview.live.json';
+import { config } from '../config';
+import DownloadButton from './DownloadButton.astro';
+import AlsoOnWindows from './AlsoOnWindows.astro';
+import LiveDemo from './LiveDemo.astro';
+import Icon from './Icon.astro';
+import { REPO_URL } from '../lib/repo';
+import { getImage } from 'astro:assets';
+import { downloadInfo } from '../lib/download';
+import { FILM_SECONDS, clock } from '../lib/film';
+import poster from '../assets/film/poster.jpg';
+import sheetWebm from '../assets/film/film-1080.webm?url';
+import sheetMp4 from '../assets/film/film-1080.mp4?url';
+import inlineWebm from '../assets/film/film-720.webm?url';
+import inlineMp4 from '../assets/film/film-720.mp4?url';
+// A file of its own (never inlined in the page as a data URL): fetched only when the film plays.
+import captions from '../assets/film/film.vtt?url&no-inline';
+// The film: its files travel as one data attribute, read by scripts/film.ts only
+// when the visitor asks for it, so the page loads none of them. The thumbnail is the desktop button's (lazy: below the
+// gate its box is hidden and the image never loads); the poster is the sheet's, fetched when it opens.
+const [thumb, sheetPoster] = await Promise.all([
+  getImage({ src: poster, format: 'avif', width: 128, height: 72, quality: 55 }),
+  getImage({ src: poster, format: 'webp', width: 1280, quality: 80 })
+]);
+const film = {
+  sheet: { webm: sheetWebm, mp4: sheetMp4, poster: sheetPoster.src },
+  inline: { webm: inlineWebm, mp4: inlineMp4 },
+  captions,
+  download: downloadInfo(config).url ?? '/download'
+};
+const length = clock(FILM_SECONDS);
+const PLAY = 'M2.5 1.3v7.4a.5.5 0 0 0 .76.43l6-3.7a.5.5 0 0 0 0-.86l-6-3.7a.5.5 0 0 0-.76.43z';
+---
+<section class="hero" data-film={JSON.stringify(film)}>
+  <div class="container copy">
+    <h1 class="h1">Run many Claude Code sessions.<br /><span class="dim">Never lose track.</span></h1>
+    <p class="lead">A desktop workbench around the real Claude Code CLI. See what every session is doing, and jump to the one waiting for you.</p>
+    <div class="cta"><DownloadButton /><AlsoOnWindows /></div>
+    <a class="oss" href={REPO_URL}>
+      <Icon name="github" size={14} /><span class="oss-tag">Open source</span><span class="oss-sep" aria-hidden="true">·</span><span class="oss-line">Peek behind the panes</span><span class="oss-arr" aria-hidden="true">→</span>
+    </a>
+  </div>
+  <div class="container shot">
+    <LiveDemo id="hero" src={overview} alt="Atelier with five Claude Code sessions: one waiting for permission, two working, one done" priority rise live={overviewLive} width={1280} mobile={overviewPhone} pill={false}>
+      <!-- Seeing the app is the window's business (the copy above keeps the downloads): on the desktop a bar on the
+           window, shown without hover, riding the screen's bottom edge while the window runs past the fold. "Try it
+           live" is the live demo's own control (its pill: the opening starts from it); the film's sits beside it. -->
+      <div class="see-rail demo-gate">
+        <div class="see">
+          <a class="see-try demo-pill" href="/demo" data-live-demo-for="hero" aria-haspopup="dialog">
+            <span class="mark" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 15.5L10 4.5l4.5 11" /></svg></span>
+            Try it live<span class="soft"><span class="sep" aria-hidden="true">·</span>in your browser</span>
+          </a>
+          <span class="divider" aria-hidden="true"></span>
+          <a class="see-film" href={sheetMp4} data-film-open aria-haspopup="dialog">
+            <span class="thumb" aria-hidden="true">
+              <img src={thumb.src} alt="" width="56" height="32" loading="lazy" decoding="async" />
+              <span class="shade"><svg width="9" height="9" viewBox="0 0 10 10"><path fill="currentColor" d={PLAY} /></svg></span>
+            </span>
+            Watch the film<span class="len">{length}</span>
+          </a>
+        </div>
+      </div>
+      <div class="film-inline film-gate-off" data-film-inline></div>
+      <button class="film-pill film-gate-off" type="button" aria-label={`Watch the film, ${Math.floor(FILM_SECONDS)} seconds, with sound`}>
+        <span class="play" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 10 10"><path fill="currentColor" d={PLAY} /></svg></span>
+        Watch the film<span class="len" aria-hidden="true">{length}</span>
+      </button>
+    </LiveDemo>
+  </div>
+  <script src="../scripts/film.ts"></script>
+</section>
+<style>
+  /* Up under the header (main's padding): the hero starts behind the bar instead of at its edge. */
+  .hero { position: relative; margin-top: calc(-1 * var(--appbar-h)); padding: calc(var(--appbar-h) + clamp(48px, 9vw, 104px)) 0 48px; overflow: clip; }
+  .copy { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 22px; }
+  .copy .lead { max-width: 620px; }
+  /* Open source, said with a wink under the downloads, just above the window: a quiet line, no outline; the line in
+     the brand's violet, an arrow that steps forward on hover. A fixed height: the mono font arriving after the first
+     paint must not push the window down (no layout shift). */
+  .oss { display: inline-flex; align-items: center; gap: 8px; height: 24px; margin-top: 4px; line-height: 1;
+    font: 500 12.5px var(--mono); color: var(--text-3); transition: color var(--t-fast) var(--ease); }
+  .oss:hover { color: var(--text); }
+  .oss:focus-visible { outline: none; border-radius: var(--r-sm); box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); }
+  .oss :global(svg) { flex: none; color: var(--text-2); transition: color var(--t-fast) var(--ease); }
+  .oss:hover :global(svg) { color: var(--text); }
+  .oss-sep { color: var(--text-4); }
+  .oss-line { color: var(--violet-soft); }
+  .oss-arr { display: inline-block; color: var(--violet-soft); transition: transform var(--t-fast) var(--ease); }
+  .oss:hover .oss-arr { transform: translateX(3px); }
+  @media (max-width: 420px) { .oss { gap: 6px; font-size: 11.5px; } }
+  .cta { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  /* Wider than the text: the whole app window, drawn 1:1 (1280 px) where the screen has room. */
+  .shot { position: relative; margin-top: clamp(40px, 6vw, 64px); max-width: calc(1280px + 2 * var(--site-gutter)); }
+  /* The window's bar (desktop, .demo-gate): the live demo and the film, side by side on one floating surface. A column
+     over the whole window ending at the bar, which is sticky: when the window runs past the fold (most laptop screens,
+     at the top of the page) the bar rides the screen's bottom edge, then settles in the frame (as LiveDemo's pill). */
+  .see-rail { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
+    padding-bottom: 28px; pointer-events: none; }
+  .see { position: sticky; bottom: 28px; display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 999px; pointer-events: auto;
+    background: var(--bg-float); -webkit-backdrop-filter: blur(16px) saturate(150%); backdrop-filter: blur(16px) saturate(150%);
+    border: 1px solid var(--edge-violet); box-shadow: var(--shadow-float); }
+  .see a { display: inline-flex; align-items: center; gap: 10px; height: 42px; border-radius: 999px; color: var(--text); font-size: 14.5px; font-weight: 600;
+    letter-spacing: -.005em; white-space: nowrap; transition: background-color var(--t-fast) var(--ease); }
+  /* The window lit (its hover, scripts/live-demo.ts › data-hot) lights "Try it live" with it. */
+  .see a:hover, .see-try[data-hot] { background: var(--tint-violet); }
+  .see a:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); }
+  .see-try { padding: 0 16px 0 6px; }
+  .see-try .mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--brand); color: var(--on-brand); }
+  .see-try .soft { color: var(--text-3); font-weight: 500; }
+  .see-try .sep { margin: 0 7px 0 2px; }
+  .divider { width: 1px; height: 22px; background: var(--line-strong); }
+  .see-film { padding: 0 16px 0 6px; }
+  .see-film .thumb { position: relative; width: 56px; height: 30px; border-radius: 999px; overflow: hidden; flex: none; background: var(--bg-2); }
+  .see-film .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .thumb .shade { position: absolute; inset: 0; display: grid; place-items: center; background: var(--film-shade); color: var(--on-brand); }
+  .play { display: grid; place-items: center; border-radius: 50%; background: var(--brand); color: var(--on-brand); }
+  .play svg, .thumb svg { margin-left: 1px; }
+  .len { font: 400 12px var(--mono); color: var(--text-3); }
+
+  /* C: below the gate the film plays in the hero's frame. The pill sits on the frame's bottom edge until it starts;
+     the player (scripts/film-inline.ts) fills the frame, over the screenshot, which stays the page's image. */
+  .film-inline { position: absolute; inset: 0; z-index: 1; border-radius: var(--r-lg); overflow: hidden; pointer-events: none; }
+  .film-inline:empty { display: none; }
+  .film-pill { position: absolute; left: 50%; bottom: 14px; z-index: 2; translate: -50% 0; display: inline-flex; align-items: center; gap: 9px;
+    height: 40px; padding: 0 16px 0 6px; border-radius: 999px; border: 1px solid var(--edge-violet); cursor: pointer;
+    background: var(--bg-float); -webkit-backdrop-filter: blur(16px) saturate(150%); backdrop-filter: blur(16px) saturate(150%);
+    box-shadow: var(--shadow-float); color: var(--text); font: 600 14px var(--font); white-space: nowrap;
+    transition: opacity var(--t-med) var(--ease), scale var(--t-fast) var(--ease); }
+  .film-pill:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); }
+  .film-pill .play { width: 28px; height: 28px; }
+  .film-pill[hidden] { display: none; }
+</style>

@@ -1,0 +1,4 @@
+{
+  "about": "References each file may still hold, per rule (scripts/public-tree.mjs). Only ever lowered, with --tighten.",
+  "files": {}
+}

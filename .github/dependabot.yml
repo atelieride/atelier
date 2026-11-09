@@ -1,0 +1,13 @@
+# Version updates for the GitHub Actions pinned by commit SHA in .github/workflows.
+# npm dependencies are pinned on purpose and updated by hand; their security alerts come from the repo settings.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: CI

@@ -1,0 +1,5 @@
+error: gpg failed to sign the data:
+gpg: signing failed: Inappropriate ioctl for device
+gpg: [stdin]: clear-sign failed: Inappropriate ioctl for device
+
+fatal: failed to write commit object

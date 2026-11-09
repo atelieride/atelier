@@ -1,0 +1,60 @@
+
+ ▐▛███▛█   Claude Code v2.1.302
+▝▜██████▀  Opus 5.5 with high effort · Claude Pro
+ ▝▝   ▝▝   ~/Developer/repos/atelier/.experiments/worktrees/claude-image-links
+
+
+❯ Use the Read tool on /private/tmp/claude-501/-Users-mrossi-Developer-repos-atelier/193bc1c1-e2e9-4f29-9b4d-f247e3a0d2
+  ee/scratchpad/shots/f24b-live-3.png and on tests/fixtures/claude-image/sample.png. Then reply with a bullet list of
+  the two absolute paths, nothing else.
+
+  Read 2 files
+
+⏺ - /private/tmp/claude-501/-Users-mrossi-Developer-repos-atelier/193bc1c1-e2e9-4f29-9b4d-f247e3a0d2ee/scratchpad/shots/
+    f24b-live-3.png
+  - /Users/mrossi/Developer/repos/atelier/.experiments/worktrees/claude-image-links/tests/fixtures/claude-image/sample.p
+    ng
+
+✻ Cooked for 6s · done 11:08 PM
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · install gh for PR status

@@ -1,0 +1,9 @@
+# Cloudflare Pages configuration. With this file `wrangler pages deploy` takes
+# bindings and the compatibility date from here; Pages secrets stay in the dashboard. No secrets here.
+name = "useatelier"
+pages_build_output_dir = "./dist"
+compatibility_date = "2026-10-12"
+
+[[analytics_engine_datasets]]
+binding = "EVENTS"
+dataset = "useatelier_events"

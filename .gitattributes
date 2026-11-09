@@ -1,0 +1,3 @@
+# LF in every checkout, Windows included (Git for Windows defaults to core.autocrlf=true): the tests read workflows,
+# scripts and fixtures byte for byte, and shell scripts with CRLF don't run. Binary files are detected as such.
+* text=auto eol=lf

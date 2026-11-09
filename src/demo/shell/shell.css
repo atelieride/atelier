@@ -1,0 +1,173 @@
+/* The demo shell: a macOS menu bar over the real renderer, the window's traffic lights,
+   "Things to try", the first hint and the notices. Aurora tokens from the app's theme.css; the only raw values are the
+   shell's own tokens just below (macOS's traffic-light colours, as the site's site.css has them). The renderer's CSS is
+   untouched: #root moves under the menu bar from here, with a selector that outranks theme.css's. */
+:root {
+  --dm-bar-h: 28px;
+  --dm-light-close: #FF5F57; --dm-light-min: #FEBC2E; --dm-light-max: #28C840;
+  --dm-light-edge: rgba(0,0,0,.18); --dm-light-glyph: rgba(0,0,0,.55);
+  /* macOS's window geometry, in the app's top bar (Window.astro documents it): 12 px lights, 8 px apart, 20 px in,
+     centred in the 45 px bar. */
+  --dm-light: 12px; --dm-light-gap: 8px; --dm-light-x: 20px; --dm-light-y: calc(var(--dm-bar-h) + (45px - var(--dm-light)) / 2);
+}
+
+/* The app below the menu bar: the body makes room (border-box, so #root's 100% is the rest). No new stacking context
+   or containing block around the app: its fixed overlays (sheets, the palette) still cover the whole viewport, under
+   the bar, as a Mac's do, and stack with the shell's pieces by z-index alone. */
+html.dm-shell body { padding-top: var(--dm-bar-h); }
+
+/* Not positioned: each piece is fixed with its own z-index, some above the app's overlays, some below. */
+.dm-layer { font: 13px/1.4 var(--font); color: var(--text); }
+.dm-layer button { -webkit-user-select: none; user-select: none; }
+
+/* ——— Menu bar */
+.dm-bar { position: fixed; z-index: 500; top: 0; left: 0; right: 0; height: var(--dm-bar-h); display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 0 6px 0 10px; background: var(--bg-float); backdrop-filter: blur(22px) saturate(150%); -webkit-backdrop-filter: blur(22px) saturate(150%);
+  border-bottom: 1px solid var(--line-soft); box-shadow: 0 1px 0 var(--tint-violet-soft); }
+.dm-menus { display: flex; align-items: center; gap: 1px; min-width: 0; overflow: hidden; }
+.dm-title { height: 22px; padding: 0 9px; border-radius: var(--r-sm); color: var(--text-2); font-size: 13px; white-space: nowrap; }
+.dm-title.is-app { font-weight: 700; color: var(--text); padding: 0 10px; }
+.dm-title:hover { background: var(--bg-hover); color: var(--text); }
+.dm-title.is-open { background: var(--tint-violet); color: var(--text); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.dm-title:active:not(:disabled) { transform: none; background: var(--tint-violet); }
+.dm-title:focus-visible { box-shadow: 0 0 0 2px var(--violet); }
+
+.dm-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.dm-live { display: inline-flex; align-items: center; gap: 7px; margin-right: 6px; font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.dm-live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); }
+.dm-download, .dm-exit { display: inline-flex; align-items: center; gap: 6px; height: 21px; padding: 0 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; text-decoration: none;
+  transition: box-shadow var(--t-fast) var(--ease), filter var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease); }
+.dm-download { background: var(--brand); color: var(--on-brand); box-shadow: 0 0 0 1px var(--edge-violet); }
+.dm-download:hover { box-shadow: 0 0 0 1px var(--edge-violet), inset 0 0 0 99px var(--on-brand-lift); }
+.dm-download:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); }
+.dm-exit { color: var(--text-2); font-weight: 500; box-shadow: inset 0 0 0 1px var(--line-strong); }
+.dm-exit:hover { background: var(--bg-3); color: var(--text); box-shadow: inset 0 0 0 1px var(--edge-violet); }
+.dm-exit:focus-visible { box-shadow: inset 0 0 0 1px var(--edge-violet), 0 0 0 2px var(--violet); }
+
+/* Narrow frames: the honesty label stays, shorter menus scroll out of the way first. */
+@media (max-width: 1000px) { .dm-live { display: none; } }
+
+/* ——— Drop-down menus: the app's context menu (.ctx-menu), anchored under the bar. */
+/* Rows as compact as a Mac's menus (the context menu's 30 px rows would make View taller than the frame); a long menu
+   scrolls rather than leaving the screen. */
+.dm-menu { position: fixed; z-index: 510; transform-origin: top left; min-width: 250px; max-height: calc(100vh - var(--dm-bar-h) - 12px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.dm-menu .ctx-item { height: 25px; padding: 0 10px; border-radius: var(--r-sm); font-size: 13px; color: var(--text-2); cursor: default; }
+.dm-menu .ctx-sep { margin: 4px 10px; }
+.dm-menu .ctx-item:focus-visible { box-shadow: inset 0 0 0 1px var(--edge-violet); outline: none; }
+.dm-menu .ctx-hint { margin-left: 22px; font-family: var(--mono); font-size: 11px; letter-spacing: .04em; color: var(--text-3); }
+.dm-menu .ctx-item.is-active .ctx-hint { color: var(--text-2); }
+.dm-menu .ctx-item[aria-disabled="true"] .ctx-hint { opacity: .6; }
+/* A shortcut the browser keeps: still shown (it is the app's), dotted under, its tooltip explains. */
+.dm-menu .ctx-hint.is-reserved { text-decoration: underline dotted var(--text-4); text-underline-offset: 3px; }
+
+/* ——— Traffic lights */
+.dm-lights { position: fixed; z-index: 500; left: var(--dm-light-x); top: var(--dm-light-y); display: flex; gap: var(--dm-light-gap); }
+.dm-light { position: relative; width: var(--dm-light); height: var(--dm-light); border-radius: 50%; display: grid; place-items: center; color: transparent;
+  box-shadow: inset 0 0 0 .5px var(--dm-light-edge); transition: color var(--t-fast) var(--ease), filter var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+/* A bigger hit area than the 12 px dot, without moving it. */
+.dm-light::before { content: ''; position: absolute; inset: -4px; border-radius: 50%; }
+.dm-light.is-close { background: var(--dm-light-close); }
+.dm-light.is-min { background: var(--dm-light-min); }
+.dm-light.is-max { background: var(--dm-light-max); }
+.dm-light svg { width: var(--dm-light); height: var(--dm-light); }
+.dm-lights:hover .dm-light, .dm-lights:focus-within .dm-light { color: var(--dm-light-glyph); }
+.dm-light:active:not(:disabled) { filter: brightness(.82); }
+.dm-light:focus-visible { box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); border-radius: 50%; }
+
+/* ——— Things to try */
+.dm-check { position: fixed; z-index: 48; right: 16px; bottom: 40px; width: 300px; border-radius: var(--r-lg); background: var(--bg-float);
+  backdrop-filter: blur(22px) saturate(150%); -webkit-backdrop-filter: blur(22px) saturate(150%); border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-float); overflow: hidden; animation: dm-rise var(--t-slow) var(--ease) both;
+  transition: width var(--t-med) var(--ease), right var(--t-slow) var(--ease), bottom var(--t-slow) var(--ease); }
+.dm-check.is-collapsed { width: 196px; border-radius: 999px; }
+.dm-check-head { display: flex; align-items: center; gap: 9px; width: 100%; height: 38px; padding: 0 10px 0 12px; color: var(--text); font-weight: 600; font-size: 12.5px; }
+.dm-check-head:hover { background: var(--bg-hover); }
+.dm-check-head:active:not(:disabled) { transform: none; background: var(--tint-violet-soft); }
+.dm-check-head:focus-visible { box-shadow: inset 0 0 0 1.5px var(--violet); border-radius: inherit; }
+.dm-check.is-collapsed .dm-check-head { height: 34px; }
+.dm-check-title { flex: 1; text-align: left; white-space: nowrap; }
+.dm-check-count { font-size: 11px; color: var(--text-3); font-weight: 500; }
+.dm-check-chev { display: flex; color: var(--text-4); transition: transform var(--t-med) var(--ease), color var(--t-fast) var(--ease); }
+.dm-check-head:hover .dm-check-chev { color: var(--text-2); }
+.dm-check:not(.is-collapsed) .dm-check-chev { transform: rotate(180deg); }
+/* The progress ring: a conic gradient of the brand colours, filled to --p. */
+.dm-ring { --p: 0; flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%;
+  background: conic-gradient(var(--pink) calc(var(--p) * 360deg), var(--line-strong) 0);
+  -webkit-mask: radial-gradient(circle, transparent 4.5px, var(--on-brand) 5px); mask: radial-gradient(circle, transparent 4.5px, var(--on-brand) 5px); transition: background var(--t-slow) var(--ease); }
+.dm-check-body { border-top: 1px solid var(--line-soft); }
+.dm-check.is-collapsed .dm-check-body { display: none; }
+.dm-check-hint { margin: 0; padding: 9px 14px 2px; font-size: 11.5px; line-height: 1.4; color: var(--text-3); }
+.dm-check-list { list-style: none; margin: 0; padding: 4px 8px 10px; display: flex; flex-direction: column; gap: 1px; }
+.dm-check-item { border-radius: 8px; color: var(--text-2); transition: color var(--t-med) var(--ease), background-color var(--t-med) var(--ease); }
+/* Each item is a "show me" button: the row lights up and an arrow says a click goes there. */
+.dm-check-btn { position: relative; display: flex; align-items: flex-start; gap: 9px; width: 100%; padding: 6px 26px 6px 6px; border-radius: inherit; font-size: 12.5px; line-height: 1.45; }
+.dm-check-btn:hover { background: var(--bg-hover); color: var(--text); }
+.dm-check-btn:active:not(:disabled) { transform: none; background: var(--tint-violet); }
+.dm-check-btn:focus-visible { border-radius: inherit; box-shadow: inset 0 0 0 1.5px var(--violet); color: var(--text); }
+.dm-check-go { position: absolute; right: 6px; top: 50%; display: flex; color: var(--text-3); opacity: 0; transform: translate(-3px, -50%);
+  transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.dm-check-btn:hover .dm-check-go, .dm-check-btn:focus-visible .dm-check-go { opacity: 1; transform: translate(0, -50%); }
+.dm-check-btn:hover .dm-check-go { color: var(--violet); }
+.dm-check-item.is-done .dm-check-btn:hover, .dm-check-item.is-done .dm-check-btn:focus-visible { color: var(--text-3); }
+.dm-tick { flex-shrink: 0; width: 16px; height: 16px; margin-top: 1px; border-radius: 50%; display: grid; place-items: center; color: transparent; box-shadow: inset 0 0 0 1.5px var(--line-strong);
+  transition: background var(--t-med) var(--ease), box-shadow var(--t-med) var(--ease), color var(--t-med) var(--ease); }
+.dm-check-item.is-done { color: var(--text-4); }
+.dm-check-item.is-done .dm-check-text { text-decoration: line-through; text-decoration-color: var(--line-strong); }
+.dm-check-item.is-done .dm-tick, .dm-check-done .dm-tick { background: var(--brand); color: var(--on-brand); box-shadow: 0 0 0 1px var(--edge-violet); }
+.dm-check-item.is-fresh { background: var(--tint-violet); animation: dm-tick 600ms var(--ease); }
+.dm-check-item.is-fresh .dm-tick { animation: dm-pop 420ms var(--ease); }
+@keyframes dm-tick { from { background: var(--tint-pink); } }
+@keyframes dm-pop { 0% { transform: scale(.6); } 60% { transform: scale(1.18); } 100% { transform: none; } }
+.dm-check-text { min-width: 0; }
+.dm-kbd { display: inline-block; margin: 0 1px; padding: 0 5px; font-family: var(--mono); font-size: 10.5px; line-height: 16px; color: var(--text-2); vertical-align: 1px; }
+.dm-check-btn:hover .dm-kbd, .dm-check-btn:focus-visible .dm-kbd { color: var(--text); }
+.dm-check-item.is-done .dm-kbd { color: var(--text-4); }
+.dm-code { font-family: var(--mono); font-size: 11.5px; color: var(--md-code); }
+.dm-check.is-finished { width: auto; border-radius: 999px; }
+.dm-check-done { display: flex; align-items: center; gap: 9px; margin: 0; height: 38px; padding: 0 16px 0 12px; font-size: 12.5px; color: var(--text); white-space: nowrap; }
+.dm-check-done a { color: var(--link); font-weight: 600; text-decoration: none; transition: color var(--t-fast) var(--ease); }
+.dm-check-done a:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+.dm-check-done a:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--violet); border-radius: 4px; }
+@keyframes dm-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* ——— First hint */
+.dm-coach { --arrow-y: 50%; position: fixed; z-index: 49; width: 272px; padding: 12px 14px; border-radius: var(--r-lg); background: var(--bg-float-strong);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); box-shadow: var(--shadow-float), inset 0 0 0 1.5px var(--edge-violet);
+  pointer-events: none; animation: dm-coach-in var(--t-slow) var(--ease) both; }
+.dm-coach.is-free { left: 50% !important; top: 72px !important; transform: translateX(-50%); }
+.dm-coach.is-free .dm-coach-arrow { display: none; }
+.dm-coach.is-leaving { opacity: 0; transform: translateX(-6px); transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease); }
+/* The arrow: a square turned 45°, its left and bottom edges drawn (they meet at the point, facing the row). */
+.dm-coach-arrow { position: absolute; left: -7px; top: calc(var(--arrow-y) - 7px); width: 14px; height: 14px; transform: rotate(45deg); border-radius: 0 0 0 3px;
+  background: var(--bg-float-strong); box-shadow: inset 1.5px -1.5px 0 var(--edge-violet); }
+.dm-coach p { margin: 0; font-size: 12.5px; line-height: 1.5; }
+.dm-coach-lead { color: var(--text-3); }
+.dm-coach-do { margin-top: 4px !important; color: var(--text); font-weight: 600; }
+.dm-coach .dm-kbd { color: var(--text); border-color: var(--edge-violet); background: var(--tint-violet); }
+@keyframes dm-coach-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+
+/* ——— Notices */
+.dm-toast { position: fixed; z-index: 520; left: 50%; bottom: 44px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; max-width: min(560px, calc(100vw - 32px));
+  padding: 8px 8px 8px 14px; border-radius: var(--radius); background: var(--bg-float); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--edge-violet); box-shadow: var(--shadow-float); font-size: 12.5px; color: var(--text-2);
+  animation: dm-toast-in var(--t-med) var(--ease) both; }
+.dm-toast[hidden] { display: none; }
+.dm-toast p { margin: 0; }
+.dm-toast a { color: var(--link); font-weight: 600; text-decoration: none; transition: color var(--t-fast) var(--ease); }
+.dm-toast a:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+.dm-toast a:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--violet); border-radius: 4px; }
+.dm-toast-dot { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; background: var(--brand); }
+.dm-toast-close { flex-shrink: 0; display: grid; place-items: center; width: 22px; height: 22px; border-radius: var(--r-sm); color: var(--text-4); }
+.dm-toast-close:hover { background: var(--bg-hover); color: var(--text); }
+.dm-toast-close:active:not(:disabled) { background: var(--tint-violet); }
+@keyframes dm-toast-in { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* Less motion, from the OS or the app's own setting (theme.css's [data-motion] rule covers that one already). */
+@media (prefers-reduced-motion: reduce) {
+  .dm-layer *, .dm-layer *::before, .dm-layer *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}
+
+/* Go's workspaces, View › Word Wrap: a ✓ column for every item of a menu that has a checkable
+   one, as a native menu draws it. */
+.dm-menu .ctx-item.is-choice { gap: 4px; }
+.dm-menu-check { flex: none; width: 14px; display: inline-flex; align-items: center; justify-content: center; color: var(--text); }

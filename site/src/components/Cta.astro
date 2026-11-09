@@ -1,0 +1,15 @@
+---
+import DownloadButton from './DownloadButton.astro';
+import AlsoOnWindows from './AlsoOnWindows.astro';
+// The closing of the home and /features. The channels and updates line went with the six-block home: "Your Claude.
+// Your Mac." says it.
+---
+<section class="final container section" data-reveal>
+  <h2 class="h2">Your sessions,<br /><span class="dim">finally in order.</span></h2>
+  <div class="cta"><DownloadButton /><AlsoOnWindows /></div>
+</section>
+<style>
+  .final { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 22px; }
+  .h2 { text-wrap: balance; }
+  .cta { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+</style>

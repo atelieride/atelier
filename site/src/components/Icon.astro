@@ -1,0 +1,30 @@
+---
+// Paths copied from src/renderer/components/Icon.tsx (20×20, stroked, round caps/joins); `download` is drawn the same way.
+const paths = {
+  terminal: '<path d="M4 6l4 4-4 4M10 15h6"/>',
+  plug: '<path d="M7.5 3v3.5M12.5 3v3.5"/><path d="M5 6.5h10v2.5a5 5 0 0 1-10 0z"/><path d="M10 14v3.5"/>',
+  services: '<rect x="3" y="4" width="14" height="5" rx="1.2"/><rect x="3" y="11" width="14" height="5" rx="1.2"/><path d="M6 6.5h.01M6 13.5h.01"/>',
+  inbox: '<path d="M3 11l2.1-5.9A1.5 1.5 0 0 1 6.5 4h7a1.5 1.5 0 0 1 1.4 1.1L17 11v4a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 15z"/><path d="M3 11h4l1.2 2h3.6L13 11h4"/>',
+  sliders: '<path d="M3.5 6.5h7M15 6.5h1.5M3.5 13.5h1.5M9.5 13.5h7"/><circle cx="12.8" cy="6.5" r="2.1"/><circle cx="7.2" cy="13.5" r="2.1"/>',
+  tag: '<path d="M3 3.5h6.5l7.5 7.5-6 6-7.5-7.5z"/><circle cx="7" cy="7.5" r="1"/>',
+  settings: '<path d="M8.53 3.87L8.7 1.8h2.6l.17 2.07 1.82.76 1.59-1.34 1.83 1.83-1.34 1.59.76 1.82 2.07.17v2.6l-2.07.17-.76 1.82 1.34 1.59-1.83 1.83-1.59-1.34-1.82.76-.17 2.07H8.7l-.17-2.07-1.82-.76-1.59 1.34-1.83-1.83 1.34-1.59-.76-1.82-2.07-.17V8.7l2.07-.17.76-1.82-1.34-1.59 1.83-1.83 1.59 1.34z"/><circle cx="10" cy="10" r="2.6"/>',
+  swap: '<path d="M5 7h10l-3-3M15 13H5l3 3"/>',
+  mic: '<rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5M7.5 17.5h5"/>',
+  lock: '<rect x="4.5" y="9" width="11" height="8" rx="1.8"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9"/>',
+  heart: '<path fill="currentColor" d="M10 16.5s-6.5-3.8-6.5-8.4A3.5 3.5 0 0 1 10 6.3a3.5 3.5 0 0 1 6.5 1.8c0 4.6-6.5 8.4-6.5 8.4z"/>',
+  close: '<path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/>',
+  check: '<path d="M4.5 10.5l3.5 3.5 7.5-8"/>',
+  // Filled too: GitHub's mark, its 16-unit drawing centred in the 20-unit box.
+  github: '<path fill="currentColor" stroke="none" transform="translate(2 2)" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/>',
+  download: '<path d="M10 3v9.5M6 9l4 4 4-4M4 16.5h12"/>',
+  // Filled too: the Apple mark on the Mac's download button, its 24-unit drawing scaled into the box.
+  apple: '<path fill="currentColor" stroke="none" transform="translate(1 1) scale(.75)" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/>',
+  // Filled, unlike the rest: the Windows mark only reads as four solid tiles.
+  windows: '<g fill="currentColor" stroke="none"><rect x="3" y="3" width="6.4" height="6.4" rx="1"/><rect x="10.6" y="3" width="6.4" height="6.4" rx="1"/><rect x="3" y="10.6" width="6.4" height="6.4" rx="1"/><rect x="10.6" y="10.6" width="6.4" height="6.4" rx="1"/></g>',
+  keyboard: '<rect x="2.5" y="5.5" width="15" height="9" rx="1.8"/><path d="M5.5 8.5h.01M8.5 8.5h.01M11.5 8.5h.01M14.5 8.5h.01M6.5 11.5h7"/>'
+} as const;
+export type IconName = keyof typeof paths;
+interface Props { name: IconName; size?: number }
+const { name, size = 18 } = Astro.props;
+---
+<svg data-icon={name} width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" set:html={paths[name]} />

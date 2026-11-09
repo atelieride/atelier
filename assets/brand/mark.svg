@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72" fill="none">
+  <defs>
+    <linearGradient id="ATL_G" x1="0" y1="0" x2="72" y2="72" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8B5CF6"/><stop offset="1" stop-color="#EC4899"/></linearGradient>
+  </defs>
+  <g transform="translate(0 6)">
+    <rect x="4" y="16" width="40" height="40" rx="11" fill="url(#ATL_G)" opacity="0.35"/>
+    <rect x="16" y="10" width="40" height="40" rx="11" fill="url(#ATL_G)" opacity="0.6"/>
+    <rect x="28" y="4" width="40" height="40" rx="11" fill="url(#ATL_G)"/>
+    <path d="M40 34 L48 14 L56 34" stroke="#FFFFFF" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

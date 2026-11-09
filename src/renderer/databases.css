@@ -1,0 +1,299 @@
+/* Databases view: the sidebar's head, list and footer, connection rows with
+   their glyph and state dot and the notes under them, environment tags, section heads, suggestion cards, the catalog
+   with its schema chip, filter, folds and rows, the empty state; a table tab's view. Loaded with the view's lazy chunk
+; the tab strip's rules are in databases-tabs.css, with the first paint. Colors only through theme.css's
+   tokens; production in the theme's danger color (the --error family).
+   Layout at every width (the sidebar goes down to 200 px): names truncate with an ellipsis (their full text in
+   a tooltip), tags, counts and buttons keep their size and never wrap, flex children that truncate get min-width: 0, a
+   card or a row out of room stacks its parts. */
+
+/* The sidebar: the head, the list scrolling between, the footer held at the bottom. Its root takes the focus on a click
+   in its empty space, so ⌘V lands here. */
+.sidebar.is-db { overflow: hidden; }
+.db-side { flex: 1; min-height: 0; display: flex; flex-direction: column; outline: none; }
+/* The count is a label too, in figures: the head shown while the chunk loads draws it the same. */
+.db-head-count { flex: none; letter-spacing: 0; white-space: nowrap; }
+/* A button waiting for main: it keeps its place and its focus, it says it's busy. */
+.db-side [aria-busy="true"] { cursor: progress; opacity: .6; }
+/* Refresh while it runs: its icon turns, at least one turn and at most --cue-cycles-long (the idle motion
+   budget: nothing loops forever), then rests violet while it still runs; under Reduce motion it stays still, dimmed. */
+.db-side .icon-btn.is-busy { opacity: 1; }
+.db-side .icon-btn.is-busy > svg { color: var(--violet-light); animation: atl-spin .6s linear var(--cue-cycles-long); }
+:root[data-motion="reduced"] .db-side .icon-btn.is-busy > svg { animation: none; opacity: .45; }
+.db-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-bottom: 10px; }
+.db-foot { flex: none; display: flex; align-items: flex-start; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line-soft); font-size: 11px; line-height: 16px; color: var(--text-4); }
+.db-foot > svg { flex: none; margin-top: 1px; }
+.db-foot > span { min-width: 0; }
+.db-link { color: var(--link); font-size: inherit; border-radius: 4px; transition: color var(--t-fast) var(--ease); }
+.db-link:hover { color: var(--text); text-decoration: underline; }
+.db-link:focus-visible { outline: none; box-shadow: 0 0 0 1.5px var(--violet); }
+
+/* Section heads: This project, Every project, Found in this project, with their counts. */
+.db-sec { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 12px 16px 6px 18px; }
+.db-sec > .section-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-sec-count { flex: none; font-family: var(--mono); font-size: 10.5px; color: var(--text-4); white-space: nowrap; }
+
+/* A connection: glyph tile with its state dot, the name with its environment tag, a sub line. */
+.db-conn { display: flex; align-items: center; gap: 10px; min-width: 0; margin: 0 8px; padding: 8px 10px; border-radius: var(--radius); color: var(--text); text-align: left; transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+/* Board 1: a connection not open reads quieter. */
+.db-conn.is-idle { color: var(--text-2); }
+.db-conn:hover { background: var(--bg-hover); color: var(--text); }
+.db-conn.is-selected { background: var(--bg-sel); box-shadow: inset 0 0 0 1px var(--edge-sel); color: var(--text); }
+.db-conn:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+.db-glyph { position: relative; flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: var(--text-3); background: var(--bg-3); box-shadow: inset 0 1px 0 var(--sheen), 0 0 0 1px var(--line-strong); }
+.db-conn.is-connected .db-glyph { color: var(--violet-light); }
+.db-conn.is-error .db-glyph { color: var(--text-error); }
+.db-conn.is-prod .db-glyph { color: var(--text-error); box-shadow: inset 0 1px 0 var(--sheen), 0 0 0 1px var(--edge-error); }
+/* The state dot (side.ts stateDot): still while connecting, as every working mark (no looping motion). */
+.db-st { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--line-strong); box-shadow: 0 0 0 2px var(--bg-1); transition: background var(--t-med) var(--ease); }
+.db-st.is-ok { background: var(--done); }
+.db-st.is-idle { background: var(--line-strong); }
+.db-st.is-warn { background: var(--waiting-mark); }
+.db-st.is-error { background: var(--error); }
+.db-st.is-busy { background: var(--working); }
+.db-conn-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.db-conn-name { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 13px; font-weight: 600; }
+.db-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-conn-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 10.5px; color: var(--text-4); }
+
+/* Environment tags (view.ts envClass): Local green, Dev sky, Staging violet, Prod the danger color. */
+.db-env { flex: none; display: inline-flex; align-items: center; height: 16px; padding: 0 6px; border-radius: 5px; font: 700 9px/1 var(--font); letter-spacing: .09em; text-transform: uppercase; white-space: nowrap; }
+.db-env.is-local { color: color-mix(in srgb, var(--done) 65%, var(--text)); background: var(--tint-green); box-shadow: inset 0 0 0 1px var(--edge-done); }
+.db-env.is-dev { color: color-mix(in srgb, var(--working) 65%, var(--text)); background: var(--tint-sky); box-shadow: inset 0 0 0 1px var(--edge-working); }
+.db-env.is-staging { color: var(--violet-light); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet); }
+.db-env.is-prod { color: var(--text-error); background: var(--tint-error-strong); box-shadow: inset 0 0 0 1px var(--edge-error); }
+
+/* What a connection needs, under its row: a password, a fix for what stopped it, the write note. */
+.db-note { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin: 2px 8px 8px; padding: 11px 12px; border-radius: var(--radius); font-size: 12px; line-height: 1.45; color: var(--text-2); animation: atl-fade var(--t-med) var(--ease) both; }
+.db-note p { margin: 0; }
+.db-note.is-err { background: var(--tint-error); box-shadow: inset 0 0 0 1px var(--edge-error); }
+.db-note.is-warn { background: var(--tint-waiting); box-shadow: inset 0 0 0 1px var(--edge-waiting); }
+.db-note.is-pass { padding-top: 4px; }
+.db-note-title { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--text); }
+.db-note-title > svg { flex: none; color: var(--waiting); }
+.db-note-detail { font-size: 11px; color: var(--text-error); overflow-wrap: anywhere; }
+.db-note-code { font-size: 10.5px; color: var(--text-4); }
+.db-note-hint { color: var(--text-2); }
+.db-note-err { font-size: 11.5px; color: var(--text-3); }
+.db-note-err.is-err { color: var(--text-error); }
+.db-note-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.db-note-actions > button { flex: none; max-width: 100%; overflow: hidden; white-space: nowrap; }
+.db-note-actions > button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The role can write: one quiet line under the row — the amber dot, the sentence (its reason in
+   the tooltip), a × — no box around it. */
+.db-write { display: flex; align-items: center; gap: 7px; min-width: 0; height: 22px; margin: 0 8px 4px; padding: 0 2px 0 22px; font-size: 11px; color: var(--text-4); animation: atl-fade var(--t-med) var(--ease) both; }
+.db-write-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--waiting-mark); }
+.db-write-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-write-x { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; color: var(--text-4); transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.db-write-x:hover { color: var(--text); background: var(--bg-hover); }
+.db-write-x:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+
+/* Needs a password: the field, then Save in Keychain and Connect (which drops under it when out of room). */
+.db-pass-input { height: 30px; min-width: 0; padding: 0 10px; border: 0; border-radius: 8px; outline: 0; background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line); color: var(--text); font-family: var(--mono); font-size: 12.5px; transition: box-shadow var(--t-fast) var(--ease); }
+.db-pass-input:focus { box-shadow: inset 0 0 0 1px var(--edge-violet), 0 0 0 3px var(--tint-violet); }
+.db-pass-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; font-size: 11.5px; color: var(--text-3); }
+.db-pass-save { display: flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; }
+.db-pass-save > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-pass-save .switch { flex: none; width: 30px; height: 18px; }
+.db-pass-save .switch i { width: 12px; height: 12px; }
+.db-pass-save .switch.is-on i { transform: translateX(12px); }
+.db-pass-row > button { flex: none; margin-left: auto; white-space: nowrap; }
+
+/* No connection saved: the cylinder in its tile, the two ways to add one. */
+.db-empty { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 0 16px 64px; text-align: center; animation: atl-fade var(--t-med) var(--ease) both; }
+.db-empty-icon { flex: none; width: 52px; height: 52px; border-radius: 15px; display: grid; place-items: center; color: var(--violet-light); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet); }
+.db-empty-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--text); }
+.db-empty-hint { margin: 0; max-width: 240px; font-size: 12px; line-height: 1.5; color: var(--text-4); }
+.db-empty-hint code { font-family: var(--mono); font-size: 11px; color: var(--md-code); }
+.db-empty > button { max-width: 100%; white-space: nowrap; }
+.db-empty > .btn-primary { margin-top: 4px; }
+
+/* The selected connection's catalog: a line above it, the schema chip and the filter held at the top while it scrolls. */
+.db-divider { flex: none; height: 1px; margin: 10px 16px 6px; background: var(--line-soft); }
+.db-cat-bar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; padding: 4px 12px 6px 14px; background: var(--bg-sticky); backdrop-filter: blur(14px); }
+/* The database chip and the schema chip share their line, half of it each at most. */
+.db-schema { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: calc(50% - 3px); height: 28px; padding: 0 8px 0 10px; border-radius: 8px; font-size: 11.5px; color: var(--text-2); background: var(--bg-control); box-shadow: inset 0 0 0 1px var(--line); transition: box-shadow var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.db-schema:hover { color: var(--text); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.db-schema:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+.db-schema-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-schema > svg { flex: none; opacity: .7; }
+.db-database { padding-left: 8px; }
+.db-database > svg:first-child { color: var(--violet-light); opacity: 1; }
+/* The filter takes the rest of the line; under 120 px it goes to a line of its own. */
+.db-filter { flex: 1 1 120px; min-width: 0; display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 9px; border-radius: 8px; background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line-soft); color: var(--text-4); transition: box-shadow var(--t-fast) var(--ease); }
+.db-filter:focus-within { box-shadow: inset 0 0 0 1px var(--edge-violet), 0 0 0 3px var(--tint-violet); color: var(--text-3); }
+.db-filter > svg { flex: none; }
+.db-filter input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--text); font: inherit; font-size: 12px; }
+.db-cat-note { margin: 0; padding: 6px 18px; font-size: 12px; line-height: 1.5; color: var(--text-4); }
+
+/* A section's head: its chevron, name and count; a click folds it (remembered per connection). */
+.db-fold { display: flex; align-items: center; gap: 6px; min-width: 0; height: 26px; margin: 6px 8px 0; padding: 0 10px 0 8px; border-radius: 7px; color: var(--text-4); text-align: left; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), opacity var(--t-med) var(--ease); }
+.db-fold:hover { color: var(--text-2); background: var(--bg-hover); }
+.db-fold:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+.db-fold > svg { flex: none; transition: transform var(--t-fast) var(--ease); }
+.db-fold[aria-expanded="true"] > svg { transform: rotate(90deg); }
+.db-fold > .section-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; }
+.db-fold > .db-sec-count { margin-left: auto; }
+
+/* Catalog rows: tables, views, materialized views (mono names, estimated rows on the right), enums, functions. */
+.db-rel { display: flex; align-items: center; gap: 9px; min-width: 0; height: 28px; margin: 0 8px; padding: 0 10px 0 12px; border-radius: 7px; color: var(--text-2); font-family: var(--mono); font-size: 12px; text-align: left; transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease), opacity var(--t-med) var(--ease); }
+/* A database without tables: the server's others, a click each. */
+.db-other-db { color: var(--text-2); }
+/* While Refresh reads the catalog under the bar dims a little; nothing moves. */
+.db-list.is-refreshing > .db-rel,
+.db-list.is-refreshing > .db-fold,
+.db-list.is-refreshing > .db-more,
+.db-list.is-refreshing > .db-enum-vals,
+.db-list.is-refreshing > .db-fn-sig,
+.db-list.is-refreshing > .db-cat-note { opacity: .55; }
+.db-rel > svg { flex: none; color: var(--text-4); }
+.db-rel:hover { background: var(--bg-hover); color: var(--text); }
+.db-rel.is-selected { background: var(--bg-sel); box-shadow: inset 0 0 0 1px var(--edge-sel); color: var(--text); }
+.db-rel.is-selected > svg { color: var(--violet-light); }
+.db-rel:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+.db-rel-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-rel-count { flex: none; margin-left: auto; font-size: 10.5px; color: var(--text-4); white-space: nowrap; }
+.db-rel-ret { flex: 0 1 auto; max-width: 45%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: var(--text-4); }
+.db-dim { color: var(--text-4); }
+/* Past 500 rows a section stops: Show all N, a quiet row of its own. */
+.db-more { flex: none; display: flex; align-items: center; height: 26px; margin: 0 8px; padding: 0 10px 0 35px; border-radius: 7px; font-size: 11.5px; color: var(--text-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.db-more:hover { color: var(--text-2); background: var(--bg-hover); }
+.db-more:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+.db-rel.is-enum[aria-expanded="true"], .db-rel.is-fn[aria-expanded="true"] { color: var(--text); }
+/* An enum's values as chips (the grid's tints, csv.css .csv-pill); a function's signature, wrapped in its box. */
+.db-enum-vals { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; margin: 2px 16px 6px 36px; }
+.db-enum-vals > .csv-pill { display: inline-block; line-height: 19px; white-space: nowrap; }
+.db-fn-sig { margin: 2px 16px 6px 36px; padding: 8px 10px; border-radius: 8px; background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line-soft); font-family: var(--mono); font-size: 11px; line-height: 1.5; color: var(--text-3); overflow-wrap: anywhere; }
+.db-fn-sig > b { font-weight: 500; color: var(--text); }
+
+/* A table tab's view (the table and the overview fill it): the Docker view's frame and state card,
+   production's 2 px hairline in the danger color along the top. A name without spaces breaks rather than spill out; the
+   line under it (connection, environment, schema.name) truncates, its tag whole. */
+.db-tab.is-prod { box-shadow: inset 0 2px 0 var(--error); }
+.db-tab.is-prod .dk-state-icon { color: var(--text-error); box-shadow: inset 0 0 0 1px var(--edge-error); }
+.db-tab .dk-state { max-width: 100%; min-width: 0; }
+.db-tab .dk-state-title { max-width: 100%; overflow-wrap: anywhere; }
+.db-tab-sub { display: flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0; margin: 0; font-size: 12px; color: var(--text-3); }
+.db-tab-sub > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-tab-sub > .db-env { flex: none; }
+
+/* Add / Edit Connection, on the git sheets' frame (SheetFrame): wider, never taller than the
+   window — its body scrolls between the head and the buttons, which stay in view. Fields in grids of shrinking columns
+   (one column when the sheet is narrow), hosts and names ellipsize inside their field, chips and tags whole. */
+.palette.git-sheet.db-sheet { position: relative; width: min(660px, calc(100vw - 32px)); max-height: calc(100vh - 100px); padding: 0; gap: 0; }
+.db-sheet > .git-sheet-head { flex: none; padding: 18px 20px 0; }
+.db-sheet-aside { flex: none; display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.db-sheet-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 16px 20px 18px; container: db-sheet / inline-size; }
+.db-sheet-foot { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line-soft); background: color-mix(in srgb, var(--bg-0) 35%, transparent); }
+.db-sheet-foot > button { flex: none; white-space: nowrap; }
+.db-sheet-foot > button:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.db-sheet-gap { flex: 1 1 0; min-width: 0; }
+.db-sheet [aria-busy="true"] { cursor: progress; opacity: .6; }
+/* A test or a save in flight: the fields read-only and quieter; the other button can't be pressed (it keeps its focus). */
+.db-sheet-body.is-locked .db-input, .db-sheet-body.is-locked .db-seg, .db-sheet-body.is-locked .db-ssh { opacity: .7; }
+.db-sheet-foot > button[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+.db-sheet-lock { flex: 1 1 auto; display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 11.5px; color: var(--text-4); }
+.db-sheet-lock > svg { flex: none; }
+.db-sheet-lock > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A field: its label, the control, a hint or what main would refuse. */
+.db-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.db-field > label, .db-label { font-size: 11.5px; font-weight: 600; color: var(--text-3); }
+.db-field-hint { font-size: 11.5px; line-height: 1.45; color: var(--text-4); }
+.db-field-hint.is-ask { color: var(--waiting); }
+.db-field-err { font-size: 11.5px; line-height: 1.4; color: var(--text-error); animation: atl-fade var(--t-fast) var(--ease) both; }
+.db-field-hint code, .db-field-err code { font-family: var(--mono); font-size: 11px; color: var(--md-code); }
+.db-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.db-grid.is-port { grid-template-columns: minmax(0, 1fr) 110px; }
+@container db-sheet (max-width: 440px) { .db-grid, .db-grid.is-port { grid-template-columns: minmax(0, 1fr); } }
+
+/* The input box: the field (its text scrolls inside), then a chip or tag at its end. */
+.db-input { display: flex; align-items: center; gap: 8px; height: 34px; min-width: 0; padding: 0 10px 0 12px; border-radius: 8px; background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line); color: var(--text-4); transition: box-shadow var(--t-fast) var(--ease); }
+.db-input:hover { box-shadow: inset 0 0 0 1px var(--line-strong); }
+.db-input:focus-within { box-shadow: inset 0 0 0 1px var(--violet-soft), 0 0 0 3px var(--tint-violet); }
+.db-input.is-invalid { box-shadow: inset 0 0 0 1px var(--edge-error); }
+.db-input.is-invalid:focus-within { box-shadow: inset 0 0 0 1px var(--edge-error), 0 0 0 3px var(--tint-error); }
+.db-input.is-url { height: 38px; }
+.db-input.is-url > svg { color: var(--violet-soft); }
+.db-input > svg { flex: none; }
+.db-input > input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: none; color: var(--text); font-family: var(--mono); font-size: 12.5px; }
+.db-input > input:focus-visible { box-shadow: none; }
+.db-input > input::placeholder { color: var(--text-4); }
+.db-input.is-text > input { font-family: var(--font); font-size: 13px; }
+.db-chip { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 999px; font: 500 10.5px/1 var(--font); color: var(--text-2); background: var(--bg-control); box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; }
+.db-chip.is-vio { height: 22px; font-size: 11.5px; color: var(--violet-light); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet); }
+.db-chip > b { font-size: 10.5px; font-weight: 700; }
+.db-input-tag { flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 45%; font-size: 11px; color: var(--text-3); white-space: nowrap; }
+.db-input-tag > svg { flex: none; }
+.db-input-tag > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Segmented controls (Settings' look): options shrink with their label rather than push the sheet wider; Show in fills
+   its column; a dot per environment, Production in the theme's danger color once picked. */
+.db-seg { max-width: 100%; min-width: 0; align-self: flex-start; }
+.db-seg.is-fill { display: flex; align-self: stretch; }
+.db-seg.is-fill .set-seg-opt { flex: 1 1 0; justify-content: center; }
+.db-seg .set-seg-opt { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.db-seg-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-seg-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; }
+.db-seg-dot.is-local { background: var(--done); }
+.db-seg-dot.is-dev { background: var(--working); }
+.db-seg-dot.is-staging { background: var(--violet-light); }
+.db-seg-dot.is-prod { background: var(--error); }
+.db-seg .set-seg-opt.is-prod.is-on { color: var(--text); background: var(--tint-error-strong); box-shadow: inset 0 0 0 1px var(--edge-error); }
+.db-seg .set-seg-opt.is-prod.is-on .db-seg-dot { background: var(--text); }
+/* TLS: the modes, then what the one picked means (under them when out of room). */
+.db-tls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; }
+.db-tls > .db-field-hint { min-width: 0; }
+
+/* The SSH tunnel: a switch row, its fields under it while on. */
+.db-ssh { min-width: 0; border-radius: 10px; background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line-soft); transition: box-shadow var(--t-fast) var(--ease); }
+.db-ssh.is-on { box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.db-sect { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 11px 12px; border-radius: 10px; color: var(--text); text-align: left; transition: box-shadow var(--t-fast) var(--ease); }
+.db-sect:hover { box-shadow: inset 0 0 0 1px var(--line-strong); }
+.db-sect:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+.db-sect > .switch { flex: none; width: 30px; height: 18px; }
+.db-sect > .switch i { width: 12px; height: 12px; }
+.db-sect > .switch.is-on i { transform: translateX(12px); }
+.db-sect-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.db-sect-title { font-size: 12.5px; font-weight: 600; }
+.db-sect-hint { font-size: 11.5px; line-height: 1.45; color: var(--text-4); }
+.db-ssh-fields { display: flex; flex-direction: column; gap: 12px; padding: 2px 12px 12px; animation: atl-fade var(--t-med) var(--ease) both; }
+
+/* Notes: the read-only line and "speaks Postgres" (violet), the test's answer (green, or the problem in the danger color). */
+.db-sheet-note { display: flex; align-items: flex-start; gap: 10px; min-width: 0; padding: 11px 13px; border-radius: 10px; font-size: 12px; line-height: 1.5; color: var(--text-2); }
+.db-sheet-note > svg { flex: none; margin-top: 1px; }
+.db-sheet-note b { font-weight: 600; color: var(--text); }
+.db-sheet-note code { font-family: var(--mono); font-size: 11.5px; color: var(--md-code); }
+.db-sheet-note.is-vio { background: var(--tint-violet-soft); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.db-sheet-note.is-vio > svg { color: var(--violet-light); }
+.db-sheet-note.is-ok { background: var(--tint-done); box-shadow: inset 0 0 0 1px var(--edge-done); animation: atl-fade var(--t-med) var(--ease) both; }
+.db-sheet-note.is-ok > svg { color: var(--done); }
+.db-sheet-note.is-err { background: var(--tint-error); box-shadow: inset 0 0 0 1px var(--edge-error); animation: atl-fade var(--t-med) var(--ease) both; }
+.db-sheet-note.is-err > svg { color: var(--text-error); }
+.db-sheet-note-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.db-sheet-note-title { font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.db-sheet-note-mono { font-family: var(--mono); font-size: 11px; color: var(--text-3); overflow-wrap: anywhere; }
+.db-sheet-note-code { font-family: var(--mono); font-size: 10.5px; color: var(--text-4); }
+.db-sheet-note-hint { color: var(--text-2); }
+.db-sheet-warn { color: var(--waiting); }
+
+/* Step 1: "or pick an engine"; the engines (the later ones disabled). */
+.db-or { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.db-or::before, .db-or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.db-or > span { flex: none; white-space: nowrap; }
+.db-engines { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.db-engine { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 12px; border-radius: 12px; background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--line); color: var(--text); text-align: left; transition: box-shadow var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.db-engine:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--edge-violet); }
+/* Picked: the app's flat selection (quiet finish: no wash, no halo), the monogram in the brand. */
+.db-engine.is-on { background: var(--bg-sel); box-shadow: inset 0 0 0 1px var(--edge-sel); }
+.db-engine:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--edge-sel), var(--focus-ring); }
+.db-engine:disabled { opacity: .55; cursor: default; }
+.db-engine-mono { flex: none; width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; font: 700 12px var(--mono); color: var(--text-3); background: var(--bg-3); box-shadow: inset 0 1px 0 var(--sheen), 0 0 0 1px var(--line-strong); }
+.db-engine.is-on .db-engine-mono { color: var(--on-brand); background: var(--brand); box-shadow: inset 0 1px 0 var(--sheen); }
+.db-engine-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.db-engine-text > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.db-engine-text > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--text-4); }
+.db-later { flex: none; align-self: flex-start; padding: 2px 6px; border-radius: 5px; font: 600 9px/1.2 var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--text-4); box-shadow: inset 0 0 0 1px var(--line-strong); white-space: nowrap; }
+/* Under the name and what it reads: beside them it squeezed both; its own words, never the note's. */
+.db-engine-text > .db-later { margin-top: 3px; font-size: 9px; overflow: visible; }
+:root[data-motion="reduced"] :is(.db-field-err, .db-ssh-fields, .db-sheet-note.is-ok, .db-sheet-note.is-err) { animation: none; }

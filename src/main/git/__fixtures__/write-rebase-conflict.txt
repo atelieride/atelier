@@ -1,0 +1,6 @@
+From /TMP/atl-rec-jBjKfe/remote
+   dfc8962..643ac45  main       -> origin/main
+Rebasing (1/1)Auto-merging a.txt
+CONFLICT (content): Merge conflict in a.txt
+error: could not apply 12621d3... local change
+Could not apply 12621d3... # local change

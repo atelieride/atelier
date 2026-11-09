@@ -1,0 +1,19 @@
+---
+import { config } from '../config';
+import { downloadInfo } from '../lib/download';
+import Icon from './Icon.astro';
+// `direct`: the button on /download itself, which links the DMG even before notarization. `sm` is the header's: one
+// word, always to /download (the platform cards); the other buttons hand over the DMG.
+interface Props { size?: 'sm' | 'md' | 'lg'; direct?: boolean }
+const { size = 'lg', direct = false } = Astro.props;
+const d = downloadInfo({ ...config, direct });
+---
+{d.state === 'available'
+  ? <a class:list={['btn', 'btn-primary', size]} href={size === 'sm' ? '/download' : d.url} data-download>{size === 'sm' ? 'Download' : <><Icon name="apple" />{d.label}<span class="ver">v{d.version}</span></>}</a>
+  : <span class:list={['pill', 'soon', size]} data-download="coming-soon"><span class="dot" aria-hidden="true"></span>{d.label}</span>}
+<style>
+  .sm { height: 30px; padding: 0 13px; font-size: 12.5px; white-space: nowrap; }
+  .md { padding: 8px 16px; font-size: 13.5px; }
+  .ver { font: 500 11.5px var(--mono); opacity: .8; white-space: nowrap; }
+  .soon .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--violet); }
+</style>

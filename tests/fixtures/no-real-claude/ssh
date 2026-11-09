@@ -1,0 +1,6 @@
+#!/bin/sh
+# e2e guard: first on PATH in every e2e environment, and the app's own ssh (ATELIER_TEST_SSH_BIN: the Databases view's
+# SSH tunnels) unless a test passes the fake (tests/support/fake-ssh.mjs). No test may run the user's real ssh: it would
+# use the developer's keys, agent and ~/.ssh/config.
+echo "ssh is disabled in tests" >&2
+exit 255

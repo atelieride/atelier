@@ -1,0 +1,116 @@
+---
+import Base from '../layouts/Base.astro';
+import DownloadButton from '../components/DownloadButton.astro';
+import WindowsButton from '../components/WindowsButton.astro';
+import Icon from '../components/Icon.astro';
+import { config } from '../config';
+import { downloadInfo } from '../lib/download';
+import { softwareJsonLd } from '../lib/seo';
+const d = downloadInfo(config);
+const description = config.windowsStoreUrl
+  ? 'Download Atelier: free for macOS on Apple Silicon, and for Windows from the Microsoft Store.'
+  : 'Download Atelier: free for macOS on Apple Silicon. Windows coming soon.';
+---
+<Base title="Atelier | Download" description={description} path="/download" jsonLd={softwareJsonLd({ ...config, description })}>
+  <section class="container section page">
+    <div class="head" data-reveal>
+      <p class="eyebrow">Free download</p>
+      <h1 class="h1">Download Atelier</h1>
+    </div>
+
+    <div class="grid">
+      <div class="card platform mac" data-reveal>
+        <h2>macOS{config.notarized && <span class="badge"><Icon name="check" />Notarized</span>}</h2>
+        <ul>
+          <li><Icon name="check" />A Mac with Apple Silicon (M1 or later)</li>
+          <li><Icon name="check" />macOS {config.minMacOS} or later</li>
+          <li><Icon name="check" /><span>Claude Code installed and signed in (<code>claude</code> works in Terminal)</span></li>
+          <li><Icon name="mic" />Dictation, if you turn it on, downloads a 574 MB speech model once</li>
+        </ul>
+        <div class="get">
+          <DownloadButton direct size="md" />
+          <p class="file fine">{d.fileName} · {d.channel === 'beta' ? 'Beta' : 'Stable'}</p>
+        </div>
+      </div>
+      {config.windowsStoreUrl ? (
+        <div class="card platform windows" id="windows" data-reveal>
+          <h2><span class="win"><Icon name="windows" /></span>Windows<span class="badge"><Icon name="check" />Microsoft Store</span></h2>
+          <ul>
+            <li><Icon name="check" />Windows 11, or Windows {config.minWindows} or later (64-bit)</li>
+            <li><Icon name="check" /><span>Claude Code installed and signed in (<code>claude</code> works in PowerShell)</span></li>
+            <li><Icon name="check" /><span>Git for Windows for changes, branches and history (Atelier works as an editor without it)</span></li>
+            <li><Icon name="mic" />Dictation, if you turn it on, downloads a 574 MB speech model once</li>
+          </ul>
+          <div class="get">
+            <WindowsButton size="md" />
+            <p class="file fine">Installs and updates through the Microsoft Store</p>
+          </div>
+        </div>
+      ) : (
+        <div class="card platform windows" id="windows" data-reveal>
+          <h2><span class="win"><Icon name="windows" /></span>Windows<span class="chip">Coming soon</span></h2>
+          <p>Atelier for Windows is on the way.</p>
+          <div class="get"><WindowsButton label="Coming soon" /></div>
+        </div>
+      )}
+    </div>
+
+    <p class="news" data-reveal><a href="/changelog">What’s new in {d.version}</a></p>
+
+    <div class="card" data-reveal>
+      <h2>Install</h2>
+      <ol class="steps">
+        <li><span class="n">1</span><span>Open the downloaded DMG.</span></li>
+        <li><span class="n">2</span><span>Drag <strong>Atelier</strong> onto <strong>Applications</strong>.</span></li>
+        <li><span class="n">3</span><span>Open Atelier from Applications, pick a project folder and press <span class="keys"><kbd>⌘</kbd> <kbd>N</kbd></span>.</span></li>
+      </ol>
+    </div>
+
+    {!config.notarized && (
+      <div class="card gatekeeper" data-reveal>
+        <h2>If macOS blocks Atelier</h2>
+        <p>The first time, macOS may say it could not verify Atelier. Click <strong>Done</strong>, then:</p>
+        <ol>
+          <li>Open <strong>System Settings › Privacy &amp; Security</strong>.</li>
+          <li>Scroll to <em>Security</em> and click <strong>Open Anyway</strong> next to “Atelier was blocked to protect your Mac”.</li>
+          <li>Confirm with your password or Touch ID, then click <strong>Open</strong>.</li>
+        </ol>
+        <p class="fine">You only do this once: updates installed by Atelier itself are not blocked.</p>
+      </div>
+    )}
+
+    <div class="card updates" data-reveal>
+      <h2>Updates</h2>
+      <p>Atelier checks for new versions in the background, verifies their signature and installs them on the next restart without closing your sessions. Choose the Stable or Beta channel in Settings › About.</p>
+    </div>
+  </section>
+</Base>
+<style>
+  .page { display: flex; flex-direction: column; gap: 20px; max-width: 920px; }
+  .head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 18px; margin-bottom: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+  .card { padding: 26px 28px; border-radius: var(--r-lg); background: var(--bg-1); border: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 14px; color: var(--text-2); }
+  .card h2 { font-size: 19px; font-weight: 650; color: var(--text); }
+  .card ul, .card ol { padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+  .card h2 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .platform ul { list-style: none; }
+  .platform li { display: flex; gap: 10px; align-items: flex-start; }
+  .platform li :global(svg) { flex: none; margin-top: 4px; color: var(--done); }
+  .mac { border-color: var(--edge-violet); }
+  .windows { opacity: .7; }
+  .get { margin-top: auto; padding-top: 6px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font: 600 11.5px var(--mono); color: var(--done); padding: 2px 9px; border-radius: 999px; background: var(--tint-done); border: 1px solid var(--edge-done); }
+  .chip { font: 600 10.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); padding: 2px 8px; border-radius: 999px; background: var(--tint-violet); border: 1px solid var(--edge-violet-soft); }
+  .win { display: inline-flex; color: var(--text-3); }
+  .news { text-align: center; }
+  .news a { color: var(--link); transition: color var(--t-fast) var(--ease); }
+  .news a:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+  .steps { list-style: none; }
+  .steps li { display: flex; gap: 12px; align-items: baseline; }
+  .steps .n { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--brand); color: var(--on-brand); font: 600 12px var(--mono); }
+  .keys { white-space: nowrap; }
+  .gatekeeper { border-color: var(--edge-waiting); background: var(--tint-waiting); }
+  .gatekeeper ol { padding-left: 20px; }
+  code { font: 13px var(--mono); padding: 1px 6px; border-radius: var(--r-sm); background: var(--bg-3); }
+  @media (max-width: 760px) { .grid { grid-template-columns: minmax(0, 1fr); } .card { padding: 22px; } }
+</style>

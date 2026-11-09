@@ -1,0 +1,29 @@
+.DS_Store
+# Personal instructions for Claude Code in this project (CLAUDE.md holds the shared ones)
+CLAUDE.local.md
+*.log
+coverage/
+dist/
+node_modules/
+out/
+playwright-report/
+release/
+test-results/
+# Claude Code working file (scheduled-task lock), not part of the project
+.claude/scheduled_tasks.lock
+# whisper.cpp, local cmake and compiled binary (npm run build:whisper)
+vendor/
+# A worktree's vendor symlink (vendor/ matches only a folder): untracked, it ran the whole e2e suite
+/vendor
+# A worktree's link to the main checkout's site dependencies (node_modules/ matches only a folder)
+/site/node_modules
+# Website (site/): Astro's generated types and cache (dist/, node_modules/ and test-results/ are covered above)
+site/.astro/
+# Wrangler's state and logs when deploying the site (npm --prefix site run deploy)
+site/.wrangler/
+# The website's live demo, built by `npm run build:demo`
+site/public/demo-app/
+# /brag plugin output (launch videos; brag-output-<timestamp>/ when one already exists)
+/brag-output*/
+# Screenshots the e2e tests take to be looked at (ATELIER_E2E_SHOTS=1, tests/e2e/shots.ts)
+/e2e-shots/

@@ -1,0 +1,127 @@
+/* JSON navigation: the file bar's path, the Tree view (tools, rows, chunks, band, empty
+   states), the table and the footer's additions. Colors only from theme.css. */
+
+/* File bar: the path of the value under the cursor (Source) or selected (Tree), after the file name. */
+.json-path { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 0 100 auto; overflow: hidden; white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
+.json-sep { color: var(--line-num); padding: 0 3px; }
+.json-seg { padding: 2px 5px; border-radius: 5px; color: var(--syn-key); font: inherit; transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.json-seg:hover { background: var(--tint-violet); color: var(--text); }
+.json-seg.is-last { color: var(--text); background: var(--tint-meet); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.json-seg:focus-visible, .json-copy:focus-visible { outline: none; box-shadow: 0 0 0 1.5px var(--violet); }
+.json-type { margin-left: 6px; color: var(--text-4); font-size: 11px; }
+.json-copy { flex-shrink: 0; }
+/* The confirmation gives way before the path does, down to "✓ Copied". */
+.json-copied { display: inline-block; flex: 0 1000 auto; min-width: 70px; overflow: hidden; text-overflow: ellipsis; color: var(--done); font: 11px var(--mono); white-space: nowrap; animation: atl-fade var(--t-med) var(--ease) both; }
+.json-copied svg { vertical-align: -2px; margin-right: 4px; }
+.json-fold-group { display: flex; align-items: center; gap: 2px; padding-right: 6px; margin-right: 2px; border-right: 1px solid var(--line); flex-shrink: 0; }
+.json-fold-group .icon-btn { color: var(--text-3); transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.json-fold-group .icon-btn:hover { color: var(--text); }
+.json-fold-group .icon-btn:focus-visible { outline: none; box-shadow: 0 0 0 1.5px var(--violet); }
+.md-switch.json-switch .md-switch-label { white-space: nowrap; }
+
+/* The pane: Tree view alone, or the right half of Split. */
+.json-pane { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg-2); container: json-pane / inline-size; animation: atl-fade var(--t-med) var(--ease) both; }
+.json-pane.is-split { border-left: 1px solid var(--line-soft); }
+
+.json-tools { height: 40px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 16px 0 18px; border-bottom: 1px solid var(--line-soft); min-width: 0; }
+.json-field { display: flex; align-items: center; gap: 7px; width: 300px; min-width: 150px; flex-shrink: 1; height: 26px; padding: 0 8px; border-radius: var(--r-sm); background: var(--bg-field); border: 1px solid var(--line); color: var(--text-4); transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+.json-field:focus-within { border-color: var(--edge-violet); box-shadow: 0 0 0 3px var(--tint-violet); }
+.json-field input { flex: 1; min-width: 0; background: none; border: 0; outline: none; color: var(--text); font: 12px var(--font); }
+/* The field shows the focus, not the input inside it; the tree and the table show it on their selected row. */
+.json-field input:focus-visible, .json-tree:focus-visible, .json-table-wrap:focus-visible { box-shadow: none; }
+.json-table-wrap:focus-visible tbody tr.is-sel td { box-shadow: inset 0 1px 0 var(--edge-violet), inset 0 -1px 0 var(--edge-violet); }
+.json-field input::placeholder { color: var(--text-4); }
+.json-kbd { padding: 0 5px; border-radius: 4px; background: var(--bg-3); color: var(--text-3); font: 10px var(--mono); }
+.json-count { font: 11px var(--mono); color: var(--text-3); white-space: nowrap; }
+.json-count.is-none { color: var(--error); }
+.json-meta { font: 11px var(--mono); color: var(--text-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.json-tool-btn { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: var(--r-sm); color: var(--text-3); font-size: 11.5px; white-space: nowrap; flex-shrink: 0; transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.json-tool-btn:hover { background: var(--bg-3); color: var(--text); }
+.json-tool-btn:focus-visible, .json-act:focus-visible, .jt-chev:focus-visible, .jtab-sort:focus-visible, .jtab-chip:focus-visible { outline: none; box-shadow: 0 0 0 1.5px var(--violet); }
+.json-stat { display: inline-flex; align-items: center; gap: 7px; height: 22px; padding: 0 9px; border-radius: 999px; background: var(--tint-done); border: 1px solid var(--edge-done); color: var(--text-3); font: 11px var(--mono); white-space: nowrap; flex-shrink: 0; }
+.json-stat i { width: 6px; height: 6px; border-radius: 50%; background: var(--done); }
+.json-tools .seg { flex-shrink: 0; }
+@container json-pane (max-width: 720px) { .json-tool-btn .json-tool-label, .json-stat { display: none; } }
+@container json-pane (max-width: 520px) { .json-field .json-kbd, .json-meta { display: none; } }
+
+/* Invalid JSON: a rose band over the last valid tree. */
+.json-band { display: flex; align-items: center; gap: 10px; height: 34px; flex-shrink: 0; padding: 0 12px 0 14px; background: var(--tint-error); border-bottom: 1px solid var(--edge-error-soft); font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; }
+.json-band-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--error); }
+.json-band b { color: var(--text-error); font-weight: 600; }
+.json-band-at { font: 11px var(--mono); color: var(--text-3); }
+.json-band-text { overflow: hidden; text-overflow: ellipsis; }
+.json-band .btn-ghost { flex-shrink: 0; }
+
+/* The tree. */
+.json-tree { flex: 1; min-height: 0; overflow: auto; padding: 6px 8px 24px; font: 12.5px var(--mono); outline: none; }
+.json-tree.is-stale .jt-rows { opacity: .62; filter: saturate(.7); }
+.jt-rows { box-sizing: border-box; min-width: max-content; }
+.jt-row { display: flex; align-items: center; height: 24px; border-radius: var(--r-sm); padding-right: 6px; min-width: max-content; cursor: default; user-select: none; transition: background-color var(--t-fast) var(--ease); }
+.jt-row:hover { background: var(--bg-hover); }
+.jt-row.is-sel { background: var(--bg-sel); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.json-tree:focus-visible .jt-row.is-sel { box-shadow: inset 0 0 0 1px var(--edge-violet); }
+.jt-row.is-miss { opacity: .55; }
+.jt-guide { width: 18px; align-self: stretch; flex-shrink: 0; background: linear-gradient(var(--line), var(--line)) 8px 0 / 1px 100% no-repeat; }
+.jt-chev { width: 18px; height: 18px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 4px; color: var(--text-4); transition: color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); }
+.jt-chev:hover { color: var(--text); background: var(--bg-3); }
+.jt-chev svg { transition: transform var(--t-med) var(--ease); }
+.jt-chev.is-open svg { transform: rotate(90deg); }
+.jt-nochev { width: 18px; flex-shrink: 0; }
+.jt-main { display: flex; align-items: center; white-space: pre; padding-left: 2px; min-width: 0; }
+.jt-key { color: var(--syn-key); }
+.jt-key.is-idx { color: var(--text-4); }
+.jt-colon { color: var(--syn-punct); margin-right: 8px; }
+.jt-chip { display: inline-flex; align-items: center; height: 16px; padding: 0 6px; margin-right: 8px; border-radius: 999px; background: var(--bg-3); color: var(--text-3); font-size: 10.5px; }
+.jt-pv { color: var(--text-4); overflow: hidden; text-overflow: ellipsis; max-width: 520px; }
+.jt-v-string { color: var(--syn-string); }
+.jt-v-number { color: var(--syn-number); }
+.jt-v-boolean, .jt-v-null { color: var(--syn-literal); }
+.jt-hit { background: var(--hit-bg); box-shadow: 0 0 0 1px var(--hit-edge); border-radius: 3px; color: var(--hit-text); }
+.jt-lno { margin-left: 12px; color: var(--line-num); font-size: 11px; flex-shrink: 0; transition: color var(--t-fast) var(--ease); }
+.jt-row:hover .jt-lno, .jt-row.is-sel .jt-lno { color: var(--text-4); }
+.jt-acts { display: flex; align-items: center; gap: 2px; margin-left: 8px; animation: atl-pop var(--t-med) var(--ease) both; }
+.json-act { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-sm); color: var(--text-3); transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.json-act:hover { background: var(--bg-3); color: var(--text); }
+.jt-range { display: inline-flex; align-items: center; height: 18px; padding: 0 8px; margin-right: 10px; border-radius: var(--r-sm); background: var(--tint-meet); border: 1px dashed var(--edge-violet); color: var(--fold); font-size: 11px; white-space: nowrap; }
+.json-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 48px 24px; text-align: center; color: var(--text-3); font-size: 12.5px; }
+.json-empty b { color: var(--text); font-size: 13.5px; font-weight: 600; }
+.json-empty-msg { font: 12px var(--mono); color: var(--text-error); max-width: 520px; }
+
+/* The table of an array of objects. */
+.json-table-wrap { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px 24px; outline: none; }
+.json-table { border-collapse: separate; border-spacing: 0; width: 100%; font: 12px var(--mono); }
+.json-table th { position: sticky; top: 0; z-index: 1; height: 30px; padding: 0 12px; text-align: left; font: 600 10.5px var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); background: var(--bg-1); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.json-table th:first-child { border-radius: 8px 0 0 0; }
+.json-table th:last-child { border-radius: 0 8px 0 0; }
+.json-table th.is-num, .json-table td.is-num { text-align: right; }
+.jtab-sort { display: inline-flex; align-items: center; gap: 5px; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; border-radius: 4px; transition: color var(--t-fast) var(--ease); }
+.jtab-sort:hover { color: var(--text); }
+.json-table th.is-sorted { color: var(--text); }
+.jtab-arrow { color: var(--fold); }
+.jtab-type { margin-left: 6px; font: 400 9.5px var(--mono); letter-spacing: 0; text-transform: none; color: var(--text-4); }
+.json-table td { height: 28px; padding: 0 12px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; transition: background-color var(--t-fast) var(--ease); }
+.json-table tbody tr { cursor: default; }
+.json-table tbody tr:hover td { background: var(--bg-hover); }
+.json-table tbody tr.is-sel td { background: var(--tint-meet); box-shadow: inset 0 1px 0 var(--edge-violet-soft), inset 0 -1px 0 var(--edge-violet-soft); }
+.json-table td.jtab-idx { color: var(--text-4); width: 36px; }
+.json-table tr.jtab-spacer td { height: auto; padding: 0; border: 0; }
+.jtab-miss { color: var(--line-num); }
+.jtab-bar { display: inline-block; height: 4px; border-radius: 2px; margin-right: 8px; vertical-align: middle; background: var(--brand); opacity: .75; }
+.jtab-chip { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 999px; background: var(--bg-3); color: var(--text-3); font: 10.5px var(--mono); transition: box-shadow var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.jtab-chip:hover { color: var(--text); box-shadow: 0 0 0 1px var(--edge-violet); }
+.jtab-pv { margin-left: 8px; color: var(--text-4); }
+
+/* Footer additions: stats and key hints (Tree), the problem count, the follow switch (Split). */
+.foot-json { font-family: var(--mono); color: var(--text-4); }
+.foot-hints { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); color: var(--text-4); }
+.foot-hints .json-kbd { margin: 0 1px; }
+@container (max-width: 700px) { .file-foot .foot-hints { display: none; } }
+.foot-problems { display: inline-flex; align-items: center; gap: 5px; color: var(--text-error); font-family: var(--mono); }
+.foot-problems::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--error); }
+.foot-follow { display: inline-flex; align-items: center; gap: 6px; color: var(--text-3); font-size: 11px; border-radius: var(--r-sm); }
+.foot-follow:focus-visible { outline: none; box-shadow: 0 0 0 1.5px var(--violet); }
+.foot-follow-sw { position: relative; width: 24px; height: 14px; border-radius: 999px; background: var(--bg-3); box-shadow: inset 0 0 0 1px var(--line-strong); transition: background var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+.foot-follow-sw::after { content: ''; position: absolute; left: 2px; top: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--text-3); transition: transform var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.foot-follow[aria-checked="true"] .foot-follow-sw { background: var(--brand); box-shadow: none; }
+.foot-follow[aria-checked="true"] .foot-follow-sw::after { transform: translateX(10px); background: var(--on-brand); }
+[data-motion="reduced"] .json-pane, [data-motion="reduced"] .jt-acts, [data-motion="reduced"] .json-copied { animation: none; }

@@ -1,0 +1,94 @@
+/* The site's styles. Aurora tokens come from the app (src/renderer/theme.css, the only source of raw values); the
+   site's own tokens are in the first block below and nowhere else (site/tests/unit/no-raw-colors.test.ts). */
+@import '../../../src/renderer/theme.css';
+
+:root {
+  --site-max: 1120px;
+  /* /features: the index beside articles whose 640 px shots stay 1:1. */
+  --site-max-wide: 1360px;
+  --site-gutter: clamp(16px, 4vw, 32px);
+  /* The quiet finish (as the app's): fills are the brand, solid, in the logo's own
+     color (the middle of violet and pink); a filled button lightens under the pointer; screenshots float on a shade
+     shadow and a hairline, no glow. */
+  --brand: color-mix(in srgb, var(--violet) 50%, var(--pink));
+  --shot-shadow: 0 40px 100px -20px rgba(0, 0, 0, .8), 0 0 0 1px rgba(139, 92, 246, .1);
+  --btn-lift: rgba(255, 255, 255, .1);
+  /* Two-tone titles: the second line, between --text-3 and --text-4. */
+  --title-dim: color-mix(in srgb, var(--text-3) 50%, var(--text-4));
+  --traffic: #2E2E4A;
+  /* The header (Nav.astro): one row, its frosted fill once the page scrolls. */
+  --appbar-h: 60px;
+  --bar-fill-strong: rgba(10, 10, 19, .9);
+  --sheet-backdrop: rgba(4, 4, 10, .45);
+  /* Live screenshots (Window.astro): the waiting pane's bright hairline (layout.css, theme.css' --wait-ring-bright). */
+  --live-edge: rgba(251, 191, 36, .85);
+  /* The open live demo (styles/live-demo.css): the page dims behind the window. */
+  --demo-dim: rgba(5, 5, 11, .84);
+  /* The film: the page behind its sheet, the bars around it in the hero, the
+     caption's plate, the shade over its thumbnail. */
+  --film-dim: rgba(5, 5, 11, .93);
+  --film-ground: #05050B;
+  --film-plate: rgba(8, 8, 15, .82);
+  --film-shade: rgba(8, 8, 15, .35);
+}
+@media (max-width: 640px) { :root { --appbar-h: 56px; } }
+
+/* theme.css is written for the app window: give the page its document behaviour back. */
+html, body { height: auto; }
+/* scrollbar-gutter: with classic scrollbars, opening the search (overflow: hidden below) does not shift the page. */
+html { scrollbar-gutter: stable; scroll-behavior: smooth; scroll-padding-top: calc(var(--appbar-h) + 28px); }
+body { overflow-x: clip; overflow-y: auto; user-select: auto; font: 16px/1.6 var(--font); }
+a { color: inherit; text-decoration: none; }
+img { display: block; max-width: 100%; height: auto; }
+h1, h2, h3, p, ul, ol { margin: 0; }
+/* The header overlaps the page by its height (Nav.astro), so the hero runs behind it. */
+main { padding-top: var(--appbar-h); }
+/* The search sheet is open: the page stays put (on body, which hands it to the viewport: on html it would reset the
+   scroll and take the sticky header with it). */
+body:has(dialog.search-sheet[open]) { overflow: hidden; }
+
+.container { width: 100%; max-width: var(--site-max); margin: 0 auto; padding: 0 var(--site-gutter); }
+.container.wide { max-width: var(--site-max-wide); }
+/* Vertical only: a section is often also a .container, whose side padding is the page gutter. */
+.section { padding-block: clamp(64px, 10vw, 120px); }
+/* A home block: a hairline across the page above it. */
+.block { border-top: 1px solid var(--line-soft); }
+/* A fixed line height (JetBrains Mono's own at 12 px): with `normal`, the fallback's metrics until the font arrives
+   would move what follows (a layout shift where an eyebrow is on the first screen, /features). */
+.eyebrow { font: 600 12px/16px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--violet-soft); }
+.h1 { font-size: clamp(40px, 7vw, 72px); font-weight: 700; letter-spacing: -.035em; line-height: 1.02; }
+.h2 { font-size: clamp(30px, 4.2vw, 44px); font-weight: 700; letter-spacing: -.03em; line-height: 1.08; }
+.lead { color: var(--text-2); font-size: clamp(16px, 1.6vw, 19px); line-height: 1.6; }
+/* A title's second line. */
+.dim { color: var(--title-dim); }
+/* Small print carries requirements and file names: --text-3 keeps it above WCAG AA (--text-4 is 3.4:1). */
+.fine { color: var(--text-3); font: 12.5px var(--mono); text-wrap: balance; }
+
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 999px; font-weight: 600; font-size: 15px; transition: transform var(--t-fast) var(--ease), box-shadow var(--t-med) var(--ease), background-color var(--t-fast) var(--ease); }
+.btn:active { filter: brightness(.94); }
+.btn-primary { background: var(--brand); color: var(--on-brand); }
+.btn-primary:hover { box-shadow: inset 0 0 0 99px var(--btn-lift); }
+.btn-ghost { border: 1px solid var(--line-strong); color: var(--text-2); }
+.btn-ghost:hover { background: var(--bg-hover); color: var(--text); border-color: var(--edge-violet); }
+.btn:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); border-radius: 999px; }
+.pill { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 999px; background: var(--tint-violet); border: 1px solid var(--edge-violet-soft); color: var(--text-2); font-weight: 600; }
+kbd { font: 500 12px var(--mono); padding: 2px 7px; border-radius: var(--r-sm); background: var(--bg-3); border: 1px solid var(--line-strong); border-bottom-width: 2px; color: var(--text-2); }
+
+/* The live demo's controls (LiveDemo.astro, Hero.astro): wide desktop screens with a real pointer only, the same query
+   as scripts/live-demo.ts (lib/live-demo.ts › DEMO_GATE). Server-rendered and switched by CSS alone, so the page lays
+   out the same before and after the script (no layout shift), and a phone or tablet never shows them. */
+@media not all and (min-width: 1100px) and (hover: hover) and (pointer: fine) { .demo-gate { display: none !important; } }
+/* The film in the hero (Hero.astro, scripts/film-inline.ts): the other side of the same gate, where no live demo is. */
+@media (min-width: 1100px) and (hover: hover) and (pointer: fine) { .film-gate-off { display: none !important; } }
+
+/* Scroll reveal (src/scripts/reveal.ts): content is hidden only once the script has run, so it is never lost. */
+/* An animation, not a transition: it never replaces an element's own transitions, and its
+   backwards fill lets the element's own styles take over once it has run. */
+.js-reveal [data-reveal]:not(.is-in) { opacity: 0; transform: translateY(18px); }
+.js-reveal [data-reveal].is-in { animation: site-reveal 600ms var(--ease) backwards; }
+@keyframes site-reveal { from { opacity: 0; transform: translateY(18px); } }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  [data-reveal] { opacity: 1 !important; transform: none !important; }
+}

@@ -1,0 +1,34 @@
+name: Bug report
+description: Something in Atelier doesn't work as it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Screenshots help.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Atelier version and channel
+      description: Settings › About, for example "0.2.0-beta.28, Beta".
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: macOS or Windows version, and the Mac's chip.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: >-
+        For crashes and update problems, the relevant lines of the log: ~/Library/Application Support/Atelier/logs/app.log
+        on a Mac, %USERPROFILE%\.atelier\logs\app.log on Windows.
+        It can contain your projects' paths: look before you paste.
+      render: text

@@ -1,0 +1,27 @@
+---
+import { config } from '../config';
+import Icon from './Icon.astro';
+// The Windows app, from the Microsoft Store (Store only). Without a Store link it is shown next
+// to the macOS download but never clickable: `label` is the /download card's wording ("Coming soon"); elsewhere
+// "Windows" with a Soon chip. The link goes through /download/windows (functions/), which counts it like a DMG.
+interface Props { label?: string; size?: 'md' | 'lg' }
+const { label, size = 'lg' } = Astro.props;
+const store = config.windowsStoreUrl;
+---
+{store
+  ? <a class:list={['btn', 'store', size === 'md' && 'md']} href="/download/windows" data-platform="windows" rel="noopener"><Icon name="windows" />Download for Windows</a>
+  : <button type="button" class:list={['btn', 'soon', label && 'md']} disabled data-platform="windows">
+      {label ?? <><Icon name="windows" />Windows<span class="chip">Soon</span></>}
+    </button>}
+<style>
+  .soon { background: transparent; border: 1px dashed var(--line-strong); color: var(--text-3); font: 600 15px var(--font); cursor: not-allowed; }
+  .soon:active { transform: none; }
+  .md { padding: 8px 16px; font-size: 13.5px; }
+  .chip { font: 600 10.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--tint-violet); border: 1px solid var(--edge-violet-soft); }
+  /* Lit, not primary: a violet tint and edge, white text, a stronger tint on hover (never a dark,
+     disabled-looking pill next to the macOS button). */
+  .store { background: color-mix(in oklab, var(--violet) 26%, var(--bg-2)); border: 1px solid color-mix(in oklab, var(--violet) 70%, transparent); color: var(--text); font: 600 15px var(--font); }
+  .store:hover { background: color-mix(in oklab, var(--violet) 36%, var(--bg-2)); border-color: var(--violet); }
+  .store:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); }
+  .store.md { font-size: 13.5px; }
+</style>

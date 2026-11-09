@@ -1,0 +1,75 @@
+---
+import { getImage } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+// `lights`: the shot includes the window's top-left corner, where macOS draws the traffic lights (crops do not).
+// `width`: the widest the frame is ever drawn, in CSS px (hero: the page; a feature row: its column). The shots are
+// taken at 2× exactly that wide (tests/e2e/site-shots.manual.ts), so on a Retina desktop they are drawn 1:1: never
+// resampled, the app's text at its real size.
+// `mobile`: a tighter crop for phones (PHONE below), about as wide as the column there, so the text stays readable;
+// `mobileLights`: that crop includes the corner. The live layers are measured on the desktop shot: off on a phone.
+// `rise`: the frame rises into place once, on load (the hero).
+// `live`: where the app animates something in this shot (written by tests/e2e/site-shots.manual.ts next to the PNG,
+// in the shot's CSS px): the same animations run on top of the still image, so the screenshot looks live.
+// The shots are mostly small text: encoded at quality 90, where lossy artefacts no longer blur it.
+export interface LiveSpots { width: number; height: number; spots: { kind: string; x: number; y: number; w: number; h: number; r: number }[] }
+interface Props { src: ImageMetadata; mobile?: ImageMetadata; alt: string; priority?: boolean; rise?: boolean; lights?: boolean; mobileLights?: boolean; width?: number; live?: LiveSpots }
+const { src, mobile, alt, priority = false, rise = false, lights = true, mobileLights = false, width = 1120, live } = Astro.props;
+const PHONE = '(max-width: 480px)';
+// 1× and 2× of that width, never wider than the screenshot itself.
+const widths = [...new Set([width, width * 2].map((w) => Math.min(w, src.width)))];
+const sizes = `(max-width: ${width < 1120 ? 900 : width + 64}px) 100vw, ${width}px`;
+const encode = (img: ImageMetadata, w: number[], format: 'avif' | 'webp') => getImage({ src: img, format, quality: 90, widths: w });
+const [avif, webp] = await Promise.all([encode(src, widths, 'avif'), encode(src, widths, 'webp')]);
+const phone = mobile ? await Promise.all(['avif', 'webp'].map((f) => encode(mobile, [mobile.width / 2, mobile.width], f as 'avif' | 'webp'))) : [];
+const pct = (n: number, of: number) => `${((n / of) * 100).toFixed(4)}%`;
+// One app pixel in the frame (the shots are 2×): what the traffic lights are sized in.
+const shotWidths = `--shot-w: ${src.width / 2}; --shot-w-m: ${(mobile ?? src).width / 2}`;
+---
+<figure class:list={['window', { rise }]}>
+  <div class:list={['frame', { 'has-mobile': !!mobile, 'no-lights-m': !!mobile && !mobileLights }]} style={shotWidths}>
+    <picture>
+      {phone.map((p, i) => <source media={PHONE} type={i === 0 ? 'image/avif' : 'image/webp'} srcset={p.srcSet.attribute} sizes="calc(100vw - 32px)" width={mobile!.width} height={mobile!.height} />)}
+      <source type="image/avif" srcset={avif.srcSet.attribute} sizes={sizes} />
+      <source type="image/webp" srcset={webp.srcSet.attribute} sizes={sizes} />
+      <img src={webp.src} srcset={webp.srcSet.attribute} sizes={sizes} alt={alt} width={src.width} height={src.height} loading={priority ? 'eager' : 'lazy'} fetchpriority={priority ? 'high' : 'auto'} decoding="async" />
+    </picture>
+    {lights && <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>}
+    {live && (
+      <div class="live" style={`--px: calc(100cqw / ${live.width})`} aria-hidden="true">
+        {live.spots.map((s) => (
+          <span class:list={['live-spot', `is-${s.kind}`]} style={`left: ${pct(s.x, live.width)}; top: ${pct(s.y, live.height)}; width: ${pct(s.w, live.width)}; height: ${pct(s.h, live.height)}; border-radius: calc(var(--px) * ${s.r})`}></span>
+        ))}
+      </div>
+    )}
+  </div>
+  <slot />
+</figure>
+<style>
+  .window { position: relative; margin: 0; }
+  .frame { position: relative; border-radius: var(--r-lg); overflow: hidden; background: var(--bg-1); box-shadow: var(--shot-shadow); container-type: inline-size; --app: calc(100cqw / var(--shot-w)); }
+  .frame picture { display: block; }
+  .frame img { width: 100%; height: auto; }
+  /* macOS draws the traffic lights outside the page: the screenshot has their space, the frame draws them. */
+  /* macOS's sizes, in app pixels (--app): 12 px lights, 8 px apart, 20 px in, centred in the app's 45 px top bar. */
+  .lights { position: absolute; left: calc(var(--app) * 20); top: calc(var(--app) * 16.5); display: flex; gap: calc(var(--app) * 8); }
+  .lights i { width: calc(var(--app) * 12); aspect-ratio: 1; border-radius: 50%; background: var(--traffic); }
+  /* A phone shows the tighter crop: its own scale, no live layers (measured on the desktop shot), lights if it has the corner. */
+  @media (max-width: 480px) {
+    .has-mobile { --app: calc(100cqw / var(--shot-w-m)); }
+    .has-mobile .live, .no-lights-m .lights { display: none; }
+  }
+  /* Flat at rest: a 3D tilt made the browser resample the screenshot and blurred its text until scrolling flattened
+     it. The entrance is a short 2D rise that ends at no transform at all. */
+  @media (prefers-reduced-motion: no-preference) {
+    .rise .frame { animation: window-rise 700ms var(--ease) 100ms backwards; }
+  }
+  @keyframes window-rise { from { opacity: 0; transform: translateY(28px); } }
+
+  /* Live layers: the app's own animation (layout.css: the waiting pane's bright hairline breathing over its calm one)
+     at the shot's scale (--px = one app pixel). The image holds the calm frame; the layer adds
+     only what moves. */
+  .live { position: absolute; inset: 0; pointer-events: none; }
+  .live-spot { position: absolute; }
+  .is-glow { box-shadow: inset 0 0 0 var(--px) var(--live-edge); animation: live-glow 2.4s ease-in-out infinite; }
+  @keyframes live-glow { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+</style>

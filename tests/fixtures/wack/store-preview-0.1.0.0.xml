@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A WACK report as the kit writes it (the Store preview 0.1.0.0), trimmed: every requirement and test with its
+     attributes and result, at most one message per test; the machine's details are placeholders. -->
+<REPORT xml:lang="en-US" OVERALL_RESULT="WARNING" VERSION="10.0.26100.7705" LATEST_VERSION="" UPDATE_DOWNLOAD_URL="" TOOLSET_ARCHITECTURE="x64" SecureBoot="TRUE" APP_TYPE="Centennial" PUBLISHER_DISPLAY_NAME="" APP_NAME="" APP_VERSION="" OSVERSION="10.0.26200.0" OS="Microsoft Windows 11" PER_USER_APPLICATION="" PARTIAL_RUN="FALSE" LCID="1033" X64_ONLY="FALSE" VALIDATION_TYPE="CommandLine" ReportGenerationTime="1/1/2026 12:00:00 PM" ID="00000000000000000000000000000000">
+<REQUIREMENTS>
+<REQUIREMENT NUMBER="3" TITLE="Digitally signed file test" RATIONALE="An Authenticode digital signature allows users to be sure that the software is genuine. It also allows detection if a file has been tampered with e.g. infected by a virus.">
+<TEST INDEX="2" NAME="Install signed driver and executable files" DESCRIPTION="Install signed driver and executable files." EXECUTIONTIME="00h:00m:01s.11ms" OPTIONAL="TRUE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+</REQUIREMENT>
+<REQUIREMENT NUMBER="6" TITLE="User account control (UAC) test" RATIONALE="Most applications do not require administrator privileges at run time, and should be just fine running as a standard-user. Windows applications must have a manifest (embedded or external) to define its execution level that tells OS the privileges needed to run the application.">
+<TEST INDEX="11" NAME="User account control run level" DESCRIPTION="Windows® applications must have a manifest (embedded or external) to define its execution level that tells OS the privileges needed to run the application." EXECUTIONTIME="00h:00m:00s.69ms" OPTIONAL="TRUE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+</REQUIREMENT>
+<REQUIREMENT NUMBER="12" TITLE="Package compliance test" RATIONALE="The package does not satisfy Store compliance rules.">
+<TEST INDEX="77" NAME="Application count" DESCRIPTION="One package should not define more than one app in the manifest." EXECUTIONTIME="00h:00m:00s.71ms" OPTIONAL="TRUE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+<TEST INDEX="31" NAME="App manifest" DESCRIPTION="App manifest must include valid entries for all required fields." EXECUTIONTIME="00h:00m:00s.75ms" OPTIONAL="FALSE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+<TEST INDEX="87" NAME="File association verbs" DESCRIPTION="Registry validation that no registered file association verbs are installed." EXECUTIONTIME="00h:00m:00s.72ms" OPTIONAL="TRUE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+<TEST INDEX="86" NAME="Registry checks" DESCRIPTION="Registry validation that drivers are not installed and NT Services are not installed." EXECUTIONTIME="00h:00m:00s.67ms" OPTIONAL="TRUE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+<TEST INDEX="91" NAME="Enterprise Features" DESCRIPTION="Check if any enterprise-only features are in the package." EXECUTIONTIME="00h:00m:00s.67ms" OPTIONAL="FALSE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+<TEST INDEX="90" NAME="Resource Packages" DESCRIPTION="Check if any resource packages contain PE files." EXECUTIONTIME="00h:00m:00s.64ms" OPTIONAL="FALSE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+</REQUIREMENT>
+<REQUIREMENT NUMBER="14" TITLE="Windows security features test" RATIONALE="Applications must opt-into Windows security features.">
+<TEST INDEX="70" NAME="Banned file analyzer" DESCRIPTION="Analysis of application to detect known insecure files" EXECUTIONTIME="00h:00m:00s.67ms" OPTIONAL="FALSE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+<TEST INDEX="62" NAME="Private code signing" DESCRIPTION="App should not package private code signing key files." EXECUTIONTIME="00h:00m:00s.69ms" OPTIONAL="FALSE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+</REQUIREMENT>
+<REQUIREMENT NUMBER="19" TITLE="App manifest resources tests" RATIONALE="The App Package Manifest should have valid resources defined in the resources.pri file, as per the App Packaging Specification and App Manifest Schema.">
+<TEST INDEX="45" NAME="App resources" DESCRIPTION="The package should have valid resources defined in the resources.pri file." EXECUTIONTIME="00h:00m:00s.70ms" OPTIONAL="TRUE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+<TEST INDEX="61" NAME="Branding" DESCRIPTION="App should not use the default images packed by windows SDK samples or Visual Studio." EXECUTIONTIME="00h:00m:00s.92ms" OPTIONAL="FALSE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+</REQUIREMENT>
+<REQUIREMENT NUMBER="20" TITLE="Debug configuration test" RATIONALE="The App should not install any debug binaries.">
+<TEST INDEX="46" NAME="Debug configuration" DESCRIPTION="The App should not install any debug binaries." EXECUTIONTIME="00h:00m:00s.72ms" OPTIONAL="TRUE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+</REQUIREMENT>
+<REQUIREMENT NUMBER="23" TITLE="App Capabilities test" RATIONALE="Packages declaring special-use capabilities will have to provide justifications during the onboarding process.">
+<TEST INDEX="52" NAME="Special use capabilities" DESCRIPTION="Packages declaring special-use capabilities will have to provide justifications during the onboarding process." EXECUTIONTIME="00h:00m:00s.67ms" OPTIONAL="FALSE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+</REQUIREMENT>
+<REQUIREMENT NUMBER="24" TITLE="Windows Runtime metadata validation" RATIONALE="Metadata needs to be conformant and consistent across all generation sources.">
+<TEST INDEX="56" NAME="ExclusiveTo attribute" DESCRIPTION="A class must not implement an interface that is marked ExclusiveTo another class." EXECUTIONTIME="00h:00m:05s.78ms" OPTIONAL="FALSE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+<TEST INDEX="57" NAME="Type location" DESCRIPTION="Types must be defined in the metadata file with the longest matching namespace." EXECUTIONTIME="00h:00m:00s.70ms" OPTIONAL="FALSE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+<TEST INDEX="55" NAME="Type name case-sensitivity" DESCRIPTION="Namespace and type names must not vary only by casing." EXECUTIONTIME="00h:00m:00s.66ms" OPTIONAL="FALSE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+<TEST INDEX="54" NAME="Type name correctness" DESCRIPTION="Only system types can be in the Windows namespace and no types can be in the global namespace." EXECUTIONTIME="00h:00m:00s.68ms" OPTIONAL="FALSE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+<TEST INDEX="58" NAME="General metadata correctness" DESCRIPTION="Metadata files must meet various requirements in order to be valid and correct." EXECUTIONTIME="00h:00m:05s.00ms" OPTIONAL="TRUE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+<TEST INDEX="53" NAME="Properties" DESCRIPTION="Write-only and indexer properties may not be used. Corresponding getter and setter methods must match in type." EXECUTIONTIME="00h:00m:00s.66ms" OPTIONAL="FALSE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+</REQUIREMENT>
+<REQUIREMENT NUMBER="25" TITLE="Package sanity test" RATIONALE="Validation of the app package contents to ensure correctness.">
+<TEST INDEX="89" NAME="Archive files usage" DESCRIPTION="Packages should not contain PE files inside archive files." EXECUTIONTIME="00h:00m:00s.66ms" OPTIONAL="TRUE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+<TEST INDEX="88" NAME="Blocked executables" DESCRIPTION="Detects if there are references to process launch APIs and blocked executables" EXECUTIONTIME="00h:00m:08s.63ms" OPTIONAL="TRUE"><MESSAGES><MESSAGE TEXT="File C:\Program Files\WindowsApps\FrancescoMusso.AtelierIDE_0.1.0.0_x64__q82zjjpjsmf54\resources\app\node_modules\node-pty\prebuilds\win32-x64\winpty.dll contains a reference to a &quot;Launch Process&quot; related API kernel32.dll!CreateProcessW" /></MESSAGES><RESULT><![CDATA[FAIL]]></RESULT></TEST>
+<TEST INDEX="63" NAME="Platform appropriate files" DESCRIPTION="App should not install files that do not match the target processor architecture." EXECUTIONTIME="00h:00m:00s.69ms" OPTIONAL="TRUE"><RESULT><![CDATA[PASS]]></RESULT></TEST>
+</REQUIREMENT>
+<REQUIREMENT NUMBER="26" TITLE="High-DPI support" RATIONALE="The application needs to set DPI-aware to make the UI look consistently good across a wide variety of high-DPI display settings.">
+<TEST INDEX="92" NAME="DPIAwarenessValidation" DESCRIPTION="Applications should set DPI-aware to make its UI look consistently good across a wide variety of high-DPI display settings." EXECUTIONTIME="00h:00m:00s.71ms" OPTIONAL="FALSE"><MESSAGES><MESSAGE TEXT="Failed to process the binary C:\Program Files\WindowsApps\FrancescoMusso.AtelierIDE_0.1.0.0_x64__q82zjjpjsmf54\AtelierIDE.exe." /></MESSAGES><RESULT><![CDATA[WARNING]]></RESULT></TEST>
+</REQUIREMENT>
+</REQUIREMENTS>
+</REPORT>

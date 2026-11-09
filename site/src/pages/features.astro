@@ -1,0 +1,55 @@
+---
+import Base from '../layouts/Base.astro';
+import FeatureSection from '../components/FeatureSection.astro';
+import Bento from '../components/Bento.astro';
+import KeyBand from '../components/KeyBand.astro';
+import Cta from '../components/Cta.astro';
+import { rows } from '../content/features';
+// Every feature in README form: an index that follows the page, then one article
+// per row, the smaller things, the keys and the closing. A wider page than the rest of the site, so the 640 px shots
+// stay 1:1 next to the index.
+const description = "Everything Atelier does, in the order you'll meet it: sessions, Ask, split view, Docker, Redis, Postgres, Git, automations, dictation and more.";
+const index = [...rows.map((r) => ({ href: `#${r.id}`, label: r.eyebrow })), { href: '#more', label: 'And more' }, { href: '#shortcuts', label: 'Keyboard' }];
+---
+<Base title="Atelier | Features" description={description} path="/features">
+  <section class="container wide page-head">
+    <p class="eyebrow">Features</p>
+    <h1>Everything Atelier does.<br /><span class="dim">In the order you'll meet it.</span></h1>
+    <p class="lead">Each feature with its shortcut and a screenshot. On a desktop, most of them open in the live demo.</p>
+  </section>
+  <div class="container wide layout">
+    <nav class="toc" aria-label="On this page">
+      {index.map((e) => <a href={e.href}>{e.label}</a>)}
+    </nav>
+    <div class="articles">
+      {rows.map((row) => <FeatureSection row={row} />)}
+      <Bento />
+      <KeyBand />
+    </div>
+  </div>
+  <Cta />
+</Base>
+<script src="../scripts/toc.ts"></script>
+<style>
+  .page-head { display: flex; flex-direction: column; gap: 18px; padding-top: clamp(40px, 7vw, 88px); padding-bottom: clamp(36px, 5vw, 56px); }
+  h1 { font-size: clamp(36px, 5.5vw, 56px); font-weight: 700; letter-spacing: -.035em; line-height: 1.04; text-wrap: balance; }
+  .page-head .lead { max-width: 620px; }
+  .layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 64px; align-items: start; }
+  /* Sticky under the header while the articles scroll by. */
+  .toc { position: sticky; top: calc(var(--appbar-h) + 24px); display: flex; flex-direction: column; gap: 2px;
+    max-height: calc(100vh - var(--appbar-h) - 48px); overflow-y: auto; scrollbar-width: none; }
+  .toc a { display: block; padding: 6px 10px; border-radius: var(--r-sm); color: var(--text-3); font-size: 14px; line-height: 1.4;
+    transition: color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); }
+  .toc a:hover { color: var(--text); background: var(--bg-hover); }
+  .toc a[aria-current] { color: var(--text); background: var(--bg-hover); box-shadow: inset 2px 0 0 var(--brand); }
+  .toc a:focus-visible { border-radius: var(--r-sm); }
+  .articles { min-width: 0; }
+  /* A narrow screen: the index is a wrapped row of links above the articles, and stops following the page. */
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+    .toc { position: static; flex-direction: row; flex-wrap: wrap; gap: 6px; max-height: none; }
+    .toc a { padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 13.5px; }
+    .toc a[aria-current] { box-shadow: none; border-color: var(--edge-violet-soft); }
+    .toc a:focus-visible { border-radius: 999px; }
+  }
+</style>

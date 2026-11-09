@@ -1,0 +1,74 @@
+/* The Source Control sidebar's Sync split button and the git sheets. Tokens only (theme.css). */
+
+/* ── Sync split button, under the repository card ─────────── */
+.git-sync { display: flex; align-items: stretch; flex-shrink: 0; height: 30px; margin: -4px 8px 12px; border-radius: var(--radius); background: var(--bg-control); box-shadow: inset 0 0 0 1px var(--line-strong); animation: atl-enter var(--t-med) var(--ease) both; transition: box-shadow var(--t-med) var(--ease), background-color var(--t-med) var(--ease); }
+.git-sync.is-due { background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet); }
+.git-sync > button { display: flex; align-items: center; gap: 7px; color: var(--text); font-size: 12.5px; font-weight: 600; transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.git-sync > button:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); }
+.git-sync-main { flex: 1; min-width: 0; justify-content: center; padding: 0 12px; border-radius: var(--radius) 0 0 var(--radius); white-space: nowrap; }
+.git-sync-main:hover { background: var(--tint-violet); }
+.git-sync.is-due .git-sync-main:hover { background: var(--tint-violet-hover); }
+.git-sync-main.is-quiet { color: var(--text-3); font-weight: 500; }
+.git-sync-main.is-quiet:hover { color: var(--text); }
+.git-sync-icon { display: flex; color: var(--violet); }
+.git-sync-main.is-quiet .git-sync-icon { color: inherit; }
+.git-sync-counts { display: inline-flex; gap: 6px; font-size: 11.5px; font-weight: 500; }
+.git-sync-behind { color: var(--working); }
+.git-sync-ahead { color: var(--link); }
+.git-sync-more { width: 30px; flex-shrink: 0; justify-content: center; color: var(--text-2); border-radius: 0 var(--radius) var(--radius) 0; box-shadow: inset 1px 0 0 var(--line-strong); }
+.git-sync.is-due .git-sync-more { box-shadow: inset 1px 0 0 var(--edge-violet-soft); }
+.git-sync-more:hover { background: var(--tint-violet); color: var(--text); }
+.git-sync-more:active { background: var(--tint-violet-hover); }
+.git-sync.is-running .git-sync-main { cursor: progress; color: var(--text-2); }
+.git-sync.is-running .git-spin { color: var(--violet); }
+:root[data-motion="reduced"] .git-sync { animation: none; }
+
+/* ── The sheets: the palette's surface, a question and its answers ─────────── */
+.palette.git-sheet { width: 480px; max-height: none; padding: 16px; gap: 12px; outline: none; }
+.git-sheet-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.git-sheet-icon { width: 28px; height: 28px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: var(--radius); color: var(--on-brand); background: var(--brand); }
+.git-sheet-icon.is-warn { color: var(--waiting); background: var(--tint-waiting); box-shadow: inset 0 0 0 1px var(--edge-waiting); }
+.git-sheet-icon.is-danger { color: var(--text-error); background: var(--tint-error-strong); box-shadow: inset 0 0 0 1px var(--edge-error); }
+.git-sheet-title { margin: 0; min-width: 0; font-size: 14px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.git-sheet-body, .git-sheet-note { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-3); }
+.git-sheet-body.is-loading { animation: atl-fade var(--t-slow) var(--ease) both; }
+.git-sheet-note { font-size: 11.5px; color: var(--text-4); }
+
+.git-sheet-commits, .git-sheet-files, .git-sheet-rows { list-style: none; margin: 0; padding: 4px; display: flex; flex-direction: column; gap: 2px; border-radius: var(--radius); background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line); }
+.git-sheet-commit, .git-sheet-file { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 8px; border-radius: var(--r-sm); font-size: 12px; animation: atl-row-in var(--t-med) var(--ease) both; }
+.git-sheet-commit:hover, .git-sheet-file:hover { background: var(--bg-hover); }
+.git-sheet-oid { flex-shrink: 0; font-size: 11px; color: var(--link); }
+.git-sheet-subject, .git-sheet-file-name { min-width: 0; flex: 1 1 auto; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.git-sheet-file-name { flex: 0 1 auto; }
+.git-sheet-author, .git-sheet-file-dir { flex-shrink: 1; min-width: 0; font-size: 11px; color: var(--text-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.git-sheet-author { flex-shrink: 0; max-width: 35%; }
+.git-sheet-more { padding: 3px 8px 4px; font-size: 11px; color: var(--text-4); }
+.git-sheet-by { width: 18px; height: 18px; flex-shrink: 0; border-radius: var(--r-sm); display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; background: var(--bg-3); box-shadow: inset 0 0 0 1.2px var(--ring); }
+
+/* Publish: the remote picker and the name it gets there. */
+.git-sheet-fields { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px 14px; }
+.git-sheet-label { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-4); }
+.git-sheet-remotes { display: flex; flex-wrap: wrap; gap: 6px; }
+.git-sheet-remote { height: 26px; padding: 0 11px; border-radius: 999px; font-size: 12px; color: var(--text-2); background: var(--bg-control); box-shadow: inset 0 0 0 1px var(--line-strong); transition: background-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.git-sheet-remote:hover { color: var(--text); background: var(--tint-violet-soft); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.git-sheet-remote.is-on { color: var(--text); background: var(--seg-on); box-shadow: var(--seg-on-shadow); }
+.git-sheet-remote:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); }
+.git-sheet-target { min-width: 0; font-size: 12px; color: var(--text); padding: 4px 9px; border-radius: var(--r-sm); background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line); justify-self: start; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.git-sheet-target.is-pending { color: var(--text-4); }
+.git-sheet-check { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); cursor: pointer; }
+.git-sheet-check:hover { color: var(--text); }
+.git-sheet-check input { accent-color: var(--violet); margin: 0; }
+
+/* Sync All's results. */
+.git-sheet-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-sm); animation: atl-row-in var(--t-med) var(--ease) both; }
+.git-sheet-row:hover { background: var(--bg-hover); }
+.git-sheet-row-icon { width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 999px; }
+.git-sheet-row.is-ok .git-sheet-row-icon { color: var(--done); background: var(--tint-done); box-shadow: inset 0 0 0 1px var(--edge-done); }
+.git-sheet-row.is-needs .git-sheet-row-icon { color: var(--waiting); background: var(--tint-waiting); box-shadow: inset 0 0 0 1px var(--edge-waiting); }
+.git-sheet-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.git-sheet-row-name { font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.git-sheet-row-text { font-size: 11.5px; color: var(--text-3); overflow-wrap: anywhere; }
+
+.git-sheet-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 2px; }
+.git-sheet-actions button:disabled { opacity: .45; cursor: not-allowed; filter: none; box-shadow: none; }
+:root[data-motion="reduced"] :is(.git-sheet-commit, .git-sheet-file, .git-sheet-row, .git-sheet-body.is-loading) { animation: none; }

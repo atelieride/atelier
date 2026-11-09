@@ -1,0 +1,67 @@
+---
+import Base from '../layouts/Base.astro';
+import { config } from '../config';
+// What the app and the site send over the network. Keep it in step with
+// README.md (Privacy) and the Settings › Updates note.
+---
+<Base title="Atelier | Privacy" description="What the Atelier website and app send over the network, and what they never do: no cookies, no account, no identifiers." path="/privacy">
+  <section class="container section page">
+    <div class="head" data-reveal>
+      <p class="eyebrow">Privacy</p>
+      <h1 class="h1">Your work stays yours.</h1>
+      <p class="lead">Atelier has no account and no tracking, and sends nothing about your work to us. This is everything the app and this website send over the network, and to whom.</p>
+    </div>
+
+    <div class="cards" data-reveal>
+      <section class="card">
+        <h2>The app</h2>
+        <ul>
+          <li><strong>Update checks.</strong> On a Mac, at launch and every six hours Atelier asks useatelier.dev for new versions. The request carries the app version and whether it is the first check of the day, week or month: that is how active installs are counted. No identifier, nothing about your projects, sessions or files. Set the channel to Off in Settings › About and the update check sends nothing.</li>
+          <li><strong>Dictation.</strong> Speech is transcribed on your computer. When you set up dictation, Atelier downloads the transcription model (about 570 MB) from Hugging Face, checks it and keeps it on your computer. The optional clean-up sends the text, never the audio, to Claude Haiku through your own Claude Code.</li>
+          <li><strong>Connectors.</strong> ClickUp, Notion and Jira talk to their own service only after you connect them; their tokens are encrypted in your Keychain (on Windows, with Windows' data protection for your account). Atelier only reads, and in Notion and Jira only the databases and projects you choose. An automation that is on reads the list, database or project it watches every few minutes, from your computer, and only while Atelier is running.</li>
+          <li><strong>Git and GitHub.</strong> Source Control fetches from your project's remotes, and pushes and pulls only when you ask; pull request status comes from your own GitHub CLI (gh). All with your own credentials. Turn fetching or pull requests off in Settings › Source Control.</li>
+          <li><strong>Commit messages.</strong> When Claude writes a commit message (✦), Atelier sends the staged changes and, unless you turn it off, what your sessions were asked to Claude through your own Claude Code. Files that look like secrets are left out. Turn it off in Settings › Source Control.</li>
+          <li><strong>Ask.</strong> Only when you ask about a session, Atelier sends a digest of its conversation (your requests, Claude's replies, one line per tool call, no tool output, token-like strings redacted) to Claude through your own Claude Code, which may read the project's files to answer, read-only; files that look like secrets are off limits. Its threads stay on your computer.</li>
+          <li><strong>Docker.</strong> Atelier reads your containers from the Docker engine on your computer, over its local socket (a named pipe on Windows) and only to read: nothing leaves your computer. Turn it off in Settings › Docker.</li>
+          <li><strong>Redis.</strong> Atelier connects only to Redis servers on your computer (local ports, and sockets on a Mac), never to another host. Passwords you type are encrypted like the connectors' tokens, and nothing leaves your computer. Turn it off in Settings › Redis.</li>
+          <li><strong>Databases.</strong> Atelier connects only to the Postgres servers you save, directly or through an SSH tunnel you set. Passwords are encrypted like the connectors' tokens, every statement runs in a read-only transaction, and nothing is sent anywhere else.</li>
+          <li><strong>Claude Code compatibility.</strong> Atelier notes the names and codes Claude Code sends that it doesn't recognize yet, on your computer only: nothing is sent. Settings › Claude shows the list, to copy or clear.</li>
+          <li><strong>Claude Code.</strong> Your sessions run your own <code>claude</code> CLI, under your Claude account and its terms.</li>
+        </ul>
+      </section>
+      <section class="card">
+        <h2>This website</h2>
+        <ul>
+          <li><strong>Visits.</strong> No cookies and no fingerprinting. Cloudflare Web Analytics counts pages, referrers, countries and load times, in aggregate.</li>
+          <li><strong>Downloads.</strong> Counted by version, channel, the page you came from and your country; a click on the Windows button the same way. IP addresses are not stored.</li>
+          <li><strong>Hosting.</strong> The site runs on Cloudflare; the Mac app's files are served from GitHub Releases, the Windows app from the Microsoft Store.</li>
+        </ul>
+      </section>
+      <section class="card">
+        <h2>Support and email</h2>
+        <ul>
+          <li><strong>Payments.</strong> Support payments go through Polar, which handles your payment details. I see the amount and the email you give.</li>
+          <li><strong>Email.</strong> Mail to <a href={`mailto:${config.contactEmail}`}>{config.contactEmail}</a> is read by me, {config.author}, and never shared.</li>
+        </ul>
+      </section>
+    </div>
+
+    <p class="fine updated">Updated 9 November 2026 · Questions: <a href={`mailto:${config.contactEmail}`}>{config.contactEmail}</a></p>
+  </section>
+</Base>
+<style>
+  .page { display: flex; flex-direction: column; gap: 32px; max-width: 820px; }
+  .head { display: flex; flex-direction: column; gap: 16px; }
+  .h1 { text-wrap: balance; }
+  .lead { max-width: 60ch; }
+  .cards { display: flex; flex-direction: column; gap: 16px; }
+  .card { padding: 22px 24px; border-radius: var(--r-lg); background: var(--bg-1); border: 1px solid var(--line-soft); transition: border-color var(--t-fast) var(--ease); }
+  .card:hover { border-color: var(--edge-violet-soft); }
+  .card h2 { margin: 0 0 12px; font-size: 17px; font-weight: 600; color: var(--text); }
+  .card ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 10px; color: var(--text-2); font-size: 14.5px; line-height: 1.55; }
+  .card strong { color: var(--text); font-weight: 600; }
+  .card code { font: 13px var(--mono); }
+  .card a, .updated a { color: var(--text); text-decoration: underline; text-decoration-color: var(--edge-violet); text-underline-offset: 3px; transition: text-decoration-color var(--t-fast) var(--ease); }
+  .card a:hover, .updated a:hover { text-decoration-color: var(--pink); }
+  .updated { color: var(--text-3); }
+</style>

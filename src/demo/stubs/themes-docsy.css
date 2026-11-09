@@ -1,0 +1,2 @@
+/* The live demo's stand-in for the stylesheet of the app's two company-named themes (compile/build.ts swaps it in):
+   empty, like their entry in the theme list. The site reads this file as text: it must never name the company. */

@@ -1,0 +1,61 @@
+---
+import Base from '../layouts/Base.astro';
+import Icon from '../components/Icon.astro';
+import { config } from '../config';
+---
+<Base title="Atelier | Support" description="Atelier is free. If it saves you time, support it with any amount, once or monthly." path="/support">
+  <section class="container section page">
+    <div class="thanks card" hidden>
+      <Icon name="heart" size={22} />
+      <p><strong>Thank you!</strong> Your support keeps Atelier free for everyone. A receipt is on its way to your inbox.</p>
+    </div>
+
+    <div class="head" data-reveal>
+      <p class="eyebrow">Support</p>
+      <h1 class="h1">Atelier is free.<br /><span class="dim">Help keep it that way.</span></h1>
+      <p class="lead">I build Atelier on my own (with my buddy Claude; you two have probably met). If it saves you time every day, or you just kinda like the way it looks, you can chip in any amount, once or monthly. Everyone gets the same app either way.</p>
+      <a class="btn btn-primary" href={config.supportUrl}><Icon name="heart" />Support Atelier</a>
+      <p class="fine">Any amount&nbsp;· once or monthly&nbsp;· card, Apple Pay, Google Pay</p>
+      <p class="secure"><Icon name="lock" size={14} />Secure checkout by Polar</p>
+    </div>
+
+    <ul class="costs" data-reveal>
+      <li><strong>Apple Developer ID</strong><span>Signing and notarization, so macOS opens Atelier without warnings.</span><code>$99 / year</code></li>
+      <li><strong>Builds for Mac and Windows</strong><span>Every release built, tested and checked on both systems, plus the site you are on.</span><code>every month</code></li>
+      <li><strong>Time</strong><span>Evenings spent on new features, fixes and updates.</span><code>every release</code></li>
+    </ul>
+
+    <div class="other" data-reveal>
+      <p class="fine">No money? These help just as much:</p>
+      <div class="help">
+        <a href={`${config.githubUrl}/issues/new?template=bug_report.yml`}>Report a bug</a>
+        <a href="mailto:?subject=Atelier&amp;body=A%20workbench%20for%20Claude%20Code%3A%20https%3A%2F%2Fuseatelier.dev">Tell a colleague</a>
+      </div>
+    </div>
+  </section>
+</Base>
+<script>
+  // Polar sends people back here with ?thanks=1 after paying (the checkout link's success URL).
+  if (new URLSearchParams(location.search).has('thanks')) document.querySelector<HTMLElement>('.thanks')!.hidden = false;
+</script>
+<style>
+  .page { display: flex; flex-direction: column; gap: 36px; max-width: 920px; }
+  .head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 18px; }
+  .h1 { text-wrap: balance; }
+  .lead { max-width: 60ch; }
+  .head .btn { margin-top: 6px; }
+  .secure { display: inline-flex; align-items: center; gap: 6px; margin-top: -10px; font: 600 12.5px var(--mono); color: var(--done); }
+  .costs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .costs li { padding: 18px 20px; border-radius: var(--radius); background: var(--bg-1); border: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 6px; color: var(--text-3); font-size: 14px; }
+  .costs strong { color: var(--text); font-size: 15px; font-weight: 600; }
+  .costs code { margin-top: auto; padding-top: 4px; font: 12px var(--mono); color: var(--text-2); }
+  .other { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .help { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .help a { font-size: 13.5px; color: var(--text-2); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); }
+  .help a:hover { color: var(--text); border-color: var(--edge-violet); }
+  .thanks { display: flex; gap: 14px; align-items: center; padding: 16px 20px; border-radius: var(--r-lg); background: var(--tint-violet); border: 1px solid var(--edge-violet); color: var(--text-2); animation: atl-pop var(--t-slow) var(--ease); }
+  .thanks[hidden] { display: none; }
+  .thanks :global(svg) { flex: none; color: var(--pink); }
+  .thanks strong { color: var(--text); }
+  @media (max-width: 760px) { .costs { grid-template-columns: minmax(0, 1fr); } }
+</style>

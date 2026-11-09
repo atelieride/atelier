@@ -1,0 +1,36 @@
+{
+  "results": [
+    {
+      "Ticket": "1",
+      "Area": "[\"app\"]",
+      "Stage": "Doing",
+      "Owner": "[\"user://11111111-2222-4333-8444-555555555555\"]",
+      "Priority": "P1",
+      "date:Deadline:start": "2026-10-24",
+      "date:Deadline:is_datetime": 0,
+      "Title": "Dark mode for the billing page",
+      "url": "https://app.notion.com/p/0000000c00004000800000000000000c"
+    },
+    {
+      "Ticket": "2",
+      "Area": "[\"site\"]",
+      "Stage": "Review",
+      "Owner": "[\"user://11111111-2222-4333-8444-555555555555\"]",
+      "Priority": "P2",
+      "date:Deadline:is_datetime": 0,
+      "Title": "Pricing page copy review",
+      "url": "https://app.notion.com/p/00000004000040008000000000000004"
+    },
+    {
+      "Ticket": "3",
+      "Area": "[\"app\"]",
+      "Stage": "Shipped",
+      "Owner": "[\"user://11111111-2222-4333-8444-555555555555\"]",
+      "Priority": "P0",
+      "date:Deadline:is_datetime": 0,
+      "Title": "Ship v2 search",
+      "url": "https://app.notion.com/p/00000008000040008000000000000008"
+    }
+  ],
+  "has_more": false
+}

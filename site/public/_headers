@@ -1,0 +1,13 @@
+# Cloudflare Pages response headers (copied to dist/ as is).
+# The live demo's build: only the site may frame it (frame-ancestors works
+# as a header, never in the page's meta CSP), and its hashed assets never change under a name.
+/demo-app/*
+  Content-Security-Policy: frame-ancestors 'self'
+  X-Frame-Options: SAMEORIGIN
+
+/demo-app/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The film's captions: a track is read only as text/vtt.
+/_astro/*.vtt
+  Content-Type: text/vtt; charset=utf-8

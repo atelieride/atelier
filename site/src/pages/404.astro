@@ -1,0 +1,14 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="Atelier | Not found" description="This page does not exist." path={null}>
+  <section class="container section nf">
+    <p class="eyebrow">404</p>
+    <h1 class="h1">Lost the session?</h1>
+    <p class="lead">This page does not exist. Press <kbd>⌘</kbd> <kbd>J</kbd>… or just go home.</p>
+    <a class="btn btn-primary" href="/">Back home</a>
+  </section>
+</Base>
+<style>
+  .nf { min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 18px; }
+</style>

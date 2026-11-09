@@ -1,0 +1,10 @@
+error: Your local changes to the following files would be overwritten by merge:
+	a.txt
+Please commit your changes or stash them before you merge.
+Aborting
+Index was not unstashed.
+On branch main
+Changes not staged for commit:
+	modified:   a.txt
+
+no changes added to commit

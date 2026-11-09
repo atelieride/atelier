@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"440824c5-f4da-4c78-9a14-51d6b671129c","uuid":"c1"}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_g","name":"Glob","input":{"pattern":"src/**/*.ts"}}]},"session_id":"440824c5-f4da-4c78-9a14-51d6b671129c","uuid":"c2"}
+{"type":"system","subtype":"permission_denied","tool_name":"Read","tool_use_id":"toolu_01Res","decision_reason":"--restricted: path outside the working directory","message":"x","uuid":"c3","session_id":"440824c5-f4da-4c78-9a14-51d6b671129c"}
+{"type":"result","subtype":"success","is_error":false,"result":"{\"points\":[\"Sessions are named\"],\"where\":\"chat\",\"choices\":[]}","structured_output":{"points":["Sessions are named"],"where":"chat","choices":[]},"total_cost_usd":0.002,"api_error_status":null,"uuid":"c4"}

@@ -1,0 +1,29 @@
+/* The film in the hero's frame (scripts/film-inline.ts), added once, when it first plays. The frame keeps its size: the
+   film sits in it, over the screenshot, and fades in once it is really playing. */
+.film-inline { background: var(--film-ground); opacity: 0; transition: opacity var(--t-slow) var(--ease); }
+.film-inline.is-on { opacity: 1; }
+.film-inline:not(.is-on) * { pointer-events: none !important; }
+.fi-stage { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; }
+.fi-stage video { display: block; width: 100%; aspect-ratio: 16 / 9; height: auto; pointer-events: auto; cursor: pointer; }
+.film-caption { position: absolute; left: 12px; right: 12px; bottom: 54px; margin: 0 auto; width: fit-content; max-width: calc(100% - 24px);
+  padding: 5px 11px; border-radius: var(--r-sm); background: var(--film-plate); color: var(--text); font: 500 14px/1.4 var(--font);
+  text-align: center; white-space: pre-line; text-wrap: balance; }
+.film-caption:empty { display: none; }
+.fi-ctrls { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 8px; pointer-events: auto; }
+.fi-ctrls button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 36px; min-width: 36px; padding: 0 10px; border-radius: 999px; cursor: pointer;
+  background: var(--bg-float); border: 1px solid var(--edge-violet); color: var(--text); font: 600 13px var(--font);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: var(--shadow-float); transition: scale var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); }
+.fi-ctrls button:active { scale: .96; }
+.fi-ctrls button:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); }
+.film-sound[aria-pressed="true"] { background: var(--tint-violet); }
+/* A phone: the frame is the 9:8 crop, so the film runs along its top and the caption gets the bar under it. */
+@media (max-width: 480px) {
+  .fi-stage { justify-content: flex-start; }
+  .film-caption { position: static; flex: 1; display: grid; place-items: center; width: auto; max-width: none; margin: 0; padding: 6px 12px 52px; background: none; font-size: 13.5px; }
+  .film-caption:empty { display: grid; }
+}
+@media (prefers-reduced-motion: reduce) { .film-inline { transition: none; } }
+.film-full svg { display: block; }
+/* The browser draws the captions full screen (a phone's film, film.ts; a tablet's): in the site's type, on the hero's
+   plate. */
+.film-phone::cue, .fi-stage video::cue { font-family: var(--font); font-weight: 500; background: var(--film-plate); color: var(--text); }

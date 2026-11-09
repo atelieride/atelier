@@ -1,0 +1,85 @@
+<!doctype html>
+<!-- The DMG window's background, rendered by scripts/render-dmg-background.cjs
+     into background.tiff (1× + 2×). Finder draws the two icons on top, at the centers marked by .pad; keep them in sync
+     with DMG_WINDOW in scripts/release-ci.mjs (a test checks). Colors are the Aurora tokens (src/renderer/theme.css). -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: 'Instrument Sans'; src: url('../../node_modules/@fontsource-variable/instrument-sans/files/instrument-sans-latin-wght-normal.woff2') format('woff2'); font-weight: 400 700; }
+  @font-face { font-family: 'JetBrains Mono'; src: url('../../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2') format('woff2'); font-weight: 100 800; }
+  :root {
+    --bg-0: #08080F; --bg-1: #0D0D18; --bg-3: #1B1B2E;
+    --text: #EEEDFF; --text-3: #A3A1C4; --text-4: #646285;
+    --violet: #8B5CF6; --pink: #EC4899;
+    --w: 660px; --h: 400px; --icon-y: 206px; --left-x: 170px; --right-x: 490px;
+    /* Where Finder centers the labels under 128 px icons with 13 pt text (measured on macOS 27). */
+    --label-y: 289px;
+  }
+  html, body { margin: 0; width: var(--w); height: var(--h); overflow: hidden; background: var(--bg-0); }
+  body { position: relative; font-family: 'Instrument Sans', system-ui, sans-serif; color: var(--text); -webkit-font-smoothing: antialiased; }
+  /* Aurora: the violet glow up left, the pink one down right, a faint indigo floor. */
+  .sky { position: absolute; inset: 0;
+    background:
+      radial-gradient(420px 260px at 18% -6%, rgba(139,92,246,.34), transparent 70%),
+      radial-gradient(400px 260px at 96% 106%, rgba(236,72,153,.26), transparent 70%),
+      radial-gradient(520px 200px at 50% 50%, rgba(139,92,246,.07), transparent 75%),
+      linear-gradient(180deg, var(--bg-1), var(--bg-0) 60%); }
+  .grain { position: absolute; inset: 0; opacity: .05; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>"); }
+  h1 { position: absolute; top: 46px; left: 0; right: 0; margin: 0; text-align: center; font-size: 21px; font-weight: 600; letter-spacing: -.01em; }
+  h1 b { font-weight: 600; background: linear-gradient(90deg, #A78BFA, #F472B6); -webkit-background-clip: text; color: transparent; }
+  .sub { position: absolute; top: 80px; left: 0; right: 0; text-align: center; font-size: 13px; color: var(--text-3); }
+  /* A soft landing pad under each icon: Finder draws the 128 px icons over their centers. */
+  .pad { position: absolute; top: var(--icon-y); width: 172px; height: 200px; margin: -86px 0 0 -86px; border-radius: 40px;
+    background: radial-gradient(closest-side, rgba(139,92,246,.16), rgba(139,92,246,.05) 70%, transparent);
+    box-shadow: inset 0 0 0 1px rgba(167,139,250,.16); }
+  .pad.left { left: var(--left-x); }
+  .pad.right { left: var(--right-x); background: radial-gradient(closest-side, rgba(236,72,153,.14), rgba(236,72,153,.04) 70%, transparent); box-shadow: inset 0 0 0 1px rgba(244,114,182,.18); }
+  /* Finder draws the labels black on any background picture, whatever the appearance: a light pill under each keeps
+     them readable. Wide enough for "Atelier.app" when Finder shows extensions. */
+  .label { position: absolute; top: var(--label-y); height: 22px; margin-top: -11px; border-radius: 999px;
+    background: linear-gradient(180deg, #F6F5FF, #E6E3FA);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.6), 0 0 0 1px rgba(167,139,250,.35), 0 6px 18px -6px rgba(139,92,246,.55); }
+  .label.left { left: calc(var(--left-x) - 48px); width: 96px; }
+  .label.right { left: calc(var(--right-x) - 60px); width: 120px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.6), 0 0 0 1px rgba(244,114,182,.35), 0 6px 18px -6px rgba(236,72,153,.5); }
+  .arrow { position: absolute; top: calc(var(--icon-y) - 22px); left: 262px; width: 136px; height: 44px; overflow: visible; }
+  .foot { position: absolute; bottom: 20px; left: 0; right: 0; display: flex; justify-content: center; align-items: center; gap: 8px;
+    font: 500 11px 'JetBrains Mono', ui-monospace, monospace; letter-spacing: .02em; color: var(--text-4); }
+  .foot svg { width: 14px; height: 14px; }
+  /* ?preview: stand-ins for what Finder draws on top (never rendered into the TIFF). */
+  .ghost { display: none; position: absolute; top: var(--icon-y); width: 128px; height: calc((var(--label-y) - var(--icon-y)) * 2 + 64px); margin: -64px 0 0 -64px; }
+  .ghost img, .ghost i { display: block; width: 128px; height: 128px; }
+  .ghost span { position: absolute; left: -40px; right: -40px; top: calc(var(--label-y) - var(--icon-y) + 64px - 8px); line-height: 16px; text-align: center; font: 13px system-ui; color: #000; }
+  .ghost i { border-radius: 10px; background: linear-gradient(180deg, #5AB0F5, #2F7FD9); transform: scale(.82, .7); }
+  .preview .ghost { display: block; }
+</style>
+</head>
+<body>
+  <div class="sky"></div>
+  <div class="grain"></div>
+  <h1>Drag <b>Atelier</b> to Applications</h1>
+  <div class="sub">Then open it from Applications or Spotlight.</div>
+  <div class="pad left"></div>
+  <div class="pad right"></div>
+  <div class="label left"></div>
+  <div class="label right"></div>
+  <svg class="arrow" viewBox="0 0 136 44" fill="none">
+    <defs>
+      <linearGradient id="ag" x1="0" y1="0" x2="136" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8B5CF6" stop-opacity=".15"/><stop offset=".45" stop-color="#A78BFA"/><stop offset="1" stop-color="#EC4899"/></linearGradient>
+      <filter id="glow" x="-20%" y="-80%" width="140%" height="260%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    </defs>
+    <g filter="url(#glow)" stroke="url(#ag)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8 22 H124"/>
+      <path d="M110 9 L125 22 L110 35"/>
+    </g>
+  </svg>
+  <div class="foot">
+    <svg viewBox="0 0 72 72" fill="none"><defs><linearGradient id="m" x1="0" y1="0" x2="72" y2="72" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8B5CF6"/><stop offset="1" stop-color="#EC4899"/></linearGradient></defs><g transform="translate(0 6)"><rect x="4" y="16" width="40" height="40" rx="11" fill="url(#m)" opacity=".35"/><rect x="16" y="10" width="40" height="40" rx="11" fill="url(#m)" opacity=".6"/><rect x="28" y="4" width="40" height="40" rx="11" fill="url(#m)"/><path d="M40 34 L48 14 L56 34" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></g></svg>
+    useatelier.dev
+  </div>
+  <div class="ghost" style="left: var(--left-x)"><img src="../icon.png" alt=""><span>Atelier</span></div>
+  <div class="ghost" style="left: var(--right-x)"><i></i><span>Applications</span></div>
+  <script>if (location.search.includes('preview')) document.body.classList.add('preview');</script>
+</body>
+</html>

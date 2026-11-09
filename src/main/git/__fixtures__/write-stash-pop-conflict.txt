@@ -1,0 +1,9 @@
+Auto-merging a.txt
+CONFLICT (content): Merge conflict in a.txt
+Index was not unstashed.
+On branch main
+Unmerged paths:
+	both modified:   a.txt
+
+no changes added to commit
+The stash entry is kept in case you need it again.

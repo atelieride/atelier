@@ -1,0 +1,8 @@
+{
+  "metadata": {
+    "type": "data_source"
+  },
+  "title": "Web",
+  "url": "https://app.notion.com/p/7e0a5b1c2d3e4f5061728394a5b6c7d8?pvs=204",
+  "text": "<data-source url=\"{{collection://9a1b2c3d-4e5f-4a6b-8c7d-8e9fa0b1c2d3}}\">\nThe title of this Data Source is: Web\n\nHere is the database's configurable state:\n<data-source-state>\n{\"name\":\"Web\",\"schema\":{\"Name\":{\"description\":\"\",\"name\":\"Name\",\"type\":\"title\"},\"Owner\":{\"description\":\"\",\"name\":\"Owner\",\"type\":\"person\"},\"Status\":{\"description\":\"\",\"groups\":{\"complete\":[{\"color\":\"green\",\"description\":\"\",\"name\":\"Launched\"}],\"current\":[],\"future\":[],\"in_progress\":[{\"color\":\"blue\",\"description\":\"\",\"name\":\"Building\"}],\"to_do\":[{\"color\":\"gray\",\"description\":\"\",\"name\":\"Planned\"}]},\"name\":\"Status\",\"type\":\"status\"}},\"url\":\"collection://9a1b2c3d-4e5f-4a6b-8c7d-8e9fa0b1c2d3\"}\n</data-source-state>\n</data-source>"
+}

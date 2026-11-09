@@ -1,0 +1,44 @@
+---
+import Base from '../layouts/Base.astro';
+import { renderReleases } from '../lib/releases';
+// Bundled at build time (a path from import.meta.url would point into dist/ once prerendered).
+import md from '../../../CHANGELOG.md?raw';
+// The entries carry the anchors the header's search links to (/search.json is built from the same rendering).
+const releases = await renderReleases(md);
+---
+<Base title="Atelier | Changelog" description="What's new in each version of Atelier." path="/changelog">
+  <section class="container section page">
+    <p class="eyebrow">Changelog</p>
+    <h1 class="h1">What's new</h1>
+    {releases.map((r) => (
+      <article class="release" id={`v${r.version}`} data-reveal>
+        <header><h2>{r.version}</h2>{r.beta && <span class="beta">Beta</span>}</header>
+        <div class="body" set:html={r.html} />
+      </article>
+    ))}
+  </section>
+</Base>
+<style>
+  .page { max-width: 860px; display: flex; flex-direction: column; gap: 20px; }
+  .h1 { margin-bottom: 20px; }
+  .release { padding: 28px 30px; border-radius: var(--r-lg); background: var(--bg-1); border: 1px solid var(--line-soft); }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  h2 { font: 600 20px var(--mono); }
+  .beta { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--working); background: var(--tint-working); box-shadow: inset 0 0 0 1px var(--edge-working); }
+  .body { color: var(--text-2); font-size: 15px; overflow-wrap: anywhere; }
+  .body :global(ul) { padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+  .body :global(li ul) { margin-top: 8px; }
+  .body :global(strong) { color: var(--text); }
+  /* The entry a search result opened: a soft violet wash that fades, as the app marks a jump target. */
+  .body :global(li:target) { border-radius: var(--r-sm); animation: entry-target 2.4s var(--ease) both; }
+  @keyframes entry-target { from { background-color: var(--tint-violet); box-shadow: 0 0 0 6px var(--tint-violet); } to { background-color: transparent; box-shadow: 0 0 0 6px transparent; } }
+  .body :global(code) { font: 13px var(--mono); padding: 1px 5px; border-radius: var(--r-sm); background: var(--bg-3); }
+  .body :global(a) { color: var(--link); }
+  .body :global(p + ul), .body :global(ul + p) { margin-top: 10px; }
+  /* Code blocks and tables scroll inside the card instead of widening the page (overflow-wrap does not apply). */
+  .body :global(pre), .body :global(table) { display: block; max-width: 100%; overflow-x: auto; margin: 12px 0; }
+  .body :global(pre) { padding: 12px 14px; border-radius: var(--radius); background: var(--bg-2); border: 1px solid var(--line-soft); }
+  .body :global(pre code) { padding: 0; background: none; }
+  .body :global(td), .body :global(th) { padding: 6px 10px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
+  @media (max-width: 560px) { .release { padding: 22px 20px; } }
+</style>

@@ -1,0 +1,125 @@
+/* The Commit all sheet: the palette's centered top surface, 700 px, never past 80% of the
+   window; cards that scroll past ~6. Tokens only (theme.css). */
+
+.palette.commit-all { width: 700px; max-width: calc(100vw - 32px); max-height: min(80vh, calc(100vh - 100px)); padding: 16px 16px 12px; gap: 12px; outline: none; }
+
+/* ── Header ─────────── */
+.commit-all-head { display: flex; align-items: center; gap: 12px; min-width: 0; flex-shrink: 0; }
+.commit-all-badge { width: 34px; height: 34px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: var(--radius); color: var(--on-brand); background: var(--brand); box-shadow: 0 0 0 1px var(--edge-violet); }
+.commit-all-heading { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.commit-all-title { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.commit-all-sub { margin: 0; display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--text-3); }
+.commit-all-sub > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.commit-all-sub .avatar { border-radius: 5px; flex-shrink: 0; }
+.commit-all-head .set-seg { flex-shrink: 0; }
+
+/* ── ✦ Write All ─────────── */
+.commit-all-tools { display: flex; align-items: center; gap: 10px; min-height: 26px; flex-shrink: 0; }
+.commit-all-write { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 12px 0 10px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--text-2); background: var(--bg-control); box-shadow: inset 0 0 0 1px var(--line-strong); transition: background-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease); }
+.commit-all-write svg { color: var(--violet); }
+.commit-all-write.is-due { color: var(--text); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet); }
+.commit-all-write.is-due svg { color: var(--pink); }
+.commit-all-write:hover:not(:disabled) { color: var(--text); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet); }
+.commit-all-write:disabled { opacity: .45; cursor: not-allowed; }
+.commit-all-write:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); }
+.commit-all-written { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-2); animation: atl-fade var(--t-med) var(--ease) both; }
+.commit-all-written svg { color: var(--pink); }
+
+.commit-all-link { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--link); border-radius: var(--r-sm); padding: 2px 4px; transition: color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); }
+.commit-all-link:hover { color: var(--text); background: var(--bg-hover); }
+.commit-all-link:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--violet); }
+.commit-all-more { font-size: 10.5px; color: var(--text-4); }
+
+/* ── Messages ─────────── */
+.commit-all-one { flex-shrink: 0; }
+.commit-all-msg { display: block; width: 100%; resize: none; padding: 6px 10px; border-radius: var(--r-sm); font: inherit; font-size: 12.5px; line-height: 18px; color: var(--text); background: var(--bg-control); border: 1px solid var(--line); outline: none; overflow: hidden; white-space: pre; text-overflow: ellipsis; transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), height var(--t-fast) var(--ease); }
+.commit-all-msg::placeholder { color: var(--text-4); }
+.commit-all-msg:hover:not(:disabled) { border-color: var(--line-strong); }
+.commit-all-msg.is-focused { white-space: pre-wrap; overflow-y: auto; border-color: var(--edge-violet); box-shadow: 0 0 0 3px var(--tint-violet); }
+.commit-all-msg:disabled { opacity: .5; cursor: not-allowed; }
+.commit-all-msg.is-writing { color: var(--text-2); border-color: var(--edge-violet); box-shadow: 0 0 0 3px var(--tint-violet); cursor: progress; }
+.commit-all-msg.is-writing::placeholder { color: var(--violet); }
+
+/* ── Cards ─────────── */
+.commit-all-list { list-style: none; margin: 0; padding: 2px; display: flex; flex-direction: column; gap: 8px; min-height: 0; max-height: 540px; overflow-y: auto; overscroll-behavior: contain; }
+.commit-all-card { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line); animation: atl-row-in var(--t-med) var(--ease) both; transition: box-shadow var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease); }
+.commit-all-card:hover { box-shadow: inset 0 0 0 1px var(--line-strong); }
+.commit-all-card:focus-within { box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.commit-all-card.is-writing { box-shadow: inset 0 0 0 1px var(--edge-violet); }
+.commit-all-card.is-out { opacity: .55; }
+.commit-all-card.is-out:hover { opacity: .8; }
+.commit-all-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 22px; }
+.commit-all-path { min-width: 0; flex: 0 1 auto; font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.commit-all-branch { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 1; min-width: 0; max-width: 40%; height: 18px; padding: 0 7px; border-radius: 999px; font-size: 10.5px; color: var(--text-3); background: var(--bg-control); box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.commit-all-branch svg { flex-shrink: 0; color: var(--violet); }
+.commit-all-counts { flex-shrink: 0; font-size: 11px; color: var(--text-3); white-space: nowrap; }
+.commit-all-counts i { font-style: normal; }
+.commit-all-counts .is-add { color: var(--done); }
+.commit-all-counts .is-del { color: var(--error); }
+.commit-all-chev { width: 22px; height: 22px; flex-shrink: 0; color: var(--text-3); }
+.commit-all-chev svg { transition: transform var(--t-med) var(--ease); }
+.commit-all-chev.is-open svg { transform: rotate(180deg); }
+.commit-all-chev:hover { color: var(--text); }
+
+.commit-all-notes { display: flex; flex-wrap: wrap; gap: 4px 12px; min-width: 0; font-size: 11.5px; color: var(--text-3); }
+.commit-all-note-line { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.commit-all-note-line.is-live i { width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: var(--working); }
+.commit-all-note-line.is-overlap { color: var(--waiting); }
+
+.commit-all-files { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; animation: atl-fade var(--t-med) var(--ease) both; }
+.commit-all-file { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 22px; padding: 0 3px 0 7px; border-radius: 999px; background: var(--bg-control); box-shadow: inset 0 0 0 1px var(--line); transition: box-shadow var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); }
+.commit-all-file:hover { background: var(--tint-violet-soft); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.commit-all-file.is-overlap { box-shadow: inset 0 0 0 1px var(--edge-waiting); }
+.commit-all-file .file-icon { flex-shrink: 0; }
+.commit-all-file-name { min-width: 0; font-family: var(--mono); font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.commit-all-file-x { width: 16px; height: 16px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 999px; color: var(--text-4); transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.commit-all-file-x:hover { color: var(--text-error); background: var(--tint-error-strong); }
+.commit-all-file-x:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--violet); }
+
+/* ── Footer ─────────── */
+.commit-all-foot { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; padding-top: 12px; border-top: 1px solid var(--line); }
+.commit-all-foot-row { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.commit-all-go[aria-disabled] { opacity: .45; cursor: not-allowed; filter: none; box-shadow: none; }
+.commit-all-keys { margin-left: 2px; padding: 1px 5px; border-radius: 4px; font-size: 10.5px; font-weight: 500; background: var(--sheen); }
+.commit-all-note { margin: 0; font-size: 11px; color: var(--text-4); }
+
+/* ── Running and results ─────────── */
+.commit-all-progress { display: flex; align-items: center; gap: 12px; min-height: 26px; flex-shrink: 0; }
+.commit-all-meter { flex: 0 1 260px; height: 6px; border-radius: 999px; background: var(--bg-3); box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; }
+.commit-all-meter i { display: block; height: 100%; border-radius: inherit; background: var(--brand); transition: width var(--t-slow) var(--ease); }
+.commit-all-progress.is-done .commit-all-meter i { background: var(--done); }
+.commit-all-count { font-size: 12px; color: var(--text-2); }
+.commit-all-summary { font-size: 14px; font-weight: 600; color: var(--text); animation: atl-fade var(--t-med) var(--ease) both; }
+.commit-all-stopping { font-size: 11.5px; color: var(--waiting); }
+
+.commit-all-row { flex-shrink: 0; padding: 8px 10px; border-radius: var(--radius); background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line); animation: atl-row-in var(--t-med) var(--ease) both; transition: box-shadow var(--t-med) var(--ease); }
+.commit-all-row.is-running { box-shadow: inset 0 0 0 1px var(--edge-working); }
+.commit-all-row.is-failed { box-shadow: inset 0 0 0 1px var(--edge-error); }
+.commit-all-row:is(.is-waiting, .is-skipped, .is-undone) { opacity: .7; }
+.commit-all-row-main { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 22px; }
+.commit-all-row-icon { width: 18px; height: 18px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 999px; }
+.commit-all-row.is-committed .commit-all-row-icon { color: var(--done); background: var(--tint-done); box-shadow: inset 0 0 0 1px var(--edge-done); }
+.commit-all-row.is-committed .commit-all-row-icon svg { animation: atl-check var(--t-med) var(--ease) both; }
+.commit-all-row.is-failed .commit-all-row-icon { color: var(--error); background: var(--tint-error-strong); box-shadow: inset 0 0 0 1px var(--edge-error); }
+.commit-all-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-4); }
+.commit-all-sha { flex-shrink: 0; font-size: 11px; color: var(--link); }
+.commit-all-row-text { min-width: 0; font-size: 12px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.commit-all-row.is-failed .commit-all-row-text { color: var(--text-error); }
+.commit-all-time { flex-shrink: 0; font-size: 11px; color: var(--text-4); }
+
+.commit-all-pushing, .commit-all-pushed, .commit-all-push-failed, .commit-all-ask { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 1; min-width: 0; font-size: 11.5px; white-space: nowrap; animation: atl-fade var(--t-med) var(--ease) both; }
+.commit-all-pushing { color: var(--text-3); }
+.commit-all-pushed { color: var(--done); }
+.commit-all-push-failed { color: var(--text-error); overflow: hidden; text-overflow: ellipsis; }
+.commit-all-ask { color: var(--text-3); }
+.commit-all-ask .git-sheet-remote { height: 22px; padding: 0 9px; font-size: 11.5px; }
+
+.commit-all-fail { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; animation: atl-fade var(--t-med) var(--ease) both; }
+.commit-all-log { margin: 0; padding: 8px 10px; border-radius: var(--r-sm); font-size: 11px; line-height: 1.55; color: var(--text-2); background: var(--bg-0); box-shadow: inset 0 0 0 1px var(--line); white-space: pre-wrap; overflow-wrap: anywhere; }
+.commit-all-fail.is-full .commit-all-log { max-height: 220px; overflow-y: auto; }
+.commit-all-nolog { margin: 0; font-size: 11.5px; color: var(--text-4); }
+.commit-all-fail-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.commit-all-fail-actions .btn-ghost.sm, .commit-all-fail-actions .btn-primary.sm { display: inline-flex; align-items: center; gap: 6px; }
+
+:root[data-motion="reduced"] :is(.commit-all-card, .commit-all-row, .commit-all-files, .commit-all-fail, .commit-all-written, .commit-all-summary, .commit-all-pushing, .commit-all-pushed, .commit-all-push-failed, .commit-all-ask, .commit-all-row-icon svg) { animation: none; }
+:root[data-motion="reduced"] :is(.commit-all-meter i, .commit-all-msg, .commit-all-chev svg) { transition: none; }

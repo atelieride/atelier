@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- The Λ of the mark (no crossbar) on the full Icon Composer canvas: the system draws the tile and its mask. Same
+       proportions as app-icon.svg (×1024/824), as two filled capsules: strokes are not Icon Composer material. -->
+  <path fill="#FFB224" d="M371.69 761.74L558.1 299.44A49.71 49.71 0 0 0 465.9 262.26L279.49 724.56A49.71 49.71 0 0 0 371.69 761.74Z"/>
+  <path fill="#FFB224" d="M465.9 299.44L652.31 761.74A49.71 49.71 0 0 0 744.51 724.56L558.1 262.26A49.71 49.71 0 0 0 465.9 299.44Z"/>
+</svg>

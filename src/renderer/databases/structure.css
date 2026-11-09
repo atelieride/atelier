@@ -1,0 +1,165 @@
+/* Structure and Relations: the tables, the cards beside them (under
+   them below ~720 px: StructureView's structureLayout), the Relations diagram, the code views. Loaded with the table's
+   lazy chunk (StructureView.tsx, RelationsView.tsx), never the first paint. Colors only through
+   Aurora's tokens, a quiet finish (no gradient fill, no halo). Every width holds: tables scroll sideways inside their
+   section, names ellipsize (whole in their tooltips), badges and buttons never shrink or wrap, the diagram fits the
+   width it is given and grows downwards. */
+
+/* —— the view —— */
+.dbs { flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 0 20px 20px; }
+.dbs-sp { flex: 1; min-width: 0; }
+/* "table · owner app · “comment”": the kind never shrinks; the comment gives way first, then the owner's name. */
+.dbs-head { display: flex; min-width: 0; margin: 12px 0 0; padding: 0 10px; font-size: 11.5px; color: var(--text-4); white-space: nowrap; overflow: hidden; }
+/* `pre`: the spaces at the pieces' ends are kept (a flex item drops them otherwise). */
+.dbs-head-kind { flex: none; white-space: pre; }
+.dbs-head-owner { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.dbs-head-comment { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; color: var(--text-3); }
+.dbs-grid { display: flex; align-items: flex-start; gap: 20px; min-width: 0; }
+.dbs-grid.is-stacked { flex-direction: column; align-items: stretch; gap: 14px; }
+.dbs-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dbs-side { flex: none; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding-top: 14px; }
+.dbs-grid.is-stacked .dbs-side { padding-top: 0; }
+/* A Refresh with the parts on screen: they stay, quieter, until the new ones come. */
+.dbs-main.is-busy, .dbs-card.is-busy, .dbr-view.is-busy { opacity: .6; transition: opacity var(--t-med) var(--ease); }
+
+/* —— sections and tables —— */
+.dbs-sec { min-width: 0; }
+.dbs-sec-head { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0; padding: 16px 10px 6px; font: inherit; white-space: nowrap; }
+.dbs-sec-head > .section-label { flex: none; }
+.dbs-sec-head > button { flex: none; white-space: nowrap; }
+.dbs-count { flex: none; font: 10.5px var(--mono); color: var(--text-4); }
+/* A table wider than its section scrolls sideways inside it: nothing spills into the cards. */
+.dbs-x { min-width: 0; overflow-x: auto; }
+.dbs-table { width: 100%; border-collapse: collapse; table-layout: fixed; font: 12px var(--mono); }
+.dbs-table.is-cols { min-width: 600px; }
+.dbs-table.is-idx { min-width: 620px; }
+.dbs-table.is-con { min-width: 420px; }
+.dbs-table .c-name { width: 200px; }
+.dbs-table .c-type { width: 124px; }
+.dbs-table .c-null { width: 52px; }
+.dbs-table .c-default { width: 168px; }
+.dbs-table .c-method { width: 70px; }
+.dbs-table .c-size { width: 76px; }
+.dbs-table .c-scans { width: 104px; }
+.dbs-table th { height: 28px; padding: 0 10px; text-align: left; font: 600 10px var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--text-4); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dbs-table td { height: 30px; padding: 0 10px; border-bottom: 1px solid var(--line-soft); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background var(--t-fast) var(--ease); }
+.dbs-table tbody tr:hover td { background: var(--bg-hover); }
+/* A name and its badges: the name ellipsizes, the badges keep their size. */
+.dbs-cell { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dbs-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.dbs-badge { flex: none; display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: 4px; font: 600 9px var(--font); letter-spacing: .06em; white-space: nowrap; color: var(--text-3); background: var(--bg-3); }
+.dbs-badge.is-pk { color: var(--waiting); background: var(--tint-waiting); }
+.dbs-badge.is-fk { color: var(--link); background: var(--tint-indigo); }
+.dbs-badge.is-uq { color: var(--done); background: var(--tint-teal); }
+.dbs-type { display: block; overflow: hidden; text-overflow: ellipsis; }
+.dbs-null { color: var(--text-4); }
+.dbs-null.is-yes { color: var(--text-2); }
+.dbs-dflt { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--syn-string); }
+.dbs-dim { color: var(--text-4); }
+.dbs-sep { flex: none; color: var(--text-4); }
+.dbs-note { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11.5px var(--font); color: var(--text-4); }
+.dbs-note.is-comment { color: var(--text-3); }
+/* An FK's target: a link to its table (a button: Tab, Enter keeps, Space previews). */
+.dbs-fk { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit; color: var(--link); border-radius: 4px; transition: color var(--t-fast) var(--ease); }
+.dbs-fk:hover { color: var(--text); text-decoration: underline; }
+.dbs-fk:focus-visible { outline: none; box-shadow: 0 0 0 1.5px var(--violet); }
+.dbs-keys, .dbs-condef { color: var(--text-2); }
+.dbs-num { text-align: right; font-variant-numeric: tabular-nums; }
+.dbs-scans { text-align: right; font-variant-numeric: tabular-nums; }
+.dbs-scans.is-never { color: var(--waiting); font-family: var(--font); }
+/* A section with nothing in it says so ("No indexes"); a table without a primary key, in amber. */
+.dbs-empty { margin: 2px 0 0; padding: 0 10px; font-size: 12px; color: var(--text-4); }
+.dbs-empty.is-warn { color: var(--waiting); }
+
+/* —— cards —— */
+/* Flat, edged (quiet finish: no card lift). */
+.dbs-card { min-width: 0; padding: 14px 16px 16px; border-radius: var(--r-lg); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--line); }
+.dbs-card > .dbs-sec-head { padding: 0 0 8px; }
+.dbs-link { flex: none; font-size: 11.5px; color: var(--link); white-space: nowrap; border-radius: 4px; transition: color var(--t-fast) var(--ease); }
+.dbs-link:hover { color: var(--text); text-decoration: underline; }
+.dbs-link:focus-visible { outline: none; box-shadow: 0 0 0 1.5px var(--violet); }
+.dbs-none { margin: 4px 0 0; font-size: 12px; color: var(--text-4); }
+
+/* The Size card: the total, the stacked bar, the legend, rows and dead rows. */
+.dbs-size-head { display: flex; align-items: baseline; gap: 10px; min-width: 0; white-space: nowrap; }
+.dbs-size-head > .section-label { flex: none; }
+.dbs-size-total { flex: none; font-size: 22px; font-weight: 600; letter-spacing: -.02em; color: var(--text); font-variant-numeric: tabular-nums; }
+.dbs-bar { display: flex; gap: 2px; height: 8px; margin: 12px 0 10px; border-radius: 4px; overflow: hidden; }
+.dbs-bar-part { flex: none; min-width: 2px; height: 100%; }
+.dbs-bar-part.is-table, .dbs-dot.is-table { background: var(--violet); }
+.dbs-bar-part.is-indexes, .dbs-dot.is-indexes { background: var(--pink); }
+.dbs-bar-part.is-toast, .dbs-dot.is-toast { background: var(--working); }
+.dbs-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 11.5px; color: var(--text-3); }
+.dbs-leg { flex: none; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dbs-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; }
+.dbs-size-note { margin: 8px 0 0; font-size: 11.5px; color: var(--text-4); }
+.dbs-rule { height: 1px; margin: 12px 0; background: var(--line-soft); }
+.dbs-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; margin: 0; font-size: 12px; color: var(--text-3); }
+.dbs-facts > dt { margin: 0; white-space: nowrap; }
+.dbs-facts > dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.dbs-facts > dd > .mono { color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* The DDL card and a view's definition: code, colored, scrolling both ways inside its box; Copy never wraps. */
+.dbs-copy, .dbs-send { flex: none; gap: 6px; white-space: nowrap; }
+.dbs-copy > svg, .dbs-send > svg { flex: none; }
+/* Send Schema gives way first: the session's name ellipsizes (whole in the tooltip), Copy keeps its room. */
+.dbs-sec-head > .dbs-send { flex: 0 1 auto; min-width: 0; }
+.dbs-code { margin: 0; max-height: 320px; overflow: auto; padding: 10px 12px; border-radius: var(--radius); background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line-soft); font-size: 11.5px; line-height: 18px; color: var(--text-2); white-space: pre; tab-size: 4; user-select: text; outline: none; }
+.dbs-code:focus-visible { box-shadow: inset 0 0 0 1px var(--line-soft), 0 0 0 1.5px var(--violet); }
+.dbs-def > .dbs-code { max-height: 480px; margin: 0 10px; }
+.dbs-code .sq-kw { color: var(--syn-literal); }
+.dbs-code .sq-type { color: var(--syn-key); }
+.dbs-code .sq-str { color: var(--syn-string); }
+.dbs-code .sq-num { color: var(--syn-number); }
+.dbs-code .sq-com { color: var(--text-4); font-style: italic; }
+/* What the DDL is, quietly: one line under the code, ellipsized in a narrow card (whole in the tooltip). */
+.dbs-ddl-note { margin: 8px 2px 0; font-size: 11px; line-height: 15px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* A first read: quiet bars in the part's place (no spinner: the place keeps its size); a finite breath (idle budget). */
+.dbs-skel { display: flex; flex-direction: column; gap: 14px; padding: 18px 10px 10px; animation: atl-fade var(--t-med) var(--ease) both; }
+.dbs-card > .dbs-skel { padding: 6px 0 0; }
+.dbs-skel > span { flex: none; height: 12px; border-radius: 6px; background: var(--bg-3); animation: atl-breathe 1.4s var(--ease) var(--cue-cycles-long); }
+.dbs-skel > span:nth-child(3n + 2) { width: 86%; }
+.dbs-skel > span:nth-child(3n) { width: 64%; }
+.dbs-skel.is-diagram > span { height: 34px; border-radius: 9px; }
+
+/* A part's failure in its place: what failed and why on one line (whole in its tooltip), Retry at its right. */
+.dbs-err { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 14px 0 0; padding: 7px 10px; border-radius: var(--r-sm); font-size: 11.5px; line-height: 1.4; color: var(--text-error); background: var(--tint-error); }
+.dbs-card > .dbs-err { margin: 2px 0 0; }
+.dbs-err > svg { flex: none; }
+.dbs-err-t { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbs-err > button { flex: none; white-space: nowrap; }
+
+/* —— Relations: the diagram —— */
+/* The card's diagram scrolls past ~360 px (many relations spread downwards); the view's fills the tab. */
+.dbr-box { position: relative; min-width: 0; max-height: 360px; overflow: auto; }
+.dbr-box.is-big { flex: 1; min-height: 0; max-height: none; }
+.dbr-plane { position: relative; flex: none; }
+.dbr-edges { position: absolute; inset: 0; overflow: visible; fill: none; stroke: var(--line-strong); stroke-width: 1.5; }
+.dbr-edge { transition: stroke var(--t-fast) var(--ease); }
+/* An incoming key no index serves (counting what points at a row scans that table): dashed. */
+.dbr-edge.is-loose { stroke-dasharray: 3 4; }
+.dbr-edge.is-self { stroke: var(--edge-violet); }
+.dbr-node { position: absolute; display: flex; align-items: center; gap: 7px; min-width: 0; padding: 0 10px; border-radius: 9px; background: var(--bg-1); box-shadow: inset 0 0 0 1px var(--line-strong); font: 11.5px var(--mono); color: var(--text-2); white-space: nowrap; text-align: left; transition: background var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+button.dbr-node:hover { color: var(--text); background: var(--bg-hover); box-shadow: inset 0 0 0 1px var(--edge-violet); }
+button.dbr-node:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--edge-violet), 0 0 0 1.5px var(--violet); }
+button.dbr-node:active { background: var(--bg-sel); }
+/* This table: the selection's flat tint (quiet finish), centered. */
+.dbr-node.is-center { justify-content: center; color: var(--text); font-weight: 500; background: var(--bg-sel); box-shadow: inset 0 0 0 1px var(--edge-sel); }
+/* Labels ellipsize inside their node; the 1:N mark never shrinks. */
+.dbr-node-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dbr-node-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dbr-node-via { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: var(--text-4); }
+.dbr-node.is-center > .dbr-node-via { flex: 0 1 auto; }
+.dbr-node-n { flex: none; margin-left: auto; font: normal 10px var(--mono); color: var(--text-4); }
+
+/* —— Relations: the view —— */
+.dbr-view { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 8px 24px 16px; }
+.dbr-heads { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 0; white-space: nowrap; }
+.dbr-head { flex: none; display: inline-flex; align-items: center; gap: 8px; }
+.dbr-pad { padding: 8px 0; }
+.dbr-none { margin: 24px auto; font-size: 12.5px; color: var(--text-4); }
+.dbr-box.is-big .dbr-node { gap: 8px; padding: 0 12px; border-radius: 10px; font-size: 12px; }
+.dbr-box.is-big .dbr-node.is-center { flex-direction: column; justify-content: center; align-items: center; gap: 2px; }
+
+[data-motion="reduced"] .dbs-skel > span { animation: none; }

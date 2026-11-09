@@ -1,0 +1,38 @@
+{
+  "name": "atelier-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
+    "build": "npm --prefix .. run build:demo && ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview --port 4329",
+    "check": "ASTRO_TELEMETRY_DISABLED=1 astro check",
+    "test": "vitest run tests/unit && npm run build && vitest run tests/build",
+    "e2e:install": "PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium",
+    "e2e": "SITE_NO_BEACON=1 npm run build && PLAYWRIGHT_BROWSERS_PATH=0 playwright test",
+    "e2e:install:browsers": "PLAYWRIGHT_BROWSERS_PATH=0 playwright install webkit firefox",
+    "e2e:browsers": "SITE_NO_BEACON=1 npm run build && E2E_BROWSERS=1 PLAYWRIGHT_BROWSERS_PATH=0 playwright test --project=webkit",
+    "e2e:firefox": "SITE_NO_BEACON=1 npm run build && E2E_BROWSERS=1 PLAYWRIGHT_BROWSERS_PATH=0 playwright test --project=firefox",
+    "shots:demo": "SITE_NO_BEACON=1 npm run build && PLAYWRIGHT_BROWSERS_PATH=0 playwright test --config playwright.manual.config.ts",
+    "brand-images": "PLAYWRIGHT_BROWSERS_PATH=0 node scripts/brand-images.mjs",
+    "stats": "node scripts/stats.mjs",
+    "deploy": "npm test && account=\"${CLOUDFLARE_ACCOUNT_ID:-$(security find-generic-password -s atelier-cloudflare-account -w)}\" && CLOUDFLARE_ACCOUNT_ID=\"$account\" CLOUDFLARE_API_TOKEN=\"${CLOUDFLARE_API_TOKEN:-$(security find-generic-password -s atelier-cloudflare-mcp -w)}\" WRANGLER_SEND_METRICS=false WRANGLER_LOG_PATH=.wrangler/logs wrangler pages deploy dist --project-name useatelier --branch main --commit-dirty=true",
+    "perf": "node scripts/perf-check.mjs"
+  },
+  "dependencies": {
+    "@astrojs/markdown-remark": "7.3.1",
+    "@fontsource-variable/instrument-sans": "5.3.0",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "astro": "7.3.5",
+    "sharp": "0.35.5"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "@playwright/test": "1.64.0",
+    "chrome-launcher": "1.2.2",
+    "lighthouse": "13.5.0",
+    "typescript": "5.9.3",
+    "vitest": "5.0.3",
+    "wrangler": "4.158.0"
+  }
+}

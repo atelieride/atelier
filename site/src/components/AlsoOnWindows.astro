@@ -1,0 +1,15 @@
+---
+import { config } from '../config';
+// Under the Mac button, never beside it: Atelier is made on the Mac first, and Windows is one quiet line away, to its
+// card on /download (the Microsoft Store button is there). Nothing while the Windows app is not in the Store.
+---
+{config.windowsStoreUrl && <a class="also" href="/download#windows">Also on Windows<span class="arr" aria-hidden="true">→</span></a>}
+<style>
+  .also { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 6px; border-radius: var(--r-sm);
+    font-size: 13.5px; font-weight: 500; color: var(--text-3); transition: color var(--t-fast) var(--ease); }
+  .also:hover { color: var(--text); }
+  .also:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); }
+  .arr { display: inline-block; transition: transform var(--t-fast) var(--ease); }
+  .also:hover .arr { transform: translateX(3px); }
+  @media (prefers-reduced-motion: reduce) { .arr { transition: none; } }
+</style>

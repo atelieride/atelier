@@ -1,0 +1,28 @@
+/* The grid's action bar: the Docker and Redis bars' floating pill,
+   over the grid's foot and centered on the rows — the wrapper spans the grid's box less an inspector lying over it
+   and the scrollbar (SelBar's `right`) and lets the pointer through around the bar. The rows always end with room for
+   it (Grid's .dbt-barroom, grid-model's BAR_ROOM) and a row brought into view stops above it (revealTop);
+   it sits above the footer. One line at every width: buttons never shrink, Send's session name ellipsizes; a narrower
+   grid folds the labels to icons (names in the tooltips), then the count; too narrow for its buttons, no bar (the cell
+   menu and ⌥↩ remain). Lazy, with the table's chunk. */
+.db-selwrap { position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; display: flex; justify-content: center; min-width: 0; padding-inline: 8px; padding-bottom: 12px; pointer-events: none; container: dbsel / inline-size; }
+.db-selbar { pointer-events: auto; display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; padding: 6px 6px 6px 14px; border-radius: var(--r-lg); background: var(--bg-float); backdrop-filter: blur(16px); box-shadow: var(--shadow-float), inset 0 0 0 1px var(--edge-violet-soft); white-space: nowrap; animation: atl-pop var(--t-med) var(--ease) both; }
+.db-selbar-n { flex: none; font-size: 12.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.db-selbar-sep { flex: none; width: 1px; height: 18px; background: var(--line); }
+.db-selbar > button { flex: none; }
+.db-selbar > .sel-send { flex: 0 1 auto; min-width: 0; }
+.db-selbar .btn-primary.sm, .db-selbar .btn-ghost.sm { height: 28px; }
+.db-selbar .btn-primary:disabled { opacity: .5; filter: grayscale(.4); cursor: default; }
+.db-sel-icon { display: none; flex: none; align-items: center; }
+
+/* Copy as JSON ▾: one pill, two buttons — JSON at once, or the formats menu. The one under the pointer or the keyboard
+   draws its edge over its neighbour's. */
+.db-selbar > .db-split { flex: none; display: flex; }
+.db-split > .btn-ghost:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.db-split > .db-split-more { margin-left: -1px; padding: 0 7px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.db-split > .btn-ghost:hover, .db-split > .btn-ghost:focus-visible, .db-split > .db-split-more[aria-expanded="true"] { position: relative; z-index: 1; }
+.db-split > .db-split-more[aria-expanded="true"] { color: var(--text); background: var(--bg-hover); }
+
+@container dbsel (max-width: 620px) { .db-selbar .btn-ghost .db-sel-label, .db-selbar .kbd-in { display: none; } .db-selbar .btn-ghost.sm { padding: 0 8px; } }
+@container dbsel (max-width: 420px) { .db-selbar-n, .db-selbar-sep, .db-selbar .sel-send .db-sel-label { display: none; } .db-sel-icon { display: inline-flex; } .db-selbar { padding-left: 6px; } }
+@container dbsel (max-width: 199px) { .db-selbar { display: none; } }

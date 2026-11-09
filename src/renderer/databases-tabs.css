@@ -1,0 +1,30 @@
+/* Table tabs in the strip and the footer's item (at the end): the only Databases rules
+   the first paint needs, loaded with the app's styles after layout.css; the view's own stylesheet (databases.css) comes
+   with its lazy chunk (the live demo's first-paint budget). Colors only through theme.css's tokens;
+   production in the theme's danger color.
+   The kind's icon, the name (mono 12 px, ellipsized by .tab-name), a dot in the environment's color; neither icon nor
+   dot ever shrinks. Production: a 1 px frame inside the tab in the danger color — a shadow, so the tab keeps its width. */
+.tab.is-db .tab-name { font-family: var(--mono); font-size: 12px; }
+.tab-db { flex: none; display: flex; color: var(--text-4); transition: color var(--t-fast) var(--ease); }
+.tab:hover .tab-db { color: var(--text-3); }
+.tab.is-active .tab-db { color: var(--violet-light); }
+.tab.is-prod .tab-db { color: var(--text-error); }
+.tab-env { flex: none; width: 6px; height: 6px; border-radius: 50%; }
+.tab-env.is-local { background: var(--done); }
+.tab-env.is-dev { background: var(--working); }
+.tab-env.is-staging { background: var(--violet-light); }
+.tab-env.is-prod { background: var(--error); }
+.tab.is-prod { box-shadow: inset 0 0 0 1px var(--edge-error); }
+/* The strip's own shadow states keep showing on a production tab (this file loads after layout.css, at the same weight):
+   the drop caret of a tab dragged before it. The focus ring outweighs both. */
+.tab.is-prod.is-drop { box-shadow: inset 2px 0 0 var(--violet), inset 0 0 0 1px var(--edge-error); }
+/* The footer's item: `pg · <connection>`, layout.css's .foot-item. It gives up its room first (its shrink
+   outweighs the other items' 1 by far), down to nothing, its name ellipsized rather than wrapped. Production in the
+   danger color, its dot too, hover included (layout.css's button.foot-item hover color would win over .is-prod alone);
+   its dot glows on hover instead. */
+.db-foot-item { flex-shrink: 1000; min-width: 0; max-width: 240px; }
+.db-foot-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-foot-item i { flex: none; transition: box-shadow var(--t-fast) var(--ease); }
+.db-foot-item.is-prod, .db-foot-item.is-prod:not(:disabled):hover { color: var(--text-error); }
+.db-foot-item.is-prod i { background: var(--error); }
+.db-foot-item.is-prod:not(:disabled):hover i { box-shadow: 0 0 0 3px var(--tint-error-strong); }

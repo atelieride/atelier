@@ -1,0 +1,95 @@
+// Context usage's words: the sheet's own, apart from en.ts so they load with the
+// sheet (lazy) and stay out of the live demo's first paint. The menu, palette and Session panel words stay in en.ts.
+export const tc = {
+  title: 'Context',
+  label: (title: string) => `Context: ${title}`,
+  analyzedAgo: (ago: string) => `Analyzed ${ago}`,
+  analyzing: 'Analyzing…',
+  refresh: 'Refresh',
+  refreshTip: 'Analyze again',
+  close: 'Close',
+  tiles: {
+    inUse: 'In use', inUseSub: (share: string, max: string) => `${share} of ${max}`,
+    before: 'Before you type', beforeSub: 'every new session here',
+    conversation: 'Conversation', conversationSub: (since: string) => `+${since} since analyzed`, conversationNone: 'the messages so far',
+    compacted: 'compacted since · Refresh', missing: 'conversation not found: not counted',
+    untilCompact: 'Until auto-compact', untilCompactSub: (at: string) => `compacts at ${at}`,
+    free: 'Free', freeSub: 'Auto-compact off'
+  },
+  window: (used: string, max: string, buffer: string) => `Context window: ${used} of ${max} in use, ${buffer} kept free for auto-compact`,
+  windowNoCompact: (used: string, max: string) => `Context window: ${used} of ${max} in use, auto-compact off`,
+  freeSpace: 'Free space',
+  buffer: 'Auto-compact buffer',
+  chart: (used: string) => `What fills the ${used} in use`,
+  inUseCenter: (share: string) => `in use · ${share}`,
+  groupsLabel: 'Groups',
+  note: (max: string) => `Share of the ${max} window. The chart splits what is in use.`,
+  groups: { system: 'System', messages: 'Messages', mcp: 'MCP servers', memory: 'Memory files', skills: 'Skills' },
+  sliceTip: (name: string, tokens: string, share: string) => `${name} · ${tokens} · ${share} of what is in use`,
+  sinceTip: (tokens: string) => `Since analyzed · ${tokens}`,
+  subs: {
+    system: 'Claude Code’s own, the same in every session',
+    messages: 'the conversation so far',
+    mcp: (deferred: string) => `in context now · ${deferred} deferred`,
+    memory: (n: number) => `${n} ${n === 1 ? 'file' : 'files'}, loaded whole at every start`,
+    skills: (skills: number, agents: number) => `${skills} ${skills === 1 ? 'skill' : 'skills'}${agents ? `, ${agents} ${agents === 1 ? 'agent' : 'agents'}` : ''}`
+  },
+  hints: {
+    system: 'The system prompt and the built-in tools. Built-in tools Claude rarely needs wait outside the context until it searches for them.',
+    messages: 'Your prompts, Claude’s replies and what its tools returned. Tool results are usually the biggest part; Compact keeps a summary and frees most of it.',
+    mcp: 'Claude Code keeps most MCP tools out of the context until Claude searches for one. A server costs its instructions, plus the tools Claude loaded in this session.',
+    memory: 'CLAUDE.md files and auto memory load into every session in this folder. A shorter file saves context in all of them.',
+    skills: 'Only each skill’s name and description sit in the context; the rest loads when Claude uses it. Skills that are off cost nothing.'
+  },
+  rows: {
+    deferredSystem: 'Deferred built-in tools', notInContext: 'not in context',
+    tools: 'Tool calls and results', otherTools: 'Other tools', user: 'Your messages', assistant: 'Claude’s replies',
+    attachments: 'Attachments and reminders', other: 'Other', since: 'Since analyzed', live: 'live'
+  },
+  mcpHead: { server: 'Server', inContext: 'In context', loaded: 'Loaded', deferred: 'Deferred' },
+  instructions: 'Server instructions',
+  loadedChip: 'loaded',
+  deferredChip: 'deferred',
+  waiting: (n: number) => `${n} ${n === 1 ? 'tool' : 'tools'} waiting outside the context`,
+  openConfig: 'Open Where It’s Configured',
+  connectors: 'claude.ai › Settings › Connectors',
+  offline: (n: number) => `${n} ${n === 1 ? 'server' : 'servers'} not connected · cost nothing`,
+  pending: (n: number) => `${n} ${n === 1 ? 'server' : 'servers'} still connecting in the copy: not counted · Refresh`,
+  serverLabel: (name: string, scope: string | null, inContext: string, loaded: number, total: number, deferred: string) =>
+    `${name}${scope ? `, ${scope}` : ''}: ${inContext} in context, ${loaded} of ${total} tools loaded, ${deferred} deferred`,
+  noServers: 'No MCP servers in this session.',
+  noMemory: 'No memory files.',
+  noSkills: 'No skills.',
+  open: (name: string) => `Open ${name}`,
+  openTip: 'Open in a tab',
+  openFailed: 'That file can’t be opened now: analyze again',
+  compact: 'Compact',
+  compactTip: 'Types /compact when Claude is at its prompt',
+  scopes: { project: 'project', user: 'user', local: 'local', claudeai: 'claude.ai', plugin: 'plugin', dynamic: 'dynamic', enterprise: 'managed', managed: 'managed' } as Record<string, string>,
+  memoryTypes: { Project: 'Project', User: 'User', Local: 'Local', AutoMem: 'Auto memory', Managed: 'Managed' } as Record<string, string>,
+  sources: { 'built-in': 'Built-in', 'claude.ai': 'claude.ai', user: 'Your skills', project: 'This project', local: 'Local', managed: 'Managed', bundled: 'Bundled', mcp: 'From MCP servers' } as Record<string, string>,
+  agentsOfUser: 'Your agents',
+  skillsChip: (n: number) => `${n} ${n === 1 ? 'skill' : 'skills'}`,
+  pluginChip: (n: number) => `plugin · ${n} ${n === 1 ? 'skill' : 'skills'}`,
+  agentsChip: (n: number) => `${n} ${n === 1 ? 'agent' : 'agents'}`,
+  steps: {
+    start: 'Opening a private copy of the session',
+    mcp: 'Connecting MCP servers',
+    mcpCount: (connected: number, total: number) => `Connecting MCP servers · ${connected} of ${total}`,
+    count: 'Counting tokens'
+  },
+  failed: 'Couldn’t analyze this session',
+  errors: {
+    'not-found': 'Claude Code wasn’t found on this Mac.',
+    'no-session': 'This terminal runs no Claude session now.',
+    account: 'This session runs on a Claude account Atelier doesn’t know: add it in Settings › Claude › Accounts.',
+    unsupported: 'This version of Claude Code doesn’t report its context to Atelier.',
+    timeout: 'Claude Code didn’t answer in 45 seconds.',
+    exit: 'Claude Code stopped before answering.'
+  } as Record<string, string>,
+  exitWith: (why: string) => `Claude Code stopped before answering: ${why}`,
+  tryAgain: 'Try Again',
+  runContext: 'Run /context in the Session',
+  runContextTip: 'Types /context when Claude is at its prompt',
+  foot: 'Claude Code’s own estimate, the same numbers as /context. Nothing is sent to Claude. The conversation keeps counting live; Refresh updates the rest.'
+};

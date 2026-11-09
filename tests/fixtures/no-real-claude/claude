@@ -1,0 +1,5 @@
+#!/bin/sh
+# e2e guard: first on PATH in every e2e environment. Tests must use the fake claude (ATELIER_CLAUDE_BIN); reaching
+# this means a terminal lost that override and would have started the user's real Claude Code.
+echo "REAL-CLAUDE-BLOCKED" >&2
+exit 97

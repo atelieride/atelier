@@ -1,0 +1,4 @@
+remote: rejecting: main is a protected branch        
+To /TMP/atl-rec-qAgOP8/remote.git
+ ! [remote rejected] main -> main (pre-receive hook declined)
+error: failed to push some refs to '/TMP/atl-rec-qAgOP8/remote.git'

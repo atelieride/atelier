@@ -1,0 +1,38 @@
+---
+import overview from '../assets/shots/overview.png';
+import overviewPhone from '../assets/shots/overview.mobile.png';
+import overviewLive from '../assets/shots/overview.live.json';
+import Base from '../layouts/Base.astro';
+import DownloadButton from '../components/DownloadButton.astro';
+import LiveDemo from '../components/LiveDemo.astro';
+// The live demo's direct link: on a desktop browser the window opens
+// straight into the demo (LiveDemo `auto`), and leaving it goes home. Anywhere else (the gate, site.css › .demo-gate)
+// it is a short page: what this is, why not here, the download. Indexed once launched, like every page (Base).
+const description = 'Atelier running in your browser: scripted Claude Code sessions, the editor, Git, Docker and Redis, nothing to install.';
+---
+<Base title="Atelier | Try it live in your browser" description={description} path="/demo">
+  <section class="demo-page">
+    <div class="container copy">
+      <p class="eyebrow">Live demo</p>
+      <h1 class="h1">Atelier, live in <span class="dim">your browser.</span></h1>
+      <p class="lead demo-gate">The real app with scripted sessions, opening in its window below.</p>
+      <p class="lead off-gate"><strong>The live demo needs a desktop browser.</strong> On your Mac, Atelier is one download away, and free.</p>
+      <noscript><p class="lead">The live demo needs JavaScript.</p></noscript>
+      <div class="cta"><DownloadButton /></div>
+    </div>
+    <div class="container shot">
+      <LiveDemo id="page" auto src={overview} alt="Atelier with five Claude Code sessions: one waiting for permission, two working, one done" priority live={overviewLive} width={1280} mobile={overviewPhone} />
+    </div>
+  </section>
+</Base>
+<style>
+  /* The hero's scene (Hero.astro): up under the header. */
+  .demo-page { position: relative; margin-top: calc(-1 * var(--appbar-h)); padding: calc(var(--appbar-h) + clamp(40px, 7vw, 88px)) 0 clamp(56px, 8vw, 96px); overflow: clip; }
+  .copy { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 18px; }
+  .copy .lead { max-width: 560px; }
+  .lead strong { color: var(--text); font-weight: 600; }
+  .cta { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 6px; }
+  .shot { position: relative; margin-top: clamp(36px, 5vw, 56px); max-width: calc(1280px + 2 * var(--site-gutter)); }
+  /* The note for screens the demo does not run on: the gate's opposite. */
+  @media (min-width: 1100px) and (hover: hover) and (pointer: fine) { .off-gate { display: none; } }
+</style>

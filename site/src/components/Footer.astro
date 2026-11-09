@@ -1,0 +1,42 @@
+---
+import { config } from '../config';
+import Icon from './Icon.astro';
+import mark from '../../../assets/brand/mark.svg?url';
+const year = new Date().getFullYear();
+---
+<footer>
+  <div class="container inner">
+    <div class="left">
+      <a class="brand" href="/"><img src={mark} width="22" height="22" alt="" />Atelier</a>
+      <p class="fine">© {year} Atelier · <a href={`${config.githubUrl}/blob/main/LICENSE`}>MIT license</a><span class="by"><span class="sep"> · </span>Made by {config.author}</span></p>
+    </div>
+    <nav aria-label="Footer">
+      <a href="/features">Features</a>
+      <a href="/changelog">Changelog</a>
+      <a href="/download">Download</a>
+      <a href="/privacy">Privacy</a>
+      <a class="github" href={config.githubUrl}><Icon name="github" size={14} />GitHub</a>
+      <a class="support" href="/support"><Icon name="heart" size={14} />Support</a>
+      <a href={`mailto:${config.contactEmail}`}>{config.contactEmail}</a>
+    </nav>
+  </div>
+  <p class="container legal">Atelier is not affiliated with Anthropic. Claude and Claude Code are trademarks of Anthropic.</p>
+</footer>
+<style>
+  footer { border-top: 1px solid var(--line-soft); padding: 40px 0 32px; margin-top: 40px; }
+  .inner { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; flex-wrap: wrap; }
+  .left { display: flex; flex-direction: column; gap: 8px; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  nav { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; color: var(--text-3); font-size: 14px; }
+  nav a { transition: color var(--t-fast) var(--ease); }
+  nav a:hover { color: var(--text); }
+  .support { display: inline-flex; align-items: center; gap: 6px; padding: 3px 11px; margin-block: -4px; border: 1px solid var(--edge-violet-soft); border-radius: 999px; color: var(--text-2); transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); }
+  .support:hover { border-color: var(--edge-violet); }
+  .github { display: inline-flex; align-items: center; gap: 6px; }
+  .fine a { text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; transition: color var(--t-fast) var(--ease); }
+  .fine a:hover { color: var(--text); }
+  /* A phone: "Made by" takes its own line rather than leaving a dot at the start of one. */
+  @media (max-width: 480px) { .by { display: block; } .by .sep { display: none; } }
+  .support :global(svg) { color: var(--pink); }
+  .legal { margin-top: 24px; color: var(--text-3); font-size: 12.5px; }
+</style>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <!-- Dock icon: the front panel of the mark, filling the tile (macOS grid: body 824, radius 185). -->
+  <defs>
+    <linearGradient id="bg" x1="100" y1="100" x2="924" y2="924" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8B5CF6"/><stop offset="0.55" stop-color="#C04FD0"/><stop offset="1" stop-color="#EC4899"/></linearGradient>
+    <radialGradient id="sheen" cx="350" cy="100" r="560" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.18"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+    <radialGradient id="depth" cx="512" cy="1000" r="560" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#3B0A5C" stop-opacity="0.35"/><stop offset="1" stop-color="#3B0A5C" stop-opacity="0"/></radialGradient>
+    <linearGradient id="rim" x1="512" y1="100" x2="512" y2="924" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.45"/><stop offset="0.25" stop-color="#FFFFFF" stop-opacity="0.08"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.04"/></linearGradient>
+    <filter id="shadow" x="200" y="200" width="624" height="624" filterUnits="userSpaceOnUse"><feDropShadow dx="0" dy="18" stdDeviation="16" flood-color="#3B0A5C" flood-opacity="0.35"/></filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#sheen)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#depth)"/>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" stroke="url(#rim)" stroke-width="3"/>
+  <path d="M362 698 L512 326 L662 698" stroke="#FFFFFF" stroke-width="80" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)"/>
+</svg>
