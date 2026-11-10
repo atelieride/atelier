@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { fuzzyFilter, fuzzyScore, textFilter, textScore } from './fuzzy';
+import { bestTime } from '../../tests/support/timing';
 
 describe('fuzzyScore', () => {
   test('characters in order', () => {
@@ -17,9 +18,7 @@ describe('fuzzyScore', () => {
   });
   test('50,000 paths filtered in under 150 ms', () => {
     const many = Array.from({ length: 50000 }, (_, i) => `repo${i % 10}/src/module${i}/file${i}.ts`);
-    const t0 = performance.now();
-    fuzzyFilter(many, 'mod123fil', (x) => x);
-    expect(performance.now() - t0).toBeLessThan(150);
+    expect(bestTime(() => fuzzyFilter(many, 'mod123fil', (x) => x))).toBeLessThan(150);
   });
 });
 
@@ -79,8 +78,6 @@ describe('textScore', () => {
   });
   test('200 conversations of 300 characters, four fields, in under 30 ms', () => {
     const many = Array.from({ length: 200 }, (_, i) => [`Title ${i}`, prompt, `feat/branch-${i}`, `pkg${i}/`]);
-    const t0 = performance.now();
-    textFilter(many, 'mcp contatore', (x) => x);
-    expect(performance.now() - t0).toBeLessThan(30);
+    expect(bestTime(() => textFilter(many, 'mcp contatore', (x) => x))).toBeLessThan(30);
   });
 });

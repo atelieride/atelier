@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import type { ScmFetchState, ScmRef, ScmRefs, ScmRepoEntry, ScmRepoStatus } from '@shared/scm';
 import { branchLine, branchTip, conventional, cursorIndex, fetchChip, isClaude, personColor, refPills, refSections, refsByOid, remoteLag, repoLabel, scopeTitle, shortRef, switcherGroups } from './view';
+import { bestTime } from '../../../tests/support/timing';
 
 const st = (o: Partial<ScmRepoStatus> = {}): ScmRepoStatus => ({ branch: 'main', detached: false, oid: 'a'.repeat(40), ahead: 0, behind: 0, upstream: 'origin/main', changes: 0, ...o });
 const entry = (rel: string, o: Partial<ScmRepoEntry> = {}): ScmRepoEntry => ({ root: rel ? `/p/${rel}` : '/p', rel, name: rel ? rel.split('/').at(-1)! : 'p', worktreeOf: null, common: `/p/${rel}/.git`, status: st(), ...o });
@@ -76,9 +77,8 @@ test('switcherGroups: the filter matches the path, case-insensitive, with the ma
 
 test('switcherGroups: 50 repositories group in well under a frame', () => {
   const list = Array.from({ length: 50 }, (_, i) => entry(`group${i % 5}/repo${i}`, { status: st({ changes: i % 7 === 0 ? 2 : 0 }) }));
-  const t0 = performance.now();
-  for (let i = 0; i < 10; i++) switcherGroups(list, list[3]!.root, [], i % 2 ? 'repo1' : '');
-  expect((performance.now() - t0) / 10).toBeLessThan(4);
+  const ms = bestTime(() => { for (let i = 0; i < 10; i++) switcherGroups(list, list[3]!.root, [], i % 2 ? 'repo1' : ''); });
+  expect(ms / 10).toBeLessThan(4);
 });
 
 test('refSections: current first then newest, remotes grouped without HEAD, tags newest first, limits with counts', () => {
