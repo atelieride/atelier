@@ -196,8 +196,9 @@ test('Atelier.app: atelier-pty-host included, signed like the app, runs on every
 });
 
 // The terminal's launchd job starts as Atelier's executable, so macOS still attributes its file accesses to Atelier:
-//a session in this repo, which sits under ~/Documents, reads it with Atelier's grant. Developer ID only: an
-// ad-hoc build is another identity, and macOS would ask.
+// a session in this repo, which sits under ~/Documents, reads it with Atelier's grant. It lists `src`, a folder every
+// clone has (the release runs this on a fresh one). Developer ID only: an ad-hoc build is another identity, and macOS
+// would ask.
 test('Atelier.app: a terminal runs in its own launchd job and keeps Atelier\'s privacy grants', async () => {
   test.skip(adhoc, 'ad-hoc build: a different identity than the installed app');
   const { env, home } = e2eEnv({ PATH: '/usr/bin:/bin:/usr/sbin:/sbin' });
@@ -210,7 +211,7 @@ test('Atelier.app: a terminal runs in its own launchd job and keeps Atelier\'s p
     await expect.poll(() => { try { return readFileSync(join(home, 'logs', 'atelierd.log'), 'utf8'); } catch { return ''; } }, { timeout: 15000 })
       .toMatch(/shell \d+ started in launchd job/);
     await win.locator('.xterm-helper-textarea').focus();
-    await win.keyboard.type('ls docs >/dev/null && echo "GRANT-$((40+2))" || echo "DENIED-$((40+2))"\n');
+    await win.keyboard.type('ls src >/dev/null && echo "GRANT-$((40+2))" || echo "DENIED-$((40+2))"\n');
     await expect(win.locator('.xterm-rows')).toContainText(/GRANT-42|DENIED-42/, { timeout: 10000 });
     await expect(win.locator('.xterm-rows')).toContainText('GRANT-42');
   } finally {
