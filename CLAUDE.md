@@ -109,7 +109,7 @@ npm --prefix site run perf -- --out x.json --against <baseline.json>   # Lightho
 
 ## Testing notes
 
-- CI (`.github/workflows/ci.yml`): pull requests, a weekly run when `main` moved, and manual runs.
+- CI (`.github/workflows/ci.yml`): every push to `main`, pull requests and manual runs.
 - e2e use `e2eEnv()`: temporary `ATELIER_HOME`, empty `ZDOTDIR`, fake Claude (`tests/e2e/fake-claude.pl`), fake whisper
   (`tests/fixtures/fake-whisper.mjs`), test audio instead of the microphone (`ATELIER_TEST_FAKE_MIC`).
 - Chromium's fake audio device returns silence on macOS and still triggers the microphone prompt: don't use it.

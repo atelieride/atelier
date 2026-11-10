@@ -1,9 +1,8 @@
 # Continuous integration.
 #
-# Pull requests to main (Dependabot's included), a weekly run when main moved since the last one, and manual runs.
-# Not on every push: the tests run locally before each commit, and again in the release workflow on the tag.
+# Every push to main, pull requests to main (Dependabot's included) and manual runs. The release workflow tests again
+# on the tag.
 #
-#   changes  ubuntu: is there anything new for the weekly run?
 #   app      macOS (as the release build): npm ci, typecheck, unit + integration tests.
 #   app-windows  Windows: the same, without the POSIX-only tests.
 #   site     ubuntu: the website's unit tests, build (live demo included) and dist guard.
@@ -12,17 +11,16 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
-  # Monday 02:17 UTC: the week's work, weekend included, ready on Monday morning.
-  schedule:
-    - cron: '17 2 * * 1'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# A new push to a pull request replaces its run; a manual run and the weekly run queue instead of killing each other.
+# A new push to a pull request replaces its run; on main a run in progress always finishes (one waiting run, the newest).
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -36,39 +34,8 @@ env:
   HOMEBREW_NO_INSTALL_CLEANUP: '1'
 
 jobs:
-  changes:
-    name: Anything to test
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    # The run history only: no checkout, no contents.
-    permissions:
-      actions: read
-    outputs:
-      needed: ${{ steps.decide.outputs.needed }}
-    steps:
-      # Pull requests and manual runs always test. The weekly run tests main unless the last scheduled run that ran
-      # (failed included, cancelled not) already tested this very commit: commit dates would miss old commits pushed late.
-      - name: Decide
-        id: decide
-        env:
-          EVENT: ${{ github.event_name }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          needed=true
-          if [ "$EVENT" = schedule ]; then
-            last=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --event schedule --status completed --limit 20 \
-              --json headSha,conclusion --jq '[.[] | select(.conclusion != "cancelled")][0].headSha // ""') || last=""
-            if [ "$last" = "$GITHUB_SHA" ]; then
-              needed=false
-              echo "main is still at ${GITHUB_SHA:0:7}, already tested by the last weekly run: nothing new to test." >> "$GITHUB_STEP_SUMMARY"
-            fi
-          fi
-          echo "needed=$needed" >> "$GITHUB_OUTPUT"
-
   app:
     name: App — typecheck and tests
-    needs: changes
-    if: needs.changes.outputs.needed == 'true'
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -100,8 +67,6 @@ jobs:
   # would only stop a release later.
   app-windows:
     name: App on Windows — typecheck and tests
-    needs: changes
-    if: needs.changes.outputs.needed == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -131,8 +96,6 @@ jobs:
 
   site:
     name: Website — tests and build
-    needs: changes
-    if: needs.changes.outputs.needed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

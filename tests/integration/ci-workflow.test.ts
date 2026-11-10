@@ -30,14 +30,13 @@ function triggers(): string {
   return rest.slice(0, rest.search(/\n\S/));
 }
 
-test('runs on pull requests to main, weekly and on demand, never on push', () => {
+test('runs on every push to main, on pull requests to main and on demand; no scheduled run', () => {
   const on = triggers();
+  expect(on).toMatch(/^ {2}push:\n {4}branches: \[main\]$/m);
   expect(on).toMatch(/^ {2}pull_request:\n {4}branches: \[main\]$/m);
-  // Weekly since 2026-10-23: one run a week, Monday night UTC, never every day.
-  expect(on).toMatch(/^ {2}schedule:\n {4}- cron: '\d+ \d+ \* \* 1'$/m);
-  expect(on.match(/- cron:/g)).toHaveLength(1);
   expect(on).toMatch(/^ {2}workflow_dispatch:/m);
-  expect(on).not.toMatch(/^ {2}push:/m);
+  // Every commit on main is tested by its push: a scheduled run would only test them again.
+  expect(on).not.toMatch(/schedule:|cron:/);
 });
 
 test('read-only, no secrets, credentials not kept', () => {
@@ -49,26 +48,16 @@ test('read-only, no secrets, credentials not kept', () => {
   expect(text.match(/persist-credentials: false/g)?.length).toBe(checkouts.length);
 });
 
-test('one run per ref; only pull requests cancel the run in progress (a manual run and the weekly run never kill each other)', () => {
+test('one run per ref; only pull requests cancel the run in progress (on main a run in progress always finishes)', () => {
   expect(text).toMatch(/^concurrency:\n {2}group: ci-\$\{\{ github\.ref \}\}\n {2}cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}$/m);
 });
 
-test('the weekly run tests main only when HEAD differs from the last scheduled run that ran (not by commit dates)', () => {
+test('three jobs, none gated: every run tests the app on macOS and Windows and the site', () => {
   const j = jobs();
-  expect(Object.keys(j)).toEqual(['changes', 'app', 'app-windows', 'site']);
-  const c = j.changes!;
-  expect(c).toMatch(/runs-on: ubuntu-latest/);
-  // Reads the run history: actions read, nothing else (no checkout needed).
-  expect(c).toMatch(/^ {4}permissions:\n {6}actions: read$/m);
-  expect(c).not.toMatch(/actions\/checkout@/);
-  expect(c).toMatch(/GH_TOKEN: \$\{\{ github\.token \}\}/);
-  expect(c).toMatch(/gh run list [^\n]*--event schedule[^\n]*--status completed/);
-  expect(c).toMatch(/select\(\.conclusion != "cancelled"\)/);
-  expect(c).toMatch(/"\$GITHUB_SHA"/);
-  expect(c).not.toMatch(/%ct|3600/);
+  expect(Object.keys(j)).toEqual(['app', 'app-windows', 'site']);
   for (const name of ['app', 'app-windows', 'site']) {
-    expect(j[name]).toMatch(/^ {4}needs: changes$/m);
-    expect(j[name]).toMatch(/^ {4}if: needs\.changes\.outputs\.needed == 'true'$/m);
+    expect(j[name]).not.toMatch(/^ {4}needs:/m);
+    expect(j[name]).not.toMatch(/^ {4}if:/m);
   }
 });
 
