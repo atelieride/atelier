@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Who uses Atelier, and how people get there: active installs and downloads from
 // Analytics Engine, site visits from Web Analytics (useatelier.dev only), GitHub's asset counts as a cross-check. The
-// answers come first, the details with --full. Reads the Cloudflare token and account id from the environment
-// (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID) or the Keychain, like `deploy`; never prints the token.
+// answers come first, the details with --full. Reads the Cloudflare token and account id from ATELIER_CLOUDFLARE_API_TOKEN
+// and ATELIER_CLOUDFLARE_ACCOUNT_ID or the Keychain, like `deploy`, never from the generic CLOUDFLARE_* a shell may
+// export for another account; never prints the token.
 // Usage: npm --prefix site run stats [-- --days 30] [-- --full]
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
@@ -260,9 +261,9 @@ async function main() {
   const full = process.argv.includes('--full');
   const now = new Date();
   const keychain = (item) => execFileSync('/usr/bin/security', ['find-generic-password', '-s', item, '-w'], { encoding: 'utf8' }).trim();
-  const token = process.env.CLOUDFLARE_API_TOKEN || keychain('atelier-cloudflare-mcp');
+  const token = process.env.ATELIER_CLOUDFLARE_API_TOKEN || keychain('atelier-cloudflare-mcp');
   // The account holding the site (not a secret, but not the repository's business either).
-  const account = process.env.CLOUDFLARE_ACCOUNT_ID || keychain('atelier-cloudflare-account');
+  const account = process.env.ATELIER_CLOUDFLARE_ACCOUNT_ID || keychain('atelier-cloudflare-account');
   const q = queries({ now, days });
   const names = Object.keys(q);
   const rows = Object.fromEntries(names.map((n, k) => [n, k]));

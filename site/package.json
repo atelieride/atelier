@@ -16,7 +16,7 @@
     "shots:demo": "SITE_NO_BEACON=1 npm run build && PLAYWRIGHT_BROWSERS_PATH=0 playwright test --config playwright.manual.config.ts",
     "brand-images": "PLAYWRIGHT_BROWSERS_PATH=0 node scripts/brand-images.mjs",
     "stats": "node scripts/stats.mjs",
-    "deploy": "npm test && account=\"${CLOUDFLARE_ACCOUNT_ID:-$(security find-generic-password -s atelier-cloudflare-account -w)}\" && CLOUDFLARE_ACCOUNT_ID=\"$account\" CLOUDFLARE_API_TOKEN=\"${CLOUDFLARE_API_TOKEN:-$(security find-generic-password -s atelier-cloudflare-mcp -w)}\" WRANGLER_SEND_METRICS=false WRANGLER_LOG_PATH=.wrangler/logs wrangler pages deploy dist --project-name useatelier --branch main --commit-dirty=true",
+    "deploy": "npm test && account=\"${ATELIER_CLOUDFLARE_ACCOUNT_ID:-$(security find-generic-password -s atelier-cloudflare-account -w)}\" && token=\"${ATELIER_CLOUDFLARE_API_TOKEN:-$(security find-generic-password -s atelier-cloudflare-mcp -w)}\" && CLOUDFLARE_ACCOUNT_ID=\"$account\" CLOUDFLARE_API_TOKEN=\"$token\" WRANGLER_SEND_METRICS=false WRANGLER_LOG_PATH=.wrangler/logs wrangler pages deploy dist --project-name useatelier --branch main --commit-dirty=true",
     "perf": "node scripts/perf-check.mjs"
   },
   "dependencies": {
