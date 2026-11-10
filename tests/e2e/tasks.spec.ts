@@ -109,6 +109,9 @@ test('tasks → sessions: a task\'s actions (paste into an open session, copy, c
     await win.keyboard.press('Enter');
     await win.locator('.palette-input').fill('auth');
     await expect(win.locator('.palette-item .palette-label')).toHaveText(['Auth refactor']);
+    // The Stop hook (state done) comes a moment before Claude's prompt turns bracketed paste on: until then the row is
+    // off and Enter would only say the prompt isn't free.
+    await expect(win.locator('.palette-item.is-active')).not.toHaveClass(/\bis-off\b/, { timeout: 15000 });
     await win.keyboard.press('Enter');
     await expect(win.locator('.palette')).toHaveCount(0);
     // The session is selected once the task came back from the (fake) tracker: as long as the paste below, not the
