@@ -194,7 +194,9 @@ posixTest('a file outside Claude\'s temp folder granted read-only (Context usage
   expect(c).not.toHaveProperty('claudeTemp');
 });
 
-test('any file outside the project: resolving it (⌘-hover) grants nothing, opening it (⌘-click) grants it read-only', async () => {
+// Any path outside the project, as macOS writes it: these run as macOS (the unit-test default), and checkOutsideFile
+// takes only a clean absolute path of the platform's own form. Windows paths: outside-read.win32.test.ts.
+posixTest('any file outside the project: resolving it (⌘-hover) grants nothing, opening it (⌘-click) grants it read-only', async () => {
   const { root, x } = setup();
   const g = new GrantStore();
   const deps = { grants: g, home: '/nowhere' };
@@ -210,7 +212,7 @@ test('any file outside the project: resolving it (⌘-hover) grants nothing, ope
   expect(g.list(root)).toEqual([x]);
 });
 
-test('a save refuses a read grant whichever deps carry the grants: without the temp folder\'s too', async () => {
+posixTest('a save refuses a read grant whichever deps carry the grants: without the temp folder\'s too', async () => {
   const { root, x } = setup();
   const g = new GrantStore();
   await outsideOpen(root, x, { grants: g, home: '/nowhere' });
@@ -224,7 +226,7 @@ test('a save refuses a read grant whichever deps carry the grants: without the t
   expect(heldReadOnly(root, null, null)(x)).toBe(false);
 });
 
-test('a file the project may already edit (Open File…) stays editable when a link opens it', async () => {
+posixTest('a file the project may already edit (Open File…) stays editable when a link opens it', async () => {
   const { root, x } = setup();
   const g = new GrantStore();
   g.grant(root, x);
