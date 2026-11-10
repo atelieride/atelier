@@ -3,7 +3,7 @@
 Release notes for Atelier. Each version has a `## <version>` section: the release workflow requires it and the app
 shows it in Settings › About and in "What's new".
 
-## 0.2.0-beta.29
+## 0.2.0-beta.30
 
 - **Atelier is open source**, under the MIT license: code, issues and releases live at github.com/atelieride/atelier.
   Updates come from there now; nothing changes on your side.
@@ -26,6 +26,11 @@ shows it in Settings › About and in "What's new".
   you leave. A click on a notification banner keeps its session's window in front. A pinned row's pin no longer
   moves. Ask keeps at most 100 threads on disk, dropping the least recently used. Electron 44.10.2 and other security
   updates.
+
+## 0.2.0-beta.29
+
+- **Not released**: a check of the signed app looked for a folder the open-source repository no longer has.
+  Everything it was meant to bring is in 0.2.0-beta.30.
 
 ## 0.2.0-beta.28
 
