@@ -3,6 +3,30 @@
 Release notes for Atelier. Each version has a `## <version>` section: the release workflow requires it and the app
 shows it in Settings › About and in "What's new".
 
+## 0.2.0-beta.29
+
+- **Atelier is open source**, under the MIT license: code, issues and releases live at github.com/atelieride/atelier.
+  Updates come from there now; nothing changes on your side.
+- **Find in the terminal**: ⌘F in a terminal (Ctrl+Shift+F on Windows), with match case, whole word and regular
+  expressions, the matches marked on the overview ruler. Also in the terminal's context menu and in ⌘K.
+- **Context usage**: what fills a Claude session's context, as Claude Code itself counts it — system prompt, tools,
+  each MCP server, memory files, skills and messages. Open it from File › Context Usage…, the session's context
+  tile in the Session panel, a session row's menu or ⌘K.
+- **Any path in a terminal is a link** while you hold ⌘ (Ctrl on Windows): an absolute or `~/` path opens read-only,
+  even outside the project, and every file Claude writes in its temp folder opens the same way.
+- **Hide the sidebar**: click the view in front again in the activity bar, or View › Sidebar (⌘B, Ctrl+B on Windows).
+- **Changes says what to sync**: ↓ and ↑ next to each clean repository and pushed worktree, in group heads and chips,
+  counted against the branch's own upstream, and a "To sync" group when grouped by session. Changes keeps them fresh
+  on its own, without opening Source Control.
+- **Session avatars** can be turned off (Settings › Appearance): rows start with the title, and tabs, pane headers and
+  the session bar show a small session tile instead.
+- Save Outside the Project… in the Save As sheet. Reveal in Finder on a Changes row. Start in New Session… asks which
+  Claude account to use when you have two or more.
+- Shift+Enter is a newline wherever Claude Code is in front, hooks or not. Switching workspaces never folds the one
+  you leave. A click on a notification banner keeps its session's window in front. A pinned row's pin no longer
+  moves. Ask keeps at most 100 threads on disk, dropping the least recently used. Electron 44.10.2 and other security
+  updates.
+
 ## 0.2.0-beta.28
 
 - **Databases**: browse your Postgres, read-only. Open it from View › Databases (⌃⇧B, Ctrl+Shift+B on Windows) and add
