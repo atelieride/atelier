@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -164,6 +164,13 @@ test('the CHANGELOG stub lists the commits since the last tag, minus release com
 test('a changelog with a string the public demo bundle refuses stops the release before the tag (beta.20: /c/Users/…)', () => {
   expect(changelogLeaks('- Git Bash paths (`/c/Users/…`) open from terminals\n')).toEqual(['/Users/']);
   expect(changelogLeaks('- Git Bash paths (`/c/…`) open from terminals\n')).toEqual([]);
+});
+
+test('the changelog check runs under plain Node, as the release runs it (no CommonJS globals in what it loads)', () => {
+  // Vitest gives every module __dirname, so importing changelogLeaks above can't catch a helper that needs it.
+  const r = spawnSync(process.execPath, ['--disable-warning=MODULE_TYPELESS_PACKAGE_JSON', 'scripts/changelog-leaks.mjs'], { cwd: join(__dirname, '../..'), encoding: 'utf8' });
+  expect(r.stderr).toBe('');
+  expect([0, 10]).toContain(r.status);
 });
 
 test('the version bump touches only the version fields, and refuses files it would reformat', () => {
