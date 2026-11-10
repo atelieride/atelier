@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, renameSync, statSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { posixTest } from '../support/platform';
 import { toCanonical } from '../../src/shared/paths';
 import { setTestDefaultPlatform } from '../../src/shared/platform';
@@ -127,7 +127,11 @@ test('scheduler: requests during a refresh merge into a single one', async () =>
   const results: unknown[] = [];
   s.onResult((st) => results.push(st));
   for (let i = 0; i < 10; i++) s.request(repo);
-  await new Promise((x) => setTimeout(x, 600));
+  // Each read is a real git status: two of them can take well over a second on a slow runner (Windows CI), so the
+  // test waits for the results, not for a fixed time.
+  await vi.waitFor(() => expect(results.length).toBeGreaterThanOrEqual(2), { timeout: 15_000, interval: 20 });
+  // A third read, had one been queued, would start as the second one ends.
+  await new Promise((x) => setTimeout(x, 50));
   expect(runs).toBe(2); // the one in progress + a single queued one
   expect(results.length).toBe(2);
 });
