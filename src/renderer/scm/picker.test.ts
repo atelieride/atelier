@@ -45,7 +45,7 @@ test('matchPositions', () => {
 
 test('checkedOutIn: the working tree of this repository a branch is checked out in, never one of another repository', () => {
   const st = (branch: string) => ({ branch, detached: false, oid: 'a'.repeat(40), ahead: 0, behind: 0, upstream: null, changes: 0 });
-  const e = (root: string, common: string, branch: string) => ({ root, rel: root.slice(3), name: root.split('/').pop()!, worktreeOf: null, common, status: st(branch) });
+  const e = (root: string, common: string, branch: string) => ({ root, rel: root.slice(3), name: root.split('/').pop()!, worktreeOf: null, nestedIn: null, common, status: st(branch) });
   const entries = [e('/p/a', '/p/a/.git', 'main'), e('/p/a/.wt/x', '/p/a/.git', 'feat/x'), e('/p/b', '/p/b/.git', 'feat/x'), e('/p/c', '/p/c/.git', 'main')];
   expect(checkedOutIn(entries, '/p/a', 'feat/x')?.root).toBe('/p/a/.wt/x');
   expect(checkedOutIn(entries, '/p/a', 'main')?.root).toBe('/p/a');

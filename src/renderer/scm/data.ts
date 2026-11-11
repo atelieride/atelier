@@ -17,9 +17,16 @@ export function loadRepos(): Promise<void> {
   return window.atelier.scm.repos().then((list) => {
     if (n !== reposAsked) return;
     useApp.getState().setScmRepos(list);
+    // Whether the folder scan still runs or stopped early: Source Control says so.
+    loadSearch();
     // Fetches that ran (or are running) before this window listed the repositories.
     void window.atelier.scm.fetchStates().then((states) => { for (const s of states) useApp.getState().setScmFetch(s); }).catch(() => {});
   }).catch(() => {});
+}
+
+/** How the project's folder scan went: still running (the empty lists say they look), or stopped at its cap. */
+export function loadSearch(): void {
+  void window.atelier.scm.search().then((s) => useApp.getState().setScmSearch(s)).catch(() => {});
 }
 
 /** Runs once the entries (and the selected repository's refs) are known: commands from the palette or a menu. */

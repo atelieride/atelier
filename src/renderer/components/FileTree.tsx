@@ -12,8 +12,8 @@ import { TREE_PATH_TYPE, endTreeDrag, startTreeDrag } from '../terminal/drop';
 import { TREE_GIT_LETTER, treeGitMap, type TreeGit } from '../tree-git';
 import { isBelow } from '@shared/paths';
 import { ConfirmActions, onEscCancel, useDismiss } from '../confirms/InlineConfirm';
+import { expandedByProject, sameEntries } from '../tree-refresh';
 
-const expandedByProject = new Map<string, Set<string>>();
 const collapseListeners = new Set<() => void>();
 const revealed = new Set<number>();
 
@@ -103,6 +103,8 @@ function Node({ entry, depth, showHidden, expanded, toggle, changes, git }: { en
   const openFile = useApp((s) => s.openFile);
   const [children, setChildren] = useState<DirEntry[] | null>(null);
   const treeNonce = useApp((s) => s.treeNonce);
+  // Raised when something changed on disk inside this folder (a clone, a rename from a terminal).
+  const dirNonce = useApp((s) => s.dirNonce[entry.path] ?? 0);
   const edit = useApp((s) => s.treeEdit);
   const renaming = edit?.mode === 'rename' && edit.path === entry.path;
   // Move to Trash asked here: the row turns into the question.
@@ -114,8 +116,9 @@ function Node({ entry, depth, showHidden, expanded, toggle, changes, git }: { en
   // A single click opens the file in the preview tab; a double click (or Open in the menu) keeps it open.
   const act = (preview = false) => (entry.dir ? toggle(entry.path) : openFile(entry.path, entry.rel, null, undefined, { preview }));
   useEffect(() => {
-    if (open) void window.atelier.files.list(entry.path, showHidden).then(setChildren);
-  }, [open, entry.path, showHidden, treeNonce]);
+    // The same rows again (a build writing into an open folder): the tree keeps what it shows.
+    if (open) void window.atelier.files.list(entry.path, showHidden).then((next) => setChildren((prev) => (sameEntries(prev, next) ? prev : next)));
+  }, [open, entry.path, showHidden, treeNonce, dirNonce]);
   if (renaming) return <TreeInput depth={depth} initial={entry.name} kind={entry.dir ? 'folder' : null} onDone={(n) => void commitEdit(edit, n)} />;
   return (
     <>
@@ -156,8 +159,15 @@ export function FileTree() {
   const expanded = expandedByProject.get(root) ?? new Set<string>();
   expandedByProject.set(root, expanded);
   const treeNonce = useApp((s) => s.treeNonce);
+  const rootNonce = useApp((s) => s.dirNonce[project?.realRoot ?? root] ?? 0);
   const edit = useApp((s) => s.treeEdit);
-  useEffect(() => { if (root) void window.atelier.files.list(root, showHidden).then(setRoots); }, [root, showHidden, treeNonce]);
+  useEffect(() => { if (root) void window.atelier.files.list(root, showHidden).then((next) => setRoots((prev) => (sameEntries(prev, next) ? prev : next))); }, [root, showHidden, treeNonce, rootNonce]);
+  // Back to the window: every open folder is listed again (changes made while no event reached Atelier).
+  useEffect(() => {
+    const again = () => useApp.getState().bumpTree();
+    window.addEventListener('focus', again);
+    return () => window.removeEventListener('focus', again);
+  }, []);
   // New file or folder: the target folder opens to show the field.
   useEffect(() => { if (edit && edit.mode !== 'rename' && edit.dir !== root && !expanded.has(edit.dir)) { expanded.add(edit.dir); force((n) => n + 1); } }, [edit, root]);
   const creatingAtRoot = edit && edit.mode !== 'rename' && edit.dir === root ? edit : null;

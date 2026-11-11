@@ -774,6 +774,9 @@ const strings = {
   // Changes when everything is clean: "All clean · 3 repos", or one repository's line.
   cleanAll: 'All clean',
   cleanCount: (n: number) => `· ${n} repos`,
+  moreCleanRepos: (n: number) => `${n} more clean ${n === 1 ? 'repository' : 'repositories'}`,
+  moreRepos: (n: number) => `+${n} more`,
+  moreReposTip: (n: number) => `Show ${n} more ${n === 1 ? 'repository' : 'repositories'}`,
   cleanOne: 'Working tree clean',
   // This workspace hides every change (only other workspaces' sessions made them): never "clean".
   cleanHidden: 'Nothing in this workspace',
@@ -1038,7 +1041,7 @@ const strings = {
       noRemote: 'No remote to fetch from'
     },
     noRepos: 'No git repositories in this project',
-    noReposBody: 'Open a folder that has one, or a repository in a subfolder (two levels deep at most).',
+    noReposBody: (depth: number) => `Open a folder that has one. Atelier looks ${depth} folder ${depth === 1 ? 'level' : 'levels'} down, inside other repositories too: to look deeper, change the`,
     gitMissing: 'Git isn’t installed',
     gitMissingBody: 'Atelier works as an editor without it. Install Git for Windows to see changes, branches and history, then restart Atelier.',
     gitMissingGet: 'Get Git for Windows',
@@ -1059,6 +1062,11 @@ const strings = {
     switcherKeys: '↑↓ move · ⏎ select · esc close',
     worktreeOf: (name: string) => `worktree of ${name}`,
     worktree: 'worktree',
+    nested: 'nested',
+    nestedTip: (parent: string) => `Inside ${parent}`,
+    searchCapped: (folders: number) => `Stopped looking for repositories after ${folders.toLocaleString('en-US')} folders. Open a subfolder, or lower the`,
+    searchDepth: 'search depth',
+    searching: 'Looking for repositories…',
     // The switcher's branch line is short (the sidebar is narrow); its tooltip says it in full.
     inSync: (b: string) => `${b} · synced`,
     ahead: (b: string, n: number) => `${b} · ↑${n}`,
@@ -2397,6 +2405,9 @@ const strings = {
     autoFetch: 'Auto-fetch',
     autoFetchHint: 'When viewing: the repositories shown in Changes and Source Control, at most every 10 min. An interval: every repository of the project too.',
     autoFetches: { viewing: 'When viewing', '15m': '15 min', '30m': '30 min', '60m': '1 hour', off: 'Off' },
+    repoSearchDepth: 'Repository search depth',
+    repoSearchDepthHint: 'Folder levels below the project searched for git repositories, inside repositories too. Deeper is slower in big folders.',
+    levels: (n: number) => (n === 1 ? '1 level' : `${n} levels`),
     gitActions: 'Git actions',
     gitActionsHint: 'Read-only: Atelier only shows and fetches, like before. Commit, push and branches stay in your terminal.',
     gitActionsOptions: { on: 'On', 'read-only': 'Read-only' },

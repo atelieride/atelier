@@ -127,6 +127,30 @@ export function cleanRepos(repos: RepoStatus[]): RepoStatus[] {
   return repos.filter((r) => r.changes.length === 0 && !r.error);
 }
 
+/** How many clean repositories Changes names before it only counts the rest: what fits the panel at its usual size. */
+export const CHANGES_CAP = 12;
+
+/**
+ * The items a list shows before "N more": the first `max` in their order, plus any later one `keep` wants shown (a
+ * repository a live session works in), in its place.
+ */
+export function capShown<T>(items: readonly T[], max: number, keep: (x: T) => boolean): { shown: T[]; more: number } {
+  const shown = items.filter((x, i) => i < max || keep(x));
+  return { shown, more: items.length - shown.length };
+}
+
+/** The repositories a live session works in: the deepest one around each session's folder. */
+export function sessionRoots(roots: readonly string[], terminals: readonly { cwd: string; session?: unknown }[]): Set<string> {
+  const out = new Set<string>();
+  for (const x of terminals) {
+    if (!x.session) continue;
+    let best: string | null = null;
+    for (const r of roots) if ((x.cwd === r || isBelow(r, x.cwd)) && (!best || r.length > best.length)) best = r;
+    if (best) out.add(best);
+  }
+  return out;
+}
+
 /**
  * The repositories git refuses to read (another user's folder: safe.directory), a row each in Changes. Other read
  * failures (a timeout under load, a repo mid-gc) pass with the next read: no row for them (Source Control shows the

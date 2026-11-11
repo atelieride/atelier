@@ -686,7 +686,7 @@ describe('installGit: ev:gitOp once at boot', () => {
     const refsAsked: string[] = [];
     const w = g.window as { atelier: Record<string, unknown> };
     w.atelier.scm = { refs: async (root: string) => { refsAsked.push(root); return null; } };
-    const entry = (root: string, common: string) => ({ root, rel: root.slice(3), name: root.slice(3), worktreeOf: null, common, status: null });
+    const entry = (root: string, common: string) => ({ root, rel: root.slice(3), name: root.slice(3), worktreeOf: null, nestedIn: null, common, status: null });
     const refs = (root: string) => ({ root, head: { branch: 'main', oid: null, detached: false }, refs: [], defaultBranch: null, shallow: false, fetchedAt: null, remotes: [], hasRemote: true, emptyTree: '' });
     useApp.setState({ scmRepos: [entry('/p/a', '/p/a/.git'), entry('/p/a-wt', '/p/a/.git'), entry('/p/b', '/p/b/.git')], scmRefs: { '/p/a': refs('/p/a'), '/p/a-wt': refs('/p/a-wt'), '/p/b': refs('/p/b') } });
     const off = git.installGit();

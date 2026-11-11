@@ -3,14 +3,19 @@
 // (`.worktrees/v2.2`), which discovery skips.
 import { basename, relative } from '../cpath';
 import type { ScmRepoEntry } from '@shared/scm';
+import { isBelow } from '@shared/paths';
 import { listWorkingTrees, type WorkingTree } from './repos';
 
 /** The entries for working trees Changes already listed (GitHub's). */
 export function scmEntries(root: string, trees: readonly WorkingTree[]): ScmRepoEntry[] {
   return trees.map((w) => {
     const rel = w.root === root ? '' : relative(root, w.root);
+    // A linked worktree is its repository's own checkout, never "nested"; a repository is nested in the deepest other
+    // working tree around it (a clone kept inside another repository).
+    let nestedIn: string | null = null;
+    if (!w.worktreeOf) for (const t of trees) if (t.root !== w.root && isBelow(t.root, w.root) && (!nestedIn || t.root.length > nestedIn.length)) nestedIn = t.root;
     // A visible linked worktree is a repo of its own in the switcher; only the ones discovery missed show their owner.
-    return { root: w.root, rel, name: rel ? basename(w.root) : basename(root), worktreeOf: w.hidden ? w.worktreeOf : null, common: w.common, status: null };
+    return { root: w.root, rel, name: rel ? basename(w.root) : basename(root), worktreeOf: w.hidden ? w.worktreeOf : null, nestedIn, common: w.common, status: null };
   });
 }
 

@@ -1,10 +1,11 @@
 import { expect, test } from 'vitest';
 import type { ScmFetchState, ScmRef, ScmRefs, ScmRepoEntry, ScmRepoStatus } from '@shared/scm';
-import { branchLine, branchTip, conventional, cursorIndex, fetchChip, isClaude, personColor, refPills, refSections, refsByOid, remoteLag, repoLabel, scopeTitle, shortRef, switcherGroups } from './view';
+import { branchLine, branchTip, conventional, cursorIndex, fetchChip, isClaude, lookingForRepos, personColor, refPills, refSections, refsByOid, remoteLag, repoLabel, scopeTitle, shortRef, switcherGroups } from './view';
 import { bestTime } from '../../../tests/support/timing';
+import { t } from '../i18n/en';
 
 const st = (o: Partial<ScmRepoStatus> = {}): ScmRepoStatus => ({ branch: 'main', detached: false, oid: 'a'.repeat(40), ahead: 0, behind: 0, upstream: 'origin/main', changes: 0, ...o });
-const entry = (rel: string, o: Partial<ScmRepoEntry> = {}): ScmRepoEntry => ({ root: rel ? `/p/${rel}` : '/p', rel, name: rel ? rel.split('/').at(-1)! : 'p', worktreeOf: null, common: `/p/${rel}/.git`, status: st(), ...o });
+const entry = (rel: string, o: Partial<ScmRepoEntry> = {}): ScmRepoEntry => ({ root: rel ? `/p/${rel}` : '/p', rel, name: rel ? rel.split('/').at(-1)! : 'p', worktreeOf: null, nestedIn: null, common: `/p/${rel}/.git`, status: st(), ...o });
 const ref = (name: string, o: Partial<ScmRef> = {}): ScmRef => {
   const kind = name.startsWith('refs/heads/') ? 'head' : name.startsWith('refs/remotes/') ? 'remote' : 'tag';
   const short = shortRef(name);
@@ -13,9 +14,28 @@ const ref = (name: string, o: Partial<ScmRef> = {}): ScmRef => {
 const refsOf = (list: ScmRef[], o: Partial<ScmRefs> = {}): ScmRefs => ({ root: '/p', head: { branch: 'main', oid: 'a'.repeat(40), detached: false }, refs: list, defaultBranch: { ref: 'main', base: 'main' }, shallow: false, fetchedAt: null, remotes: [...new Set(list.flatMap((r) => (r.remote ? [r.remote] : [])))], hasRemote: list.some((r) => r.kind === 'remote'), emptyTree: '', ...o });
 
 test('repoLabel: folder and name; the root by its name; a hidden worktree as "owner › name" with a worktree note', () => {
-  expect(repoLabel(entry('plugins/clickup'))).toEqual({ dir: 'plugins/', name: 'clickup', note: null });
-  expect(repoLabel(entry(''))).toEqual({ dir: '', name: 'p', note: null });
-  expect(repoLabel(entry('.worktrees/v2.2', { worktreeOf: '/p' }))).toEqual({ dir: 'p › ', name: 'v2.2', note: 'worktree' });
+  expect(repoLabel(entry('plugins/clickup'))).toEqual({ dir: 'plugins/', name: 'clickup', note: null, tip: null });
+  expect(repoLabel(entry(''))).toEqual({ dir: '', name: 'p', note: null, tip: null });
+  expect(repoLabel(entry('.worktrees/v2.2', { worktreeOf: '/p' }))).toEqual({ dir: 'p › ', name: 'v2.2', note: 'worktree', tip: null });
+});
+
+test('lookingForRepos: while the first scan runs, "no repositories" would be wrong; after it, nothing to say', () => {
+  expect(lookingForRepos({ capped: false, searching: true, maxFolders: 20_000 })).toBe('Looking for repositories…');
+  expect(lookingForRepos({ capped: false, searching: false, maxFolders: 20_000 })).toBeNull();
+  expect(lookingForRepos(null)).toBeNull();
+});
+
+test('no repository found: the empty state says how deep Atelier looked, as the setting says', () => {
+  expect(t.scm.noReposBody(4)).toContain('4 folder levels');
+  expect(t.scm.noReposBody(1)).toContain('1 folder level ');
+  expect(t.scm.noReposBody(3)).not.toMatch(/two levels/);
+});
+
+test('repoLabel: a repository inside another one says so, and inside which', () => {
+  expect(repoLabel(entry('hub/guides', { nestedIn: '/p/hub' }))).toEqual({ dir: 'hub/', name: 'guides', note: 'nested', tip: 'Inside hub' });
+  expect(repoLabel(entry('team/hub/guides', { nestedIn: '/p/team/hub' })).tip).toBe('Inside team/hub');
+  // Inside the project's own repository: named by the project's folder.
+  expect(repoLabel(entry('apps/web', { nestedIn: '/p' })).tip).toBe('Inside p');
 });
 
 test('branchLine: short enough for the sidebar; branchTip says it in full', () => {

@@ -1,7 +1,7 @@
 // The Source Control sidebar: the Read-only badge (only in Read-only), the
 // repository switcher with its Sync button and the selected repository's sections, or the empty and error states; with
 // more than one repository, a switch to the All Repositories view.
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import type { ScmRefs, ScmRepoEntry } from '@shared/scm';
 import { Icon } from '../components/Icon';
 import { t } from '../i18n/en';
@@ -11,13 +11,15 @@ import { RefSections } from './RefSections';
 import { RepoSwitcher } from './RepoSwitcher';
 import { SyncButton } from '../git/SyncButton';
 import { fetchAll, showHistory } from './actions';
-import { AllRepos } from './AllRepos';
+// The second view, loaded the first time it opens: its blocks stay out of the first paint (the live demo's budget).
+const AllRepos = lazy(() => import('./AllRepos').then((m) => ({ default: m.AllRepos })));
 import { FetchButton } from './FetchControls';
 import { GitMissing } from '../git/GitMissing';
 import { gitMissing } from '../git/missing';
 import { RepoTrouble } from '../git/RepoTrouble';
 import { dubiousOwnership } from '../git/unsafe';
 import { useViewFetch } from './view-fetch';
+import { lookingForRepos } from './view';
 
 export function ScmSidebar() {
   const entries = useApp((s) => s.scmRepos);
@@ -44,8 +46,24 @@ export function ScmSidebar() {
         {all ? <FetchAllButton /> : root && <FetchButton root={root} />}
         {root && <button type="button" className="icon-btn scm-history-btn" aria-label={t.scm.menu.showHistory} data-tip={t.scm.menu.showHistory} onClick={() => showHistory('all')}><Icon name="commit" size={14} /></button>}
       </div>
-      {all && <AllRepos />}
+      <SearchCapped />
+      {all && <Suspense fallback={null}><AllRepos /></Suspense>}
       {!all && <OneRepo entries={entries} root={root} refs={refs} />}
+    </div>
+  );
+}
+
+/** The folder scan stopped at its cap: deeper repositories may be missing; the search depth is one click away. */
+function SearchCapped() {
+  const search = useApp((s) => s.scmSearch);
+  if (!search?.capped) return null;
+  return (
+    <div className="scm-capped" role="status">
+      <Icon name="info" size={12} stroke={1.8} />
+      <span className="scm-capped-text">
+        {t.scm.searchCapped(search.maxFolders)}{' '}
+        <button type="button" className="link-btn" onClick={() => useApp.getState().setSettingsOpen('scm')}>{t.scm.searchDepth}</button>.
+      </span>
     </div>
   );
 }
@@ -87,14 +105,21 @@ function FetchAllButton() {
 
 /** Today's view: the switcher, its Sync button and the selected repository's sections, or the empty and error states. */
 function OneRepo({ entries, root, refs }: { entries: ScmRepoEntry[] | null; root: string | null; refs: ScmRefs | undefined }) {
+  // No repository yet while the first folder scan runs: it says it looks, not that there is none.
+  const looking = useApp((s) => lookingForRepos(s.scmSearch));
+  const depth = useApp((s) => s.settings.repoSearchDepth);
   return (
     <>
       {entries === null && <p className="empty">{t.scm.loading}</p>}
-      {entries !== null && entries.length === 0 && (
+      {entries !== null && entries.length === 0 && looking && <p className="empty">{looking}</p>}
+      {entries !== null && entries.length === 0 && !looking && (
         <div className="scm-empty">
           <span className="scm-empty-icon"><Icon name="git" size={20} /></span>
           <p className="scm-empty-title">{t.scm.noRepos}</p>
-          <p className="scm-empty-body">{t.scm.noReposBody}</p>
+          <p className="scm-empty-body">
+            {t.scm.noReposBody(depth)}{' '}
+            <button type="button" className="link-btn" onClick={() => useApp.getState().setSettingsOpen('scm')}>{t.scm.searchDepth}</button>.
+          </p>
           <button type="button" className="btn-ghost sm" onClick={() => void window.atelier.openFolder()}>{t.scm.openFolder}</button>
         </div>
       )}

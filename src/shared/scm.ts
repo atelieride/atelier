@@ -128,6 +128,8 @@ export interface ScmRepoEntry {
   name: string;
   /** The main worktree's root when this entry is a linked worktree. */
   worktreeOf: string | null;
+  /** The root of the nearest other working tree this repository lies inside (null for none, and for linked worktrees). */
+  nestedIn: string | null;
   /** Absolute git common dir: events name it. */
   common: string;
   status: ScmRepoStatus | null;
@@ -135,6 +137,9 @@ export interface ScmRepoEntry {
 
 /** Refs, a HEAD or a fetch changed in a repository (its git common dir). Worktrees' statuses come with Changes' own. */
 export interface ScmEvent { common: string; what: 'refs' | 'head' | 'fetch' }
+
+/** How the project's folder scan for repositories went: still running, or stopped after `maxFolders` folders read. */
+export interface RepoSearch { capped: boolean; searching: boolean; maxFolders: number }
 
 /** How a fetch ended. */
 export type FetchOutcome = 'ok' | 'auth' | 'busy' | 'network' | 'error';

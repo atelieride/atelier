@@ -216,7 +216,7 @@ test('Show History of <branch>: the branch of the working tree the session is in
   useApp.setState({
     terminals: [{ ...term('w', true), cwd: `${wt}/src` }, term('r', true)],
     repos: [{ root: '/p', name: 'p', branch: 'main', detached: false, ahead: 0, behind: 0, oid: 'a'.repeat(40), changes: [], checkedAt: 0, truncated: 0 }],
-    scmRepos: [{ root: '/p', rel: '', name: 'p', worktreeOf: null, common: '/p/.git', status: st('main') }, { root: wt, rel: '.worktrees/sc', name: 'sc', worktreeOf: '/p', common: '/p/.git', status: st('feat/source-control') }]
+    scmRepos: [{ root: '/p', rel: '', name: 'p', worktreeOf: null, nestedIn: null, common: '/p/.git', status: st('main') }, { root: wt, rel: '.worktrees/sc', name: 'sc', nestedIn: null, worktreeOf:'/p', common: '/p/.git', status: st('feat/source-control') }]
   });
   expect(item(sessionRowMenu(useApp.getState().terminals[0]!), 'show-branch-history')?.label).toBe('Show History of feat/source-control');
   expect(item(sessionRowMenu(useApp.getState().terminals[1]!), 'show-branch-history')?.label).toBe('Show History of main');

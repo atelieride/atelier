@@ -175,7 +175,8 @@ export interface GitApi {
   stashRestore(o: { root: string; oid: string; message: string }): Promise<GitOpResult>;
   discard(root: string, rels: StageTarget): Promise<GitOpResult>;
   cancel(id: string): Promise<void>;
-  facts(root: string): Promise<GitFacts | null>;
+  /** `view`: asked by a view of many repositories (All Repositories' blocks): it waits for a read slot in main. */
+  facts(root: string, o?: { view: true }): Promise<GitFacts | null>;
   /** Paths a pull would change (diff --name-only HEAD...@{u}). */
   incoming(root: string): Promise<string[]>;
   /** The upstream's commits HEAD doesn't have (after a fetch), at most `n`; the first one's oid is what a lease names. */

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { buildRows, unreadableRepos, changeTimes, chipOf, clashChipLabels, clashChipsShown, clashSessionTip, runningAt, clashNames, cleanRepos, dotProps, fileList, groupByRepo, groupBySession, inSessionOrder, locationRows, originTip, overlapGroups, overlaps, sameMoment, sessionOrderKey, touchedBy, unsureOf, whereRan, type ChangeBy, type ChangeRow } from './changes';
+import { CHANGES_CAP, capShown, sessionRoots, buildRows, unreadableRepos, changeTimes, chipOf, clashChipLabels, clashChipsShown, clashSessionTip, runningAt, clashNames, cleanRepos, dotProps, fileList, groupByRepo, groupBySession, inSessionOrder, locationRows, originTip, overlapGroups, overlaps, sameMoment, sessionOrderKey, touchedBy, unsureOf, whereRan, type ChangeBy, type ChangeRow } from './changes';
 import type { RepoStatus } from '@shared/git';
 import type { Attribution } from '@shared/attribution';
 import { t } from './i18n/en';
@@ -276,4 +276,32 @@ test('a repository git can’t read is never clean: listed apart, left out of th
   const slow: RepoStatus = { ...repo('api', []), branch: null, oid: null, error: 'git status: timed out' };
   expect(unreadableRepos([slow, bad]).map((r) => r.name)).toEqual(['shop']);
   expect(cleanRepos([slow])).toEqual([]);
+});
+
+describe('capShown: a dozen repositories, then a count', () => {
+  const items = Array.from({ length: 20 }, (_, i) => i);
+  test('the first ones in their order, the rest counted', () => {
+    expect(CHANGES_CAP).toBe(12);
+    expect(capShown(items, 12, () => false)).toEqual({ shown: items.slice(0, 12), more: 8 });
+  });
+  test('one past the cap that must show (a live session in it) shows too, in its place', () => {
+    expect(capShown(items, 12, (x) => x === 17)).toEqual({ shown: [...items.slice(0, 12), 17], more: 7 });
+  });
+  test('a dozen or fewer: all of them, nothing counted', () => {
+    expect(capShown(items.slice(0, 12), 12, () => false)).toEqual({ shown: items.slice(0, 12), more: 0 });
+    expect(capShown([], 12, () => false)).toEqual({ shown: [], more: 0 });
+  });
+});
+
+describe('sessionRoots', () => {
+  test('the deepest repository each session works in; terminals without a session count for nothing', () => {
+    const roots = ['/p/hub', '/p/hub/guides', '/p/api'];
+    const terminals = [
+      { cwd: '/p/hub/guides/src', session: {} },
+      { cwd: '/p/api', session: {} },
+      { cwd: '/p/hub', session: null },
+      { cwd: '/elsewhere', session: {} }
+    ];
+    expect(sessionRoots(roots, terminals as never)).toEqual(new Set(['/p/hub/guides', '/p/api']));
+  });
 });

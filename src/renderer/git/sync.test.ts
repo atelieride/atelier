@@ -91,7 +91,7 @@ const facts = (o: Partial<GitFacts> = {}): GitFacts => ({
   headHasParent: true, headMessage: 'x', hooks: { preCommit: false, commitMsg: false, prePush: false }, gpgProgram: null, signs: false, gitVersion: [2, 50, 1],
   undo: null, remotes: ['origin'], ...o
 });
-const entry = (o: Partial<ScmRepoStatus> = {}): ScmRepoEntry => ({ root: '/p/a', rel: 'a', name: 'acme-store', worktreeOf: null, common: '/p/a/.git', status: status(o) });
+const entry = (o: Partial<ScmRepoStatus> = {}): ScmRepoEntry => ({ root: '/p/a', rel: 'a', name: 'acme-store', worktreeOf: null, nestedIn: null, common: '/p/a/.git', status: status(o) });
 const toast = () => useApp.getState().toast;
 const actionsOf = (): ToastAction[] => { const tt = toast(); return tt ? [tt.action, tt.second].filter((a): a is ToastAction => !!a) : []; };
 const names = () => calls.map((c) => c[0]);

@@ -52,7 +52,7 @@ export function createScm(ctx: DemoContext): AtelierApi['scm'] {
   const publish = (next: ScmFetchState) => { state = next; ctx.events.emit('scmFetch', state); };
 
   const entry = (): ScmRepoEntry => ({
-    root, rel: '', name, worktreeOf: null, common,
+    root, rel: '', name, worktreeOf: null, nestedIn: null, common,
     status: { branch: 'main', detached: false, oid: head, ahead: 0, behind: 0, upstream: UPSTREAM, changes: statusOf(ctx).changes.length }
   });
   const refs = (): ScmRefs => ({
@@ -80,6 +80,7 @@ export function createScm(ctx: DemoContext): AtelierApi['scm'] {
 
   return {
     repos: () => resolved([entry()]),
+    search: () => resolved({ capped: false, searching: false, maxFolders: 20_000 }),
     refs: () => resolved(refs()),
     log: (_root, scope, skip, count, filter) => resolved(history.log(scope, skip, count, filter)),
     locate: (_root, scope, oid) => resolved(history.locate(scope, oid)),

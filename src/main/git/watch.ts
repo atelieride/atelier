@@ -25,6 +25,36 @@ export function locate(rel: string): { gitDir: string; inside: string[] } | null
   return { gitDir: dir.join('/'), inside };
 }
 
+/**
+ * Whether a changed path (relative to the project root) may change which repositories the project has, so discovery
+ * runs again:
+ * - a git dir appearing for a folder no working tree is (a clone, `git init`, a submodule) within `depth` levels, or a
+ *   known repository's `.git` gone while its folder stays;
+ * - a known working tree's folder, or a folder above it, gone (renamed, moved, deleted);
+ * - `created` (the OS reported a name come or gone, not a write): a folder within the depth that is a repository
+ *   nobody knows, or a folder above that depth that may hold some (moved or renamed in).
+ * Folders discovery skips (hidden ones, node_modules) never count. `known` holds the working trees' paths inside the
+ * project ('' for the root); `probe` says what is on disk at such a path now.
+ */
+export function needsRediscovery(rel: string, known: ReadonlySet<string>, depth: number,
+  probe: { isRepoDir(rel: string): boolean; isDir(rel: string): boolean }, created: boolean): boolean {
+  const parts = rel.split(/[\\/]/).filter(Boolean);
+  const g = parts.indexOf('.git');
+  const own = g >= 0 ? parts.slice(0, g) : parts;
+  if (own.some((s) => s === 'node_modules' || s.startsWith('.'))) return false;
+  if (g >= 0) {
+    const owner = own.join('/');
+    if (!known.has(owner)) return own.length <= depth;
+    // The .git itself reported for a known repository: is it still one?
+    return g === parts.length - 1 && !probe.isRepoDir(owner);
+  }
+  const path = parts.join('/');
+  const below = `${path}/`;
+  for (const k of known) if ((k === path || k.startsWith(below)) && !probe.isRepoDir(k)) return true;
+  if (!created || known.has(path) || parts.length > depth) return false;
+  return probe.isRepoDir(path) || (parts.length < depth && probe.isDir(path));
+}
+
 /** What to do for a changed path (relative to the project root). */
 export function classifyChange(_root: string, rel: string): 'ignore' | 'git' | 'file' {
   const parts = rel.split(/[\\/]/);

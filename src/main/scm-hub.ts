@@ -8,13 +8,16 @@ import { IPC } from '@shared/api';
 import { OID_RE, scmStatusOf, type ScmEvent, type ScmFetchAnswer, type ScmFetchState, type ScmLogPage, type ScmRefs, type ScmRepoEntry, type ScmScope } from '@shared/scm';
 import type { AutoFetch } from '@shared/settings';
 import { runGit } from './git/exec';
+import { gitReadLimiter } from './git/read-limiter';
 import { autoFetchAllowed, runFetch, stopAllFetches, type FetchResult } from './git/fetch';
 import { FetchScheduler } from './fetch-scheduler';
 import { WriteQueue } from './git/write-queue';
 import { aheadBehind, lastFetchAt, locateCommit, readBlob, readCommit, readLog, readRefs, readStashes, readWorktrees, resolveCommit } from './git/history';
-import { listScmRepos, scmEntries } from './git/scm-repos';
+import { scmEntries } from './git/scm-repos';
+import { quickTrees } from './git/repos';
 import { ScmEvents } from './scm-watch';
-import { scmAheadBehindSchema, scmCommitSchema, scmFetchSchema, scmFileSchema, scmLocateSchema, scmLogSchema, scmResolveSchema, scmRootSchema } from './ipc-schemas';
+import { noArgsSchema, scmAheadBehindSchema, scmCommitSchema, scmFetchSchema, scmFileSchema, scmLocateSchema, scmLogSchema, scmResolveSchema, scmRootSchema } from './ipc-schemas';
+import { REPO_SEARCH_MAX_FOLDERS } from './git/repos';
 import type { GitHub } from './git-hub';
 import { toOut } from './cpath';
 
@@ -67,7 +70,6 @@ export class CallQueue {
 }
 
 interface Project {
-  entries: Promise<ScmRepoEntry[]> | null;
   refs: Map<string, ScmRefs>;
   /** Bumped whenever the cached refs are dropped (a read started before must not put its answer back). */
   gen: number;
@@ -86,6 +88,11 @@ export interface ScmFetchDeps {
 }
 
 const OFF: ScmFetchDeps = { setting: () => 'off', online: () => false, projects: () => [] };
+
+/** Whether a repository has a remote to fetch from. Fetch All asks it of every repository: through the shared limiter. */
+export function hasRemote(root: string): Promise<boolean> {
+  return gitReadLimiter.run('live', () => runGit(root, ['remote'])).then((s) => s.trim() !== '', () => false);
+}
 
 export class ScmHub {
   private projects = new Map<string, Project>();
@@ -106,7 +113,7 @@ export class ScmHub {
         return res;
       }),
       fetchedAt: (common) => lastFetchAt(common),
-      hasRemote: (root) => (fetchDeps.hasRemote ? fetchDeps.hasRemote(root) : runGit(root, ['remote']).then((s) => s.trim() !== '', () => false)),
+      hasRemote: (root) => (fetchDeps.hasRemote ?? hasRemote)(root),
       autoAllowed: (root) => (fetchDeps.autoAllowed ?? autoFetchAllowed)(root),
       setting: () => fetchDeps.setting(),
       online: () => fetchDeps.online(),
@@ -136,9 +143,9 @@ export class ScmHub {
 
   /** A fetch state goes to the windows of the projects that list that repository. */
   private async sendFetch(st: ScmFetchState): Promise<void> {
-    for (const [key, p] of this.projects) {
-      const trees = this.git.info(key)?.trees;
-      const commons = trees ? trees.map((t) => t.common) : p.entries ? (await p.entries).map((e) => e.common) : [];
+    for (const key of this.projects.keys()) {
+      const info = this.git.info(key);
+      const commons = (info?.trees ?? quickTrees(info?.discovered ?? [])).map((t) => t.common);
       if (!commons.includes(st.common)) continue;
       for (const wc of this.git.info(key)?.windows ?? []) if (!wc.isDestroyed()) wc.send(IPC.evScmFetch, st);
     }
@@ -148,19 +155,18 @@ export class ScmHub {
     let p = this.projects.get(key);
     if (!p) {
       // Statuses, hidden worktrees' included, are GitHub's (worktrees in Changes): the renderer reloads the entries on each.
-      p = { entries: null, refs: new Map(), gen: 0, events: new ScmEvents(300, (e) => this.send(key, e)) };
+      p = { refs: new Map(), gen: 0, events: new ScmEvents(300, (e) => this.send(key, e)) };
       this.projects.set(key, p);
     }
     return p;
   }
 
-  private event(key: string, e: ScmEvent, worktree = false): void {
+  // `worktree` (a linked worktree added or removed): the entries are GitHub's working trees, listed again by it.
+  private event(key: string, e: ScmEvent, _worktree = false): void {
     const p = this.project(key);
     // Refs read before are only a check list for the renderer's refnames: dropped, read again on the next call.
     p.refs.clear();
     p.gen++;
-    // A linked worktree added or removed: the entries are listed again, but only once a window asks for them.
-    if (worktree) p.entries = null;
     p.events.add(e);
   }
 
@@ -170,17 +176,17 @@ export class ScmHub {
 
   /**
    * The project's switcher entries with their current statuses: the working trees Changes listed (GitHub's, listed
-   * again on every worktree change and kept through a git timeout); before its first listing, listed here once. Common
-   * dirs outside the project are GitHub's to watch too: its events reach this hub through onScm.
+   * again on every worktree change and kept through a git timeout); before its first listing, the repositories found
+   * so far, read without git (a big folder's first listing takes a while). Common dirs outside the project are
+   * GitHub's to watch too: its events reach this hub through onScm.
    */
   private entriesOf(key: string): Promise<ScmRepoEntry[]> {
     const info = this.git.info(key);
     if (!info) return Promise.resolve([]);
+    // A window used Source Control: its fetch states and events go to it from now on.
+    this.project(key);
     const withStatus = (list: ScmRepoEntry[]) => list.map((e) => ({ ...e, status: scmStatusOf(info.status.get(e.root)) }));
-    if (info.trees) return Promise.resolve(withStatus(scmEntries(info.root, info.trees)));
-    const p = this.project(key);
-    p.entries ??= listScmRepos(info.root, info.discovered).catch(() => []);
-    return p.entries.then(withStatus);
+    return Promise.resolve(withStatus(scmEntries(info.root, info.trees ?? quickTrees(info.discovered))));
   }
 
   /**
@@ -266,6 +272,12 @@ export class ScmHub {
     };
     const aborted = (err: unknown) => (err as Error)?.message?.includes('aborted');
     handle(IPC.scmRepos, (e) => this.entriesOf(keyOf(e)));
+    handle(IPC.scmSearch, (e, arg) => {
+      const key = keyOf(e);
+      noArgsSchema.parse(arg);
+      const i = this.git.info(key);
+      return i ? { capped: i.capped, searching: i.searching, maxFolders: i.maxFolders } : { capped: false, searching: false, maxFolders: REPO_SEARCH_MAX_FOLDERS };
+    });
     handle(IPC.scmRefs, async (e, arg) => {
       const { key, root } = await rooted(e, scmRootSchema.parse(arg).root);
       return this.queue(e.sender).run(undefined, () => this.refsOf(key, root, true));

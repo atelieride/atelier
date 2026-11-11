@@ -1,3 +1,5 @@
+import type { ReadLevel } from './read-limiter';
+
 /**
  * What git ignores in each repo: a change there (build output, logs) asks for no status. From
  * `git ls-files --others --ignored --exclude-standard --directory -z`: an ignored folder is listed once, with its slash.
@@ -21,18 +23,21 @@ export class IgnoreCache {
   private again = new Set<string>();
 
   /** `onChanged`: what git ignores changed (a path may have become visible): its repo wants a status. */
-  constructor(private readonly list: (repo: string) => Promise<string>, private readonly now: () => number = Date.now,
+  constructor(private readonly list: (repo: string, level: ReadLevel) => Promise<string>, private readonly now: () => number = Date.now,
     private readonly onChanged: (repo: string) => void = () => {}) {}
 
-  /** `force`: the rules changed (a .gitignore saved): a listing already running is followed by another one. */
-  refresh(repo: string, force = false): Promise<void> {
+  /**
+   * `force`: the rules changed (a .gitignore saved): a listing already running is followed by another one. `level`: how
+   * urgent the listing is among the git reads of every repository ('bulk' when a whole project is being read).
+   */
+  refresh(repo: string, force = false, level: ReadLevel = 'live'): Promise<void> {
     const running = this.inflight.get(repo);
     if (running) {
       if (force) this.again.add(repo);
       return running;
     }
     this.tried.set(repo, this.now());
-    const p = this.list(repo).then((out) => {
+    const p = this.list(repo, level).then((out) => {
       const paths = parseIgnored(out);
       // A folder with nothing listed inside it. Sorted, the paths under a folder come right after it: one look at the
       // next path, not a scan of all of them per folder (thousands of __pycache__/ made that quadratic, every minute).
@@ -57,6 +62,12 @@ export class IgnoreCache {
     if (!s) return false;
     if (s.files.has(rel)) return true;
     return s.dirs.some((d) => rel.startsWith(d) || rel === d.slice(0, -1));
+  }
+
+  /** A repository gone from every project: what git ignored there goes (a large set, renames would pile it up). */
+  forget(repo: string): void {
+    this.sets.delete(repo);
+    this.tried.delete(repo);
   }
 
   stale(repo: string): boolean {

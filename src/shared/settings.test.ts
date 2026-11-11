@@ -38,6 +38,16 @@ test('no file: the defaults', () => {
   expect(normalizeSettings(null)).toEqual(DEFAULT_SETTINGS);
 });
 
+test('repoSearchDepth: 3 levels by default; 1–5 accepted, anything else back to the default', () => {
+  expect(DEFAULT_SETTINGS.repoSearchDepth).toBe(3);
+  for (const v of [1, 3, 5]) {
+    expect(normalizeSettings({ repoSearchDepth: v }).repoSearchDepth).toBe(v);
+    expect(settingsPatchSchema.safeParse({ repoSearchDepth: v }).success).toBe(true);
+  }
+  for (const v of [0, 6, 2.5, '3', null]) expect(normalizeSettings({ repoSearchDepth: v }).repoSearchDepth).toBe(3);
+  expect(settingsPatchSchema.safeParse({ repoSearchDepth: 6 }).success).toBe(false);
+});
+
 test('autoFetch: "when viewing" by default; intervals and off accepted, anything else back to the default', () => {
   expect(DEFAULT_SETTINGS.autoFetch).toBe('viewing');
   for (const v of ['viewing', '15m', '30m', '60m', 'off'] as const) {

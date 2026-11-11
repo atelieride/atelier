@@ -1,5 +1,42 @@
 import { describe, expect, test, vi } from 'vitest';
-import { Debouncer, classifyChange, gitChangeScope, gitDirOf, repoOf, scmChange, worktreeListChange } from './watch';
+import { Debouncer, classifyChange, gitChangeScope, gitDirOf, needsRediscovery, repoOf, scmChange, worktreeListChange } from './watch';
+
+describe('needsRediscovery', () => {
+  // The project's working trees by their path inside it, and what is on disk now: repositories and plain folders.
+  const known = new Set(['hub', 'old-tools', 'web', '']);
+  const repos = new Set(['hub', '', 'new-tools', 'hub/guides']);
+  const dirs = new Set([...repos, 'web', 'drafts', 'group', 'a/b/c', 'hub/src']);
+  const probe = { isRepoDir: (rel: string) => repos.has(rel), isDir: (rel: string) => dirs.has(rel) };
+  test.each([
+    ['a git dir of a folder no working tree is', 'hub/guides/.git/HEAD', false, true],
+    ['the same with Windows separators', 'hub\\guides\\.git\\HEAD', false, true],
+    ['a .git file appearing (a linked worktree or a submodule)', 'tools/.git', true, true],
+    ['git internals of a known repository', 'hub/.git/HEAD', false, false],
+    ['git objects of a known repository', 'hub/.git/objects/ab/cd', true, false],
+    ['a known repository\'s .git removed, its folder kept', 'web/.git', true, true],
+    ['a known repository\'s .git still there', 'hub/.git', false, false],
+    ['a git dir deeper than the depth', 'a/b/c/d/.git/HEAD', false, false],
+    ['a submodule inside the root repository', '.git/modules/lib/HEAD', false, false],
+    ['a worktree in a hidden folder (discovery skips those; the worktree listing finds it)', '.claude/worktrees/x/.git', true, false],
+    ['a package inside node_modules', 'web/node_modules/p/.git/HEAD', true, false],
+    ['a known repository whose folder is gone (renamed, deleted)', 'old-tools', true, true],
+    ['a file in a known repository', 'hub/notes.md', true, false],
+    ['a repository moved or renamed in', 'new-tools', true, true],
+    ['the same path only written to (no folder came): nothing to look at', 'new-tools', false, false],
+    ['a folder that may hold repositories moved in', 'group', true, true],
+    ['a new folder at the depth that is no repository', 'a/b/c', true, false],
+    ['a new folder deeper than the depth', 'a/b/c/d', true, false],
+    ['a file created at the root', 'notes.md', true, false]
+  ])('%s: %s', (_what, rel, created, want) => {
+    expect(needsRediscovery(rel, known, 3, probe, created)).toBe(want);
+  });
+
+  test('a folder above a known repository going away', () => {
+    const none = { isRepoDir: () => false, isDir: () => false };
+    expect(needsRediscovery('team', new Set(['team/api']), 3, none, true)).toBe(true);
+    expect(needsRediscovery('team', new Set(['team/api']), 3, { isRepoDir: (r) => r === 'team/api', isDir: (r) => r === 'team' }, false)).toBe(false);
+  });
+});
 
 describe('classifyChange', () => {
   test.each([

@@ -20,6 +20,7 @@ import type { TerminalInfo } from '@shared/protocol';
 import type { ScmFetchAnswer, ScmRef, ScmRefs, ScmRepoEntry, ScmStash, ScmWorktree } from '@shared/scm';
 import type { Settings } from '@shared/settings';
 import { DIFF_GUARDS, LOG_GUARDS, runGit } from './git/exec';
+import { gitReadLimiter } from './git/read-limiter';
 import { readStashes, readWorktrees } from './git/history';
 import { type StatusChange, parseStatusV2 } from './git/parse';
 import { githubRepoOf, incomingPaths, pushTargetOf, readRepoFacts, remoteCommits, stashFiles, unmergedCommits, upstreamOf } from './git/repo-facts';
@@ -33,7 +34,7 @@ import { osWords } from '@shared/windows-words';
 import {
   gitBranchCreateSchema, gitBranchDeleteSchema, gitBranchRenameSchema, gitBranchRestoreSchema, gitCheckBranchNameSchema, gitCommitSchema, gitIdSchema,
   gitPathsSchema, gitPullSchema, gitPushSchema, gitRemoteCommitsSchema, gitStashApplySchema, gitStashDropSchema, gitStashPushSchema, gitStashRestoreSchema,
-  gitSwitchSchema, gitSyncAllSchema, gitSyncSchema, gitUndoCommitSchema, gitWorktreeAddSchema, gitWorktreeCheckSchema, noArgsSchema, scmMessageSchema, scmRootSchema
+  gitSwitchSchema, gitSyncAllSchema, gitSyncSchema, gitUndoCommitSchema, gitWorktreeAddSchema, gitWorktreeCheckSchema, noArgsSchema, scmMessageSchema, scmRootSchema, gitFactsSchema
 } from './ipc-schemas';
 
 export type GitOpsSettings = Pick<Settings, 'gitActions' | 'commitMessages' | 'commitUsePrompts' | 'commitLanguage'>;
@@ -95,6 +96,12 @@ async function smallFile(path: string): Promise<string | null> {
     await fh?.close().catch(() => {});
   }
 }
+
+/**
+ * A facts read for a view of many repositories (All Repositories asks for one block each): it waits for a slot of the
+ * shared limiter. A read for an action the user is waiting on (commit, push, pull) never does.
+ */
+export const viewFacts = (read: (root: string) => Promise<RepoFacts>) => (root: string): Promise<RepoFacts> => gitReadLimiter.run('live', () => read(root));
 
 export const gitReads: GitReads = {
   facts: readRepoFacts,
@@ -1442,10 +1449,12 @@ export class GitOps {
 
   // ── reads for the sheets ────────────────────────────────────────────────────────────────────────────────────────────
 
-  async facts(key: string, a: { root: string }): Promise<GitFacts | null> {
+  /** `view`: asked by a view of many repositories (All Repositories' blocks), which waits for a read slot. */
+  async facts(key: string, a: { root: string; view?: true }): Promise<GitFacts | null> {
     const t = await this.target(key, a.root);
     if (!('key' in t)) return null;
-    const [f, refs] = await Promise.all([this.reads.facts(t.root), this.deps.scm.refs(t.key, t.root).catch(() => null)]);
+    const read = a.view ? viewFacts(this.reads.facts) : this.reads.facts;
+    const [f, refs] = await Promise.all([read(t.root), this.deps.scm.refs(t.key, t.root).catch(() => null)]);
     const u = this.undoFor(t.root, f);
     const remotes = refs?.remotes ?? [];
     // Publish's "Open a pull request": a compare base per github.com remote, never the URL (it may hold a token).
@@ -1580,7 +1589,7 @@ export class GitOps {
     handle(IPC.gitStashDrop, (e, arg) => this.stashDrop(keyOf(e), gitStashDropSchema.parse(arg)));
     handle(IPC.gitStashRestore, (e, arg) => this.stashRestore(keyOf(e), gitStashRestoreSchema.parse(arg)));
     handle(IPC.gitCancel, (e, arg) => { keyOf(e); this.cancel(gitIdSchema.parse(arg).id); });
-    handle(IPC.gitFacts, (e, arg) => this.facts(keyOf(e), scmRootSchema.parse(arg)));
+    handle(IPC.gitFacts, (e, arg) => this.facts(keyOf(e), gitFactsSchema.parse(arg)));
     handle(IPC.gitIncoming, (e, arg) => this.incoming(keyOf(e), scmRootSchema.parse(arg)));
     handle(IPC.gitRemoteCommits, (e, arg) => this.remoteCommits(keyOf(e), gitRemoteCommitsSchema.parse(arg)));
     handle(IPC.gitRunning, (e, arg) => { const k = keyOf(e); noArgsSchema.parse(arg); return this.running(k); });

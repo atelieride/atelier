@@ -126,7 +126,7 @@ const api: AtelierApi = {
     stashRestore: (o) => ipcRenderer.invoke(IPC.gitStashRestore, { root: o.root, oid: o.oid, message: o.message }),
     discard: (root, rels) => ipcRenderer.invoke(IPC.gitDiscard, { root, rels }),
     cancel: (id) => ipcRenderer.invoke(IPC.gitCancel, { id }),
-    facts: (root) => ipcRenderer.invoke(IPC.gitFacts, { root }),
+    facts: (root, o) => ipcRenderer.invoke(IPC.gitFacts, { root, ...(o?.view ? { view: true } : {}) }),
     incoming: (root) => ipcRenderer.invoke(IPC.gitIncoming, { root }),
     remoteCommits: (root, n) => ipcRenderer.invoke(IPC.gitRemoteCommits, { root, n }),
     running: () => ipcRenderer.invoke(IPC.gitRunning),
@@ -135,6 +135,7 @@ const api: AtelierApi = {
   },
   scm: {
     repos: () => ipcRenderer.invoke(IPC.scmRepos),
+    search: () => ipcRenderer.invoke(IPC.scmSearch),
     refs: (root) => ipcRenderer.invoke(IPC.scmRefs, { root }),
     log: (root, scope, skip, count, filter, view) => ipcRenderer.invoke(IPC.scmLog, { root, scope, skip, count, ...(filter ? { filter } : {}), ...(view ? { view } : {}) }),
     locate: (root, scope, oid, view) => ipcRenderer.invoke(IPC.scmLocate, { root, scope, oid, ...(view ? { view } : {}) }),

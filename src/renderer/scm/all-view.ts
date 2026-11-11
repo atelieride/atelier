@@ -7,7 +7,8 @@ import type { ScmRepoEntry } from '@shared/scm';
 import { t } from '../i18n/en';
 import { repoLabel } from './view';
 
-export interface AllRow { root: string; name: string; dir: string; worktree: boolean; status: RepoStatus }
+/** `note` and `tip`: what the header says next to the name (a repository inside another one), if anything. */
+export interface AllRow { root: string; name: string; dir: string; worktree: boolean; status: RepoStatus; note: string | null; tip: string | null }
 
 /**
  * Changes' working trees as blocks: repositories by their label (the folder part, then the name), each followed by its
@@ -19,8 +20,8 @@ export function allRows(repos: readonly RepoStatus[], entries: readonly ScmRepoE
   const row = (s: RepoStatus, worktree: boolean): AllRow => {
     const e = entryOf.get(s.root);
     // A worktree sits right under its repository: its own name says enough.
-    const label = e && !worktree ? repoLabel({ ...e, worktreeOf: null }) : { dir: '', name: e?.name ?? s.name };
-    return { root: s.root, name: label.name, dir: label.dir, worktree, status: s };
+    const label = e && !worktree ? repoLabel({ ...e, worktreeOf: null }) : { dir: '', name: e?.name ?? s.name, note: null, tip: null };
+    return { root: s.root, name: label.name, dir: label.dir, worktree, status: s, note: label.note, tip: label.tip };
   };
   const byLabel = (a: AllRow, b: AllRow) => (a.dir + a.name).localeCompare(b.dir + b.name);
   const isWorktree = (s: RepoStatus) => !!s.worktreeOf && known.has(s.worktreeOf);
@@ -29,6 +30,14 @@ export function allRows(repos: readonly RepoStatus[], entries: readonly ScmRepoE
     out.push(repo, ...repos.filter((s) => isWorktree(s) && s.worktreeOf === repo.root).map((s) => row(s, true)).sort(byLabel));
   }
   return out;
+}
+
+/**
+ * How a block watches for the screen before reading its facts: inside the list that scrolls (the viewport's margin
+ * never reaches past the list's clip), 200 px ahead so the facts are there when the block shows.
+ */
+export function nearScreen(block: Pick<Element, 'closest'>): IntersectionObserverInit {
+  return { root: block.closest('.scm-all-list'), rootMargin: '200px' };
 }
 
 export type BlockButton =

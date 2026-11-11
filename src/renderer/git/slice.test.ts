@@ -200,7 +200,7 @@ test('a git sheet closes the menu and the palette; Commit all is its own state',
 
 describe('the Sync button after a pull, push or sync', () => {
   const behind = (root: string, n: number, checkedAt: number): RepoStatus => ({ ...repo(root), behind: n, upstream: 'origin/main', checkedAt });
-  const entry = (s: RepoStatus): ScmRepoEntry => ({ root: s.root, rel: s.root.split('/').pop()!, name: s.name, worktreeOf: null, common: `${s.root}/.git`, status: { branch: s.branch, detached: false, oid: s.oid, ahead: s.ahead, behind: s.behind, upstream: s.upstream ?? null, upstreamGone: false, changes: s.changes.length, checkedAt: s.checkedAt } });
+  const entry = (s: RepoStatus): ScmRepoEntry => ({ root: s.root, rel: s.root.split('/').pop()!, name: s.name, worktreeOf: null, nestedIn: null, common: `${s.root}/.git`, status: { branch: s.branch, detached: false, oid: s.oid, ahead: s.ahead, behind: s.behind, upstream: s.upstream ?? null, upstreamGone: false, changes: s.changes.length, checkedAt: s.checkedAt } });
   const shown = () => ({ changes: useApp.getState().repos.find((r) => r.root === '/p/a')?.behind, scm: useApp.getState().scmRepos?.find((e) => e.root === '/p/a')?.status?.behind });
   beforeEach(() => {
     useApp.setState({ gitStageIntents: [], gitReposSeen: [], gitSyncIntents: [] });

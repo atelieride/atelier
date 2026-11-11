@@ -7,6 +7,16 @@ test('parses ls-files -z output: folders keep their slash, files are exact', () 
   expect(parseIgnored('')).toEqual([]);
 });
 
+test('a repository forgotten (gone from the project) keeps nothing: nothing ignored, listed again when asked', async () => {
+  const c = new IgnoreCache(async () => 'out/\0', () => 0);
+  await c.refresh('/r');
+  expect(c.ignored('/r', 'out/x')).toBe(true);
+  expect(c.stale('/r')).toBe(false);
+  c.forget('/r');
+  expect(c.ignored('/r', 'out/x')).toBe(false);
+  expect(c.stale('/r')).toBe(true);
+});
+
 test('a path is ignored when it is an ignored file, or sits under an ignored folder (not a prefix of a name)', async () => {
   const c = new IgnoreCache(async () => 'out/\0.env\0', () => 0);
   await c.refresh('/r');

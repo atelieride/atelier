@@ -70,7 +70,7 @@ function harness(roots: string[], o: { settings?: Partial<GitOpsSettings>; run?:
   const keep = new KeepSet();
   const queue = new WriteQueue();
   const events: GitOpEvent[] = [];
-  const entries = (): ScmRepoEntry[] => roots.map((r) => ({ root: r, rel: relative(project, r), name: basename(r), worktreeOf: null, common: commonOf(r), status: null }));
+  const entries = (): ScmRepoEntry[] => roots.map((r) => ({ root: r, rel: relative(project, r), name: basename(r), worktreeOf: null, nestedIn: null, common: commonOf(r), status: null }));
   const deps: GitOpsDeps = {
     settings: () => settings,
     git: { info: () => ({ root: project, status: statuses }), keep: (r, p) => keep.hold(r, p), requestStatus: () => {} },

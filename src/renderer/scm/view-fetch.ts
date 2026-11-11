@@ -18,27 +18,48 @@ export function useViewFetch(root: string | null, visible: boolean): void {
   }, [root, visible]);
 }
 
-/** The roots Changes asks for: readable main repositories, once each, in order (worktrees share their repo's objects). */
-export function viewFetchRoots(repos: RepoStatus[]): string[] {
-  return [...new Set(repos.filter((r) => !r.error && !isWorktree(r)).map((r) => r.root))];
+/**
+ * Up to this many repositories, Changes keeps every one fresh. Past it (a folder of hundreds), only the ones with
+ * changes or a live session ask: the others are fetched when Source Control or History shows them, or by Fetch All.
+ */
+export const VIEW_FETCH_ALL_MAX = 20;
+
+/**
+ * The roots Changes asks for: readable main repositories, once each, in order (worktrees share their repo's objects);
+ * past VIEW_FETCH_ALL_MAX of them, those with changes or in `live` (a session works there).
+ */
+export function viewFetchRoots(repos: RepoStatus[], live: ReadonlySet<string> = new Set()): string[] {
+  const mains = repos.filter((r) => !r.error && !isWorktree(r));
+  const all = [...new Set(mains.map((r) => r.root))];
+  if (all.length <= VIEW_FETCH_ALL_MAX) return all;
+  return [...new Set(mains.filter((r) => r.changes.length > 0 || live.has(r.root)).map((r) => r.root))];
 }
 
-/** Asks `ask` for every root now and on every focus of `target`; the returned function stops listening. */
-export function watchViewFetches(roots: readonly string[], ask: (root: string) => void, target: EventTarget): () => void {
+/**
+ * Asks `ask` for every root once they held still for `settleMs`, then on every focus of `target`; the returned function
+ * stops it. A project opening reports its repositories one by one: asking at once would fetch the first ones before
+ * the threshold for many repositories could apply.
+ */
+export function watchViewFetches(roots: readonly string[], ask: (root: string) => void, target: EventTarget, settleMs = 0): () => void {
   if (!roots.length) return () => {};
   const all = () => { for (const root of roots) ask(root); };
-  all();
-  target.addEventListener('focus', all);
-  return () => target.removeEventListener('focus', all);
+  let listening = false;
+  const start = () => { all(); target.addEventListener('focus', all); listening = true; };
+  const timer = settleMs > 0 ? setTimeout(start, settleMs) : null;
+  if (!timer) start();
+  return () => { if (timer) clearTimeout(timer); if (listening) target.removeEventListener('focus', all); };
 }
+
+/** How long Changes' set of repositories holds still before it asks (statuses arrive progressively on open). */
+export const VIEW_FETCH_SETTLE_MS = 1500;
 
 /**
  * The roots as one string: the same while only the statuses change (every broadcast is a new array), another when the
  * set of readable main repositories does. The hook takes it, never an array, so it can't ask on every broadcast.
  */
-export const viewFetchKey = (repos: RepoStatus[]): string => viewFetchRoots(repos).join('\n');
+export const viewFetchKey = (repos: RepoStatus[], live: ReadonlySet<string> = new Set()): string => viewFetchRoots(repos, live).join('\n');
 
 /** Changes' view fetches (`key`: viewFetchKey): on mount, when the key changes, and whenever the window comes back to the front. */
 export function useViewFetches(key: string): void {
-  useEffect(() => watchViewFetches(key ? key.split('\n') : [], (root) => { void fetchRepo(root, 'view'); }, window), [key]);
+  useEffect(() => watchViewFetches(key ? key.split('\n') : [], (root) => { void fetchRepo(root, 'view'); }, window, VIEW_FETCH_SETTLE_MS), [key]);
 }

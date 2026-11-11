@@ -431,11 +431,12 @@ function Redis({ s }: { s: S }) {
   );
 }
 
-/** Source Control: when Atelier fetches on its own. */
+/** Source Control: when Atelier fetches on its own, and how deep it looks for repositories. */
 function SourceControl({ s }: { s: S }) {
   return (
     <>
       <Row label={t.set.autoFetch} hint={t.set.autoFetchHint}><Segmented label={t.set.autoFetch} value={s.autoFetch} options={opts(t.set.autoFetches)} onChange={(v) => set({ autoFetch: v })} /></Row>
+      <Row label={t.set.repoSearchDepth} hint={t.set.repoSearchDepthHint}><Stepper label={t.set.repoSearchDepth} value={s.repoSearchDepth} min={1} max={5} step={1} format={t.set.levels} onChange={(v) => set({ repoSearchDepth: v })} /></Row>
       <GitWrites s={s} />
       <p className="set-note">{t.set.scmNote}</p>
     </>

@@ -1,34 +1,91 @@
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { readFileSync, realpath as realpathCb, realpathSync, statSync } from 'node:fs';
+import { access, readdir, stat } from 'node:fs/promises';
 import { join, resolve, toOut } from '../cpath';
 import { parseWorktrees } from '@shared/git-history';
+import type { ScmWorktree } from '@shared/scm';
 import { runGit } from './exec';
+import { gitReadLimiter, type ReadLevel } from './read-limiter';
 import { isBelow } from '@shared/paths';
 
-const isRepo = (d: string) => existsSync(join(d, '.git'));
-const skip = (name: string) => name === 'node_modules' || name.startsWith('.');
+/** Folders one scan reads at most: a few hundred milliseconds on a slow disk, far above what a usual depth needs. */
+export const REPO_SEARCH_MAX_FOLDERS = 20_000;
+/** Folders read at once: enough to hide the disk's latency, few enough to stay clear of the open-files limit. */
+const READ_AT_ONCE = 32;
 
-function dirs(d: string): string[] {
+const skip = (name: string) => name === 'node_modules' || name.startsWith('.');
+/**
+ * node's own realpath, async: the one GitHub reads a project's root with (realpathSync). The native one differs: on
+ * Windows a mapped drive comes back as \\server\share and a subst drive as its folder, on macOS a folder in its own
+ * case; repositories found through it would not be under the root.
+ */
+const realpath = (p: string) => new Promise<string>((done, fail) => { realpathCb(p, (e, r) => (e ? fail(e) : done(r))); });
+const isRepo = (d: string) => access(join(d, '.git')).then(() => true, () => false);
+
+/** A folder's subfolders (symlinked ones too), by name; none when it can't be read. */
+async function subfolders(d: string): Promise<string[]> {
   try {
-    return readdirSync(d).filter((n) => !skip(n)).map((n) => join(d, n)).filter((p) => { try { return statSync(p).isDirectory(); } catch { return false; } }).sort();
+    const entries = await readdir(d, { withFileTypes: true });
+    const dirs = await Promise.all(entries.filter((e) => !skip(e.name)).map(async (e) => {
+      if (e.isDirectory()) return e.name;
+      if (!e.isSymbolicLink()) return null;
+      return stat(join(d, e.name)).then((s) => (s.isDirectory() ? e.name : null), () => null);
+    }));
+    return dirs.filter((n): n is string => n !== null).sort();
   } catch {
     return [];
   }
 }
 
+export interface RepoSearchResult {
+  repos: string[];
+  /** The scan stopped at its folder cap: deeper folders may hold repos it didn't see. */
+  capped: boolean;
+}
+
 /**
- * The root if it is a repo, then the repos in subfolders up to depth 2. Real paths, like those of git and attributions
- * (a symlinked folder yields its target), each repo once.
+ * The repos of a project: the root if it is one, then every repo in its subfolders down to `depth` levels (the root is
+ * level 0), inside other repos too. Hidden folders and node_modules are skipped; folders a .gitignore ignores are not
+ * (repos cloned inside another one are usually ignored by it). Level by level, so the shallow repos are known first
+ * when the scan reaches `maxFolders` folders read and stops. Real paths, like those of git and attributions (a
+ * symlinked folder yields its target), each repo once, in the order of the folders they were found in.
  */
-export function discoverRepos(root: string): string[] {
-  const r = toOut(realpathSync(root));
-  const out = new Set<string>();
-  const add = (d: string) => { try { out.add(toOut(realpathSync(d))); } catch { /* gone meanwhile */ } };
-  if (isRepo(r)) out.add(r);
-  for (const d1 of dirs(r)) {
-    if (isRepo(d1)) { add(d1); continue; }
-    for (const d2 of dirs(d1)) if (isRepo(d2)) add(d2);
+export async function discoverRepos(root: string, o: { depth: number; maxFolders?: number }): Promise<RepoSearchResult> {
+  const max = o.maxFolders ?? REPO_SEARCH_MAX_FOLDERS;
+  const start = toOut(await realpath(root));
+  /** Where each repo was found (its path under the root, as segments) and its real path. */
+  const found: { at: string[]; real: string }[] = [];
+  const seen = new Set<string>();
+  const add = async (at: string[], dir: string) => {
+    let real: string;
+    try { real = toOut(await realpath(dir)); } catch { return; /* gone meanwhile */ }
+    if (seen.has(real)) return;
+    seen.add(real);
+    found.push({ at, real });
+  };
+  if (await isRepo(start)) await add([], start);
+  let level: string[][] = [[]];
+  let read = 0;
+  let capped = false;
+  for (let depth = 1; depth <= o.depth && level.length > 0 && !capped; depth++) {
+    const next: string[][] = [];
+    for (let i = 0; i < level.length; i += READ_AT_ONCE) {
+      const wanted = level.slice(i, i + READ_AT_ONCE);
+      const batch = wanted.slice(0, Math.max(0, max - read));
+      read += batch.length;
+      const children = (await Promise.all(batch.map(async (at) => (await subfolders(join(start, ...at))).map((n) => [...at, n])))).flat();
+      const repos = await Promise.all(children.map((at) => isRepo(join(start, ...at))));
+      for (const [k, at] of children.entries()) if (repos[k]) await add(at, join(start, ...at));
+      next.push(...children);
+      if (batch.length < wanted.length) { capped = true; break; }
+    }
+    level = next;
   }
-  return [...out];
+  // Folder order: the root, then depth-first with each folder's subfolders by name.
+  const before = (a: string[], b: string[]) => {
+    for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i]! < b[i]! ? -1 : 1;
+    return a.length - b.length;
+  };
+  return { repos: found.sort((a, b) => before(a.at, b.at)).map((f) => f.real), capped };
 }
 
 /** A working tree of the project: a discovered repo or a linked worktree of one. */
@@ -70,19 +127,54 @@ function commonOfGitDir(gitDir: string): string {
 const real = (p: string) => { try { return toOut(realpathSync(p)); } catch { return p; } };
 
 /**
+ * The discovered repos as working trees before git has listed them: each its own, its common dir read from the files
+ * git reads (no git process: Source Control can show them while a big folder's first listing runs).
+ */
+export function quickTrees(discovered: readonly string[]): WorkingTree[] {
+  return discovered.map((root) => {
+    const gitDir = gitDirOfTree(root);
+    return { root, common: commonOfGitDir(gitDir ?? join(root, '.git')), gitDir, worktreeOf: null, hidden: false };
+  });
+}
+
+/**
+ * The listing that covers the ones asked while another ran: every repo asked about, each at the level it was asked
+ * at (a full bulk relist after dropped events stays bulk when one repository's commit asks for a live one).
+ */
+export function relistPlan(live: ReadonlySet<string> | 'all', bulk: ReadonlySet<string> | 'all'): { stale: ReadonlySet<string> | 'all'; level: (repo: string) => ReadLevel } {
+  const stale = live === 'all' || bulk === 'all' ? 'all' : new Set([...live, ...bulk]);
+  return { stale, level: (repo) => (live === 'all' || live.has(repo) ? 'live' : 'bulk') };
+}
+
+/** What git said about a discovered repo: its common dir and its worktrees (null when git didn't answer). */
+export interface RepoList { common: string; wts: ScmWorktree[] | null }
+
+/**
  * The discovered repos, each followed by its linked worktrees inside the project that discovery missed (hidden
  * folders), by path. A discovered repo that is a linked worktree of another one gets its `worktreeOf`. Worktrees
  * outside the project, prunable (folder gone) or bare are left out. When git can't list a repo's worktrees (a timeout
  * under load), the ones `previous` had for it stay.
+ *
+ * `lists` keeps git's answers between calls: only the repos in `stale`, and those it has no answer for, are asked again
+ * (a commit in one repository of hundreds asks about that one). Git is asked through the shared limiter at `level`.
  */
-export async function listWorkingTrees(projectRoot: string, discovered: string[], previous: readonly WorkingTree[] = []): Promise<WorkingTree[]> {
+export async function listWorkingTrees(projectRoot: string, discovered: string[], previous: readonly WorkingTree[] = [],
+  o: { lists?: Map<string, RepoList>; stale?: ReadonlySet<string> | 'all'; level?: ReadLevel | ((repo: string) => ReadLevel) } = {}): Promise<WorkingTree[]> {
   const known = new Set(discovered);
   const linked = new Map<string, string>();
+  const stale = o.stale ?? 'all';
+  const levelOf = typeof o.level === 'function' ? o.level : () => (o.level as ReadLevel | undefined) ?? 'live';
+  for (const r of o.lists?.keys() ?? []) if (!known.has(r)) o.lists!.delete(r);
   const lists = await Promise.all(discovered.map(async (r) => {
+    const cached = o.lists?.get(r);
+    if (cached && stale !== 'all' && !stale.has(r)) return { r, ...cached };
+    const git = (args: string[]) => gitReadLimiter.run(levelOf(r), () => runGit(r, args));
     // Under load git may not answer in time: the common dir is then read from the files git itself reads.
     const fallback = () => previous.find((t) => t.root === r)?.common ?? commonOfGitDir(gitDirOfTree(r) ?? join(r, '.git'));
-    const common = await runGit(r, ['rev-parse', '--path-format=absolute', '--git-common-dir']).then((x) => real(x.trim()), fallback);
-    const wts = await runGit(r, ['worktree', 'list', '--porcelain', '-z']).then(parseWorktrees, () => null);
+    const common = await git(['rev-parse', '--path-format=absolute', '--git-common-dir']).then((x) => real(x.trim()), fallback);
+    const wts = await git(['worktree', 'list', '--porcelain', '-z']).then(parseWorktrees, () => null);
+    // No answer is not one to keep: the next listing asks again.
+    if (wts) o.lists?.set(r, { common, wts }); else o.lists?.delete(r);
     return { r, common, wts };
   }));
   // Every working tree lists them all: one adopts the others — the main one (listed first), or, when that one is

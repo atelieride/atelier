@@ -1,6 +1,6 @@
 // Source Control view helpers: what the switcher, the sections and the history rows show.
 // Pure functions.
-import type { ScmFetchState, ScmHead, ScmPerson, ScmRef, ScmRefs, ScmRepoEntry, ScmRepoStatus, ScmScope } from '@shared/scm';
+import type { RepoSearch, ScmFetchState, ScmHead, ScmPerson, ScmRef, ScmRefs, ScmRepoEntry, ScmRepoStatus, ScmScope } from '@shared/scm';
 import { OID_RE } from '@shared/scm';
 import { upstreamKind } from '@shared/git-write';
 import { relativeTime } from '../history';
@@ -18,13 +18,24 @@ export function shortRef(name: string): string {
 
 /**
  * How an entry is named: its folder part dimmed, its name bold. A hidden-folder worktree reads "atelier › scm-minors"
- * (whose worktree, then its folder's name) with a "worktree" note, never its long path. `dir + name` is the matched text.
+ * (whose worktree, then its folder's name) with a "worktree" note, never its long path. A repository inside another
+ * one gets a "nested" note whose tip names that one. `dir + name` is the matched text.
  */
-export function repoLabel(e: ScmRepoEntry): { dir: string; name: string; note: string | null } {
-  if (e.worktreeOf) return { dir: `${e.worktreeOf.split('/').at(-1) ?? e.worktreeOf} › `, name: e.name, note: t.scm.worktree };
+export function repoLabel(e: ScmRepoEntry): { dir: string; name: string; note: string | null; tip: string | null } {
+  if (e.worktreeOf) return { dir: `${e.worktreeOf.split('/').at(-1) ?? e.worktreeOf} › `, name: e.name, note: t.scm.worktree, tip: null };
   const text = e.rel || e.name;
   const i = text.lastIndexOf('/');
-  return { dir: i >= 0 ? text.slice(0, i + 1) : '', name: i >= 0 ? text.slice(i + 1) : text, note: null };
+  const label = { dir: i >= 0 ? text.slice(0, i + 1) : '', name: i >= 0 ? text.slice(i + 1) : text };
+  if (!e.nestedIn) return { ...label, note: null, tip: null };
+  // The project's folder: the entry's root without its path inside the project.
+  const project = e.rel ? e.root.slice(0, e.root.length - e.rel.length - 1) : e.root;
+  const parent = e.nestedIn === project ? project.split('/').at(-1) ?? project : e.nestedIn.slice(project.length + 1);
+  return { ...label, note: t.scm.nested, tip: t.scm.nestedTip(parent) };
+}
+
+/** What an empty list of repositories says while the project's first folder scan runs (nothing once it ended). */
+export function lookingForRepos(search: RepoSearch | null): string | null {
+  return search?.searching ? t.scm.searching : null;
 }
 
 /** "main · synced", "feat/x · ↑4", "main · ↑2 ↓1", "main · local", "detached · f0d6c52": short for the sidebar. */

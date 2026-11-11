@@ -43,14 +43,14 @@ function Chip({ e }: { e: ScmRepoEntry }) {
 function Row({ row, index, cursor, selected, onPick, onHover }: { row: SwitcherRow; index: number; cursor: boolean; selected: boolean; onPick: (root: string) => void; onHover: (i: number) => void }) {
   const ref = useRef<HTMLButtonElement>(null);
   useEffect(() => { if (cursor) ref.current?.scrollIntoView({ block: 'nearest' }); }, [cursor]);
-  const note = repoLabel(row.entry).note;
+  const { note, tip } = repoLabel(row.entry);
   const shown = row.sessions.slice(0, 3);
   return (
     <button ref={ref} type="button" role="option" aria-selected={selected} tabIndex={-1} className={`sw-row ${cursor ? 'is-cursor' : ''} ${selected ? 'is-selected' : ''}`}
       style={{ animationDelay: `${Math.min(index, 13) * 16}ms` }} onClick={() => onPick(row.entry.root)} onMouseMove={() => onHover(index)}
       onContextMenu={(e) => useApp.getState().openMenu(e, repoMenu(row.entry.root))}>
       <span className="sw-row-main">
-        <span className="sw-row-title"><Label e={row.entry} match={row.match} />{note && <span className="sw-wt">{note}</span>}</span>
+        <span className="sw-row-title"><Label e={row.entry} match={row.match} />{note && <span className="sw-wt" data-tip={tip ?? undefined}>{note}</span>}</span>
         <span className="sw-branch mono" data-tip={branchTip(row.entry.status)}>{branchLine(row.entry.status)}</span>
       </span>
       {shown.map((s) => <span key={s.id} className="sw-avatar" style={idStyle(s.color)} data-tip={s.title}>{initialOf(s.title)}</span>)}
@@ -123,7 +123,7 @@ export function RepoSwitcher() {
       <span className="sw-card-main">
         <span className="sw-card-title">
           <span className="sw-label">{label.dir && <span className="sw-dir">{label.dir}</span>}<b>{label.name}</b></span>
-          {label.note && <span className="sw-wt">{label.note}</span>}
+          {label.note && <span className="sw-wt" data-tip={label.tip ?? undefined}>{label.note}</span>}
           {/* A narrow card keeps the count alone: the name needs the room. */}
           {changes > 0 && <span className="sw-chip is-changes" data-tip={t.scm.changes(changes)}>{changes}<span className="sw-chip-word"> {t.scm.changesWord(changes)}</span></span>}
         </span>

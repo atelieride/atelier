@@ -8,7 +8,7 @@ import type { DirEntry, FileContent, ImageContent, OpenPathsEvent, Stamp, VideoC
 import type { RestoredTabs, SavedTabs } from './tabs-state';
 import type { RepoCompare, RepoStatus } from './git';
 import type { GitApi, GitOpEvent, ScmMessageEvent } from './git-write';
-import type { FetchOutcome, FetchReason, ScmBlob, ScmCommitDetail, ScmEvent, ScmFetchAnswer, ScmFetchState, ScmLogPage, ScmRefs, ScmRepoEntry, ScmScope, ScmStash, ScmWorktree } from './scm';
+import type { FetchOutcome, FetchReason, RepoSearch, ScmBlob, ScmCommitDetail, ScmEvent, ScmFetchAnswer, ScmFetchState, ScmLogPage, ScmRefs, ScmRepoEntry, ScmScope, ScmStash, ScmWorktree } from './scm';
 import type { Attribution } from './attribution';
 import type { ServicePane, ServicesStatus } from './services';
 import type { DfSummary, DockerContainer, DockerDetail, DockerEventEntry, DockerNote, DockerSnapshot, StatsSample } from './docker';
@@ -333,6 +333,7 @@ export const IPC = {
   tasksGet: 'tasks:get',
   tasksSearch: 'tasks:search',
   scmRepos: 'scm:repos',
+  scmSearch: 'scm:search',
   scmRefs: 'scm:refs',
   scmLog: 'scm:log',
   scmLocate: 'scm:locate',
@@ -369,7 +370,8 @@ export const IPC = {
    *   git:stash-drop                      { root, index: number, oid }
    *   git:stash-restore                   { root, oid, message }
    *   git:cancel                          { id }
-   *   git:facts, git:incoming             { root }
+   *   git:facts                           { root, view? }
+   *   git:incoming                        { root }
    *   git:remote-commits                  { root, n: number }
    *   scm:message                         { root, tweak?: { kind: 'shorter' | 'detail' | 'subject', current } }
    *   scm:message-cancel                  { id }
@@ -665,6 +667,8 @@ export interface AtelierApi {
    */
   scm: {
     repos(): Promise<ScmRepoEntry[]>;
+    /** How the project's folder scan for repositories went (Source Control says when it stopped early). */
+    search(): Promise<RepoSearch>;
     refs(root: string): Promise<ScmRefs>;
     log(root: string, scope: ScmScope, skip: number, count: number, filter?: string, view?: string): Promise<ScmLogPage>;
     /** Where a commit is in the scope's history (to jump to it), null when it isn't there. */

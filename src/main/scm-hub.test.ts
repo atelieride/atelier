@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { CallQueue, checkRoot, knownRevs } from './scm-hub';
-import type { ScmRefs } from '@shared/scm';
+import type { ScmRefs, ScmRepoEntry } from '@shared/scm';
 
 const refs = (names: string[], head: string | null = 'a'.repeat(40)): ScmRefs => ({ root: '/p', head: { branch: 'main', oid: head, detached: false }, refs: names.map((name) => ({ name, short: name, kind: 'head', oid: 'a'.repeat(40), upstream: null, ahead: 0, behind: 0, gone: false, current: false, date: 0 })), defaultBranch: null, shallow: false, fetchedAt: null, remotes: [], hasRemote: false, emptyTree: '' });
 
@@ -69,12 +69,19 @@ import * as scmRepos from './git/scm-repos';
 import { join as nativeJoin } from 'node:path';
 import { WriteQueue } from './git/write-queue';
 
+/** The working trees GitHub listed (what the hub reads through git.info), given as the entries they make. */
+let listedTrees: { root: string; common: string; gitDir: null; worktreeOf: string | null; hidden: boolean }[] | undefined;
+function listed(entries: ScmRepoEntry[]) {
+  listedTrees = entries.map((e) => ({ root: e.root, common: e.common, gitDir: null, worktreeOf: e.worktreeOf, hidden: !!e.worktreeOf }));
+  return { mockRestore: () => { listedTrees = undefined; } };
+}
+
 test('ScmHub does no git work for a project whose windows never used Source Control, and lets it go when it closes', async () => {
   vi.useFakeTimers();
-  const list = vi.spyOn(scmRepos, 'listScmRepos').mockResolvedValue([]);
+  const list = vi.spyOn(scmRepos, 'listScmRepos');
   const sent: unknown[] = [];
   const wc = { isDestroyed: () => false, send: (...a: unknown[]) => sent.push(a) };
-  const git = { onScm: (_k: string, _e: unknown, _w?: boolean) => {}, onProjectClosed: (_k: string) => {}, info: () => ({ root: '/p', repos: ['/p'], discovered: ['/p'], status: new Map(), windows: new Set([wc]) }) };
+  const git = { onScm: (_k: string, _e: unknown, _w?: boolean) => {}, onProjectClosed: (_k: string) => {}, info: () => ({ root: '/p', repos: ['/p'], discovered: ['/p'], status: new Map(), windows: new Set([wc]), ...(listedTrees ? { trees: listedTrees } : {}) }) };
   const hub = new ScmHub(git as never);
   git.onScm('/p', { common: '/p/.git', what: 'head' }, false);
   git.onScm('/p', { common: '/p/.git', what: 'refs' }, false);
@@ -90,8 +97,38 @@ test('ScmHub does no git work for a project whose windows never used Source Cont
 
 import * as history from './git/history';
 
+test('before GitHub\'s first listing, the entries are the repositories found so far, read without git and never kept', async () => {
+  const list = vi.spyOn(scmRepos, 'listScmRepos');
+  const info = { root: '/p', repos: [] as string[], discovered: [] as string[], status: new Map(), windows: new Set(), capped: false, searching: true, maxFolders: 20_000 };
+  const git = { onScm: () => {}, onProjectClosed: () => {}, info: () => info };
+  const hub = new ScmHub(git as never);
+  const handlers = new Map<string, (e: unknown, a: unknown) => Promise<unknown>>();
+  hub.installIpc(() => '/p', () => true, (ch, fn) => { handlers.set(ch, fn as never); });
+  const e = { sender: { id: 1, once: () => {} } };
+  // Asked while the scan runs: nothing yet, and nothing kept for later.
+  expect(await handlers.get('scm:repos')!(e, undefined)).toEqual([]);
+  info.discovered = ['/p/api', '/p/web'];
+  const entries = await handlers.get('scm:repos')!(e, undefined) as { root: string; common: string }[];
+  expect(entries.map((x) => [x.root, x.common])).toEqual([['/p/api', '/p/api/.git'], ['/p/web', '/p/web/.git']]);
+  expect(list).not.toHaveBeenCalled();
+  list.mockRestore();
+});
+
+test('scm:search answers how the project\'s folder scan went', async () => {
+  const info = { root: '/p', repos: [], discovered: [], status: new Map(), windows: new Set(), capped: true, searching: false, maxFolders: 20_000 };
+  const git = { onScm: () => {}, onProjectClosed: () => {}, info: () => info };
+  const hub = new ScmHub(git as never);
+  const handlers = new Map<string, (e: unknown, a: unknown) => Promise<unknown>>();
+  hub.installIpc(() => '/p', () => true, (ch, fn) => { handlers.set(ch, fn as never); });
+  const e = { sender: { id: 1, once: () => {} } };
+  expect(await handlers.get('scm:search')!(e, undefined)).toEqual({ capped: true, searching: false, maxFolders: 20_000 });
+  info.capped = false;
+  info.searching = true;
+  expect(await handlers.get('scm:search')!(e, undefined)).toEqual({ capped: false, searching: true, maxFolders: 20_000 });
+});
+
 test('every git call of the scm IPC goes through the window\'s queue: at most two at a time', async () => {
-  const list = vi.spyOn(scmRepos, 'listScmRepos').mockResolvedValue([{ root: '/p', rel: '', name: 'p', worktreeOf: null, common: '/p/.git', status: null }]);
+  const list = listed([{ root: '/p', rel: '', name: 'p', worktreeOf: null, nestedIn: null, common: '/p/.git', status: null }]);
   let running = 0; let peak = 0;
   const gates: (() => void)[] = [];
   const slow = <T,>(v: T) => async () => { running++; peak = Math.max(peak, running); await new Promise<void>((r) => gates.push(r)); running--; return v; };
@@ -124,14 +161,14 @@ test('every git call of the scm IPC goes through the window\'s queue: at most tw
 });
 
 test('scm:fetch: only a listed root, by its common dir; fetch-all once per common dir; states and events', async () => {
-  const list = vi.spyOn(scmRepos, 'listScmRepos').mockResolvedValue([
-    { root: '/p', rel: '', name: 'p', worktreeOf: null, common: '/p/.git', status: null },
-    { root: '/p/.wt/x', rel: '.wt/x', name: 'x', worktreeOf: '/p', common: '/p/.git', status: null },
-    { root: '/p/lib', rel: 'lib', name: 'lib', worktreeOf: null, common: '/p/lib/.git', status: null }
+  const list = listed([
+    { root: '/p', rel: '', name: 'p', worktreeOf: null, nestedIn: null, common: '/p/.git', status: null },
+    { root: '/p/.wt/x', rel: '.wt/x', name: 'x', worktreeOf: '/p', nestedIn: null, common: '/p/.git', status: null },
+    { root: '/p/lib', rel: 'lib', name: 'lib', worktreeOf: null, nestedIn: null, common: '/p/lib/.git', status: null }
   ]);
   const sent: unknown[][] = [];
   const wc = { isDestroyed: () => false, send: (...a: unknown[]) => sent.push(a) };
-  const git = { onScm: () => {}, onProjectClosed: () => {}, info: () => ({ root: '/p', repos: ['/p'], discovered: ['/p'], status: new Map(), windows: new Set([wc]) }) };
+  const git = { onScm: () => {}, onProjectClosed: () => {}, info: () => ({ root: '/p', repos: ['/p'], discovered: ['/p'], status: new Map(), windows: new Set([wc]), ...(listedTrees ? { trees: listedTrees } : {}) }) };
   const ran: string[] = [];
   const hub = new ScmHub(git as never, { setting: () => 'off', online: () => true, projects: () => ['/p'], run: async (root) => { ran.push(root); return { outcome: 'ok' }; }, hasRemote: async () => true });
   const handlers = new Map<string, (e: unknown, a?: unknown) => Promise<unknown>>();
@@ -156,14 +193,14 @@ test('scm:fetch: only a listed root, by its common dir; fetch-all once per commo
 
 // A fetch moves remote-tracking refs: the Sync button's ↓N must show without waiting for the watcher's spacing.
 test('a fetch that went through asks for a fresh status of every working tree of its common dir; a failed one asks nothing', async () => {
-  const list = vi.spyOn(scmRepos, 'listScmRepos').mockResolvedValue([
-    { root: '/p', rel: '', name: 'p', worktreeOf: null, common: '/p/.git', status: null },
-    { root: '/p/.wt/x', rel: '.wt/x', name: 'x', worktreeOf: '/p', common: '/p/.git', status: null },
-    { root: '/p/lib', rel: 'lib', name: 'lib', worktreeOf: null, common: '/p/lib/.git', status: null }
+  const list = listed([
+    { root: '/p', rel: '', name: 'p', worktreeOf: null, nestedIn: null, common: '/p/.git', status: null },
+    { root: '/p/.wt/x', rel: '.wt/x', name: 'x', worktreeOf: '/p', nestedIn: null, common: '/p/.git', status: null },
+    { root: '/p/lib', rel: 'lib', name: 'lib', worktreeOf: null, nestedIn: null, common: '/p/lib/.git', status: null }
   ]);
   const asked: string[] = [];
   const wc = { isDestroyed: () => false, send: () => {} };
-  const git = { onScm: () => {}, onProjectClosed: () => {}, requestStatus: (root: string) => { asked.push(root); }, info: () => ({ root: '/p', repos: ['/p'], discovered: ['/p'], status: new Map(), windows: new Set([wc]) }) };
+  const git = { onScm: () => {}, onProjectClosed: () => {}, requestStatus: (root: string) => { asked.push(root); }, info: () => ({ root: '/p', repos: ['/p'], discovered: ['/p'], status: new Map(), windows: new Set([wc]), ...(listedTrees ? { trees: listedTrees } : {}) }) };
   let outcome: 'ok' | 'network' = 'ok';
   const hub = new ScmHub(git as never, { setting: () => 'off', online: () => true, projects: () => ['/p'], run: async () => ({ outcome }), hasRemote: async () => true });
   const handlers = new Map<string, (e: unknown, a?: unknown) => Promise<unknown>>();
@@ -202,13 +239,13 @@ function boundedQueue(): WriteQueue {
 }
 
 test('fetches waiting behind writes hold no fetch slot: with writes on two common dirs, a third repo fetches at once', async () => {
-  const list = vi.spyOn(scmRepos, 'listScmRepos').mockResolvedValue([
-    { root: '/p', rel: '', name: 'p', worktreeOf: null, common: '/p/.git', status: null },
-    { root: '/p/lib', rel: 'lib', name: 'lib', worktreeOf: null, common: '/p/lib/.git', status: null },
-    { root: '/p/docs', rel: 'docs', name: 'docs', worktreeOf: null, common: '/p/docs/.git', status: null }
+  const list = listed([
+    { root: '/p', rel: '', name: 'p', worktreeOf: null, nestedIn: null, common: '/p/.git', status: null },
+    { root: '/p/lib', rel: 'lib', name: 'lib', worktreeOf: null, nestedIn: null, common: '/p/lib/.git', status: null },
+    { root: '/p/docs', rel: 'docs', name: 'docs', worktreeOf: null, nestedIn: null, common: '/p/docs/.git', status: null }
   ]);
   const wc = { isDestroyed: () => false, send: () => {} };
-  const git = { onScm: () => {}, onProjectClosed: () => {}, info: () => ({ root: '/p', repos: ['/p'], discovered: ['/p'], status: new Map(), windows: new Set([wc]) }) };
+  const git = { onScm: () => {}, onProjectClosed: () => {}, info: () => ({ root: '/p', repos: ['/p'], discovered: ['/p'], status: new Map(), windows: new Set([wc]), ...(listedTrees ? { trees: listedTrees } : {}) }) };
   const ran: string[] = [];
   const hub = new ScmHub(git as never, { setting: () => 'off', online: () => true, projects: () => ['/p'], run: async (root) => { ran.push(root); return { outcome: 'ok' }; }, hasRemote: async () => true }, boundedQueue());
   const handlers = new Map<string, (e: unknown, a?: unknown) => Promise<unknown>>();
@@ -233,13 +270,13 @@ test('fetches waiting behind writes hold no fetch slot: with writes on two commo
 });
 
 test('a fetch waits behind a write on the same common dir, not behind one on another', async () => {
-  const list = vi.spyOn(scmRepos, 'listScmRepos').mockResolvedValue([
-    { root: '/p', rel: '', name: 'p', worktreeOf: null, common: '/p/.git', status: null },
-    { root: '/p/.wt/x', rel: '.wt/x', name: 'x', worktreeOf: '/p', common: '/p/.git', status: null },
-    { root: '/p/lib', rel: 'lib', name: 'lib', worktreeOf: null, common: '/p/lib/.git', status: null }
+  const list = listed([
+    { root: '/p', rel: '', name: 'p', worktreeOf: null, nestedIn: null, common: '/p/.git', status: null },
+    { root: '/p/.wt/x', rel: '.wt/x', name: 'x', worktreeOf: '/p', nestedIn: null, common: '/p/.git', status: null },
+    { root: '/p/lib', rel: 'lib', name: 'lib', worktreeOf: null, nestedIn: null, common: '/p/lib/.git', status: null }
   ]);
   const wc = { isDestroyed: () => false, send: () => {} };
-  const git = { onScm: () => {}, onProjectClosed: () => {}, info: () => ({ root: '/p', repos: ['/p'], discovered: ['/p'], status: new Map(), windows: new Set([wc]) }) };
+  const git = { onScm: () => {}, onProjectClosed: () => {}, info: () => ({ root: '/p', repos: ['/p'], discovered: ['/p'], status: new Map(), windows: new Set([wc]), ...(listedTrees ? { trees: listedTrees } : {}) }) };
   const ran: string[] = [];
   const hub = new ScmHub(git as never, { setting: () => 'off', online: () => true, projects: () => ['/p'], run: async (root) => { ran.push(root); return { outcome: 'ok' }; }, hasRemote: async () => true }, boundedQueue());
   const handlers = new Map<string, (e: unknown, a?: unknown) => Promise<unknown>>();
@@ -279,13 +316,13 @@ test('refs read before an event never go back in the cache after it (they would 
 });
 
 test('the switcher’s entries are the working trees Changes listed, every time (a worktree come or gone shows at once)', async () => {
-  const list = vi.spyOn(scmRepos, 'listScmRepos').mockResolvedValue([]);
+  const list = vi.spyOn(scmRepos, 'listScmRepos');
   const tree = (root: string, o: Partial<{ worktreeOf: string; hidden: boolean }> = {}) => ({ root, common: '/elsewhere/.git', gitDir: null, worktreeOf: o.worktreeOf ?? null, hidden: o.hidden ?? false });
   let trees = [tree('/p')];
   const status = new Map([['/p', { root: '/p', name: 'p', branch: 'feat', detached: false, ahead: 1, behind: 0, upstream: 'origin/feat', changes: [], oid: 'a'.repeat(40), checkedAt: 0, truncated: 0 }]]);
   const git = { onScm: () => {}, onProjectClosed: () => {}, info: () => ({ root: '/p', repos: trees.map((t) => t.root), discovered: ['/p'], status, windows: new Set(), trees }) };
   const hub = new ScmHub(git as never);
-  expect(await hub.entries('/p')).toEqual([{ root: '/p', rel: '', name: 'p', worktreeOf: null, common: '/elsewhere/.git', status: expect.objectContaining({ ahead: 1, upstream: 'origin/feat' }) }]);
+  expect(await hub.entries('/p')).toEqual([{ root: '/p', rel: '', name: 'p', worktreeOf: null, nestedIn: null, common: '/elsewhere/.git', status: expect.objectContaining({ ahead: 1, upstream: 'origin/feat' }) }]);
   trees = [tree('/p'), tree('/p/.claude/worktrees/a', { worktreeOf: '/p', hidden: true })];
   // The tests run as macOS: on a Windows host that is node:path's win32 relative, hence the native separator.
   expect((await hub.entries('/p')).map((e) => [e.rel, e.worktreeOf])).toEqual([['', null], [nativeJoin('.claude', 'worktrees', 'a'), '/p']]);

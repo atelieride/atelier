@@ -1,17 +1,17 @@
 // Source Control's All Repositories view: Sync All on top, then one block per
 // working tree in a fixed order. A second view of the sidebar: the One view (the switcher) stays as it was.
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { syncAction } from '@shared/git-write';
 import { Icon } from '../components/Icon';
 import { t } from '../i18n/en';
 import type { MenuItem } from '../menu-model';
 import { useApp } from '../store';
-import { refreshFacts } from '../git/actions';
 import { runGitCommand } from '../git/commands';
 import { fetchAll } from './actions';
 import { pullAll, pushAll, syncAllRun } from './all-actions';
 import { allRows, syncTotals } from './all-view';
 import { RepoBlock } from './RepoBlock';
+import './all-repos.css';
 
 const st = () => useApp.getState();
 
@@ -21,9 +21,6 @@ export function AllRepos() {
   const folds = useApp((s) => s.scmFolds);
   const writes = useApp((s) => s.settings.gitActions === 'on');
   const rows = useMemo(() => allRows(repos, entries), [repos, entries]);
-  const roots = rows.map((r) => r.root).join('\n');
-  // What a block needs from main (its remotes, a commit's checks), for the working trees not read yet.
-  useEffect(() => { for (const r of rows) if (!st().gitFacts[r.root]) void refreshFacts(r.root); }, [roots]);
   return (
     <div className="scm-all">
       {writes && <SyncAll totals={syncTotals(repos)} />}

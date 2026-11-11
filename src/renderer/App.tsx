@@ -58,6 +58,7 @@ import { Icon } from './components/Icon';
 import { disposeLiveTerminal, redrawTerminal, resetTerminal, writeToTerminal } from './terminal/registry';
 import { t } from './i18n/en';
 import { NO_TAB, useApp } from './store';
+import { treeChanged } from './tree-refresh';
 import { sameAsLast } from './same-as-last';
 import { usageKey } from '@shared/session';
 import { adoptSettings } from './settings-live';
@@ -81,7 +82,7 @@ import { isStarting } from './starting';
 import { isWaiting } from '@shared/session-view';
 import { loadTaskLists } from './task-session';
 import { tasksKey } from './task-view';
-import { installScm, withScm } from './scm/data';
+import { installScm, loadSearch, withScm } from './scm/data';
 import { installGit, openCommitDrawer, undoLastCommit } from './git/actions';
 import { writeMessageCommand } from './git/message-run';
 import { runGitCommand } from './git/commands';
@@ -450,9 +451,13 @@ export function App() {
       window.atelier.on.daemon(s.setDaemon),
       window.atelier.on.usage(sameAsLast(s.setUsage, usageKey)),
       window.atelier.on.git(s.setRepos),
+      // Nothing listed yet, or the scan still running: whether it still looks (main tells the windows when it ends).
+      window.atelier.on.git((repos) => { const sr = useApp.getState().scmSearch; if (repos.length === 0 || !sr || sr.searching) loadSearch(); }),
       window.atelier.on.attributions(s.setAttributions),
       window.atelier.on.companion((e) => useApp.getState().applyCompanionEvent(e)),
       window.atelier.on.fsChanged(s.filesChanged),
+      // Files follows the disk: the folders showing a changed path are listed again.
+      window.atelier.on.fsChanged(treeChanged),
       window.atelier.on.services(onServices),
       window.atelier.on.resumables(s.setResumables),
       // New MCP servers: main's list now, then as it changes.

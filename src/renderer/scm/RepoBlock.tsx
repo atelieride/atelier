@@ -9,7 +9,7 @@ import { t } from '../i18n/en';
 import { kbd } from '../kbd';
 import type { MenuItem } from '../menu-model';
 import { useApp } from '../store';
-import { cancelOp, push } from '../git/actions';
+import { cancelOp, push, refreshFacts } from '../git/actions';
 import { commitRepo, repoCommitState, stageThenCommitRepo } from '../git/commit-repo';
 import { messageApplied, messageEdited, stopMessage, writeMessage } from '../git/message-run';
 import { Sparkle } from '../git/MessageWrite';
@@ -17,7 +17,7 @@ import { StageAllConfirm } from '../git/StageAllConfirm';
 import { startPull, startSync } from '../git/sync';
 import { useMessage } from '../git/use-message';
 import { fetchRepo, repoMenu } from './actions';
-import { blockView, firstLine, foldedOf, hasBody, idleTip, runningLabel, syncAbility, withFirstLine, type AllRow, type BlockView } from './all-view';
+import { blockView, firstLine, foldedOf, hasBody, idleTip, nearScreen, runningLabel, syncAbility, withFirstLine, type AllRow, type BlockView } from './all-view';
 
 const st = () => useApp.getState();
 type Ability = ReturnType<typeof syncAbility>;
@@ -60,6 +60,20 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
   const [above, setAbove] = useState(false);
   const askRef = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
+  const block = useRef<HTMLDivElement>(null);
+  // What the block needs from main (its remotes, a commit's checks), read once it nears the screen: a folder of hundreds
+  // of repositories doesn't read them all at once.
+  useEffect(() => {
+    const el = block.current;
+    if (!el || st().gitFacts[root]) return;
+    const seen = new IntersectionObserver((es) => {
+      if (!es.some((e) => e.isIntersecting)) return;
+      seen.disconnect();
+      if (!st().gitFacts[root]) void refreshFacts(root, { view: true });
+    }, nearScreen(el));
+    seen.observe(el);
+    return () => seen.disconnect();
+  }, [root]);
 
   const commit = repoCommitState(root, st());
   const hasRemote = facts ? facts.remotes.length > 0 : !!status.upstream;
@@ -95,7 +109,7 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
   const edit = (line: string) => { const next = withFirstLine(text, line); setText(next); if (w) messageEdited(next); };
 
   return (
-    <div className={`ab ${folded ? 'is-folded' : ''} ${row.worktree ? 'is-worktree' : ''} ${writes ? '' : 'is-ro'}`} role="listitem" aria-label={row.name}
+    <div ref={block} className={`ab ${folded ? 'is-folded' : ''} ${row.worktree ? 'is-worktree' : ''} ${writes ? '' : 'is-ro'}`} role="listitem" aria-label={row.name}
       aria-description={row.worktree ? a.worktreeTip : undefined} data-root={root}>
       <div className="ab-head" onContextMenu={(e) => st().openMenu(e, repoMenu(root))}>
         {writes ? (
@@ -107,8 +121,9 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
         {row.worktree && <span className="ab-wt" data-tip={a.worktreeTip} aria-hidden="true"><Icon name="worktree" size={12} stroke={1.8} /></span>}
         <button type="button" className="ab-name" data-tip={a.openOne(row.name)}
           onClick={() => { st().selectScmRepo(root); st().setScmView('one'); }}>
-          {row.dir && <span className="ab-dir">{row.dir}</span>}{row.name}
+          {row.dir && <span className="ab-dir">{row.dir}</span>}<span className="ab-leaf">{row.name}</span>
         </button>
+        {row.note && <span className="sw-wt ab-note" data-tip={row.tip ?? undefined}>{row.note}</span>}
         {(branch || status.oid) && (
           <span className="ab-branch mono"><Icon name="git" size={11} stroke={1.8} /><span className="ab-branch-name">{branch ?? status.oid!.slice(0, 7)}</span></span>
         )}

@@ -219,7 +219,11 @@ if (!app.requestSingleInstanceLock()) {
   const hub = new TerminalHub(client, daemonBuild, (e) => isAppUrl(e.senderFrame?.url ?? ''));
   // A moved terminal's session resumed in its new window: the new terminal keeps its home.
   hub.onResumed = (oldId, info) => homes.resumed(oldId, info);
-  const gitHub = new GitHub(client);
+  // e2e: a folder cap a test reaches with a handful of folders.
+  const searchCap = testMs('ATELIER_TEST_REPO_SEARCH_MAX_FOLDERS');
+  const gitHub = new GitHub(client, { depth: () => settings.get().repoSearchDepth, ...(searchCap ? { maxFolders: () => searchCap } : {}) });
+  // A window coming to the front: repositories cloned or moved while no event said so are looked for again.
+  app.on('browser-window-focus', (_e, w) => { const root = windowProjects.get(w.webContents.id); if (root) gitHub.focused(root); });
   // Fetch: view and manual fetches from the renderer, periodic ones per the setting, for open projects.
   const scmHub = new ScmHub(gitHub, {
     setting: () => settings.get().autoFetch,
@@ -503,6 +507,7 @@ if (!app.requestSingleInstanceLock()) {
     if (s.claudeMcpNotice !== prevSettings.claudeMcpNotice) hub.mcpSettingsChanged();
     if (s.prStatus !== prevSettings.prStatus) prHub.settingsChanged();
     if (s.autoFetch !== prevSettings.autoFetch) scmHub.fetchSettingsChanged();
+    if (s.repoSearchDepth !== prevSettings.repoSearchDepth) gitHub.settingsChanged();
     if (s.showServices !== prevSettings.showServices) servicesHub.settingsChanged();
     if (s.showDocker !== prevSettings.showDocker || s.dockerSocket !== prevSettings.dockerSocket) dockerHub.settingsChanged();
     if (s.showRedis !== prevSettings.showRedis || s.redisInstances.join('\n') !== prevSettings.redisInstances.join('\n') || s.redisMonitor !== prevSettings.redisMonitor || s.redisQueues !== prevSettings.redisQueues || s.redisNotify !== prevSettings.redisNotify) redisHub.settingsChanged();

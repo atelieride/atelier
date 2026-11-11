@@ -1,6 +1,5 @@
-/* Source Control's All Repositories view: Sync All on top, one block per working
-   tree. Every block has the same parts (a 34 px header, a 32 px field, a 28 px button): a state only changes what they
-   say, nothing grows or moves. Quiet finish: no halos, flat fills, a step under the pointer. Tokens only. */
+/* Source Control's head with the All Repositories switch: shown at once. The view itself brings its own
+   all-repos.css, loaded with it when first opened (the live demo's first-paint budget). Tokens only. */
 
 /* The head's view switch: a radio group of two icons; the chosen one is a neutral step. */
 .scm-view { display: flex; flex-shrink: 0; height: 24px; padding: 2px; gap: 1px; margin: -4px 0; border-radius: 999px; background: var(--bg-control); box-shadow: inset 0 0 0 1px var(--line-strong); }
@@ -9,96 +8,9 @@
 .scm-view-seg.is-on { color: var(--seg-on-text); background: var(--seg-on); box-shadow: var(--seg-on-shadow); }
 .scm-view-seg:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
-.scm-all { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: atl-fade var(--t-med) var(--ease) both; }
-.scm-all-sync.git-sync { margin: 2px 8px 10px; }
-.scm-all-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 0 8px 12px; }
-
-/* A block; the one being committed (focus in its field or its button) is the flat selection with a hairline. */
-.ab { position: relative; flex-shrink: 0; border-radius: var(--radius); }
-.ab:has(.ab-body:focus-within) { background: var(--bg-sel); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
-
-.ab-head { position: relative; height: 34px; display: flex; align-items: center; gap: 6px; padding: 0 6px 0 2px; border-radius: var(--radius); }
-.ab-head:hover { background: var(--bg-hover); }
-.ab-fold { width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: var(--r-sm); color: var(--text-4); }
-.ab-fold:hover { color: var(--text); background: var(--bg-3); }
-.ab-wt { display: flex; flex-shrink: 0; color: var(--worktree); }
-.ab-name { min-width: 0; flex: 0 1 auto; padding: 1px 2px; border-radius: var(--r-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--text); }
-.ab-name:hover { text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
-.ab-dir { color: var(--text-4); font-weight: 500; }
-.ab.is-worktree .ab-name { font-weight: 500; color: var(--text-2); }
-/* The branch takes only the room left after the name (basis 0): narrow, it gives way first, with an ellipsis, and the
-   name shrinks only once the branch has none left (the name is the block's identity). */
-.ab-branch { display: inline-flex; align-items: center; gap: 4px; min-width: 0; flex: 1 1 0; overflow: hidden; font-size: 11px; color: var(--text-4); }
-.ab-branch > svg { flex-shrink: 0; }
-.ab-branch-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-/* The marks keep the actions' room (four icons; two in Read-only): what shows under the pointer never covers a name. */
-.ab-marks { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-shrink: 0; min-width: 96px; }
-.ab.is-ro .ab-marks { min-width: 48px; }
-.ab-counts { display: inline-flex; gap: 6px; font-size: 11.5px; font-weight: 500; }
-.ab-error { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: var(--error); }
-/* Under the pointer (or the keyboard), the actions take the marks' place: the row never widens. */
-.ab-acts { position: absolute; top: 0; right: 6px; bottom: 0; display: flex; align-items: center; opacity: 0; pointer-events: none; }
-.ab-acts .icon-btn[aria-disabled="true"] { opacity: .4; cursor: default; }
-.ab-acts .icon-btn[aria-disabled="true"]:hover { background: none; color: var(--text-4); }
-.ab-head:hover .ab-acts, .ab-head:focus-within .ab-acts { opacity: 1; pointer-events: auto; }
-.ab-head:hover .ab-marks, .ab-head:focus-within .ab-marks { visibility: hidden; }
-
-.ab-body { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 0 6px 10px 28px; }
-.ab-field { display: flex; align-items: center; gap: 4px; height: 32px; padding: 0 3px 0 10px; border-radius: var(--radius); background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line); cursor: text; }
-.ab-field:hover { box-shadow: inset 0 0 0 1px var(--line-strong); }
-.ab-field:focus-within { box-shadow: inset 0 0 0 1px var(--violet); }
-.ab-field input { flex: 1; min-width: 0; height: 30px; padding: 0; background: none; border: 0; outline: none; color: var(--text); font: 12.5px var(--font); text-overflow: ellipsis; }
-.ab-field.is-writing input { color: var(--text-3); }
-/* The draft has a body (✦'s, or one written in the drawer): kept, not shown on this one line. */
-.ab-body-hint { flex-shrink: 0; padding: 0 2px; font-size: 10.5px; color: var(--text-4); cursor: default; }
-
-/* The one button: tinted; neutral when it can't run; the solid brand on the block being committed. */
-.ab-btn { display: flex; height: 28px; border-radius: var(--r-sm); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
-.ab-btn > button { display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--text); }
-.ab-btn > button:hover { background: var(--tint-violet-hover); }
-.ab-btn > button:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-.ab-main { flex: 1; min-width: 0; border-radius: var(--r-sm) 0 0 var(--r-sm); white-space: nowrap; }
-.ab-main:only-child { border-radius: var(--r-sm); }
-.ab-more { width: 28px; flex-shrink: 0; border-radius: 0 var(--r-sm) var(--r-sm) 0; color: var(--text-2); box-shadow: inset 1px 0 0 var(--edge-violet-soft); }
-.ab-sync-icon { display: flex; color: var(--violet); }
-.ab-btn.is-off { background: var(--bg-control); box-shadow: inset 0 0 0 1px var(--line); }
-.ab-btn.is-off .ab-main { color: var(--text-4); font-weight: 500; cursor: default; }
-.ab-btn.is-off .ab-main:hover { background: none; }
-.ab-btn.is-off .ab-more { box-shadow: inset 1px 0 0 var(--line); }
-.ab-btn.is-off .ab-more:hover { background: var(--bg-3); }
-.ab-btn.is-running .ab-main { color: var(--text-2); cursor: progress; }
-.ab-btn.is-running .ab-main:hover { background: none; }
-.ab-btn.is-running .git-spin { color: var(--violet); }
-.ab:has(.ab-body:focus-within) .ab-btn.is-commit:not(.is-off) { background: var(--brand); box-shadow: none; }
-.ab:has(.ab-body:focus-within) .ab-btn.is-commit:not(.is-off) > button { color: var(--on-brand); }
-.ab:has(.ab-body:focus-within) .ab-btn.is-commit:not(.is-off) > button:hover { background: var(--on-brand-lift); }
-.ab:has(.ab-body:focus-within) .ab-btn.is-commit:not(.is-off) .ab-more { box-shadow: inset 1px 0 0 var(--on-brand-edge); }
-
-/* Commit with nothing staged asks here, floating over what follows: the block keeps its height. */
-.ab-ask { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% - 8px); border-radius: var(--radius); background: var(--bg-float-strong); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); box-shadow: var(--shadow-float); }
-/* No room below in the list: over the field instead, above the button. */
-.ab-ask.is-above { top: auto; bottom: 42px; }
-/* Its answers on one row, at the right; where that row wouldn't fit, one above the other, full width, the answer first. */
-.ab-ask .git-ask-actions { flex-wrap: nowrap; justify-content: flex-end; }
-.ab-ask .git-ask-actions > .btn-primary { margin-left: 0; }
-
-/* The sidebar's width (200–480 px, container `.scm-sidebar`): every part keeps to one line and to its block. */
-.ab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ab-main > svg, .ab-main > .ab-sync-icon, .ab-main > .git-spin, .ab-main > .ab-counts { flex-shrink: 0; }
+/* The sidebar's width (200–480 px, container `.scm-sidebar`): the head's label gives way before anything else. */
 .scm-sidebar .sidebar-head .section-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-@container (max-width: 300px) {
-  .ab-ask .git-ask-actions { flex-direction: column-reverse; align-items: stretch; }
-  .ab-ask .git-ask-actions > button { justify-content: center; }
-}
 /* With the view switch in the head, the label goes before it would be cut (the activity bar says where you are). */
 @container (max-width: 255px) {
   .scm-sidebar .sidebar-head:has(.scm-view) .section-label { display: none; }
 }
-/* Narrow: the body under the name, not indented; under the pointer only ⋯ (Fetch, Pull and Push are in it). */
-@container (max-width: 240px) {
-  .ab-body { padding-left: 8px; }
-  .ab-marks, .ab.is-ro .ab-marks { min-width: 24px; }
-  .ab-acts .ab-act-sync { display: none; }
-}
-
-:root[data-motion="reduced"] .scm-all { animation: none; }

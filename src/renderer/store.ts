@@ -59,7 +59,7 @@ import {
 import { loadLayout as loadSplitLayout, saveLayout as saveSplitLayout } from './layout-store';
 import { adoptTerminals, pruneDrafts, setDialogProbe } from './terminal/drafts';
 import { isWaiting } from '@shared/session-view';
-import type { ScmFetchState, ScmRefs, ScmRepoEntry, ScmScope } from '@shared/scm';
+import type { RepoSearch, ScmFetchState, ScmRefs, ScmRepoEntry, ScmScope } from '@shared/scm';
 import { loadScmPrefs, saveScmPrefs } from './scm/prefs';
 import { healAfterOpen } from './terminal-heal';
 import type { DockEvent, Point, PopoutBoot, PopoutOpenResult, PopoutReveal, ProjectWindowInfo } from '@shared/popout';
@@ -311,6 +311,9 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
   /** Source Control: the switcher's entries (null until main answers), the selected one. */
   scmRepos: ScmRepoEntry[] | null;
   scmRepo: string | null;
+  /** How the project's folder scan for repositories went (null until main answers). */
+  scmSearch: RepoSearch | null;
+  setScmSearch(s: RepoSearch): void;
   /** The last refs read per repository root. */
   scmRefs: Record<string, ScmRefs>;
   /** Fetch states per git common dir: running, last outcome. */
@@ -477,6 +480,10 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
   /** Increases when the tree must be re-read (after new, rename, duplicate, trash). */
   treeNonce: number;
   bumpTree(): void;
+  /** Per folder of Files: raised when the folder's listing may have changed on disk (it is listed again if shown). */
+  dirNonce: Record<string, number>;
+  /** These folders (or every open one) changed on disk: Files lists them again. */
+  relistFolders(folders: ReadonlySet<string> | 'all'): void;
   /** Short message at the bottom (e.g. a failed file operation), with an optional action (Undo) or two (Push, Undo). */
   /** Without a tone it reads as an error (a failed operation); `info` is a neutral notice. `ms`: how long it stays. */
   toast: { text: string; nonce: number; action?: ToastAction; second?: ToastAction; tone?: 'info'; ms?: number } | null;
@@ -1113,6 +1120,8 @@ export const useApp = create<AppState>((set, get) => ({
   setReviewAgainstMain: (on) => { writeFlag('atelier.reviewAgainstMain', on); set({ reviewAgainstMain: on }); },
   scmRepos: null,
   scmRepo: null,
+  scmSearch: null,
+  setScmSearch: (scmSearch) => set({ scmSearch }),
   scmRefs: {},
   scmCollapsed: [],
   scmView: 'one',
@@ -1559,6 +1568,13 @@ export const useApp = create<AppState>((set, get) => ({
   endTreeEdit: () => set({ treeEdit: null }),
   treeNonce: 0,
   bumpTree: () => set({ treeNonce: get().treeNonce + 1 }),
+  dirNonce: {},
+  relistFolders: (folders) => {
+    if (folders === 'all') { get().bumpTree(); return; }
+    const next = { ...get().dirNonce };
+    for (const f of folders) next[f] = (next[f] ?? 0) + 1;
+    set({ dirNonce: next });
+  },
   toast: null,
   showToast: (text, action, tone, ms) => {
     const cur = get().toast;

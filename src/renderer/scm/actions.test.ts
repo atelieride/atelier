@@ -72,7 +72,7 @@ test('Fetch All Repositories: how many, how many failed, or nothing to fetch', a
 test('M7: Git › Fetch on a repository without a remote says so instead of doing nothing', async () => {
   const calls = fakeFetch({ outcome: 'ok' });
   const refs = { root: '/p', head: { branch: 'main', oid: null, detached: false }, refs: [], defaultBranch: null, shallow: false, fetchedAt: null, remotes: [], hasRemote: false, emptyTree: '' };
-  useApp.setState({ scmRepos: [{ root: '/p', rel: '', name: 'p', worktreeOf: null, common: '/p/.git', status: null }], scmRepo: '/p', scmRefs: { '/p': refs } });
+  useApp.setState({ scmRepos: [{ root: '/p', rel: '', name: 'p', worktreeOf: null, nestedIn: null, common: '/p/.git', status: null }], scmRepo: '/p', scmRefs: { '/p': refs } });
   fetchSelected();
   await tick(); await tick();
   expect(calls).toEqual([]);

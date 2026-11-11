@@ -1,4 +1,4 @@
-import { existsSync, realpathSync, watch, type FSWatcher } from 'node:fs';
+import { existsSync, realpathSync, statSync, watch, type FSWatcher } from 'node:fs';
 import { join, relative, sep, toOut } from './cpath';
 import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron';
 import { runGit } from './git/exec';
@@ -7,13 +7,16 @@ import { gitSnapshotKey } from './git/snapshot-key';
 import { LastSent } from './last-sent';
 import { IPC } from '@shared/api';
 import { shouldPrune } from '@shared/attribution';
-import type { MergeInfo, RepoStatus } from '@shared/git';
+import type { MergeInfo, RepoCompare, RepoStatus } from '@shared/git';
 import type { ScmEvent } from '@shared/scm';
 import { headTarget } from './git-head';
-import { discoverRepos, listWorkingTrees, type WorkingTree } from './git/repos';
+import { REPO_SEARCH_MAX_FOLDERS, discoverRepos, listWorkingTrees, relistPlan, type RepoList, type WorkingTree } from './git/repos';
 import { StatusScheduler, buildFileIndex, readHeadContent, readRepoStatus } from './git/service';
+import { gitReadLimiter, type ReadLevel } from './git/read-limiter';
 import { testMs } from './dev-env';
-import { Debouncer, classifyChange, gitChangeScope, gitDirOf, insideKind, locate, repoOf, scmChange, worktreeListChange } from './git/watch';
+import { Debouncer, classifyChange, gitChangeScope, gitDirOf, insideKind, locate, needsRediscovery, repoOf, scmChange, worktreeListChange } from './git/watch';
+import { DEFAULT_SETTINGS } from '@shared/settings';
+import { distinctNames } from '@shared/repo-names';
 import { mergeAgainst, probeDefaultRef, readCompare, readContentAt } from './git/compare';
 import { MergeSummaries } from './git/merge-cache';
 import { KeepSet } from './git/keep-set';
@@ -23,6 +26,15 @@ import { isBelow, isInside } from '@shared/paths';
 
 /** The debouncer's key for "events were dropped": no path is ever this (a NUL can't be in a file name). */
 const RESCAN = '\0rescan';
+/** A `.git` entry itself (folder or file): what a clone, `git init`, a submodule or a worktree creates first. */
+const DOT_GIT = /(^|[\\/])\.git$/;
+/** A window coming to the front looks for repositories again when the last look is older than this. */
+const FOCUS_RESCAN_MS = 60_000;
+/** After a scan that stopped at its cap, changes wait this long before the folders are looked through again. */
+const CAPPED_RESCAN_MS = 30_000;
+
+/** What git-dir changes ask for: fresh statuses of these working trees, new listings for these common dirs. */
+interface GitDirChanges { repos: Set<string>; relist: Set<string> }
 
 /** The status reader, its answer held back `ms` once read (tests only: devEnv). */
 const slowRead = (ms: number | undefined) => (ms ? async (repo: string) => { const st = await readRepoStatus(repo); await new Promise((r) => setTimeout(r, ms)); return st; } : readRepoStatus);
@@ -37,6 +49,18 @@ interface Project {
   /** What each working tree's branch has to merge, for repos with linked worktrees. */
   merge: Map<string, MergeInfo | null>;
   relisting: Promise<void> | null; relistAgain: boolean;
+  /** What the next listing asks git about again, live and bulk (gathered while one is running). */
+  relistLive: Set<string> | 'all'; relistBulk: Set<string> | 'all';
+  /** Git's last answers about each discovered repo's worktrees: a listing asks again only about the stale ones. */
+  lists: Map<string, RepoList>;
+  /** The folder scan running, whether another one was asked meanwhile, when the last one ended (0: none yet). */
+  discovering: Promise<void> | null; discoverAgain: ReadLevel | null; discoveredAt: number;
+  /** A rescan held back after a scan that stopped at its cap. */
+  rescanTimer: NodeJS.Timeout | null;
+  /** Paths the OS reported come or gone (rename events), since the last batch: only those may be new folders. */
+  renamed: Set<string>;
+  /** The last scan stopped at its folder cap. */
+  capped: boolean;
   /** Its working trees were listed once: until then a status neither prunes nor counts as the last HEAD seen. */
   listed: boolean;
   status: Map<string, RepoStatus>; watcher: FSWatcher | null; debounce: Debouncer; windows: Set<WebContents>;
@@ -57,7 +81,7 @@ export class GitHub {
   private projects = new Map<string, Project>();
   /** What git ignores per repo, and the last snapshot each project's windows got. */
   // What git ignores changed (a path un-ignored, or a skipped change that is no longer ignored): a fresh status.
-  private readonly ignores = new IgnoreCache((repo) => runGit(repo, LS_IGNORED_ARGS, { timeoutMs: 10000, maxBytes: 4 * 1024 * 1024 }),
+  private readonly ignores = new IgnoreCache((repo, level) => gitReadLimiter.run(level, () => runGit(repo, LS_IGNORED_ARGS, { timeoutMs: 10000, maxBytes: 4 * 1024 * 1024 })),
     Date.now, (repo) => this.scheduler.request(repo));
   private readonly sent = new LastSent();
   // e2e: a status read as slow as on a Windows PC (seconds), to prove nothing on screen waits for it.
@@ -66,6 +90,12 @@ export class GitHub {
   private merges = new MergeSummaries(probeDefaultRef, mergeAgainst);
   /** HEAD of each repo at its last complete status. */
   private heads = new Map<string, string | null>();
+  /**
+   * Each repo's compare against the default branch, kept while its status reads the same and its refs didn't move
+   * (`refsGen`, per common dir: the default branch can move with no change to the status, after a fetch).
+   */
+  private readonly compares = new Map<string, { key: string; compare: Promise<RepoCompare> }>();
+  private readonly refsGen = new Map<string, number>();
   /** Files whose attributions survive prunes while an Atelier op holds them. */
   private readonly kept = new KeepSet();
   /** Working trees whose next read from that time on is sent whatever the dedup says (requestStatus). */
@@ -77,7 +107,13 @@ export class GitHub {
   /** A project's last window closed. */
   onProjectClosed: (projectRoot: string) => void = () => {};
 
-  constructor(private readonly client: DaemonClient) {
+  /** How many folder levels below a project repositories are looked for, and how many folders one scan reads at most. */
+  private readonly depth: () => number;
+  private readonly maxFolders: () => number;
+
+  constructor(private readonly client: DaemonClient, o: { depth?: () => number; maxFolders?: () => number } = {}) {
+    this.depth = o.depth ?? (() => DEFAULT_SETTINGS.repoSearchDepth);
+    this.maxFolders = o.maxFolders ?? (() => REPO_SEARCH_MAX_FOLDERS);
     this.scheduler.onResult((st) => {
       // Files that became clean lose their attribution, but only once HEAD moved (commit, checkout): a brief clean
       // state with the same HEAD (stash, stash pop, reset) must not wipe them. An incomplete status (error,
@@ -95,7 +131,8 @@ export class GitHub {
       for (const p of this.projects.values()) {
         if (!p.repos.includes(st.root)) continue;
         // A worktree whose folder is gone though no event said so (macOS drops events under a flood of writes).
-        if (st.error && p.trees.get(st.root)?.worktreeOf && !existsSync(st.root)) this.relist(p);
+        const tree = p.trees.get(st.root);
+        if (st.error && tree?.worktreeOf && !existsSync(st.root)) this.relist(p, { stale: this.reposOfCommons(p, new Set([tree.common])), level: 'live' });
         p.status.set(st.root, st);
         this.broadcast(p, force);
         this.refreshMerge(p, st);
@@ -124,27 +161,30 @@ export class GitHub {
       // Real paths everywhere, like those of git and attributions (e.g. /var → /private/var).
       let real = root;
       try { real = toOut(realpathSync(root)); } catch { /* folder gone */ }
-      const discovered = discoverRepos(real);
       const proj: Project = {
-        key: root, root: real, discovered, repos: [...discovered], trees: new Map(), merge: new Map(), relisting: null, relistAgain: false, listed: false,
+        key: root, root: real, discovered: [], repos: [], trees: new Map(), merge: new Map(), relisting: null, relistAgain: false, listed: false,
+        relistLive: new Set(), relistBulk: new Set(), lists: new Map(), discovering: null, discoverAgain: null, discoveredAt: 0, capped: false,
+        rescanTimer: null, renamed: new Set(),
         status: new Map(), watcher: null, windows: new Set(), debounce: new Debouncer(300, (keys) => this.onChanges(proj, keys), 1500), outside: new Map()
       };
       try {
         // Ignored paths (node_modules, .git objects) are dropped right away: during an npm install there are thousands.
-        // No name: the OS dropped events (Windows' change buffer overflows under an install or a build): every working
-        // tree is read again, or what changed meanwhile would stay unseen until some later event.
-        proj.watcher = watch(real, { recursive: true }, (_ev, file) => {
-          if (!file) proj.debounce.add(RESCAN);
-          else if (classifyChange(real, String(file)) !== 'ignore') proj.debounce.add(String(file));
+        // A `.git` itself (a clone's first entry, a submodule's or a worktree's .git file) still counts: repositories
+        // may have come. No name: the OS dropped events (Windows' change buffer overflows under an install or a
+        // build): every working tree is read again, or what changed meanwhile would stay unseen until some later event.
+        proj.watcher = watch(real, { recursive: true }, (ev, file) => {
+          if (!file) { proj.debounce.add(RESCAN); return; }
+          const rel = String(file);
+          if (classifyChange(real, rel) !== 'ignore' || DOT_GIT.test(rel)) {
+            if (ev === 'rename') proj.renamed.add(rel);
+            proj.debounce.add(rel);
+          }
         });
         proj.watcher.on('error', () => { /* folder gone: the status stays the last known one */ });
       } catch { /* without a watcher it only updates on hook events */ }
       p = proj;
       this.projects.set(root, p);
-      for (const r of discovered) this.scheduler.request(r);
-      for (const r of discovered) void this.ignores.refresh(r);
-      // The repos show at once; their linked worktrees join as soon as git lists them.
-      this.relist(proj);
+      this.rediscover(proj);
     }
     p.windows.add(wc);
     wc.once('destroyed', () => this.close(root, wc));
@@ -155,37 +195,141 @@ export class GitHub {
     return this.projects.get(root)?.repos ?? [];
   }
 
-  /** A project's real root, its working trees and discovered repos, their last statuses and its windows (Source Control builds on them). */
-  info(root: string): { root: string; repos: string[]; discovered: string[]; status: ReadonlyMap<string, RepoStatus>; windows: ReadonlySet<WebContents>; trees?: readonly WorkingTree[] } | null {
+  /**
+   * A project's real root, its working trees and discovered repos, their last statuses and its windows (Source Control
+   * builds on them), and how the folder scan went: still running, or stopped at its folder cap.
+   */
+  info(root: string): { root: string; repos: string[]; discovered: string[]; status: ReadonlyMap<string, RepoStatus>; windows: ReadonlySet<WebContents>; trees?: readonly WorkingTree[]; capped: boolean; searching: boolean; maxFolders: number } | null {
     const p = this.projects.get(root);
     // The working trees once listed: Source Control's switcher shows the same ones as Changes.
-    return p ? { root: p.root, repos: p.repos, discovered: p.discovered, status: p.status, windows: p.windows, ...(p.listed && p.trees.size ? { trees: [...p.trees.values()] } : {}) } : null;
+    return p ? {
+      root: p.root, repos: p.repos, discovered: p.discovered, status: p.status, windows: p.windows, ...(p.listed && p.trees.size ? { trees: [...p.trees.values()] } : {}),
+      capped: p.capped, searching: p.discovering !== null, maxFolders: this.maxFolders()
+    } : null;
   }
 
-  /** Lists the project's working trees again (a worktree added or removed): new ones get a status, gone ones leave. */
-  private relist(p: Project): void {
+  /** The search depth changed: every open project looks for its repositories again (what it adds read as bulk). */
+  settingsChanged(): void {
+    for (const p of this.projects.values()) this.rediscover(p, 'bulk');
+  }
+
+  /** A window of the project came to the front: its repositories are looked for again if the last look is old. */
+  focused(root: string): void {
+    const p = this.projects.get(root);
+    if (p && p.discoveredAt > 0 && Date.now() - p.discoveredAt > FOCUS_RESCAN_MS) this.rediscover(p, 'bulk');
+  }
+
+  /**
+   * A change on disk may have brought or taken repositories: a scan now, except right after one that stopped at its cap
+   * (git at work in a repository the scan never reached would rescan every folder, each time): then once that while is
+   * over.
+   */
+  private rescanFor(p: Project): void {
+    const wait = p.capped ? p.discoveredAt + CAPPED_RESCAN_MS - Date.now() : 0;
+    if (wait <= 0) { this.rediscover(p, 'live'); return; }
+    p.rescanTimer ??= setTimeout(() => { p.rescanTimer = null; if (this.projects.get(p.key) === p) this.rediscover(p, 'live'); }, wait);
+  }
+
+  /**
+   * Looks for the project's repositories again (one scan at a time; asked during one, once more after it, at the most
+   * urgent level asked). The first scan shows them at once and reads them all as bulk; a later one adds the new ones at
+   * `level`, drops the gone ones, and reads nothing about the repositories that stayed.
+   */
+  private rediscover(p: Project, level: ReadLevel = 'live'): void {
+    if (p.discovering) { p.discoverAgain = p.discoverAgain === 'live' || level === 'live' ? 'live' : 'bulk'; return; }
+    const first = p.discoveredAt === 0;
+    p.discovering = discoverRepos(p.root, { depth: this.depth(), maxFolders: this.maxFolders() }).then(({ repos, capped }) => {
+      if (this.projects.get(p.key) !== p) return;
+      p.discoveredAt = Date.now();
+      const cappedNow = p.capped !== capped;
+      p.capped = capped;
+      const before = new Set(p.discovered);
+      const added = repos.filter((r) => !before.has(r));
+      if (!first && added.length === 0 && repos.length === before.size) {
+        // The same repositories, but the scan stopped (or no longer stops) at its cap: the windows ask again.
+        if (cappedNow) this.broadcast(p, true);
+        return;
+      }
+      p.discovered = repos;
+      p.index = undefined;
+      // Statuses first (Changes fills from them), then the worktrees, then what git ignores: the limiter keeps that
+      // order within a level.
+      if (first) {
+        // The repos show at once; their linked worktrees join as soon as git lists them.
+        p.repos = [...repos];
+        for (const r of repos) this.scheduler.request(r, { bulk: true });
+        this.relist(p, { stale: 'all', level: 'bulk' });
+      } else this.relist(p, { stale: new Set(added), level });
+      for (const r of added) void this.ignores.refresh(r, false, first ? 'bulk' : level);
+    }, () => { /* folder gone: what was found stays */ }).finally(() => {
+      p.discovering = null;
+      const again = p.discoverAgain;
+      p.discoverAgain = null;
+      if (again && this.projects.get(p.key) === p) this.rediscover(p, again);
+    });
+  }
+
+  /** The discovered repos whose git common dir is one of `commons` (what a refs or worktree change can move). */
+  private reposOfCommons(p: Project, commons: ReadonlySet<string>): Set<string> {
+    return new Set(p.discovered.filter((r) => commons.has(p.lists.get(r)?.common ?? p.trees.get(r)?.common ?? '')));
+  }
+
+  /**
+   * Lists the project's working trees again (a worktree added or removed, a repository found or gone): git is asked
+   * only about the `stale` repos; new trees get a status, gone ones leave. Asked during a listing, the next one covers
+   * every stale repo asked meanwhile.
+   */
+  private relist(p: Project, o: { stale: ReadonlySet<string> | 'all'; level: ReadLevel }): void {
+    const merge = (a: Set<string> | 'all', b: ReadonlySet<string> | 'all') => (a === 'all' || b === 'all' ? 'all' : new Set([...a, ...b]));
+    if (o.level === 'live') p.relistLive = merge(p.relistLive, o.stale); else p.relistBulk = merge(p.relistBulk, o.stale);
     if (p.relisting) { p.relistAgain = true; return; }
-    p.relisting = listWorkingTrees(p.root, p.discovered, [...p.trees.values()]).then((trees) => {
+    // Each repo at the level it was asked at: a pending full bulk listing stays bulk next to one live repo.
+    const { stale, level } = relistPlan(p.relistLive, p.relistBulk);
+    p.relistLive = new Set();
+    p.relistBulk = new Set();
+    p.relisting = listWorkingTrees(p.root, p.discovered, [...p.trees.values()], { lists: p.lists, stale, level }).then((trees) => {
       if (this.projects.get(p.key) !== p) return;
       const before = new Set(p.repos);
       const first = !p.listed;
       p.listed = true;
       p.trees = new Map(trees.map((t) => [t.root, t]));
       p.repos = trees.map((t) => t.root);
+      // The repositories git was asked about: their worktrees' merge summaries may have moved.
+      const asked = stale === 'all' ? null : new Set([...stale].map((r) => p.trees.get(r)?.common));
       // The first listing: every repo again, so a prune held back meanwhile happens with its worktrees excluded.
-      for (const r of p.repos) if (first || !before.has(r) || this.sharesCommon(p, r)) this.scheduler.request(r);
-      for (const r of before) if (!p.trees.has(r)) { p.status.delete(r); p.merge.delete(r); this.merges.forget(r); }
+      for (const r of p.repos) {
+        const moved = this.sharesCommon(p, r) && (!asked || asked.has(p.trees.get(r)?.common));
+        // A new worktree of a repo asked about live is read live too.
+        const owner = p.trees.get(r)?.worktreeOf ?? r;
+        if (first || !before.has(r) || moved) this.scheduler.request(r, { bulk: first || (level(r) === 'bulk' && level(owner) === 'bulk') });
+      }
+      for (const r of before) if (!p.trees.has(r)) { p.status.delete(r); p.merge.delete(r); this.merges.forget(r); this.forgetRepo(r); }
       // A repo whose last worktree went has no merge summary any more.
       for (const r of p.repos) if (p.merge.has(r) && !this.sharesCommon(p, r)) { p.merge.delete(r); this.merges.forget(r); }
       this.watchOutside(p);
       this.broadcast(p);
     }, () => {
       // Listed again on the next change; meanwhile statuses prune as before.
-      if (!p.listed) { p.listed = true; for (const r of p.repos) this.scheduler.request(r); }
+      if (!p.listed) { p.listed = true; for (const r of p.repos) this.scheduler.request(r, { bulk: true }); }
     }).finally(() => {
       p.relisting = null;
-      if (p.relistAgain) { p.relistAgain = false; this.relist(p); }
+      if (p.relistAgain && this.projects.get(p.key) === p) { p.relistAgain = false; this.relist(p, { stale: new Set(), level: 'bulk' }); }
     });
+  }
+
+  /** Refs moved in a common dir (a commit, a fetch): the compares of its working trees are worked out again. */
+  private refsMoved(common: string): void {
+    this.refsGen.set(common, (this.refsGen.get(common) ?? 0) + 1);
+  }
+
+  /** A working tree no open project shows any more: what was kept about it goes (renames would pile it up). */
+  private forgetRepo(root: string): void {
+    if ([...this.projects.values()].some((p) => p.repos.includes(root))) return;
+    this.compares.delete(root);
+    this.heads.delete(root);
+    this.forced.delete(root);
+    this.scheduler.forget(root);
+    this.ignores.forget(root);
   }
 
   /** Watches the common dirs of the project's working trees that lie outside it; lets go of the ones no tree has now. */
@@ -209,35 +353,37 @@ export class GitHub {
   /** Paths changed in a common dir outside the project (relative to it). */
   private onOutside(p: Project, common: string, files: Set<string>): void {
     if (this.projects.get(p.key) !== p) return;
-    const out = { repos: new Set<string>(), relist: false };
+    const out: GitDirChanges = { repos: new Set(), relist: new Set() };
     for (const file of files) {
       const at = locate(`.git/${file}`);
       // A submodule of that repository has its own git dir under it.
       if (at) this.gitDirChanged(p, join(common, ...at.gitDir.split('/').slice(1)), `.git/${file}`, out);
     }
     for (const r of out.repos) this.scheduler.request(r);
-    if (out.relist) this.relist(p);
+    if (out.relist.size) this.relist(p, { stale: this.reposOfCommons(p, out.relist), level: 'live' });
   }
 
   /**
    * A path changed in the git dir `gitDir` (a real path; `rel` the path as locate reads it): the working trees it moves
    * get a fresh status — refs and fetches every tree of that common dir, a linked worktree's admin files that worktree,
    * the main HEAD and index the main checkout — merge summaries are worked out again when refs moved, the worktrees are
-   * listed again when one may have come or gone, and Source Control hears of it.
+   * listed again when one may have come or gone (for the repositories of that common dir only), and Source Control
+   * hears of it.
    */
-  private gitDirChanged(p: Project, gitDir: string, rel: string, out: { repos: Set<string>; relist: boolean }): void {
+  private gitDirChanged(p: Project, gitDir: string, rel: string, out: GitDirChanges): void {
     const at = locate(rel);
     if (!at || insideKind(at.inside) === 'ignore') return;
     let dir = gitDir;
     try { dir = toOut(realpathSync(gitDir)); } catch { /* gone meanwhile */ }
-    if (worktreeListChange(rel)) out.relist = true;
+    if (worktreeListChange(rel)) out.relist.add(dir);
     const scope = gitChangeScope(rel);
     const trees = [...p.trees.values()].filter((t) => t.common === dir);
     if (scope === 'all') {
       // Refs moved (a commit, a branch deleted with its worktree): the worktrees are listed again too, so a removal
       // whose own events were lost is caught at the next one.
       this.merges.invalidate(dir);
-      out.relist = true;
+      this.refsMoved(dir);
+      out.relist.add(dir);
       for (const t of trees) out.repos.add(t.root);
     } else if (scope === 'linked') {
       const own = join(dir, 'worktrees', at.inside[1] ?? '');
@@ -271,15 +417,20 @@ export class GitHub {
     });
   }
 
-  /** The statuses a window gets: each working tree's, with its worktree link and merge summary. */
+  /**
+   * The statuses a window gets: each working tree's, with its worktree link and merge summary. Repositories sharing a
+   * folder name are named by the end of their path that tells them apart (linked worktrees show under their own
+   * repository, by their folder).
+   */
   private snapshot(p: Project): RepoStatus[] {
+    const names = distinctNames(p.repos.filter((r) => !p.trees.get(r)?.worktreeOf), p.root);
     return p.repos.map((r) => p.status.get(r)).filter((s): s is RepoStatus => !!s)
-      .map((s) => ({ ...s, worktreeOf: p.trees.get(s.root)?.worktreeOf ?? null, merge: p.merge.get(s.root) ?? null }));
+      .map((s) => ({ ...s, name: names.get(s.root) ?? s.name, worktreeOf: p.trees.get(s.root)?.worktreeOf ?? null, merge: p.merge.get(s.root) ?? null }));
   }
 
   /** A fresh status of every repo of every open project (the attribution baseline after (re)connecting to atelierd). */
   refreshAll(): void {
-    for (const p of this.projects.values()) for (const r of p.repos) this.scheduler.request(r);
+    for (const p of this.projects.values()) for (const r of p.repos) this.scheduler.request(r, { bulk: true });
   }
 
   /**
@@ -309,20 +460,38 @@ export class GitHub {
   }
 
   private onChanges(p: Project, rels: Set<string>): void {
+    let rescan = false;
+    let dropped = false;
+    const renamed = p.renamed;
+    p.renamed = new Set();
     if (rels.has(RESCAN)) {
       rels.delete(RESCAN);
-      for (const r of p.repos) this.scheduler.request(r);
+      // Anything may have changed: every status, the worktrees and the repositories themselves, behind live work.
+      for (const r of p.repos) this.scheduler.request(r, { bulk: true });
       // Refs may have moved unseen too: History, the switcher and merge summaries read again, the worktrees listed.
       for (const common of new Set([...p.trees.values()].map((t) => t.common))) {
         this.merges.invalidate(common);
+        this.refsMoved(common);
         this.onScm(p.key, { common, what: 'refs' }, true);
       }
-      this.relist(p);
+      this.relist(p, { stale: 'all', level: 'bulk' });
+      dropped = true;
+      // Files too: the root itself reported means every open folder is listed again.
+      for (const wc of p.windows) if (!wc.isDestroyed()) wc.send(IPC.evFsChanged, [p.root]);
     }
-    const out = { repos: new Set<string>(), relist: false };
+    const out: GitDirChanges = { repos: new Set(), relist: new Set() };
     const { repos } = out;
     const files: string[] = [];
+    // Discovered repositories still waiting for their listing count as known: their own git at work is no news.
+    const known = new Set([...p.repos, ...p.discovered].map((r) => relative(p.root, r).split(sep).join('/')));
+    const depth = this.depth();
+    const probe = {
+      isRepoDir: (rel: string) => existsSync(join(p.root, rel, '.git')),
+      isDir: (rel: string) => { try { return statSync(join(p.root, rel)).isDirectory(); } catch { return false; } }
+    };
     for (const rel of rels) {
+      // A repository cloned, renamed, moved or deleted: the folders are looked through again.
+      if (!rescan && !dropped && needsRediscovery(rel, known, depth, probe, renamed.has(rel))) rescan = true;
       const kind = classifyChange(p.root, rel);
       if (kind === 'ignore') continue;
       const abs = join(p.root, rel);
@@ -344,7 +513,11 @@ export class GitHub {
       if (kind === 'file') files.push(abs);
     }
     for (const r of repos) this.scheduler.request(r);
-    if (out.relist) this.relist(p);
+    if (out.relist.size) this.relist(p, { stale: this.reposOfCommons(p, out.relist), level: 'live' });
+    // Dropped events: everything is read again behind live work, the folders too. A change that may bring
+    // repositories: a scan now (or once a capped scan's while is over).
+    if (dropped) this.rediscover(p, 'bulk');
+    else if (rescan) this.rescanFor(p);
     if (files.length) for (const wc of p.windows) if (!wc.isDestroyed()) wc.send(IPC.evFsChanged, files);
   }
 
@@ -362,6 +535,7 @@ export class GitHub {
     // Gone with its last window: reopened, its first snapshot must reach the new window even if equal to the old one.
     if (p.windows.size === 0) {
       p.watcher?.close(); p.debounce.dispose();
+      if (p.rescanTimer) { clearTimeout(p.rescanTimer); p.rescanTimer = null; }
       for (const w of p.outside.values()) { w.watcher.close(); w.debounce.dispose(); }
       p.outside.clear();
       this.projects.delete(root); this.sent.forget(`git:${p.key}`); this.onProjectClosed(root);
@@ -404,8 +578,26 @@ export class GitHub {
     // Each repo against its default branch, from its last status (repos without one yet are skipped).
     ipcMain.handle(IPC.gitCompare, async (e) => {
       const p = proj(e);
-      if (!p) return [];
-      return Promise.all(p.repos.map((r) => p.status.get(r)).filter((s): s is RepoStatus => !!s).map((s) => readCompare(s.root, s)));
+      return p ? this.compare(p.key) : [];
     });
+  }
+
+  /**
+   * Each repo against its default branch, from its last status (repos without one yet are skipped). Worked out once per
+   * status: Review asks after every status, and with hundreds of repositories only the ones that changed are read.
+   */
+  compare(root: string): Promise<RepoCompare[]> {
+    const p = this.projects.get(root);
+    if (!p) return Promise.resolve([]);
+    return Promise.all(p.repos.map((r) => p.status.get(r)).filter((s): s is RepoStatus => !!s).map((s) => {
+      const key = `${this.refsGen.get(p.trees.get(s.root)?.common ?? '') ?? 0}\0${gitSnapshotKey(s)}`;
+      const kept = this.compares.get(s.root);
+      if (kept?.key === key) return kept.compare;
+      const compare = gitReadLimiter.run('live', () => readCompare(s.root, s));
+      this.compares.set(s.root, { key, compare });
+      // A failed read is not kept: the next ask tries again.
+      compare.catch(() => { if (this.compares.get(s.root)?.compare === compare) this.compares.delete(s.root); });
+      return compare;
+    }));
   }
 }

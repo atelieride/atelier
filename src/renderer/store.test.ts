@@ -655,7 +655,7 @@ describe('task links: per project, saved, pruned with the terminals, carried by 
 });
 
 describe('source control', () => {
-  const entry = (root: string, rel: string) => ({ root, rel, name: rel || 'p', worktreeOf: null, common: `${root}/.git`, status: null });
+  const entry = (root: string, rel: string) => ({ root, rel, name: rel || 'p', worktreeOf: null, nestedIn: null, common: `${root}/.git`, status: null });
   beforeEach(() => useApp.setState({ terminals: [term('a')], selectedId: 'a', activeTab: 'term', tabOrder: ['t:a'], openFiles: [], review: null, historyTab: null, revFiles: [], scmRepos: null, scmRepo: null, project: null }));
 
   test('the repos list keeps the selection while it is listed, else the root repo, else the first', () => {

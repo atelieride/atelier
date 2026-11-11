@@ -199,6 +199,11 @@ export interface Settings {
   /** Settings › Source Control: when Atelier runs `git fetch` on its own; manual fetches always work. */
   autoFetch: AutoFetch;
   /**
+   * Settings › Source Control: how many folder levels below the project root repositories are looked for (the root
+   * is level 0), inside other repositories too.
+   */
+  repoSearchDepth: number;
+  /**
    * Settings › Source Control, git writes: the actions, ✦'s model, whether ✦ reads what the
    * sessions were asked, its language, and the Co-authored-by Claude toggle's default.
    */
@@ -306,6 +311,8 @@ export const DEFAULT_SETTINGS: Settings = {
   openTasksInApp: true,
   openNotionTasksInApp: true,
   autoFetch: 'viewing',
+  // `group/subgroup/project` layouts and repositories cloned inside another one, at little cost on a normal project.
+  repoSearchDepth: 3,
   gitActions: 'on',
   commitMessages: 'haiku',
   commitUsePrompts: true,
@@ -452,6 +459,7 @@ export const SETTINGS_FIELDS: { [K in keyof Settings]: Field } = {
   openTasksInApp: { kind: 'bool' },
   openNotionTasksInApp: { kind: 'bool' },
   autoFetch: { kind: 'enum', values: ['viewing', '15m', '30m', '60m', 'off'] },
+  repoSearchDepth: { kind: 'int', min: 1, max: 5 },
   gitActions: { kind: 'enum', values: ['on', 'read-only'] },
   commitMessages: { kind: 'enum', values: ['haiku', 'sonnet', 'off'] },
   commitUsePrompts: { kind: 'bool' },

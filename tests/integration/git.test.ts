@@ -21,34 +21,88 @@ function repoWithCommit(dir: string) {
   git(dir, 'commit', '-q', '-m', 'first');
 }
 
-test('repo discovery: non-repo root with repos inside, node_modules and hidden folders excluded', () => {
+const found = async (root: string, depth: number, maxFolders?: number) => (await discoverRepos(root, { depth, ...(maxFolders ? { maxFolders } : {}) })).repos;
+
+test('repo discovery: non-repo root with repos inside, node_modules and hidden folders excluded', async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-proj-')));
   repoWithCommit(join(root, 'app-ui'));
   repoWithCommit(join(root, 'group', 'worker'));
   repoWithCommit(join(root, 'node_modules', 'pkg'));
   repoWithCommit(join(root, '.hidden', 'x'));
   repoWithCommit(join(root, 'a', 'b', 'too-deep'));
-  expect(discoverRepos(root)).toEqual([join(root, 'app-ui'), join(root, 'group', 'worker')]);
+  expect(await found(root, 2)).toEqual([join(root, 'app-ui'), join(root, 'group', 'worker')]);
 });
 
-test('the root itself is a repo: it comes first', () => {
+test('the root itself is a repo: it comes first', async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-proj-')));
   repoWithCommit(root);
   repoWithCommit(join(root, 'sub'));
-  expect(discoverRepos(root)).toEqual([root, join(root, 'sub')]);
+  expect(await found(root, 2)).toEqual([root, join(root, 'sub')]);
 });
 
-test('repo discovery: a symlinked repo folder yields its real path (like attributions), once', () => {
+test('repo discovery: a symlinked repo folder yields its real path (like attributions), once', async () => {
   const base = realpathSync(mkdtempSync(join(tmpdir(), 'atl-symrepo-')));
   const root = join(base, 'project');
   mkdirSync(root);
   repoWithCommit(join(base, 'elsewhere', 'api'));
   symlinkSync(join(base, 'elsewhere', 'api'), join(root, 'api'));
-  expect(discoverRepos(root)).toEqual([realpathSync(join(root, 'api'))]);
+  expect(await found(root, 2)).toEqual([realpathSync(join(root, 'api'))]);
   // Two links to the same repo: one root.
   repoWithCommit(join(root, 'web'));
   symlinkSync(join(root, 'web'), join(root, 'web-link'));
-  expect(discoverRepos(root)).toEqual([realpathSync(join(root, 'api')), join(root, 'web')]);
+  expect(await found(root, 2)).toEqual([realpathSync(join(root, 'api')), join(root, 'web')]);
+});
+
+test('repo discovery: paths spelled as the project root is (node\'s realpath, as GitHub reads the root; never the native one)', async (ctx) => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'atl-spell-')));
+  repoWithCommit(join(base, 'Proj', 'api'));
+  const spelled = join(base, 'PROJ');
+  // A case-sensitive volume has no other spelling of the folder.
+  if (!existsSync(spelled)) ctx.skip();
+  // Windows' native realpath turns a mapped drive into \\server\share and a subst drive into its folder; macOS' gives
+  // the folder's own case. GitHub's root keeps the spelling it was given: the repositories must be under it.
+  expect(await found(spelled, 2)).toEqual([join(realpathSync(spelled), 'api')]);
+});
+
+test('repo discovery: the depth says how many levels below the root are searched', async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-depth-')));
+  repoWithCommit(join(root, 'a'));
+  repoWithCommit(join(root, 'g', 's', 'p'));
+  repoWithCommit(join(root, 'x', 'y', 'z', 'deep'));
+  expect(await found(root, 1)).toEqual([join(root, 'a')]);
+  expect(await found(root, 3)).toEqual([join(root, 'a'), join(root, 'g', 's', 'p')]);
+  expect(await found(root, 4)).toEqual([join(root, 'a'), join(root, 'g', 's', 'p'), join(root, 'x', 'y', 'z', 'deep')]);
+});
+
+test('repo discovery: a repo inside a repo is found, even one its parent ignores', async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-nested-')));
+  const hub = join(root, 'hub');
+  repoWithCommit(hub);
+  writeFileSync(join(hub, '.gitignore'), 'guides/\n');
+  repoWithCommit(join(hub, 'guides'));
+  repoWithCommit(join(hub, 'tools', 'ops'));
+  // Hidden folders and node_modules stay skipped inside a repo too.
+  repoWithCommit(join(hub, '.claude', 'x'));
+  repoWithCommit(join(hub, 'node_modules', 'p'));
+  expect(await found(root, 3)).toEqual([hub, join(hub, 'guides'), join(hub, 'tools', 'ops')]);
+});
+
+posixTest('repo discovery: a symlink back to the root ends at the depth, each repo once', async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-cycle-')));
+  repoWithCommit(join(root, 'api'));
+  mkdirSync(join(root, 'a'));
+  symlinkSync(root, join(root, 'a', 'loop'));
+  expect(await found(root, 5)).toEqual([join(root, 'api')]);
+});
+
+test('repo discovery: past the folder cap the scan stops and says so, shallow repos found first', async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-cap-')));
+  for (let i = 0; i < 30; i++) mkdirSync(join(root, `d${String(i).padStart(2, '0')}`, 'inner'), { recursive: true });
+  repoWithCommit(join(root, 'zz'));
+  repoWithCommit(join(root, 'd29', 'inner', 'deep'));
+  // Level by level: the root's own children are checked before the cap stops the folders below them.
+  expect(await discoverRepos(root, { depth: 3, maxFolders: 10 })).toEqual({ repos: [join(root, 'zz')], capped: true });
+  expect(await discoverRepos(root, { depth: 3 })).toEqual({ repos: [join(root, 'd29', 'inner', 'deep'), join(root, 'zz')], capped: false });
 });
 
 test('status: modified, added, deleted, renamed, untracked in a new folder, counts', async () => {
@@ -269,7 +323,7 @@ posixTest('file index for ⌘K: tracked and untracked non-ignored, in all repos,
   writeFileSync(join(root, 'dev.sh'), 'x');
   mkdirSync(join(root, 'node_modules', 'p'), { recursive: true });
   writeFileSync(join(root, 'node_modules', 'p', 'i.js'), 'x');
-  const files = (await buildFileIndex(root, discoverRepos(root))).map((f) => f.rel).sort();
+  const files = (await buildFileIndex(root, await found(root, 2))).map((f) => f.rel).sort();
   expect(files).toEqual(['app/.gitignore', 'app/a.ts', 'app/new.ts', 'app/old.ts', 'app/to-rename.ts', 'dev.sh']);
 });
 
@@ -280,7 +334,7 @@ test('file index: a repo reached through a symlink to outside the project adds n
   repoWithCommit(join(base, 'elsewhere', 'api'));
   symlinkSync(join(base, 'elsewhere', 'api'), join(root, 'api'));
   writeFileSync(join(root, 'dev.sh'), 'x');
-  const files = await buildFileIndex(root, discoverRepos(root));
+  const files = await buildFileIndex(root, await found(root, 2));
   expect(files).toEqual([{ path: join(root, 'dev.sh'), rel: 'dev.sh' }]);
 });
 

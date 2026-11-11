@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type { FileChange, RepoStatus } from '@shared/git';
 import type { ScmRepoEntry } from '@shared/scm';
-import { allRows, blockView, firstLine, foldedOf, hasBody, idleTip, runningLabel, syncAbility, syncTotals, viewCommand, withFirstLine } from './all-view';
+import { nearScreen, allRows, blockView, firstLine, foldedOf, hasBody, idleTip, runningLabel, syncAbility, syncTotals, viewCommand, withFirstLine } from './all-view';
 
 // Source Control's All Repositories view: the order of the blocks, what each
 // header marks and which one button each block shows. Nothing here moves a block by itself.
@@ -10,8 +10,15 @@ const ch = (rel: string): FileChange => ({ path: `/p/${rel}`, rel, kind: 'M', st
 const st = (root: string, o: Partial<RepoStatus> = {}): RepoStatus => ({
   root, name: root.split('/').pop()!, branch: 'dev', detached: false, ahead: 0, behind: 0, upstream: 'origin/dev', changes: [], oid: 'a'.repeat(40), checkedAt: 1, truncated: 0, ...o
 });
-const entry = (root: string, rel: string, worktreeOf: string | null = null): ScmRepoEntry => ({ root, rel, name: rel.split('/').pop()!, worktreeOf, common: `${worktreeOf ?? root}/.git`, status: null });
+const entry = (root: string, rel: string, worktreeOf: string | null = null, nestedIn: string | null = null): ScmRepoEntry => ({ root, rel, name: rel.split('/').pop()!, worktreeOf, nestedIn, common: `${worktreeOf ?? root}/.git`, status: null });
 const commit = { staged: 0, offered: false, block: null };
+
+test('a block watches for the screen inside the list that scrolls, 200 px ahead (the viewport would never see it coming)', () => {
+  const list = { id: 'list' };
+  const block = { closest: (sel: string) => (sel === '.scm-all-list' ? list : null) };
+  expect(nearScreen(block as never)).toEqual({ root: list, rootMargin: '200px' });
+  expect(nearScreen({ closest: () => null } as never)).toEqual({ root: null, rootMargin: '200px' });
+});
 
 describe('allRows', () => {
   const repos = [st('/p/web'), st('/p/api'), st('/p/api/.worktrees/x', { worktreeOf: '/p/api' })];
@@ -19,6 +26,14 @@ describe('allRows', () => {
 
   test('repositories by their label, each followed by its worktrees', () => {
     expect(allRows(repos, entries).map((r) => [r.name, r.worktree])).toEqual([['api', false], ['x', true], ['web', false]]);
+  });
+
+  test('a nested repository carries its note and tip; repositories and worktrees otherwise none', () => {
+    const more = [...repos, st('/p/api/sdk')];
+    const ents = [...entries, entry('/p/api/sdk', 'api/sdk', null, '/p/api')];
+    expect(allRows(more, ents).map((r) => [r.dir + r.name, r.note, r.tip])).toEqual([
+      ['api', null, null], ['x', null, null], ['api/sdk', 'nested', 'Inside api'], ['web', null, null]
+    ]);
   });
 
   test('a working tree added keeps everyone else where they were', () => {
@@ -138,7 +153,7 @@ test('viewCommand: the palette offers the other view, and none with a single rep
 });
 
 test('foldedOf: worktrees start folded, repositories open; a fold by hand wins both ways', () => {
-  const repo = { root: '/p/a', name: 'a', dir: '', worktree: false, status: st('/p/a') };
+  const repo = { root: '/p/a', name: 'a', dir: '', worktree: false, status: st('/p/a'), note: null, tip: null };
   const wt = { ...repo, root: '/p/a/wt', worktree: true };
   expect([foldedOf(repo, {}), foldedOf(wt, {})]).toEqual([false, true]);
   expect([foldedOf(repo, { '/p/a': true }), foldedOf(wt, { '/p/a/wt': false })]).toEqual([true, false]);

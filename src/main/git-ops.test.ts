@@ -50,7 +50,7 @@ function world(o: {
   const project = o.project ?? '/p';
   const settings: GitOpsSettings = { gitActions: 'on', commitMessages: 'haiku', commitUsePrompts: true, commitLanguage: 'commits' };
   const status: RepoStatus = { root, name: 'acme-store', branch: 'main', detached: false, ahead: 0, behind: 0, changes: o.changes ?? [], oid: O1, checkedAt: 1, truncated: 0 };
-  const entry: ScmRepoEntry = { root, rel: '', name: 'acme-store', worktreeOf: null, common: `${root}/.git`, status: null };
+  const entry: ScmRepoEntry = { root, rel: '', name: 'acme-store', worktreeOf: null, nestedIn: null, common: `${root}/.git`, status: null };
   const runs: string[][] = []; const stdins: (string | undefined)[] = []; const events: GitOpEvent[] = []; const statusAsked: string[] = []; const trashed: string[] = [];
   const kept: World['kept'] = [];
   const entryFor = vi.fn(async (_key: string, r: string) => (r === root ? entry : null));
@@ -1299,7 +1299,7 @@ describe('more write guards (main)', () => {
   test('syncAll({ skip }): a listed root skipped answers needsYou live without pulling; unknown roots in skip change nothing', async () => {
     const status: ScmRepoEntry['status'] = { branch: 'main', detached: false, oid: O1, ahead: 0, behind: 2, upstream: 'origin/main', changes: 0 };
     const w = world({ reads: { aheadBehind: async () => ({ ahead: 0, behind: 2 }) } });
-    w.deps.scm.entries = async () => [{ root: '/p', rel: '', name: 'acme-store', worktreeOf: null, common: '/p/.git', status }];
+    w.deps.scm.entries = async () => [{ root: '/p', rel: '', name: 'acme-store', worktreeOf: null, nestedIn: null, common: '/p/.git', status }];
     expect(await w.ops.syncAll(K, { skip: ['/p'] })).toEqual([{ root: '/p', result: null, needsYou: 'live' }]);
     expect(w.runs).toEqual([]);
     expect(await w.ops.syncAll(K, { skip: ['/elsewhere'] })).toEqual([{ root: '/p', result: { outcome: 'ok', at: expect.any(Number), left: { ahead: 0, behind: 0 } } }]);
@@ -1311,8 +1311,8 @@ describe('more write guards (main)', () => {
     const other: ScmRepoEntry['status'] = { branch: 'feat/x', detached: false, oid: O1, ahead: 3, behind: 1, upstream: 'origin/main', changes: 0 };
     const gone: ScmRepoEntry['status'] = { branch: 'feat/y', detached: false, oid: O1, ahead: 0, behind: 0, upstream: 'origin/feat/y', upstreamGone: true, changes: 0 };
     w.deps.scm.entries = async () => [
-      { root: '/p', rel: '', name: 'acme-store', worktreeOf: null, common: '/p/.git', status: other },
-      { root: '/p/b', rel: 'b', name: 'b', worktreeOf: null, common: '/p/b/.git', status: gone }
+      { root: '/p', rel: '', name: 'acme-store', worktreeOf: null, nestedIn: null, common: '/p/.git', status: other },
+      { root: '/p/b', rel: 'b', name: 'b', worktreeOf: null, nestedIn: null, common: '/p/b/.git', status: gone }
     ];
     expect(await w.ops.syncAll(K)).toEqual([{ root: '/p', result: null, needsYou: 'no-upstream' }]);
     expect(w.runs).toEqual([]);

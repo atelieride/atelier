@@ -26,6 +26,24 @@ test('several repositories: "All clean · N repos", then a row each with its bra
   expect(html).not.toMatch(/clean-ring|clean-repo\b|No changes yet/);
 });
 
+test('many repositories: a dozen rows, then one row saying how many more (the count stays the whole)', () => {
+  const repos = Array.from({ length: 20 }, (_, i) => repo(`r${String(i).padStart(2, '0')}`));
+  const html = render(repos);
+  expect(html.match(/class="clean-row"/g)).toHaveLength(12);
+  expect(text(html)).toContain('All clean · 20 repos');
+  expect(text(html)).toContain('r11 dev');
+  expect(text(html)).not.toContain('r12');
+  expect(html).toMatch(/<button[^>]*class="clean-more"[^>]*>8 more clean repositories<\/button>/);
+});
+
+test('a repository with a live session past the dozen still gets its row', () => {
+  const repos = Array.from({ length: 20 }, (_, i) => repo(`r${String(i).padStart(2, '0')}`));
+  const html = renderToStaticMarkup(createElement(CleanState, { repos, worktreesOf: () => [], live: new Set(['/p/r17']) }));
+  expect(html.match(/class="clean-row"/g)).toHaveLength(13);
+  expect(text(html)).toContain('r17 dev');
+  expect(text(html)).toContain('7 more clean repositories');
+});
+
 test('one repository: "Working tree clean", no count', () => {
   const html = render([repo('acme-store', { branch: 'main' })]);
   expect(text(html)).toBe('Working tree clean acme-store main');

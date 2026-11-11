@@ -89,9 +89,10 @@ const info = (text: string, action?: ToastActions, ms?: number) => st().showToas
 /** A toast's text with what git also reported when the op was done all the same (a failing post-checkout hook). */
 const noted = (text: string, r: GitOpResult) => (r.warning ? `${text}. ${r.warning}` : text);
 
-export async function refreshFacts(root: string): Promise<GitFacts | null> {
+/** `view`: for a view of many repositories (All Repositories' blocks): main reads it when a read slot is free. */
+export async function refreshFacts(root: string, o?: { view: true }): Promise<GitFacts | null> {
   let facts: GitFacts | null = null;
-  try { facts = await api().facts(root); } catch { /* none */ }
+  try { facts = await (o ? api().facts(root, o) : api().facts(root)); } catch { /* none */ }
   st().setGitFacts(root, facts);
   return facts;
 }

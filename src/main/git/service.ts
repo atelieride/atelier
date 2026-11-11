@@ -4,6 +4,7 @@ import { isBelow, isInside, isRepoRel } from '@shared/paths';
 import type { RepoStatus } from '@shared/git';
 import { DIFF_GUARDS as GUARDS, SHOW_GUARDS, runGit } from './exec';
 import { parseNumstat, parseStatusV2 } from './parse';
+import { gitReadLimiter, type ReadLimiter } from './read-limiter';
 const MAX_COUNT_BYTES = 5 * 1024 * 1024;
 
 /** Line count of an untracked file (null if binary or too large). Async: does not block the main process. */
@@ -77,48 +78,78 @@ export async function readHeadContent(repo: string, rel: string): Promise<string
 }
 
 /**
- * One refresh at a time per repo; requests made while one is running collapse into a single follow-up. `soon` (after
- * an Atelier git write, the user waiting on a click) skips the spacing between reads, never the one-at-a-time.
+ * One refresh at a time per repo; requests made while one is running collapse into a single follow-up. Reads wait for
+ * a slot of the limiter shared by every repository: `bulk` ones (a whole project refreshed) after the others. `soon`
+ * (after an Atelier git write, the user waiting on a click) skips the spacing between reads and the limiter's queue,
+ * never the one-at-a-time.
  */
 export class StatusScheduler {
-  private running = new Set<string>();
-  private queued = new Set<string>();
+  /** A read asked for: waiting for a slot ('queued', with its level) or under way ('started'). */
+  private running = new Map<string, 'live' | 'bulk' | 'started'>();
+  /** A follow-up asked during a read: true while every request for it was bulk (then it reads as bulk). */
+  private queued = new Map<string, boolean>();
   private queuedSoon = new Set<string>();
   private lastStart = new Map<string, number>();
-  private waiting = new Map<string, NodeJS.Timeout>();
+  private waiting = new Map<string, { timer: NodeJS.Timeout; bulk: boolean }>();
   private listeners: ((s: RepoStatus) => void)[] = [];
 
   /** minIntervalMs: minimum time between the starts of two reads of the same repo (no bursts of git status). */
-  constructor(private readonly read: (repo: string) => Promise<RepoStatus> = readRepoStatus, private readonly minIntervalMs = 1000) {}
+  constructor(private readonly read: (repo: string) => Promise<RepoStatus> = readRepoStatus, private readonly minIntervalMs = 1000,
+    private readonly limiter: ReadLimiter = gitReadLimiter) {}
 
   onResult(cb: (s: RepoStatus) => void): void { this.listeners.push(cb); }
 
-  request(repo: string, o: { soon?: boolean } = {}): void {
-    if (this.running.has(repo)) {
-      this.queued.add(repo);
+  request(repo: string, o: { soon?: boolean; bulk?: boolean } = {}): void {
+    const state = this.running.get(repo);
+    if (state === 'started') {
+      this.queued.set(repo, (this.queued.get(repo) ?? true) && !!o.bulk);
       if (o.soon) this.queuedSoon.add(repo);
       return;
     }
-    const timer = this.waiting.get(repo);
-    if (timer) {
-      if (!o.soon) return;
-      clearTimeout(timer);
-      this.waiting.delete(repo);
-    }
-    const wait = o.soon ? 0 : (this.lastStart.get(repo) ?? -Infinity) + this.minIntervalMs - Date.now();
-    if (wait > 0) {
-      this.waiting.set(repo, setTimeout(() => { this.waiting.delete(repo); this.request(repo); }, wait));
+    // Still waiting for a slot: it reads after this request anyway, only sooner if asked.
+    if (state) {
+      if (o.soon) this.limiter.promote(repo, 'now');
+      else if (!o.bulk && state === 'bulk') { this.running.set(repo, 'live'); this.limiter.promote(repo, 'live'); }
       return;
     }
-    this.running.add(repo);
-    this.lastStart.set(repo, Date.now());
-    void this.read(repo).then((s) => {
+    const spaced = this.waiting.get(repo);
+    if (spaced) {
+      // A live request keeps the spacing but no longer waits behind bulk reads once it is over.
+      if (!o.soon) { if (!o.bulk) spaced.bulk = false; return; }
+      clearTimeout(spaced.timer);
+      this.waiting.delete(repo);
+    }
+    const bulk = !o.soon && !!o.bulk;
+    const wait = o.soon ? 0 : (this.lastStart.get(repo) ?? -Infinity) + this.minIntervalMs - Date.now();
+    if (wait > 0) {
+      const entry = { timer: setTimeout(() => { this.waiting.delete(repo); this.request(repo, { bulk: entry.bulk }); }, wait), bulk };
+      this.waiting.set(repo, entry);
+      return;
+    }
+    const start = () => {
+      this.running.set(repo, 'started');
+      this.lastStart.set(repo, Date.now());
+      return this.read(repo);
+    };
+    this.running.set(repo, bulk ? 'bulk' : 'live');
+    const reading = o.soon ? start() : this.limiter.run(bulk ? 'bulk' : 'live', start, repo);
+    void reading.then((s) => {
       for (const l of this.listeners) l(s);
-    }).finally(() => {
+    }, () => { /* a failed read: the next request reads again */ }).finally(() => {
       this.running.delete(repo);
       const soon = this.queuedSoon.delete(repo);
-      if (this.queued.delete(repo)) this.request(repo, { soon });
+      const followUp = this.queued.get(repo);
+      if (followUp === undefined) return;
+      this.queued.delete(repo);
+      this.request(repo, { soon, bulk: followUp });
     });
+  }
+
+  /** A repository gone from every project: its spacing goes (back later, it is read at once). */
+  forget(repo: string): void {
+    this.lastStart.delete(repo);
+    const spaced = this.waiting.get(repo);
+    if (spaced) { clearTimeout(spaced.timer); this.waiting.delete(repo); }
   }
 }
 
@@ -145,10 +176,12 @@ export async function buildFileIndex(root: string, repos: string[]): Promise<{ p
     if (!isInside(root, r)) continue;
     const listed = await listRepoFiles(r);
     if (!listed) { unread.push(r); continue; }
+    // A nested repo lists its own files: the outer repo's files that sit inside a nested one are skipped. Only the
+    // repos inside this one are looked at (with hundreds of repos found, checking every one per file adds up).
+    const inner = repos.filter((o) => o !== r && isBelow(r, o));
     for (const f of listed) {
       const p = join(r, f);
-      // a nested repo lists its own files: the outer repo's files that sit inside a nested one are skipped
-      if (repos.some((o) => o !== r && isBelow(r, o) && isBelow(o, p))) continue;
+      if (inner.length && inner.some((o) => isBelow(o, p))) continue;
       out.push({ path: p, rel: relOf(p) });
       if (out.length >= MAX_INDEX) return out;
     }

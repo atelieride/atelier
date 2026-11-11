@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChangeKind, RepoStatus } from '@shared/git';
 import type { TerminalInfo } from '@shared/protocol';
-import { buildRows, clashChipLabels, clashChipsShown, clashSessionTip, cleanRepos, unreadableRepos, fileList, groupBySession, locationRows, overlapGroups, sessionOrderKey, sureBy, touchedBy, unsureOf, type ChangeBy, type ChangeRow } from '../changes';
+import { CHANGES_CAP, capShown, sessionRoots, buildRows, clashChipLabels, clashChipsShown, clashSessionTip, cleanRepos, unreadableRepos, fileList, groupBySession, locationRows, overlapGroups, sessionOrderKey, sureBy, touchedBy, unsureOf, type ChangeBy, type ChangeRow } from '../changes';
 import { OriginMarks } from './OriginMarks';
 import { branchLabel, toMerge, hideWorktreeFolders, isWorktree, locationOf, meetGroups, nestWorktrees, realPath, showLocations, treeOf, type MeetSide, type WtView } from '../worktrees';
 import { effectiveState } from '@shared/background';
@@ -12,6 +12,7 @@ import { t } from '../i18n/en';
 import type { MenuItem } from '../menu-model';
 import { repoMenu } from '../scm/actions';
 import { useViewFetches, viewFetchKey } from '../scm/view-fetch';
+import { lookingForRepos } from '../scm/view';
 import { useApp } from '../store';
 import { FileIcon } from './FileIcon';
 import { Icon } from './Icon';
@@ -410,9 +411,16 @@ function useFlashOf(rows: ChangeRow[], open: boolean): { color: string | undefin
 
 export function ChangesPanel() {
   const rawRepos = useApp((s) => s.repos);
+  // No repository yet while the project's first folder scan runs: Changes says it looks.
+  const looking = useApp((s) => lookingForRepos(s.scmSearch));
+  // The Clean and To sync sections opened past their dozen chips.
+  const [moreClean, setMoreClean] = useState(false);
+  const [moreSync, setMoreSync] = useState(false);
   // Changes counts as viewing: every readable main repository of the window asks
-  // for a view fetch, shown by name or not, so its ↓ stays fresh; main's gates decide.
-  useViewFetches(viewFetchKey(rawRepos));
+  // for a view fetch, shown by name or not, so its ↓ stays fresh; main's gates decide. A folder of hundreds: only
+  // the ones with changes or a live session.
+  const liveRoots = useApp((s) => [...sessionRoots(s.repos.map((r) => r.root), s.terminals)].join('\n'));
+  useViewFetches(viewFetchKey(rawRepos, new Set(liveRoots ? liveRoots.split('\n') : [])));
   // A worktree's folder is its own group, never an untracked row of its repo.
   const repos = useMemo(() => hideWorktreeFolders(rawRepos), [rawRepos]);
   // Windows without Git: the views say so instead of showing every repo clean.
@@ -452,14 +460,28 @@ export function ChangesPanel() {
   const nothing = rows.length === 0 && (group === 'session' || byRepo.length === 0);
   // A worktree's chip: its name, its sync arrows, then (in Clean) what it has to merge; "To sync" leaves that out.
   const wtChip = (w: WtView, o: { merge: boolean } = { merge: true }) => (
-    <span key={w.status.root} className="chip-static mono chip-wt" data-tip={t.wt.headTip(w.status.root, branchLabel(w.status), null)}>
+    <span key={w.status.root} className="chip-static mono chip-wt" tabIndex={-1} data-tip={t.wt.headTip(w.status.root, branchLabel(w.status), null)}>
       <Icon name="branchOff" size={10} stroke={1.9} /><span className="chip-name">{w.name}</span><SyncCounts status={w.status} />
       {o.merge && w.state === 'merge' ? <span className="chip-wt-ahead">↑{toMerge(w.status)}</span> : null}
     </span>
   );
-  const repoChip = (r: RepoStatus) => <span key={r.root} className="chip-static mono"><span className="chip-name">{r.name}</span><SyncCounts status={r} /></span>;
+  const repoChip = (r: RepoStatus) => <span key={r.root} className="chip-static mono" tabIndex={-1}><span className="chip-name">{r.name}</span><SyncCounts status={r} /></span>;
   // By session: the dirty repositories' and the worktrees' arrows, at the bottom so nothing above moves.
   const toSync = group === 'session' && !nothing ? toSyncOf(mains, rows, [...nest.families.flatMap((f) => f.worktrees), ...nest.idle]) : [];
+  // A folder of hundreds of repositories: a dozen chips per section, the rest behind "+N more" (sessions' always show).
+  const live = sessionRoots(repos.map((r) => r.root), terminals);
+  const syncChips = moreSync ? { shown: toSync, more: 0 } : capShown(toSync, CHANGES_CAP, (x) => live.has(x.kind === 'repo' ? x.status.root : x.view.status.root));
+  const idleShown = group === 'repo' ? nest.idle : [];
+  const cleanChips = moreClean ? { shown: [...clean, ...idleShown], more: 0 }
+    : capShown<RepoStatus | WtView>([...clean, ...idleShown], CHANGES_CAP, (x) => live.has('root' in x ? x.root : x.status.root));
+  // "+N more" goes away under the focus: the focus moves to the first chip it showed.
+  const moreChip = (n: number, shownBefore: number, show: () => void) => (
+    <button type="button" className="chip-more mono" data-tip={t.moreReposTip(n)} onClick={(e) => {
+      const section = e.currentTarget.parentElement;
+      show();
+      requestAnimationFrame(() => section?.querySelectorAll<HTMLElement>('.chip-static')[shownBefore]?.focus());
+    }}>{t.moreRepos(n)}</button>
+  );
   const wtsOf = (root: string) => [...nest.families.flatMap((f) => f.worktrees), ...nest.idle].filter((w) => w.status.worktreeOf === root);
   // Staging: while the drawer is open every group but the one being committed folds.
   const { writes } = useStaging();
@@ -497,12 +519,12 @@ export function ChangesPanel() {
       ))}
       <Flashing.Provider value={flashing}>
       <div className="changes-body">
-        {repos.length === 0 && <p className="empty">{t.noRepos}</p>}
+        {repos.length === 0 && <p className="empty">{looking ?? t.noRepos}</p>}
         {missing && <GitMissing />}
         {unreadable.map((r) => <RepoTrouble key={r.root} name={r.name} root={r.root} error={r.error!} />)}
         {readable.length > 0 && !missing && nothing && (
           // All clean: one quiet line and a row per repo (no "Clean" section repeated below).
-          <CleanState repos={readable} worktreesOf={wtsOf} hidden={filtered ? allRows.length - rows.length : 0} />
+          <CleanState repos={readable} worktreesOf={wtsOf} hidden={filtered ? allRows.length - rows.length : 0} live={live} />
         )}
         {byRepo.map((g) => {
           const shown = shownOf(g.id, keepRepo ? groupKey('repo', keepRepo) : null);
@@ -546,7 +568,8 @@ export function ChangesPanel() {
           <div className="clean to-sync">
             <span className="clean-label to-sync-label"><Icon name="sync" size={11} stroke={2} />{t.toSync}</span>
             <span className="clean-chips">
-              {toSync.map((x) => (x.kind === 'repo' ? repoChip(x.status) : wtChip(x.view, { merge: false })))}
+              {syncChips.shown.map((x) => (x.kind === 'repo' ? repoChip(x.status) : wtChip(x.view, { merge: false })))}
+              {syncChips.more > 0 && moreChip(syncChips.more, syncChips.shown.length, () => setMoreSync(true))}
             </span>
           </div>
         )}
@@ -554,8 +577,8 @@ export function ChangesPanel() {
           <div className="clean">
             <span className="clean-label"><Icon name="check" size={11} stroke={2.4} />{t.clean}</span>
             <span className="clean-chips">
-              {clean.map(repoChip)}
-              {group === 'repo' && nest.idle.map((w) => wtChip(w))}
+              {cleanChips.shown.map((x) => ('root' in x ? repoChip(x) : wtChip(x)))}
+              {cleanChips.more > 0 && moreChip(cleanChips.more, cleanChips.shown.length, () => setMoreClean(true))}
             </span>
           </div>
         )}

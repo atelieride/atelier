@@ -139,6 +139,8 @@ export const SPECS: Record<string, Area[]> = {
   'move-window.spec.ts': ['workspace', 'files', 'terminal'],
   'shell-env-auto.spec.ts': ['terminal'],
   'scm-all.spec.ts': ['scm'],
+  // Repositories found deeper and inside others, Files and Source Control following the disk, the depth setting.
+  'repo-discovery.spec.ts': ['scm', 'files', 'changes', 'settings'],
   'source-control-fetch.spec.ts': ['scm', 'changes'],
   'source-control.spec.ts': ['scm'],
   'split-focus.spec.ts': ['workspace'],
@@ -390,6 +392,8 @@ export const SOURCES: Record<string, Area[]> = {
   'src/renderer/components/DropPill.tsx': ['files'],
   'src/renderer/components/FileIcon.tsx': ['files'],
   'src/renderer/components/FileTree.tsx': ['files'],
+  // Files following the disk: the folders a changed path shows in are listed again.
+  'src/renderer/tree-refresh.ts': ['files'],
   'src/renderer/components/FolderSheet.tsx': ['sessions', 'files'],
   'src/renderer/components/Footer.tsx': ['workspace', 'updates', 'dictation', 'databases'],
   'src/renderer/components/Header.tsx': ['workspace'],
@@ -541,6 +545,8 @@ export const SOURCES: Record<string, Area[]> = {
   'src/main/work-hub.ts': ['background'],
   // Shared
   'src/shared/attribution.ts': ['changes'],
+  // Same-name repositories told apart in Changes.
+  'src/shared/repo-names.ts': ['changes', 'scm'],
   'src/shared/automation': ['connectors', 'sessions'],
   'src/shared/background': ['background'],
   'src/shared/bash-attribution.ts': ['changes'],

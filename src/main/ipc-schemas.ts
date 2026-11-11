@@ -117,6 +117,8 @@ export const scmScopeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('compare'), base: revSchema, head: revSchema }).strict()
 ]);
 export const scmRootSchema = z.object({ root: abs }).strict();
+/** git:facts — `view`: asked by a view of many repositories, which waits for a read slot. */
+export const gitFactsSchema = z.object({ root: abs, view: z.literal(true).optional() }).strict();
 /** A listed root and why; the argv itself is fixed in git/fetch.ts. */
 export const scmFetchSchema = z.object({ root: abs, reason: z.enum(['view', 'manual']) }).strict();
 export const scmLogSchema = z.object({

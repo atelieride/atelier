@@ -34,7 +34,7 @@ export const BUILD_TIME_ONLY = [
  */
 export const BACKEND_ONLY_SHARED: readonly string[] = [
   'app-icon.ts', 'automation-run.ts', 'background-files.ts', 'background-recent.ts', 'bash-attribution.ts', 'claude-config.ts', 'claude-signals.ts', 'close-sessions.ts', 'command-attribution.ts', 'daemon-build.ts',
-  'env.ts', 'git.ts', 'helper-hash.node.ts', 'hook-paths.ts', 'loop-transcript.ts', 'paths.node.ts', 'popout.ts', 'prompt-text.ts', 'protocol.ts', 'readonly-command.ts', 'schedule-notices.ts', 'services.ts', 'session-name.ts', 'shell.ts',
+  'env.ts', 'git.ts', 'helper-hash.node.ts', 'hook-paths.ts', 'loop-transcript.ts', 'paths.node.ts', 'popout.ts', 'prompt-text.ts', 'protocol.ts', 'readonly-command.ts', 'repo-names.ts', 'schedule-notices.ts', 'services.ts', 'session-name.ts', 'shell.ts',
   'store-updates.ts', 'tool-calls.ts', 'transcript.ts', 'update-sign.node.ts', 'version.ts', 'windows-menu.ts',
   // Ask's backend: the `claude -p` argv builder, the chat digest, the rules and facts it
   // writes (live.ts too), the stream parser. The demo plays
