@@ -113,6 +113,45 @@ test('opening a project: every status is read before the ignored-file listings (
   expect(order.slice(0, firstListing).filter((s) => s === 'status')).toHaveLength(6);
 });
 
+test('a hidden worktree the first listing finds: the windows hear of it at once, and its status comes before what git ignores', async () => {
+  const root = folder();
+  repoAt(root);
+  writeFileSync(join(root, '.gitignore'), '.worktrees/\n');
+  for (const n of ['a', 'b', 'c', 'd', 'e', 'f']) repoAt(join(root, n));
+  const wt = join(root, '.worktrees', 'v2');
+  git(root, 'worktree', 'add', '-q', '-b', 'v2', wt);
+  const order: string[] = [];
+  const real = exec.runGit;
+  vi.spyOn(exec, 'runGit').mockImplementation((repo, args, ...rest) => { order.push(`${args[0]}:${repo}`); return real(repo, args, ...rest); });
+  const { h, w } = open(root);
+  // Listed: the windows are told (Source Control reloads its entries) before the worktree has a status.
+  await until(() => !!h.info(root)?.trees?.some((t) => t.root === wt));
+  const sentAtListing = w.sent.length;
+  await until(() => w.sent.length >= sentAtListing && shown(h, root, wt));
+  expect(w.sent.length).toBeGreaterThan(0);
+  const firstIgnored = order.findIndex((x) => x.startsWith('ls-files:'));
+  const wtStatus = order.indexOf(`status:${wt}`);
+  expect(wtStatus).toBeGreaterThan(-1);
+  expect(firstIgnored === -1 || wtStatus < firstIgnored).toBe(true);
+});
+
+test('the first listing tells the windows when it changes the working trees, even with no new status yet', async () => {
+  const root = folder();
+  repoAt(root);
+  writeFileSync(join(root, '.gitignore'), '.worktrees/\n');
+  const wt = join(root, '.worktrees', 'v2');
+  git(root, 'worktree', 'add', '-q', '-b', 'v2', wt);
+  // The root's status comes at once, the worktree's never: only the listing can tell the windows about it.
+  vi.spyOn(service, 'readRepoStatus').mockImplementation((repo) => (repo === wt ? new Promise(() => {}) : Promise.resolve({
+    root: repo, name: 'r', branch: 'main', detached: false, ahead: 0, behind: 0, oid: null, changes: [], checkedAt: Date.now(), truncated: 0
+  })));
+  const { h, w } = open(root);
+  await until(() => !!h.info(root)?.trees?.some((t) => t.root === wt));
+  // The same snapshot sent again right after the listing: that send is the listing's (a send with nothing new is
+  // otherwise never made).
+  await until(() => w.sent.some((s, i) => i > 0 && JSON.stringify(s) === JSON.stringify(w.sent[i - 1])), 3000);
+});
+
 test('a rescan reads no repository that stayed', async () => {
   const root = folder();
   const a = repoAt(join(root, 'a'));

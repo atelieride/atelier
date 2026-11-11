@@ -323,6 +323,8 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
   scmCollapsed: string[];
   /** Source Control's view: One repository (the switcher) or All Repositories, per project. */
   scmView: 'one' | 'all';
+  /** A view picked before the window's project was known: it wins over the saved one, and is saved with the project. */
+  scmViewAsked: 'one' | 'all' | null;
   setScmView(view: 'one' | 'all'): void;
   /** All Repositories: blocks folded (true) or unfolded (false) by hand, per project; the rest follow foldedOf. */
   scmFolds: Record<string, boolean>;
@@ -1125,10 +1127,11 @@ export const useApp = create<AppState>((set, get) => ({
   scmRefs: {},
   scmCollapsed: [],
   scmView: 'one',
+  scmViewAsked: null,
   setScmView: (scmView) => {
     const proj = get().project?.root;
     if (proj) saveScmPrefs(proj, { view: scmView });
-    set({ scmView });
+    set({ scmView, ...(proj ? {} : { scmViewAsked: scmView }) });
   },
   scmFolds: {},
   setScmFold: (root, folded, def) => {
@@ -2105,7 +2108,7 @@ export const useApp = create<AppState>((set, get) => ({
     get().loadGitProject(project.root);
     if (get().popout) {
       // A pop-out reads the project's data but owns none of its tabs: nothing pruned, hidden or restored from here.
-      const sp = loadScmPrefs(project.root);
+      const sp = scmPrefsOf(project.root);
       useApp.setState({ pins: loadPins(project.root), taskLinks: loadTaskLinks(project.root), scmCollapsed: sp.collapsed ?? [], scmView: sp.view ?? 'one', scmFolds: sp.folds ?? {}, ...(sp.repo && !get().scmRepo ? { scmRepo: sp.repo } : {}) });
       return;
     }
@@ -2118,7 +2121,7 @@ export const useApp = create<AppState>((set, get) => ({
     prunePinned();
     setHidden(prunePins(loadHidden(project.root), alive));
     useApp.setState({ taskLinks: loadTaskLinks(project.root) });
-    const sp = loadScmPrefs(project.root);
+    const sp = scmPrefsOf(project.root);
     useApp.setState({ scmCollapsed: sp.collapsed ?? [], scmView: sp.view ?? 'one', scmFolds: sp.folds ?? {}, ...(sp.repo && !get().scmRepo ? { scmRepo: sp.repo } : {}) });
     pruneLinks();
     // The list came before the project: the tabs hidden last time leave now (the selection moves as when closing them).
@@ -3404,6 +3407,18 @@ function pruneLinks(terminals = useApp.getState().terminals) {
   // The main window prunes the project's links: a pop-out never writes them.
   if (st.popout || !st.project || !st.resumablesKnown || terminals.length === 0) return;
   setTaskLinks(pruneTaskLinks(st.taskLinks, [...terminals.map((x) => x.id), ...st.resumables.map((r) => r.id), ...resuming]));
+}
+
+/**
+ * A project's saved Source Control preferences, with the view picked before the project was known (the sidebar can
+ * show its switch first): that one wins and is saved now.
+ */
+function scmPrefsOf(root: string): ReturnType<typeof loadScmPrefs> {
+  const asked = useApp.getState().scmViewAsked;
+  if (!asked) return loadScmPrefs(root);
+  saveScmPrefs(root, { view: asked });
+  useApp.setState({ scmViewAsked: null });
+  return { ...loadScmPrefs(root), view: asked };
 }
 
 /**

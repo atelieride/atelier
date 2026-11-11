@@ -152,6 +152,24 @@ test('the new-session sheet and the folder sheet replace each other (one top she
   expect(useApp.getState().folderSheet).toBeNull();
 });
 
+test('a Source Control view picked before the project is known survives the project loading, and is saved with it', () => {
+  const store = new Map<string, string>();
+  (globalThis as { localStorage?: unknown }).localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) };
+  try {
+    useApp.setState({ project: null, scmView: 'one' });
+    // The sidebar can show its switch before the window's project arrives (main lists the entries at once).
+    useApp.getState().setScmView('all');
+    useApp.getState().setProject({ root: '/p', name: 'p', realRoot: '/p' });
+    expect(useApp.getState().scmView).toBe('all');
+    useApp.setState({ scmView: 'one' });
+    useApp.getState().setProject({ root: '/p', name: 'p', realRoot: '/p' });
+    expect(useApp.getState().scmView).toBe('all');
+  } finally {
+    delete (globalThis as { localStorage?: unknown }).localStorage;
+    useApp.setState({ project: null, scmView: 'one' });
+  }
+});
+
 describe('a terminal shown from the create reply, before the daemon list', () => {
   const reset = () => useApp.setState({ terminals: [], selectedId: null, activeTab: 'term', tabOrder: [], pendingAnchor: null, project: { root: '/p', name: 'p', realRoot: '/p' } });
   const ids = () => useApp.getState().terminals.map((t) => t.id);

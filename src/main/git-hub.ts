@@ -259,8 +259,10 @@ export class GitHub {
         p.repos = [...repos];
         for (const r of repos) this.scheduler.request(r, { bulk: true });
         this.relist(p, { stale: 'all', level: 'bulk' });
-      } else this.relist(p, { stale: new Set(added), level });
-      for (const r of added) void this.ignores.refresh(r, false, first ? 'bulk' : level);
+      } else {
+        this.relist(p, { stale: new Set(added), level });
+        for (const r of added) void this.ignores.refresh(r, false, level);
+      }
     }, () => { /* folder gone: what was found stays */ }).finally(() => {
       p.discovering = null;
       const again = p.discoverAgain;
@@ -307,14 +309,23 @@ export class GitHub {
       // A repo whose last worktree went has no merge summary any more.
       for (const r of p.repos) if (p.merge.has(r) && !this.sharesCommon(p, r)) { p.merge.delete(r); this.merges.forget(r); }
       this.watchOutside(p);
-      this.broadcast(p);
+      // Working trees came or went: the windows hear of it now (Source Control's entries), not with their first status.
+      const changed = p.repos.length !== before.size || p.repos.some((r) => !before.has(r));
+      this.broadcast(p, changed);
+      // What git ignores, once the statuses of the first listing are asked for: they come first.
+      if (first) this.refreshIgnores(p);
     }, () => {
       // Listed again on the next change; meanwhile statuses prune as before.
-      if (!p.listed) { p.listed = true; for (const r of p.repos) this.scheduler.request(r, { bulk: true }); }
+      if (!p.listed) { p.listed = true; for (const r of p.repos) this.scheduler.request(r, { bulk: true }); this.refreshIgnores(p); }
     }).finally(() => {
       p.relisting = null;
       if (p.relistAgain && this.projects.get(p.key) === p) { p.relistAgain = false; this.relist(p, { stale: new Set(), level: 'bulk' }); }
     });
+  }
+
+  /** A project's first listing is done: what git ignores in each discovered repo is listed, behind everything else. */
+  private refreshIgnores(p: Project): void {
+    for (const r of p.discovered) void this.ignores.refresh(r, false, 'bulk');
   }
 
   /** Refs moved in a common dir (a commit, a fetch): the compares of its working trees are worked out again. */

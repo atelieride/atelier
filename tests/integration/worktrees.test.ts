@@ -7,7 +7,7 @@ import { expect, test, vi } from 'vitest';
 import { posixTest } from '../support/platform';
 import * as exec from '../../src/main/git/exec';
 import { readMerge } from '../../src/main/git/compare';
-import { discoverRepos as discover, listWorkingTrees, relistPlan, type RepoList } from '../../src/main/git/repos';
+import { discoverRepos as discover, listWorkingTrees, quickTrees, relistPlan, type RepoList } from '../../src/main/git/repos';
 import { gitReadLimiter } from '../../src/main/git/read-limiter';
 import { readRepoStatus } from '../../src/main/git/service';
 import { commit, git } from '../support/git-fixture';
@@ -114,6 +114,29 @@ posixTest('relisting one repository of three asks git only about it, with the sa
     commit(d, 'first', { 'x.ts': '1\n' });
     await listWorkingTrees(base, [...repos, d], again, { lists, stale: new Set() });
     expect(asked.mock.calls.map((c) => c[0])).toEqual([d, d]);
+  } finally {
+    asked.mockRestore();
+  }
+});
+
+// POSIX: git writes C:/ worktree paths on Windows.
+posixTest('before git has listed them, the working trees are read from the files git keeps: hidden linked worktrees too', async () => {
+  const root = project();
+  const hidden = join(root, '.claude', 'worktrees', 'vad');
+  git(root, 'worktree', 'add', '-q', '-b', 'worktree-vad', hidden);
+  const gone = join(root, '.worktrees', 'gone');
+  git(root, 'worktree', 'add', '-q', '-b', 'gone', gone);
+  rmSync(gone, { recursive: true, force: true });
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), 'atl-wt-out-')));
+  git(root, 'worktree', 'add', '-q', '-b', 'far', join(outside, 'far'));
+  const asked = vi.spyOn(exec, 'runGit');
+  try {
+    const trees = quickTrees(root, [root]);
+    expect(trees.map((t) => [t.root, t.worktreeOf, t.hidden, t.common])).toEqual([
+      [root, null, false, join(root, '.git')],
+      [hidden, root, true, join(root, '.git')]
+    ]);
+    expect(asked).not.toHaveBeenCalled();
   } finally {
     asked.mockRestore();
   }

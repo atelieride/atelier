@@ -1,6 +1,6 @@
-import { readFileSync, realpath as realpathCb, realpathSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpath as realpathCb, realpathSync, statSync } from 'node:fs';
 import { access, readdir, stat } from 'node:fs/promises';
-import { join, resolve, toOut } from '../cpath';
+import { dirname, join, resolve, toOut } from '../cpath';
 import { parseWorktrees } from '@shared/git-history';
 import type { ScmWorktree } from '@shared/scm';
 import { runGit } from './exec';
@@ -127,14 +127,39 @@ function commonOfGitDir(gitDir: string): string {
 const real = (p: string) => { try { return toOut(realpathSync(p)); } catch { return p; } };
 
 /**
- * The discovered repos as working trees before git has listed them: each its own, its common dir read from the files
- * git reads (no git process: Source Control can show them while a big folder's first listing runs).
+ * The project's working trees before git has listed them, read from the files git keeps (no git process: Source
+ * Control shows them at once while a big folder's first listing runs): each discovered repo, a linked one tied to its
+ * discovered main checkout, then each main checkout's linked worktrees inside the project that discovery missed
+ * (hidden folders), from `<common>/worktrees/<name>/gitdir`. Gone or outside ones are left out, as git's listing does.
  */
-export function quickTrees(discovered: readonly string[]): WorkingTree[] {
-  return discovered.map((root) => {
+export function quickTrees(projectRoot: string, discovered: readonly string[]): WorkingTree[] {
+  const known = new Set(discovered);
+  const trees = discovered.map((root) => {
     const gitDir = gitDirOfTree(root);
-    return { root, common: commonOfGitDir(gitDir ?? join(root, '.git')), gitDir, worktreeOf: null, hidden: false };
+    return { root, common: commonOfGitDir(gitDir ?? join(root, '.git')), gitDir, worktreeOf: null as string | null, hidden: false };
   });
+  const mainOf = new Map(trees.filter((t) => t.gitDir === t.common).map((t) => [t.common, t.root]));
+  for (const t of trees) if (t.gitDir !== t.common) t.worktreeOf = mainOf.get(t.common) ?? null;
+  const out: WorkingTree[] = [];
+  for (const t of trees) {
+    out.push(t);
+    if (t.gitDir !== t.common) continue;
+    let names: string[];
+    try { names = readdirSync(join(t.common, 'worktrees')); } catch { continue; }
+    const hidden: WorkingTree[] = [];
+    for (const name of names) {
+      const admin = join(t.common, 'worktrees', name);
+      let dotGit: string;
+      try { dotGit = readFileSync(join(admin, 'gitdir'), 'utf8').trim(); } catch { continue; }
+      const root = dirname(resolve(admin, dotGit));
+      if (!existsSync(root)) continue;
+      const wt = real(root);
+      if (known.has(wt) || !isBelow(projectRoot, wt)) continue;
+      hidden.push({ root: wt, common: t.common, gitDir: real(admin), worktreeOf: t.root, hidden: true });
+    }
+    out.push(...hidden.sort((a, b) => (a.root < b.root ? -1 : 1)));
+  }
+  return out;
 }
 
 /**

@@ -145,7 +145,7 @@ export class ScmHub {
   private async sendFetch(st: ScmFetchState): Promise<void> {
     for (const key of this.projects.keys()) {
       const info = this.git.info(key);
-      const commons = (info?.trees ?? quickTrees(info?.discovered ?? [])).map((t) => t.common);
+      const commons = (info?.trees ?? (info ? quickTrees(info.root, info.discovered) : [])).map((t) => t.common);
       if (!commons.includes(st.common)) continue;
       for (const wc of this.git.info(key)?.windows ?? []) if (!wc.isDestroyed()) wc.send(IPC.evScmFetch, st);
     }
@@ -186,7 +186,7 @@ export class ScmHub {
     // A window used Source Control: its fetch states and events go to it from now on.
     this.project(key);
     const withStatus = (list: ScmRepoEntry[]) => list.map((e) => ({ ...e, status: scmStatusOf(info.status.get(e.root)) }));
-    return Promise.resolve(withStatus(scmEntries(info.root, info.trees ?? quickTrees(info.discovered))));
+    return Promise.resolve(withStatus(scmEntries(info.root, info.trees ?? quickTrees(info.root, info.discovered))));
   }
 
   /**
