@@ -1,10 +1,14 @@
 // GitHub follows the disk while a project is open: repositories cloned, renamed or deleted from outside Atelier join
 // and leave without reopening it, a lower search depth drops the deeper ones, and none of it reads again the
 // repositories that stayed. Real folders, real git, the project's own watcher.
+// POSIX only, as the other GitHub tests on real folders: on Windows the tests' forced macOS platform meets C:\ paths,
+// and a folder git is reading can't be renamed (EPERM). The pieces they build on (discovery, needsRediscovery with
+// Windows separators) run on Windows in their own tests.
 import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterEach, expect, vi } from 'vitest';
+import { posixTest as test } from '../support/platform';
 import { IPC } from '../../src/shared/api';
 import type { RepoStatus } from '../../src/shared/git';
 import { GitHub } from '../../src/main/git-hub';
@@ -150,6 +154,25 @@ test('the first listing tells the windows when it changes the working trees, eve
   // The same snapshot sent again right after the listing: that send is the listing's (a send with nothing new is
   // otherwise never made).
   await until(() => w.sent.some((s, i) => i > 0 && JSON.stringify(s) === JSON.stringify(w.sent[i - 1])), 3000);
+});
+
+test('a file event during the first fill doesn\'t list what git ignores ahead of the statuses', async () => {
+  const root = folder();
+  for (const n of ['a', 'b', 'c']) repoAt(join(root, n));
+  const order: string[] = [];
+  const real = exec.runGit;
+  vi.spyOn(exec, 'runGit').mockImplementation((repo, args, ...rest) => { order.push(args[0]!); return real(repo, args, ...rest); });
+  const release: (() => void)[] = [];
+  for (let i = 0; i < 4; i++) void gitReadLimiter.run('live', () => new Promise<void>((r) => release.push(r)));
+  const { h } = open(root);
+  await until(() => (h.info(root)?.discovered.length ?? 0) === 3);
+  // A file written in a while the project opens (an editor saving, a build).
+  const p = (h as unknown as { projects: Map<string, unknown> }).projects.get(root);
+  (h as unknown as { onChanges(p: unknown, rels: Set<string>): void }).onChanges(p, new Set(['a/notes.txt']));
+  for (const r of release) r();
+  await until(() => (h.info(root)?.status.size ?? 0) === 3);
+  const firstIgnored = order.indexOf('ls-files');
+  expect(order.slice(0, firstIgnored === -1 ? order.length : firstIgnored).filter((s) => s === 'status').length).toBeGreaterThanOrEqual(3);
 });
 
 test('a rescan reads no repository that stayed', async () => {

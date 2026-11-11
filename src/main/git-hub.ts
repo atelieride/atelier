@@ -518,8 +518,9 @@ export class GitHub {
         // A change git ignores (build output, logs) needs no status; an open editor tab still hears of it below.
         const skip = kind === 'file' && this.ignores.ignored(r, relInRepo);
         if (!skip) repos.add(r);
-        // A new ignored folder (a first build) is learnt at the next listing: at most one per minute.
-        if (kind === 'file' && this.ignores.stale(r)) void this.ignores.refresh(r);
+        // A new ignored folder (a first build) is learnt at the next listing: at most one per minute. Not before the
+        // project's first listing: the listings of what git ignores follow it, behind the statuses.
+        if (kind === 'file' && p.listed && this.ignores.stale(r)) void this.ignores.refresh(r);
       }
       if (kind === 'file') files.push(abs);
     }

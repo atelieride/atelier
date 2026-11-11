@@ -109,7 +109,8 @@ test('before GitHub\'s first listing, the entries are the repositories found so 
   expect(await handlers.get('scm:repos')!(e, undefined)).toEqual([]);
   info.discovered = ['/p/api', '/p/web'];
   const entries = await handlers.get('scm:repos')!(e, undefined) as { root: string; common: string }[];
-  expect(entries.map((x) => [x.root, x.common])).toEqual([['/p/api', '/p/api/.git'], ['/p/web', '/p/web/.git']]);
+  // The tests run as macOS: on a Windows host the common dir is node:path's win32 join, hence the native separator.
+  expect(entries.map((x) => [x.root, x.common])).toEqual([['/p/api', nativeJoin('/p/api', '.git')], ['/p/web', nativeJoin('/p/web', '.git')]]);
   expect(list).not.toHaveBeenCalled();
   list.mockRestore();
 });

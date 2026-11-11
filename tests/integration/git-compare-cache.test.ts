@@ -1,9 +1,11 @@
 // Review compares every repository against its default branch after each status. Statuses now arrive one repository
 // at a time: a compare is worked out again only for the repositories whose status changed since the last one.
+// POSIX only, as the other GitHub tests on real folders: on Windows the tests' forced macOS platform meets C:\ paths.
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterEach, expect, vi } from 'vitest';
+import { posixTest as test } from '../support/platform';
 import { GitHub } from '../../src/main/git-hub';
 import * as compare from '../../src/main/git/compare';
 import { commit, git } from '../support/git-fixture';
