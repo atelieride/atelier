@@ -133,6 +133,18 @@ test('claude alias to a path: the hooks are still there', async () => {
   await until(() => /ARGS:--settings \S.*claude-settings\.json -n prova/.test(r.out));
 });
 
+test('claude alias that sets variables in front (another Claude account): they reach that claude only, ~ expanded', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'atl-av-'));
+  const bin = join(dir, 'fake');
+  writeFileSync(bin, '#!/bin/sh\necho "ARGS:$*"\necho "X=$ATL_X Y=$ATL_Y"\n');
+  chmodSync(bin, 0o755);
+  const userZ = userConfig({ '.zshrc': `PS1="$ "\nalias claude='ATL_X=~/q ATL_Y="a b" ${bin} --model m'\n` });
+  const d = await start({ userZdotdir: userZ });
+  // The marker after is computed: the command line the terminal echoes can't match it.
+  const r = run(d, 'claude x; echo "after$((1+1))=[$ATL_X]"');
+  await until(() => /ARGS:--model m --settings \S.*claude-settings\.json x/.test(r.out) && /X=\/\S+\/q Y=a b/.test(r.out) && r.out.includes('after2=[]'));
+});
+
 test('user claude function: it is respected and receives the hooks', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'atl-fn-'));
   const userZ = userConfig({ '.zshrc': `PS1="$ "\nclaude() { echo UTENTE; ${fakeClaude(dir)} "$@"; }\n` });

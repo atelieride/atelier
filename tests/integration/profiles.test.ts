@@ -440,15 +440,16 @@ test('user profile: Home/End reach the line ends in a plain emacs or vi-mode zsh
 // The Atelier profile doesn't load the user's rc, so their `claude` alias (e.g. alias claude=~/.claude/local/claude)
 // is captured with the environment. Every claude here is a fake: the alias target, or fakebin first on PATH (the fake
 // user's .zprofile puts it back in front after path_helper).
-test('Atelier profile: the user\'s claude alias from the capture is used (with the hooks); one calling claude itself too', async () => {
+test('Atelier profile: the user\'s claude alias from the capture is used (with the hooks); one calling claude itself, or setting variables in front, too', async () => {
   for (const [alias, expected] of [
     ['ALIAS', (s: string) => `ALIAS-CLAUDE:--settings ${s} -n x`],
-    ['claude --from-alias', (s: string) => `PATH-CLAUDE:--from-alias --settings ${s} -n x`]
+    ['claude --from-alias', (s: string) => `PATH-CLAUDE:--from-alias --settings ${s} -n x`],
+    ['ATL_X=1 claude --from-alias', (s: string) => `PATH-CLAUDE:--from-alias --settings ${s} -n x\r\nX=1`]
   ] as const) {
     const u = fakeUser('PS1="USER-PROMPT$ "\n');
     const fakebin = join(u.home, 'fakebin');
     mkdirSync(fakebin);
-    writeFileSync(join(fakebin, 'claude'), '#!/bin/sh\necho "PATH-CLAUDE:$*"\n');
+    writeFileSync(join(fakebin, 'claude'), '#!/bin/sh\necho "PATH-CLAUDE:$*"\n[ -n "$ATL_X" ] && echo "X=$ATL_X"\nexit 0\n');
     chmodSync(join(fakebin, 'claude'), 0o755);
     const aliasBin = join(u.home, 'alias claude');
     writeFileSync(aliasBin, '#!/bin/sh\necho "ALIAS-CLAUDE:$*"\n');

@@ -95,18 +95,23 @@ fi
 if (( \${+aliases[claude]} )); then ATELIER_CLAUDE_ALIAS="\${aliases[claude]}"; unalias claude; fi
 if (( \${+functions[claude]} )); then functions -c claude _atelier_user_claude; unfunction claude; fi
 function claude {
-  local -a base
+  local -a base words pre
   if [[ -n "$ATELIER_CLAUDE_BIN" ]]; then base=("$ATELIER_CLAUDE_BIN")
   elif [[ -n "$ATELIER_E2E" ]]; then
     # e2e tests only ever run the fake claude: never the user's real Claude Code, whatever PATH says.
     print -ru2 -- REAL-CLAUDE-BLOCKED
     return 97
   elif (( \${+functions[_atelier_user_claude]} )); then base=(_atelier_user_claude)
-  elif [[ -n "$ATELIER_CLAUDE_ALIAS" ]]; then eval "base=($ATELIER_CLAUDE_ALIAS)"
+  elif [[ -n "$ATELIER_CLAUDE_ALIAS" ]]; then words=(\${(z)ATELIER_CLAUDE_ALIAS})
   # Atelier profile: the user's alias (or claude on PATH) as captured from their shell, which isn't loaded here.
-  elif [[ -n "$ATELIER_USER_CLAUDE" ]]; then eval "base=($ATELIER_USER_CLAUDE)"
+  elif [[ -n "$ATELIER_USER_CLAUDE" ]]; then words=(\${(z)ATELIER_USER_CLAUDE})
   else base=(command claude)
   fi
+  # Variables an alias sets in front (another Claude account's CLAUDE_CONFIG_DIR) hold for this claude only, ~
+  # expanded, as the alias would set them. (z) only splits the alias's text into words: nothing runs here.
+  while (( $#words )) && [[ \${words[1]} =~ '^[A-Za-z_][A-Za-z0-9_]*=' ]]; do pre+=("\${words[1]}"); shift words; done
+  if (( $#words )); then eval "base=(\${words[*]})"; elif (( $#pre )); then base=(command claude); fi
+  if (( $#pre )); then eval "local -x \${pre[*]}"; fi
   # An alias such as claude='claude --flag' would call this function again.
   [[ "\${base[1]}" == claude ]] && base=(command "\${base[@]}")
   if [[ -z "$ATELIER_SOCK" || ! -r "$ATELIER_CLAUDE_SETTINGS" ]]; then "\${base[@]}" "$@"; return; fi
