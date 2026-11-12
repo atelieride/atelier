@@ -314,6 +314,90 @@ export function powerShellArgs(script: string): string[] {
   return ['-NoLogo', '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', `try { ${load} } catch [System.Management.Automation.PSSecurityException] { ${POLICY_BLOCKED} }`];
 }
 
+/**
+ * Windows: Atelier's Git Bash integration, the file Git Bash terminals start with (`bash --rcfile <it> -i`). A login
+ * bash ignores --rcfile, so it first reads what `bash -l` would; then, as "PowerShell (your profile)": Atelier's bin
+ * first on PATH (the bridge by name), OSC 7 with the folder and the prompt signal atelierd reads (OSC 133;P with the
+ * terminal's nonce) at every prompt. Nothing else changes: the user's prompt, PATH, aliases and history stay theirs.
+ * bash 3.2-compatible (macOS runs the same file in tests), safe under the user's `set -u`.
+ */
+export const ATELIER_BASH = `# Atelier: Git Bash integration. Atelier starts Git Bash as \`bash --rcfile <this file> -i\`: a login bash would ignore
+# --rcfile, so this file first reads what \`bash -l\` reads. Your prompt, PATH and aliases stay yours.
+if [ -r /etc/profile ]; then . /etc/profile; fi
+if [ -r ~/.bash_profile ]; then . ~/.bash_profile
+elif [ -r ~/.bash_login ]; then . ~/.bash_login
+elif [ -r ~/.profile ]; then . ~/.profile
+fi
+
+if command -v cygpath >/dev/null 2>&1; then __atelier_cygpath=1; else __atelier_cygpath=; fi
+
+# The prompt signal's nonce (hex only): read once, then dropped, so no program started here sees it.
+__atelier_signal=
+case "\${ATELIER_PROMPT_NONCE:-}" in
+  ''|*[!0-9a-f]*) ;;
+  *) __atelier_signal=";atelier=\${ATELIER_PROMPT_NONCE}" ;;
+esac
+unset ATELIER_PROMPT_NONCE
+
+# Claude's settings may call atelier-bridge by name (a home that needs quoting): Atelier's bin first, back in front if
+# your files moved it, and only once.
+if [ -n "\${ATELIER_HOME:-}" ]; then
+  if [ -n "$__atelier_cygpath" ]; then __atelier_bin="$(cygpath -u "$ATELIER_HOME")/bin"; else __atelier_bin="$ATELIER_HOME/bin"; fi
+  __atelier_path=":\${PATH:-}:"
+  while [ "\${__atelier_path#*":$__atelier_bin:"}" != "$__atelier_path" ]; do
+    __atelier_path="\${__atelier_path//":$__atelier_bin:"/:}"
+  done
+  __atelier_path="\${__atelier_path#:}"
+  __atelier_path="\${__atelier_path%:}"
+  PATH="$__atelier_bin\${__atelier_path:+:$__atelier_path}"
+  export PATH
+  unset __atelier_bin __atelier_path
+fi
+
+# A folder as the path of a file: URI, percent-encoded byte by byte (run in a subshell: LC_ALL=C stays there).
+__atelier_encode() {
+  local s=$1 out= c n i
+  for (( i = 0; i < \${#s}; i++ )); do
+    c=\${s:i:1}
+    case "$c" in
+      [A-Za-z0-9/._~:-]) out+=$c ;;
+      *) printf -v n '%d' "'$c"; if (( n < 0 )); then n=$(( n + 256 )); fi; printf -v c '%%%02X' "$n"; out+=$c ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+# At every prompt, before your own prompt commands (which still see the last command's status): the folder for Atelier
+# (OSC 7, worked out again only when it changed) and the prompt signal atelierd reads (a Claude killed here is gone).
+__atelier_pwd=
+__atelier_url=
+__atelier_prompt() {
+  local s=$? p
+  if [ "$PWD" != "$__atelier_pwd" ]; then
+    __atelier_pwd=$PWD
+    p=$PWD
+    if [ -n "$__atelier_cygpath" ]; then p=$(cygpath -m "$PWD" 2>/dev/null) || p=$PWD; fi
+    case "$p" in /*) ;; *) p="/$p" ;; esac
+    # A plain assignment: as a prefix of a function call LC_ALL wouldn't switch bash's own locale.
+    __atelier_url="file://$(LC_ALL=C; __atelier_encode "$p")"
+  fi
+  printf '\\033]7;%s\\007' "$__atelier_url"
+  if [ -n "$__atelier_signal" ]; then printf '\\033]133;P%s\\007' "$__atelier_signal"; fi
+  return $s
+}
+# First: an array PROMPT_COMMAND (bash 5.1+) gets it in its first element, its other elements untouched.
+if [ -n "\${PROMPT_COMMAND:-}" ]; then
+  PROMPT_COMMAND="__atelier_prompt"$'\\n'"$PROMPT_COMMAND"
+else
+  PROMPT_COMMAND=__atelier_prompt
+fi
+`;
+
+/** Git Bash's arguments for an Atelier terminal: the integration as its rcfile (forward slashes), interactive. */
+export function gitBashArgs(rcfile: string): string[] {
+  return ['--rcfile', rcfile.replace(/\\/g, '/'), '-i'];
+}
+
 export const ZSH_FILES: Record<string, string> = {
   '.zshenv': `# Atelier\n${load('.zshenv')}`,
   '.zprofile': `# Atelier\n${load('.zprofile')}`,
