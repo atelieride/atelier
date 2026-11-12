@@ -26,7 +26,7 @@ import { openSelectedContextSheet } from './context-actions';
 import { commentOnSelection } from './comment-targets';
 import { goToChange } from './change-targets';
 import { revealActive } from './reveal';
-import { findInFilesCommand, installSearchKeys, stepSearchResult } from './search/open';
+import { findInFilesCommand, installSearchKeys, stepFromPopout } from './search/open';
 import { Palette } from './components/Palette';
 import { SessionBar, type PaneSlot } from './components/SessionBar';
 import { PanePicker } from './components/PanePicker';
@@ -493,7 +493,7 @@ export function App() {
       window.atelier.on.select((id) => { const st = useApp.getState(); st.setSettingsOpen(null); st.setActivity('sessions', { keepHidden: true }); st.select(id); }),
       window.atelier.on.serviceLines((e) => { if (useApp.getState().appendServiceLines(e.id, e.lines, e.reset, e.seq, e.live) === 'refetch') loadBuffer(e.id); }),
       window.atelier.on.backgroundFeed((f) => useApp.getState().applyBackgroundFeed(f)),
-      window.atelier.on.command((cmd) => {
+      window.atelier.on.command((cmd, from) => {
         const st = useApp.getState();
         // A pop-out's toast for one connector: its details page here.
         const connector = CONNECTOR_IDS.find((id) => cmd === `open-connector:${id}`);
@@ -515,9 +515,9 @@ export function App() {
           case 'redraw-terminal': if (st.selectedId) redrawTerminal(st.selectedId); break;
           case 'view-sessions': st.setActivity('sessions'); break;
           case 'view-files': st.setActivity('files'); break;
-          case 'find-in-files': findInFilesCommand(); break;
+          case 'find-in-files': findInFilesCommand(from === 'popout'); break;
           // F4 / ⇧F4 pressed in a pop-out: the results are this window's; the keyboard goes with the result.
-          case 'next-search-result': case 'prev-search-result': stepSearchResult(cmd === 'next-search-result' ? 1 : -1, false); break;
+          case 'next-search-result': case 'prev-search-result': stepFromPopout(cmd === 'next-search-result' ? 1 : -1); break;
           case 'view-services': if (servicesView(st.settings.showServices)) st.setActivity('services'); break;
           case 'view-scm': st.setActivity('scm'); break;
           case 'view-docker': st.setActivity('docker'); break;

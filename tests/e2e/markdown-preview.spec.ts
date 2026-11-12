@@ -5,6 +5,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } f
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { e2eEnv } from './env';
+import { layoutProblems } from './layout';
 import { look } from './shots';
 
 // Test repos isolated from the user's git configuration (global hooks, commit signing, ...).
@@ -187,9 +188,18 @@ test('the switch and ⇧⌘V: GFM rendered with Aurora, outline, front matter, a
     await expect(card.locator('.fc-sr')).toHaveText(/of 41/);
     await win.keyboard.press('Enter');
     await expect(card.locator('.fc-sr')).toHaveText(/^2 of 41/);
-    // The card doesn't sit on the outline: the outline moves down while it is open.
+    // The card doesn't sit on the outline, nor does "Search in all files" under it: the outline moves down while the
+    // card is open.
+    const all = win.locator('.file-view:visible .md-find-layer .fc-all');
+    await expect(all).toBeVisible();
+    await expect(pv.locator('.md-toc')).toBeVisible();
+    expect((await pv.boundingBox())!.width).toBeGreaterThanOrEqual(900);
     const cardBox = (await card.boundingBox())!;
-    await expect.poll(async () => (await pv.locator('.md-toc').boundingBox())!.y).toBeGreaterThan(cardBox.y + cardBox.height);
+    const allBox = (await all.boundingBox())!;
+    expect(allBox.y).toBeGreaterThanOrEqual(cardBox.y + cardBox.height);
+    await expect.poll(async () => (await pv.locator('.md-toc').boundingBox())!.y).toBeGreaterThan(allBox.y + allBox.height);
+    // Once the outline has moved: nothing of the card, the pill or the outline drawn over another.
+    await expect.poll(async () => (await layoutProblems(pv, ['.find-card', '.fc-all', '.md-toc'])).overlaps).toEqual([]);
     await look(win, join(SHOTS, '04-find.png'));
     await win.keyboard.press('Escape');
     await expect(card).toBeHidden();

@@ -44,7 +44,7 @@ test('View › Sidebar (⌘B) right after Changes, showing or hiding the sidebar
   expect(sub.find((i) => 'label' in i && i.label === 'Sidebar')).toEqual({ label: 'Sidebar', accelerator: 'CmdOrCtrl+B', command: 'toggle-sidebar' });
 });
 
-test('View › Find in Files (⇧⌘F) right after Files; on Windows the keymap gives it Shift+Alt+F, a key no other item has', () => {
+test('View › Find in Files (⌘⇧F) right after Files; on Windows the keymap gives it Shift+Alt+F, a key no other item has', () => {
   const view = MENU_SPEC.find((m) => 'label' in m && m.label === 'View');
   const sub = view && 'submenu' in view ? view.submenu : [];
   const labels = sub.map((i) => ('label' in i ? i.label : '-'));

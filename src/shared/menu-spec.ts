@@ -120,7 +120,7 @@ export const MENU_SPEC: readonly MenuSpecMenu[] = [
     sep,
     { label: 'Sessions', accelerator: 'CmdOrCtrl+Shift+1', command: 'view-sessions' },
     { label: 'Files', accelerator: 'CmdOrCtrl+Shift+2', command: 'view-files' },
-    // ⇧⌘F, Shift+Alt+F on Windows (its keymap: Ctrl+Shift+F is a terminal's find). F4 / ⇧F4 through the results are the
+    // ⌘⇧F, Shift+Alt+F on Windows (its keymap: Ctrl+Shift+F is a terminal's find). F4 / ⇧F4 through the results are the
     // page's own keys (App.tsx), never the menu's: a terminal keeps them.
     { label: 'Find in Files', accelerator: 'CmdOrCtrl+Shift+F', command: 'find-in-files' },
     // Services and Automations (2026-11-02): only once turned on in Settings (main adds them to the window's state).

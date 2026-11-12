@@ -56,7 +56,7 @@ const triggers = new TriggerEngine({
 });
 setTerminalFocuser((id) => live.get(id)?.term.focus());
 setBracketedProbe((id) => bracketedPaste(id));
-// ⇧⌘F in a terminal: what is selected there becomes the query.
+// ⌘⇧F in a terminal: what is selected there becomes the query.
 setTerminalSelection((el) => {
   for (const lt of live.values()) if (lt.host.contains(el)) return lt.term.hasSelection() ? lt.term.getSelection() : null;
   return null;

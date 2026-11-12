@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { commandPlan, isPopoutWindow, mainWindows, openProjectRoots, pageReloading, projectWindowId, windowToFront, type WindowKind } from './popout-wiring';
+import { commandFrom, commandPlan, forwardCommand, isPopoutWindow, mainWindows, openProjectRoots, pageReloading, projectWindowId, windowToFront, type WindowKind } from './popout-wiring';
 
 describe('the window the app comes forward with (a second launch, Open Atelier)', () => {
   const w = (id: number, usedAt: number, popout = false) => ({ id, popout, usedAt });
@@ -59,6 +59,28 @@ describe('pop-out windows among the windows', () => {
   test('main windows (what the file opener targets): project and welcome windows, no pop-out', () => {
     expect(mainWindows(view())).toEqual([[1, '/a'], [4, '/b'], [5, null]]);
   });
+});
+
+test('a command a pop-out forwards runs in its project window, which comes forward; F4 / ⇧F4 bring it forward only if their result opens there', () => {
+  const done: string[] = [];
+  const d = { send: (w: string, c: string) => done.push(`send ${w} ${c}`), reveal: (w: string) => done.push(`reveal ${w}`) };
+  forwardCommand('open-palette', 'main', d);
+  forwardCommand('next-search-result', 'main', d);
+  forwardCommand('prev-search-result', 'main', d);
+  forwardCommand('open-palette', null, d);
+  expect(done).toEqual(['send main open-palette', 'reveal main', 'send main next-search-result', 'send main prev-search-result']);
+  // Sent as given in a pop-out.
+  const sent: unknown[][] = [];
+  forwardCommand('find-in-files', 'main', { send: (...a) => sent.push(a), reveal: () => {} });
+  expect(sent).toEqual([['main', 'find-in-files', 'popout']]);
+});
+
+test('a command a pop-out sends on to another window says so; the window it was given in, or a project window\'s own, does not', () => {
+  const v = { projects: new Map<number, string | null>([[1, '/a'], [2, '/a']]), kinds: new Map<number, WindowKind>([[1, 'project'], [2, 'popout']]) };
+  expect(commandFrom(2, 1, v)).toBe('popout');
+  expect(commandFrom(2, 2, v)).toBeUndefined();
+  expect(commandFrom(1, 1, v)).toBeUndefined();
+  expect(commandFrom(1, 2, v)).toBeUndefined();
 });
 
 describe('commandPlan', () => {

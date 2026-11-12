@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 // e2e windows are never shown: the switches, options and the no-op reveal apply
@@ -71,6 +74,28 @@ test('every reveal is remembered with its time, in e2e too: the app comes back w
     expect([revealedAt(x), revealedAt(y)]).toEqual([1000, 2000]);
   } finally {
     vi.useRealTimers();
+  }
+});
+
+test('in e2e a test may ask which windows were brought forward: their pages, a line each, never shown', () => {
+  const log = join(mkdtempSync(join(tmpdir(), 'atl-reveal-')), 'reveals.log');
+  const had = process.env.ATELIER_TEST_REVEAL_LOG;
+  process.env.ATELIER_TEST_BACKGROUND = '1';
+  process.env.ATELIER_TEST_REVEAL_LOG = log;
+  try {
+    const a = { ...fakeWin(), webContents: { id: 7 } };
+    const b = { ...fakeWin(), webContents: { id: 9 } };
+    revealWindow(a);
+    revealWindow(b);
+    revealWindow(a);
+    expect(readFileSync(log, 'utf8')).toBe('7\n9\n7\n');
+    expect([a.show, a.focus].map((f) => f.mock.calls.length)).toEqual([0, 0]);
+    // Without the flag (a window really shown) nothing is written.
+    delete process.env.ATELIER_TEST_BACKGROUND;
+    revealWindow(b);
+    expect(readFileSync(log, 'utf8')).toBe('7\n9\n7\n');
+  } finally {
+    if (had === undefined) delete process.env.ATELIER_TEST_REVEAL_LOG; else process.env.ATELIER_TEST_REVEAL_LOG = had;
   }
 });
 

@@ -27,7 +27,7 @@ export interface FindCardProps {
   enterUp?: boolean;
   /** One neutral line under the field (a terminal on its alternate screen). */
   note?: string | null;
-  /** "Search in all files" under the card: its query and options to Find in Files (⇧⌘F in the card does the same). */
+  /** "Search in all files" under the card: its query and options to Find in Files (⌘⇧F in the card does the same). */
   onSearchAll?: () => void;
 }
 
@@ -145,7 +145,7 @@ export function FindCard(p: FindCardProps) {
       )}
     </div>
     {p.onSearchAll && (
-      <button type="button" className="fc-all" data-tip={t.find.searchAll} data-kbd={kbd('⇧⌘F')} onClick={p.onSearchAll}
+      <button type="button" className="fc-all" data-tip={t.find.searchAll} data-kbd={kbd('⌘⇧F')} onClick={p.onSearchAll}
         onContextMenu={(e) => e.stopPropagation()}>
         <Icon name="search" size={12} stroke={1.8} />{t.find.searchAll}
       </button>

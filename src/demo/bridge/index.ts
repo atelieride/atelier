@@ -91,6 +91,7 @@ export function createDemo(compiled: DemoWorld, opts: DemoBridgeOptions): DemoBr
       focus: () => resolved(undefined),
       recall: () => resolved(undefined),
       forward: () => resolved(undefined),
+      front: () => resolved(undefined),
       list: () => resolved([] as string[]),
       handoff: () => resolved(null),
       dragStart: () => resolved(undefined),

@@ -9,7 +9,7 @@ import { compileSearch } from '@shared/search-match';
 import { nearestMatch } from '../search/model';
 import { useSearch } from '../search/store';
 import { forgetFound, type FoundTarget } from '../store';
-import { RESULT_SELECT } from './comments-ext';
+import { RESULT_SELECT, resultSelection } from './result-select';
 import { setTargetLine } from './decorations';
 import { rulerMatches } from './ruler';
 
@@ -197,7 +197,7 @@ const theme = EditorView.baseTheme({
   '.cm-fif-hit-strong': { backgroundColor: 'var(--hit-strong)', boxShadow: '0 0 0 1px var(--hit-edge)', borderRadius: '3px' }
 });
 
-export const findInFilesHighlight: Extension = [hitsField, highlighter, escape, theme];
+export const findInFilesHighlight: Extension = [hitsField, resultSelection, highlighter, escape, theme];
 
 /** Lines either side of a result's own where its match is looked for once the file has changed. */
 const NEAR = 5;

@@ -1,9 +1,24 @@
 import { EditorSelection, EditorState } from '@codemirror/state';
-import { expect, test, vi } from 'vitest';
+import { afterAll, beforeAll, expect, test, vi } from 'vitest';
 
-vi.mock('../store', () => ({ useApp: { getState: () => ({}) } }));
+const app = vi.hoisted(() => ({ state: {} as Record<string, unknown>, reads: 0 }));
+vi.mock('../store', () => ({ useApp: { getState: () => { app.reads++; return app.state; } } }));
+const search = vi.hoisted(() => ({ focusField: vi.fn() }));
+vi.mock('./store', () => ({ useSearch: { getState: () => search } }));
 
-import { f4Action, hasSearchResults, searchLoaded, selectionSeed } from './open';
+import { RESULT_SELECT, resultSelection } from '../editor/result-select';
+import { cardHandsOver, f4Action, findInFilesCommand, hasSearchResults, installSearchKeys, searchLoaded, selectionSeed, stepFromPopout } from './open';
+
+// The page as these tests need it: an element that knows which selectors it sits inside, the window and document.
+class FakeEl {
+  constructor(private readonly inside: string[] = []) {}
+  closest(sel: string): FakeEl | null { return sel.split(',').some((s) => this.inside.includes(s.trim())) ? this : null; }
+}
+const g = globalThis as Record<string, unknown>;
+const saved = { window: g.window, document: g.document, input: g.HTMLInputElement, area: g.HTMLTextAreaElement };
+beforeAll(() => { g.HTMLInputElement = class {}; g.HTMLTextAreaElement = class {}; });
+afterAll(() => { g.window = saved.window; g.document = saved.document; g.HTMLInputElement = saved.input; g.HTMLTextAreaElement = saved.area; });
+const PLAIN = { query: '', matchCase: false, wholeWord: false, regex: false };
 
 const key = (k: Partial<KeyboardEvent> = {}) => ({ key: 'F4', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, isComposing: false, ...k });
 
@@ -49,9 +64,122 @@ test('before Find in Files has loaded nothing is walked and plain options apply;
   expect(hasSearchResults()).toBe(false);
   expect(selectionSeed({ text: 'a.b' })).toBe('a.b');
   let results = true;
-  searchLoaded({ hasResults: () => results, spec: () => ({ query: 'x', matchCase: false, wholeWord: false, regex: true }), step: () => {} });
+  searchLoaded({ hasResults: () => results, spec: () => ({ query: 'x', matchCase: false, wholeWord: false, regex: true }), step: () => null });
   expect(hasSearchResults()).toBe(true);
   results = false;
   expect(hasSearchResults()).toBe(false);
   expect(selectionSeed({ text: 'a.b' })).toBe('a\\.b');
+});
+
+test('the match a result selected is not a selection to search from: the query that found it stays; the user\'s own is', () => {
+  const doc = 'const store = new TokenStore();';
+  const at = doc.indexOf('TokenStore');
+  const base = EditorState.create({ doc, extensions: [resultSelection] });
+  const shown = base.update({ selection: EditorSelection.single(at, at + 10), userEvent: RESULT_SELECT }).state;
+  expect(selectionSeed({ state: shown }, true)).toBeNull();
+  // An edit elsewhere moves it along: still the result's.
+  const edited = shown.update({ changes: { from: 0, insert: '// x\n' } }).state;
+  expect(selectionSeed({ state: edited }, false)).toBeNull();
+  // The user selects something: that is the query, and so is the same text selected again by them.
+  const mine = edited.update({ selection: EditorSelection.single(5, 10), userEvent: 'select' }).state;
+  expect(selectionSeed({ state: mine }, false)).toBe('const');
+  const again = mine.update({ selection: EditorSelection.single(at + 5, at + 15), userEvent: 'select' }).state;
+  expect(selectionSeed({ state: again }, false)).toBe('TokenStore');
+});
+
+test('F4 at the window: no other key is looked at; it yields to the palette, Settings, a sheet or a menu and a terminal; a pop-out always asks its project window', () => {
+  const listeners: ((e: KeyboardEvent) => void)[] = [];
+  const forward = vi.fn(() => Promise.resolve());
+  const doc = { activeElement: new FakeEl() as unknown };
+  g.window = { addEventListener: (_t: string, fn: (e: KeyboardEvent) => void) => listeners.push(fn), removeEventListener: () => {}, atelier: { popout: { forward } } };
+  g.document = doc;
+  const step = vi.fn();
+  searchLoaded({ hasResults: () => true, spec: () => PLAIN, step });
+  installSearchKeys();
+  /** Whether the window took the key (and stopped it). */
+  const press = (k: Partial<KeyboardEvent> = {}): boolean => {
+    const e = { ...key(k), preventDefault: vi.fn(), stopPropagation: vi.fn() };
+    listeners[0]!(e as unknown as KeyboardEvent);
+    return e.preventDefault.mock.calls.length > 0;
+  };
+  app.state = {};
+  app.reads = 0;
+  expect(press({ key: 'a' })).toBe(false);
+  expect(press({ key: 'Enter' })).toBe(false);
+  expect(app.reads).toBe(0);
+  expect(press()).toBe(true);
+  expect(step).toHaveBeenLastCalledWith(1, false);
+  // From the list or the field the keyboard stays there.
+  doc.activeElement = new FakeEl(['.sidebar.is-search']);
+  expect(press({ shiftKey: true })).toBe(true);
+  expect(step).toHaveBeenLastCalledWith(-1, true);
+  step.mockClear();
+  // Something in front of the results has the keyboard, or a terminal does: the key is theirs.
+  app.state = { paletteOpen: true };
+  expect(press()).toBe(false);
+  app.state = { settingsOpen: 'appearance' };
+  expect(press()).toBe(false);
+  app.state = {};
+  for (const where of ['[role="dialog"]', '[role="menu"]', '[aria-modal="true"]', '.xterm']) {
+    doc.activeElement = new FakeEl([where]);
+    expect(press(), where).toBe(false);
+  }
+  expect(step).not.toHaveBeenCalled();
+  // A pop-out has no results of its own: its project window walks them, whatever the pop-out shows.
+  doc.activeElement = new FakeEl(['.cm-editor']);
+  app.state = { popout: { key: 'f:/p/a.ts' }, mdVisit: {} };
+  expect(press()).toBe(true);
+  expect(forward).toHaveBeenLastCalledWith('next-search-result');
+  expect(press({ shiftKey: true })).toBe(true);
+  expect(forward).toHaveBeenLastCalledWith('prev-search-result');
+  expect(step).not.toHaveBeenCalled();
+});
+
+test('F4 sent from a pop-out: this window comes forward only when the result opened in it', () => {
+  const front = vi.fn(() => Promise.resolve());
+  g.window = { atelier: { popout: { front } } };
+  let next: string | null = '/p/b.ts';
+  searchLoaded({ hasResults: () => true, spec: () => PLAIN, step: () => next });
+  app.state = { poppedOut: ['f:/p/a.ts'] };
+  stepFromPopout(1);
+  expect(front).toHaveBeenCalledTimes(1);
+  // In the pop-out's own file: that window shows it, this one stays behind.
+  next = '/p/a.ts';
+  stepFromPopout(1);
+  next = null;
+  stepFromPopout(-1);
+  expect(front).toHaveBeenCalledTimes(1);
+});
+
+test('⌘⇧F in a window without the keyboard (sent from a pop-out) starts from no selection, nor a find card\'s query', async () => {
+  const go = vi.fn();
+  const card = new FakeEl(['.find-card']);
+  cardHandsOver(card as unknown as Element, go);
+  searchLoaded({ hasResults: () => false, spec: () => PLAIN, step: () => null });
+  g.window = { getSelection: () => ({ toString: () => 'picked' }) };
+  app.state = { setActivity: vi.fn() };
+  const opened = async () => { await vi.waitFor(() => expect(search.focusField).toHaveBeenCalled()); return search.focusField.mock.lastCall?.[0] as unknown; };
+  g.document = { activeElement: card, hasFocus: () => false };
+  findInFilesCommand();
+  expect(await opened()).toBeUndefined();
+  expect(go).not.toHaveBeenCalled();
+  g.document = { activeElement: new FakeEl(), hasFocus: () => false };
+  search.focusField.mockClear();
+  findInFilesCommand();
+  expect(await opened()).toBeUndefined();
+  // With the keyboard: the card hands its query over; elsewhere the page's selection is the query.
+  g.document = { activeElement: card, hasFocus: () => true };
+  findInFilesCommand();
+  expect(go).toHaveBeenCalledTimes(1);
+  g.document = { activeElement: new FakeEl(), hasFocus: () => true };
+  search.focusField.mockClear();
+  findInFilesCommand();
+  expect(await opened()).toEqual({ ...PLAIN, query: 'picked' });
+  // Given in a pop-out: never this window's selection, even with the keyboard here by the time it arrives.
+  search.focusField.mockClear();
+  findInFilesCommand(true);
+  expect(await opened()).toBeUndefined();
+  g.document = { activeElement: card, hasFocus: () => true };
+  findInFilesCommand(true);
+  expect(go).toHaveBeenCalledTimes(1);
 });

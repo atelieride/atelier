@@ -150,32 +150,28 @@ export const ResultList = forwardRef<ResultListHandle, { rows: Row[]; onEscape: 
     return () => ro.disconnect();
   }, []);
 
+  /** The selected row whole in sight (the least scroll that does it), and the keyboard on it when `focus`. */
+  const showSelected = (focus: boolean) => {
+    const el = scroller.current;
+    if (!el || sel < 0) return;
+    const top = scrollToShow(tops, sel, el.scrollTop, el.clientHeight);
+    if (top !== el.scrollTop) {
+      el.scrollTop = top;
+      setView({ top, height: el.clientHeight, width: el.clientWidth });
+    }
+    if (focus) el.querySelector<HTMLElement>(`.fif-row[data-i="${sel}"]`)?.focus({ preventScroll: true });
+  };
+
   // Before the effect below: a selection it moves is focused on the render that follows, once that row is drawn.
   useLayoutEffect(() => {
     if (!focusAfter.current) return;
     focusAfter.current = false;
-    const el = scroller.current;
-    if (!el || sel < 0) return;
-    const top = scrollToShow(tops, sel, el.scrollTop, el.clientHeight);
-    if (top !== el.scrollTop) {
-      el.scrollTop = top;
-      setView({ top, height: el.clientHeight, width: el.clientWidth });
-    }
-    el.querySelector<HTMLElement>(`.fif-row[data-i="${sel}"]`)?.focus({ preventScroll: true });
+    showSelected(true);
   });
 
   // The selection moved from outside the list (F4, the palette): its row comes into sight, and a keyboard in the list
   // goes along with it.
-  useLayoutEffect(() => {
-    const el = scroller.current;
-    if (!el || sel < 0) return;
-    const top = scrollToShow(tops, sel, el.scrollTop, el.clientHeight);
-    if (top !== el.scrollTop) {
-      el.scrollTop = top;
-      setView({ top, height: el.clientHeight, width: el.clientWidth });
-    }
-    if (el.contains(document.activeElement)) el.querySelector<HTMLElement>(`.fif-row[data-i="${sel}"]`)?.focus({ preventScroll: true });
-  }, [selected]);
+  useLayoutEffect(() => { showSelected(!!scroller.current?.contains(document.activeElement)); }, [selected]);
 
   useLayoutEffect(() => {
     if (after.current === null) return;

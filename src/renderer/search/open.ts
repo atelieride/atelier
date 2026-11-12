@@ -1,14 +1,16 @@
-// Find in Files from anywhere in the window: View › Find in Files (⇧⌘F), the palette, a find card's "Search in all
+// Find in Files from anywhere in the window: View › Find in Files (⌘⇧F), the palette, a find card's "Search in all
 // files", the selection a search starts from, and F4 / ⇧F4 through the results. On the first paint, so kept small: the
 // view, its store and what opening a result takes load on first use.
 import type { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import type { SearchSpec } from '@shared/search';
+import { resultSelection } from '../editor/result-select';
 import { initialQuery, seedText, type FindSpec } from '../editor/find/find-logic';
+import { insideOverlay } from '../pane-focus';
 import { useApp } from '../store';
 
-/** What the first paint reaches of the search store once it has loaded, without loading it. */
-export interface LoadedSearch { hasResults(): boolean; spec(): SearchSpec; step(dir: 1 | -1, keepFocus: boolean): void }
+/** What the first paint reaches of the search store once it has loaded, without loading it (`step`: the file it opened). */
+export interface LoadedSearch { hasResults(): boolean; spec(): SearchSpec; step(dir: 1 | -1, keepFocus: boolean): string | null }
 
 const PLAIN: SearchSpec = { query: '', matchCase: false, wholeWord: false, regex: false };
 let loaded: LoadedSearch | null = null;
@@ -43,8 +45,10 @@ function focusedSelection(): SeedSource | null {
  */
 export function selectionSeed(source: SeedSource | null = focusedSelection(), regex: boolean = currentSpec().regex): string | null {
   if (!source) return null;
-  if ('state' in source) return initialQuery(source.state, { search: '', caseSensitive: false, wholeWord: false, regexp: regex, replace: '' }).search || null;
-  return seedText(source.text, regex);
+  if (!('state' in source)) return seedText(source.text, regex);
+  // The match a result selected is not the user's selection: the query that found it stays (a regular expression too).
+  if (source.state.field(resultSelection, false)?.eq(source.state.selection.main)) return null;
+  return initialQuery(source.state, { search: '', caseSensitive: false, wholeWord: false, regexp: regex, replace: '' }).search || null;
 }
 
 /** Find in Files in front (the sidebar shown), the keyboard in its field with the text selected; a seed is searched. */
@@ -53,15 +57,20 @@ export function openFindInFiles(seed?: SearchSpec): void {
   void import('./store').then((m) => m.useSearch.getState().focusField(seed));
 }
 
-/** Find cards that hand their query over: ⇧⌘F with the keyboard in one does what its "Search in all files" does. */
+/** Find cards that hand their query over: ⌘⇧F with the keyboard in one does what its "Search in all files" does. */
 const cards = new WeakMap<Element, () => void>();
 export function cardHandsOver(card: Element, go: () => void): () => void {
   cards.set(card, go);
   return () => { cards.delete(card); };
 }
 
-/** View › Find in Files (⇧⌘F): with the keyboard in a find card, its query and options; else the selection, if short. */
-export function findInFilesCommand(): void {
+/**
+ * View › Find in Files (⌘⇧F): with the keyboard in a find card, its query and options; else the selection, if short.
+ * Given in a pop-out, or reaching a window without the keyboard, nothing of this window's (a selection left in an
+ * editor here) is the query.
+ */
+export function findInFilesCommand(fromPopout = false): void {
+  if (fromPopout || !document.hasFocus()) { openFindInFiles(); return; }
   const card = document.activeElement?.closest('.find-card');
   const go = card ? cards.get(card) : undefined;
   if (go) { go(); return; }
@@ -94,19 +103,31 @@ export function stepSearchResult(dir: 1 | -1, keepFocus: boolean): void {
 }
 
 /**
+ * F4 / ⇧F4 sent from a pop-out: the results are this window's. A result in a popped-out file shows in that pop-out,
+ * which comes forward with it; one that opens here brings this window forward.
+ */
+export function stepFromPopout(dir: 1 | -1): void {
+  const path = loaded?.step(dir, false);
+  if (path && !useApp.getState().poppedOut.includes(`f:${path}`)) void window.atelier.popout.front().catch(() => {});
+}
+
+/**
  * F4 / ⇧F4 at the window, before an editor or a field has them. From the list or the field the keyboard stays there
- * to walk on; from anywhere else it follows the result into its editor. A pop-out holds no results: once one was shown
- * in it, its project window walks on, and a match in the pop-out's file comes back to it, selected and marked.
+ * to walk on; from anywhere else it follows the result into its editor. The palette, Settings, a sheet or a menu in
+ * front keeps the key (the results behind it stay put). A pop-out holds no results: its project window walks them, and
+ * a match in the pop-out's file comes back to it, selected and marked.
  */
 export function installSearchKeys(): () => void {
   const onKey = (e: KeyboardEvent) => {
+    if (e.key !== 'F4') return;
     const el = document.activeElement;
-    const { popout, mdVisit } = useApp.getState();
-    const dir = f4Action(e, !!el?.closest('.xterm'), popout ? !!mdVisit[popout.key.slice(2)] : hasSearchResults());
+    const st = useApp.getState();
+    if (st.paletteOpen || st.settingsOpen || insideOverlay(el)) return;
+    const dir = f4Action(e, !!el?.closest('.xterm'), st.popout !== null || hasSearchResults());
     if (dir === null) return;
     e.preventDefault();
     e.stopPropagation();
-    if (popout) void window.atelier.popout.forward(dir === 1 ? 'next-search-result' : 'prev-search-result').catch(() => {});
+    if (st.popout) void window.atelier.popout.forward(dir === 1 ? 'next-search-result' : 'prev-search-result').catch(() => {});
     else stepSearchResult(dir, !!el?.closest('.sidebar.is-search'));
   };
   window.addEventListener('keydown', onKey, true);

@@ -31,6 +31,7 @@ const api: AtelierApi = {
     focus: (key, reveal) => ipcRenderer.invoke(IPC.popoutFocus, { key, ...(reveal ? { reveal } : {}) }),
     recall: (key) => ipcRenderer.invoke(IPC.popoutRecall, key),
     forward: (cmd) => ipcRenderer.invoke(IPC.popoutForward, cmd),
+    front: () => ipcRenderer.invoke(IPC.popoutFront),
     list: () => ipcRenderer.invoke(IPC.popoutList),
     handoff: () => ipcRenderer.invoke(IPC.popoutHandoff),
     dragStart: () => ipcRenderer.invoke(IPC.popoutDragStart),

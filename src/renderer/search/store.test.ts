@@ -360,7 +360,8 @@ test('F4 / ⇧F4: the next and previous match across files, wrapping; a collapse
   const b: SearchFile = { path: '/p/b.ts', rel: 'b.ts', size: 7, lines: [ln(4)] };
   useSearch.setState({ ranSpec: ran, files: [a, b], collapsed: new Set([fileKey(b.path)]), dismissed: new Set([matchKey(a.path, 9, 0)]), selected: null });
   const open = () => app.openSearchResult.mock.lastCall;
-  st().step(1, false);
+  // It says which file it opened (a forwarded F4 brings the window forward only when that file opened in it).
+  expect(st().step(1, false)).toBe(a.path);
   expect(st().selected).toBe(matchKey(a.path, 4, 0));
   expect(open()).toEqual([a, a.lines[0], 0, { side: false, keepFocus: false, spec: ran }]);
   // The dismissed match is passed over; through the opener of the first paint.
@@ -379,7 +380,7 @@ test('F4 / ⇧F4: the next and previous match across files, wrapping; a collapse
   // Nothing left: nothing selected, nothing opened.
   app.openSearchResult.mockClear();
   useSearch.setState({ files: [], selected: null });
-  st().step(1, true);
+  expect(st().step(1, true)).toBeNull();
   expect(st().selected).toBeNull();
   expect(app.openSearchResult).not.toHaveBeenCalled();
 });

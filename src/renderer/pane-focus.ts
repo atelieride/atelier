@@ -69,6 +69,8 @@ export function isPaneContent(x: FocusFacts): boolean {
 }
 
 const OVERLAY = '[role="dialog"], [role="menu"], [aria-modal="true"], .palette, .settings';
+/** The element is in a sheet, menu, popover or dialog (the palette and Settings included). */
+export const insideOverlay = (el: Element | null | undefined): boolean => !!el?.closest(OVERLAY);
 /** A pane's own chrome, not its content: its header, its session bar, the tabs. */
 const PANE_CHROME = '.session-bar, .pane-head, .tabs';
 

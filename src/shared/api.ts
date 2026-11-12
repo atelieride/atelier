@@ -501,6 +501,7 @@ export const IPC = {
   popoutFocus: 'popout:focus',
   popoutRecall: 'popout:recall',
   popoutForward: 'popout:forward',
+  popoutFront: 'popout:front',
   popoutList: 'popout:list',
   popoutHandoff: 'popout:handoff',
   popoutDragStart: 'popout:drag-start',
@@ -542,6 +543,8 @@ export interface AtelierApi {
     recall(key: string): Promise<void>;
     /** Run a menu command in the main window (from a pop-out). */
     forward(cmd: MenuCommand): Promise<void>;
+    /** This project window comes forward: what a pop-out's forwarded F4 walked to opened here, not in the pop-out. */
+    front(): Promise<void>;
     /** Keys of the tabs that live in pop-outs now. */
     list(): Promise<string[]>;
     /** The editor state handed over to this pop-out, once. */
@@ -1077,7 +1080,8 @@ export interface AtelierApi {
     exit(cb: (id: string) => void): () => void;
     daemon(cb: (s: DaemonState) => void): () => void;
     usage(cb: (list: UsageEntry[]) => void): () => void;
-    command(cb: (cmd: MenuCommand) => void): () => void;
+    /** A menu command; `from` 'popout': given in a pop-out (its menu, a key it forwarded) and run in this window. */
+    command(cb: (cmd: MenuCommand, from?: 'popout') => void): () => void;
     /** Windows: this window's menu changed (profiles, accounts, its project's Git state). */
     menuModel(cb: (model: WinMenu[]) => void): () => void;
     git(cb: (repos: RepoStatus[]) => void): () => void;

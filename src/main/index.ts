@@ -31,7 +31,7 @@ import { TerminalHub } from './terminal-hub';
 import { ScreenResync, isLayoutChange } from './screen-resync';
 import { createPopoutWindow, createProjectWindow, isAppUrl, isGhostUrl, SessionEndGuard, setDictationGate } from './windows';
 import { PopoutManager, popoutFileRules, type PopoutWin, type ProjectWin } from './popouts';
-import { commandPlan, isPopoutWindow, mainWindows, openProjectRoots, pageReloading, projectWindowId, windowToFront, type WindowKind } from './popout-wiring';
+import { commandFrom, commandPlan, forwardCommand, isPopoutWindow, mainWindows, openProjectRoots, pageReloading, projectWindowId, windowToFront, type WindowKind } from './popout-wiring';
 import { CloseGuard, type CloseAnswer } from './close-guard';
 import { busyShells } from './foreground';
 import { effectiveCloseMode, projectBusy, type CloseSessionsAsk } from '@shared/close-sessions';
@@ -1405,13 +1405,19 @@ if (!app.requestSingleInstanceLock()) {
     installDbIpc(dbHub, (id) => windowProjects.get(id) ?? null, (e) => isAppUrl(e.senderFrame?.url ?? ''));
     portsHub.installIpc((id) => windowProjects.get(id) ?? null, (e) => isAppUrl(e.senderFrame?.url ?? ''), openUrl);
     prHub.installIpc((id) => windowProjects.get(id) ?? null, (e) => isAppUrl(e.senderFrame?.url ?? ''), openUrl);
+    /** A menu command to a window's page; `from` 'popout': it was given in a pop-out (its menu, a key it forwarded). */
+    const commandTo = (b: BrowserWindow, c: MenuCommand, from?: 'popout') => {
+      if (b.isDestroyed() || b.webContents.isDestroyed()) return;
+      if (from) b.webContents.send(IPC.evCommand, c, from); else b.webContents.send(IPC.evCommand, c);
+    };
     const sendCommand = (c: MenuCommand, win?: Electron.BaseWindow) => {
       const target = (win instanceof BrowserWindow ? win : null) ?? BrowserWindow.getFocusedWindow();
       if (!target) return;
       // A project window gets it as always; a pop-out keeps its tab's commands and sends the rest (rule 9).
-      const plan = commandPlan(c, target.webContents.id, windowsView);
+      const source = target.webContents.id;
+      const plan = commandPlan(c, source, windowsView);
       if (plan.close !== null) { const b = windowById(plan.close); if (b) sendTo(b, IPC.evPopoutClose); }
-      for (const id of plan.send) { const b = windowById(id); if (b) sendTo(b, IPC.evCommand, c); }
+      for (const id of plan.send) { const b = windowById(id); if (b) commandTo(b, c, commandFrom(source, id, windowsView)); }
       if (plan.reveal !== null) { const b = windowById(plan.reveal); if (b) revealWindow(b); }
     };
     installPopoutIpc({
@@ -1420,12 +1426,8 @@ if (!app.requestSingleInstanceLock()) {
       projectOf: (id) => windowProjects.get(id) ?? null,
       popouts,
       tear,
-      forward: (root, cmd) => {
-        const b = projectWindow(root);
-        if (!b) return;
-        sendTo(b, IPC.evCommand, cmd);
-        revealWindow(b);
-      },
+      forward: (root, cmd) => forwardCommand(cmd, projectWindow(root), { send: commandTo, reveal: (b) => revealWindow(b) }),
+      front: (wcId) => { const b = windowById(wcId); if (b) revealWindow(b); },
       // The opener hands the path to the pop-out's project window (targetOf) and brings that window forward. The page
       // named it: never granted (a project file or one granted before), never a folder.
       openInMain: (wcId, path, line) => {

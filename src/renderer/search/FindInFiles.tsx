@@ -294,7 +294,7 @@ function FirstOpen({ recent, onPick }: { recent: SearchSpec[]; onPick: (s: Searc
         </div>
       )}
       <p className="fif-about">{ts.about}</p>
-      <p className="fif-about is-keys">{ts.selectAndPress} <span className="kbd mono">{kbd('⇧⌘F')}</span>.</p>
+      <p className="fif-about is-keys">{ts.selectAndPress} <span className="kbd mono">{kbd('⌘⇧F')}</span>.</p>
     </div>
   );
 }

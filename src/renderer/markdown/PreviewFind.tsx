@@ -120,7 +120,7 @@ export function PreviewFind({ page, scroller, version, nonce, onClose }: {
         onAction={act}
         onToggleReplace={() => {}}
         onOtherKey={(e) => {
-          // ⇧⌘F is Find in Files' (the menu's), with this card's query.
+          // ⌘⇧F is Find in Files' (the menu's), with this card's query.
           if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'f') { setFocus((f) => ({ field: 'find', nonce: f.nonce + 1 })); return true; }
           if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g' && !isSourceControlKey(e)) { act(e.shiftKey ? 'prev' : 'next'); return true; }
           return false;

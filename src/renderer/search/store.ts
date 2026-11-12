@@ -53,9 +53,9 @@ export interface SearchState {
   /**
    * F4 / ⇧F4 and the palette's Next / Previous Search Result: the match after (before) the selected row in the list's
    * order, across files and wrapping, selected and opened in the preview tab; the keyboard stays where it is with
-   * `keepFocus`, else it goes to the editor.
+   * `keepFocus`, else it goes to the editor. The file it opened, or null for none.
    */
-  step(dir: 1 | -1, keepFocus: boolean): void;
+  step(dir: 1 | -1, keepFocus: boolean): string | null;
   onEvent(e: SearchEvent): void;
   focusField(seed?: SearchSpec): void;
 }
@@ -248,12 +248,13 @@ export const useSearch = create<SearchState>((set, get) => {
       const rows = buildRows(s.files, NONE, s.dismissed);
       const key = stepResult(rows, s.selected, dir);
       const row = key === null ? undefined : rows.find((r) => r.key === key);
-      if (row?.kind !== 'match') return;
+      if (row?.kind !== 'match') return null;
       // A collapsed file opens, so the list shows the row.
       const fk = fileKey(row.file.path);
       if (s.collapsed.has(fk)) s.toggleCollapsed(fk);
       s.select(row.key);
       useApp.getState().openSearchResult(row.file, row.line, row.index, { side: false, keepFocus, spec: s.ranSpec });
+      return row.file.path;
     },
 
     onEvent(e) {
@@ -310,8 +311,8 @@ export const useSearch = create<SearchState>((set, get) => {
   };
 });
 
-// What the first paint's opener reaches without importing this module: results to walk (and walking them), the options
-// a seed is escaped for.
+// What the first paint's opener reaches without importing this module: results to walk (and walking them), the options a
+// seed is escaped for.
 searchLoaded({
   hasResults: () => { const s = useSearch.getState(); return anyResult(s.files, s.dismissed); },
   spec: () => useSearch.getState().spec,

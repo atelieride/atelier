@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { RangeSet, RangeSetBuilder, StateEffect, StateField, type EditorState } from '@codemirror/state';
 import { Decoration, EditorView, GutterMarker, ViewPlugin, WidgetType, gutter, showTooltip, type DecorationSet, type Tooltip, type ViewUpdate } from '@codemirror/view';
 import { selectionSettle, type SelectionSettle } from './selection-settle';
+import { RESULT_SELECT } from './result-select';
 import { useApp, type CommentDraft } from '../store';
 import { t } from '../i18n/en';
 import { defaultTarget, docLineOf, isOutdated, newLineRange, snippetOf } from '../comments';
@@ -127,12 +128,6 @@ function tooltipFor(state: EditorState, onComment: (v: EditorView) => void): Too
 
 /** The selection is finished (see selection-settle.ts): its "Comment" button may show. */
 const selectionSettled = StateEffect.define<null>();
-
-/**
- * The user event of a selection made for the user rather than by them (a Find in Files result's match): it counts as
- * settled, with no "Comment" button until the user changes it.
- */
-export const RESULT_SELECT = 'select.result';
 
 /** Tells the view when its selection is finished: on mouse up after a drag, on Shift up, or after a quiet moment. */
 const settleSelection = ViewPlugin.fromClass(class {

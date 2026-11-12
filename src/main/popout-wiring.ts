@@ -48,6 +48,28 @@ export function windowToFront(wins: readonly FrontCandidate[]): number | null {
   return (used ?? wins.find((w) => !w.popout) ?? wins[0])?.id ?? null;
 }
 
+/**
+ * Forwarded commands whose project window comes forward only if their outcome shows there: F4 / ⇧F4 walk the project
+ * window's search results, and one in the pop-out's own file is shown in the pop-out, which stays in front (the project
+ * window asks to come forward itself when the result opens in it).
+ */
+const QUIET_FORWARD = new Set<MenuCommand>(['next-search-result', 'prev-search-result']);
+
+/** A menu command a pop-out forwards: run in its project window (none: nothing), as given there, which comes forward. */
+export function forwardCommand<W>(cmd: MenuCommand, win: W | null, d: { send(win: W, cmd: MenuCommand, from: 'popout'): void; reveal(win: W): void }): void {
+  if (win === null) return;
+  d.send(win, cmd, 'popout');
+  if (!QUIET_FORWARD.has(cmd)) d.reveal(win);
+}
+
+/**
+ * How a window learns where a command was given: 'popout' when a pop-out (`source`) sends it on to another window,
+ * whose page then knows the keyboard and the selection the user means are not its own.
+ */
+export function commandFrom(source: number, receiver: number, v: WindowsView): 'popout' | undefined {
+  return receiver !== source && isPopoutWindow(v, source) ? 'popout' : undefined;
+}
+
 /** Where a menu command aimed at a window goes: windows that get it, one to bring forward, a pop-out to move back. */
 export interface CommandPlan { send: number[]; reveal: number | null; close: number | null }
 

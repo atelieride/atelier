@@ -150,8 +150,10 @@ p > .md-img:only-child { display: block; margin: 4px auto; border-radius: var(--
 
 /* The outline ("On this page"): a floating card, sticky beside the page; the track fills up to the current heading. */
 .md-outline { width: clamp(236px, 20cqi, 320px); flex-shrink: 0; position: sticky; top: 0; padding: 40px 28px 24px 8px; user-select: none; transition: padding-top var(--t-med) var(--ease); }
-/* The find card floats where the outline starts: the outline steps down while it is open. */
+/* The find card floats where the outline starts: the outline steps down while it is open, further for the card's
+   "Search in all files" under it (6 px and 24 px, shown wherever the card can hand over). */
 .md-preview.has-find .md-outline { padding-top: 72px; }
+.md-preview.has-find:has(.fc-all) .md-outline { padding-top: 102px; }
 @container md-pane (max-width: 899px) { .md-outline { display: none; } }
 .md-toc { padding: 12px 10px 10px; border-radius: var(--r-lg); background: color-mix(in srgb, var(--bg-3) 50%, transparent); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--sheen) 50%, transparent), 0 0 0 1px color-mix(in srgb, var(--edge-violet-soft) 60%, transparent); animation: atl-pop var(--t-med) var(--ease) both; }
 .md-toc-head { display: flex; align-items: center; gap: 7px; padding: 0 4px 0 6px; margin-bottom: 9px; color: var(--violet); }
