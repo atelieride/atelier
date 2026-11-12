@@ -3,7 +3,7 @@
 // with its list, popover, strings and stylesheet.
 import './search.css';
 import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { SEARCH_LIMITS, type SearchSpec } from '@shared/search';
+import { SEARCH_LIMITS, type SearchSpec, type SkippedFile } from '@shared/search';
 import { compileSearch } from '@shared/search-match';
 import { Icon } from '../components/Icon';
 import { regexError } from '../editor/find/find-logic';
@@ -12,7 +12,7 @@ import { kbd } from '../kbd';
 import { useApp } from '../store';
 import { ts } from './copy';
 import { searchAreaMenu } from './menus';
-import { buildRows, fileKey, totals } from './model';
+import { anyExpanded, buildRows, rowTotals } from './model';
 import { loadRecent } from './recent';
 import { ResultList, type ResultListHandle } from './ResultList';
 import { SkippedPopover } from './SkippedPopover';
@@ -34,6 +34,12 @@ function ClearGlyph() {
 const WholeWord = (
   <span className="fc-ww">ab<svg width="13" height="4" viewBox="0 0 13 4" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true"><path d="M1 .5v2h11v-2" /></svg></span>
 );
+
+/** The store's last focus request the field answered: the store outlives the view, so a remount takes no old request. */
+let answeredNonce = 0;
+// What the field's description points at: a window has one Find in Files view.
+const whyId = 'fif-why';
+const lineId = 'fif-line';
 
 /** The small marks of a recent query's options. */
 const optionMarks = (s: SearchSpec): string => [s.matchCase && 'Aa', s.wholeWord && 'ab', s.regex && '.*'].filter(Boolean).join(' ');
@@ -84,26 +90,50 @@ function SearchView({ root }: { root: string }) {
   const includeIgnored = useSearch((s) => s.includeIgnored);
   const filtersOpen = useSearch((s) => s.filtersOpen);
   const focusNonce = useSearch((s) => s.focusNonce);
-  const [skippedOpen, setSkippedOpen] = useState(false);
+  // The search whose files-not-searched list is open: another search closes it.
+  const [skippedFor, setSkippedFor] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<ResultListHandle>(null);
   const st = useSearch.getState;
 
-  // The keyboard in the field, its text selected: when the view opens, and each time it is asked for again.
+  // The keyboard in the field, its text selected, when asked: an open on purpose (the activity item that showed the
+  // view has the keyboard, as a click or Enter on it gives it), or the store's focus request. The sidebar merely shown
+  // again (⌘B) leaves the keyboard where it is, a terminal's for one.
   useLayoutEffect(() => {
+    const asked = !!document.activeElement?.closest('.activity-bar') || focusNonce !== answeredNonce;
+    answeredNonce = focusNonce;
+    if (!asked) return;
     input.current?.focus();
     input.current?.select();
   }, [focusNonce]);
 
   const kind = useMemo(() => compileSearch(spec).kind, [spec]);
-  const rows = useMemo(() => buildRows(files, collapsed, dismissed), [files, collapsed, dismissed]);
-  const count = useMemo(() => totals(files, dismissed), [files, dismissed]);
+  // One pass over the results: the rows, and the totals read off them (a collapsed file's row carries its count).
+  const { rows, count } = useMemo(() => {
+    const built = buildRows(files, collapsed, dismissed);
+    return { rows: built, count: rowTotals(built) };
+  }, [files, collapsed, dismissed]);
   const recent = useMemo(() => (spec.query === '' ? loadRecent(root) : []), [root, spec.query === '', searchId]);
   const running = searchId !== 0 && phase === 'running';
   const live = searchId !== 0 && kind === 'ok';
-  const filtered = include.trim() !== '' || exclude.trim() !== '' || includeIgnored;
-  const anyOpen = files.some((f) => !collapsed.has(fileKey(f.path)) && !dismissed.has(fileKey(f.path)));
+  // Paths narrow the search ("Search the whole project" clears them); Include ignored files widens it: the funnel is
+  // lit for both.
+  const narrowed = include.trim() !== '' || exclude.trim() !== '';
+  const filtered = narrowed || includeIgnored;
+  const anyOpen = anyExpanded(rows);
   const empty = live && !running && phase !== 'error' && count.results === 0;
+  const skippedOpen = skippedFor !== 0 && skippedFor === searchId;
+  const skippedNote = live && !running && skipped.length > 0
+    ? <SkippedNote files={skipped} open={skippedOpen} onOpen={() => setSkippedFor(searchId)} onClose={() => setSkippedFor(0)} />
+    : null;
+
+  // The last rows gone with the keyboard on one of them (⌘⌫, ×): it goes back to the field rather than nowhere.
+  const hadRows = useRef(rows.length > 0);
+  useLayoutEffect(() => {
+    const has = rows.length > 0;
+    if (hadRows.current && !has && (!document.activeElement || document.activeElement === document.body)) input.current?.focus();
+    hadRows.current = has;
+  }, [rows.length > 0]);
   const cap = live && limitHit && !running;
   const capped = live && fileCap !== null && !running;
   const failed = searchId !== 0 && phase === 'error' && error !== null;
@@ -112,7 +142,8 @@ function SearchView({ root }: { root: string }) {
 
   const toggle = (k: Toggle) => st().setSpec({ [k]: !st().spec[k] });
   const toField = () => { input.current?.focus(); };
-  const clear = () => { st().setQuery(''); setSkippedOpen(false); toField(); };
+  const clear = () => { st().setQuery(''); toField(); };
+  const areaMenu = (e: React.MouseEvent) => { e.preventDefault(); useApp.getState().openMenu(e, searchAreaMenu()); };
 
   const onFieldKey = (e: KeyboardEvent<HTMLInputElement>) => {
     const k = e.nativeEvent;
@@ -140,7 +171,7 @@ function SearchView({ root }: { root: string }) {
       <Head>
         {running
           ? <button type="button" className="icon-btn" aria-label={ts.stop} data-tip={ts.stop} onClick={() => st().stop()}><Icon name="stop" size={14} /></button>
-          : <button type="button" className="icon-btn" aria-label={ts.refresh} data-tip={ts.refresh} disabled={spec.query === ''} onClick={() => st().run()}><Icon name="refresh" size={14} /></button>}
+          : <button type="button" className="icon-btn" aria-label={ts.refresh} data-tip={ts.refresh} disabled={kind !== 'ok'} onClick={() => st().run()}><Icon name="refresh" size={14} /></button>}
         <button type="button" className="icon-btn" aria-label={ts.clear} data-tip={ts.clear} disabled={spec.query === '' && files.length === 0} onClick={clear}><ClearGlyph /></button>
         <button type="button" className="icon-btn" aria-label={anyOpen || rows.length === 0 ? ts.collapseAll : ts.expandAll} data-tip={anyOpen || rows.length === 0 ? ts.collapseAll : ts.expandAll}
           disabled={rows.length === 0} onClick={() => st().setAllCollapsed(anyOpen)}><Icon name={anyOpen || rows.length === 0 ? 'collapseAll' : 'unfoldAll'} size={14} /></button>
@@ -150,7 +181,8 @@ function SearchView({ root }: { root: string }) {
           <div className={`fif-field${kind === 'invalid' ? ' is-error' : ''}`}>
             <span className="fif-lead" aria-hidden="true"><Icon name="search" size={14} stroke={1.8} /></span>
             <input ref={input} type="text" aria-label={ts.field} placeholder={ts.field} spellCheck={false} autoComplete="off" value={spec.query}
-              aria-invalid={kind === 'invalid' || undefined} onChange={(e) => st().setQuery(e.target.value)} onKeyDown={onFieldKey} />
+              aria-invalid={kind === 'invalid' || undefined} aria-describedby={kind === 'invalid' ? whyId : kind === 'multiline' ? lineId : undefined}
+              onChange={(e) => st().setQuery(e.target.value)} onKeyDown={onFieldKey} />
             {opt('matchCase', t.find.matchCase, '⌥C', 'Aa')}
             {opt('wholeWord', t.find.wholeWord, '⌥W', WholeWord)}
             {opt('regex', t.find.regexp, '⌥R', '.*')}
@@ -181,40 +213,36 @@ function SearchView({ root }: { root: string }) {
       </div>
 
       {live && (count.results > 0 || running) && (
-        <div className="fif-summary" onContextMenu={(e) => { e.preventDefault(); useApp.getState().openMenu(e, searchAreaMenu()); }}>
+        <div className="fif-summary" onContextMenu={areaMenu}>
           <span className="fif-totals">
             {count.results === 0 && running ? ts.searching : <Totals results={count.results} files={count.files} more={limitHit} />}
           </span>
-          {skipped.length > 0 && !running && (
-            <>
-              <span className="fif-sep" aria-hidden="true">·</span>
-              <button type="button" className="link-btn fif-skipped-link" aria-expanded={skippedOpen} onClick={() => setSkippedOpen((v) => !v)}>{ts.notSearched(skipped.length)}</button>
-            </>
-          )}
+          {skippedNote}
           <span className="grow" />
           {running && <span className="fif-counter mono">{ts.progress(progress.searched, progress.total)}</span>}
-          {skippedOpen && skipped.length > 0 && <SkippedPopover files={skipped} onClose={() => setSkippedOpen(false)} />}
         </div>
       )}
 
       {kind === 'invalid' && (
-        <div className="fif-notice is-error" role="alert">
+        <div className="fif-notice is-error" role="alert" id={whyId}>
           <span className="fif-why">{regexError(spec.query) ?? t.find.invalid}</span>
           <span>{ts.regexOff[0]} <code className="mono">.*</code> {ts.regexOff[1]}</span>
         </div>
       )}
       {spec.query === '' && <FirstOpen recent={recent} onPick={(r) => { st().setSpec(r); toField(); }} />}
-      {kind === 'multiline' && <p className="fif-state">{ts.multiline}</p>}
+      {kind === 'multiline' && <p className="fif-state" id={lineId}>{ts.multiline}</p>}
       {empty && (
-        <p className="fif-state">
+        <div className="fif-state">
           {include.trim()
             ? <>{ts.noResultsIn} <code className="mono">{include.trim()}</code>. </>
             : <>{ts.noResults} </>}
-          {filtered && <button type="button" className="link-btn fif-whole" onClick={() => st().setFilters({ include: '', exclude: '', includeIgnored: false })}>{ts.wholeProject}</button>}
-        </p>
+          {narrowed && <button type="button" className="link-btn fif-whole" onClick={() => st().setFilters({ include: '', exclude: '' })}>{ts.wholeProject}</button>}
+          {narrowed && skippedNote && ' '}
+          {skippedNote}
+        </div>
       )}
       {rows.length > 0 && <ResultList ref={list} rows={rows} onEscape={toField} />}
-      {/* What arrives with the end of a search, or after it: below the list, so the rows on screen stay where they are. */}
+      {/* What arrives with the end of a search, or after it: right below the list, so the rows on screen stay put. */}
       {(cap || capped || failed || stopped || changed) && (
         <div className="fif-foot">
           {failed && error && <div className="fif-notice is-error" role="alert"><span className="fif-why">{error.message}</span>{refreshButton}</div>}
@@ -224,6 +252,20 @@ function SearchView({ root }: { root: string }) {
           {changed && <p className="fif-quiet">{ts.stale} <span aria-hidden="true">·</span> {refreshButton}</p>}
         </div>
       )}
+      {/* The rest of the sidebar under the results: their empty area, with its menu. */}
+      {rows.length > 0 && <div className="fif-rest" onContextMenu={areaMenu} />}
+    </>
+  );
+}
+
+/** "· 2 files not searched": a link to the list of them; closed with Esc or its ×, the keyboard comes back to it. */
+function SkippedNote({ files, open, onOpen, onClose }: { files: SkippedFile[]; open: boolean; onOpen: () => void; onClose: () => void }) {
+  const link = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <span className="fif-sep" aria-hidden="true">·</span>{' '}
+      <button ref={link} type="button" className="link-btn fif-skipped-link" aria-expanded={open} onClick={() => (open ? onClose() : onOpen())}>{ts.notSearched(files.length)}</button>
+      {open && <SkippedPopover files={files} onClose={(back) => { onClose(); if (back) link.current?.focus(); }} />}
     </>
   );
 }

@@ -130,25 +130,41 @@ describe('compileSearch', () => {
 });
 
 describe('lineResult', () => {
-  it('keeps the whole line up to the cap when matches are far apart', () => {
+  it('keeps the line from its start up to the cap when matches are far apart; the end is cut', () => {
     const text = 'x'.repeat(5000);
     const r = lineResult(7, text, [[10, 14], [4900, 4904]], 2000);
     expect(r.line).toBe(7);
     expect(r.start).toBe(0);
-    expect(r.text.length).toBeLessThanOrEqual(2000);
-    expect(r.text).toBe(text.slice(0, r.text.length));
+    expect(r.text).toBe(text.slice(0, 2000));
     expect(r.ranges).toEqual([[10, 14], [4900, 4904]]);
+    expect(r).toMatchObject({ cutStart: false, cutEnd: true });
   });
 
-  it('keeps 40 characters around a single match', () => {
+  it('starts 40 characters before the first match and runs to the end of the line, within the cap', () => {
     const text = 'y'.repeat(6000);
     const r = lineResult(1, text, [[3000, 3005]], 2000);
     expect(r.start).toBe(2960);
-    expect(r.text).toBe(text.slice(2960, 3045));
-    expect(r.ranges).toEqual([[3000, 3005]]);
+    expect(r.text).toBe(text.slice(2960, 4960));
+    expect(r).toMatchObject({ cutStart: true, cutEnd: true });
+    const tail = lineResult(1, `${'a'.repeat(100)}token and the rest of the line`, [[100, 105]], 2000);
+    expect(tail).toMatchObject({ start: 60, text: `${'a'.repeat(40)}token and the rest of the line`, cutStart: true, cutEnd: false });
   });
 
-  it('keeps a short line whole', () => {
-    expect(lineResult(3, 'a token b', [[2, 7]], 2000)).toEqual({ line: 3, text: 'a token b', start: 0, ranges: [[2, 7]] });
+  it('keeps a short line whole: nothing cut', () => {
+    expect(lineResult(3, 'a token b', [[2, 7]], 2000)).toEqual({ line: 3, text: 'a token b', start: 0, ranges: [[2, 7]], cutStart: false, cutEnd: false });
+    const long = 'export function readSession(token: string, now = Date.now()): Session | null {';
+    expect(lineResult(11, long, [[28, 33]], 2000)).toMatchObject({ text: long, cutStart: false, cutEnd: false });
+  });
+
+  it('never splits a surrogate pair at either edge', () => {
+    // An emoji (two UTF-16 units) right where the kept text would start, and right where it would end.
+    const before = `${'a'.repeat(9)}😀${'b'.repeat(39)}token`;
+    const r = lineResult(1, before, [[50, 55]], 2000);
+    expect(r.start).toBe(9);
+    expect(r.text.startsWith('😀')).toBe(true);
+    const after = `token${'c'.repeat(4)}😀tail`;
+    const e = lineResult(1, after, [[0, 5]], 10);
+    expect(e.text).toBe('tokencccc');
+    expect(e.cutEnd).toBe(true);
   });
 });

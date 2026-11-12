@@ -44,9 +44,9 @@ describe('demo Find in Files', () => {
     const found = filesOf(events);
     expect(found.map((f) => f.rel)).toEqual(['src/auth/session.ts', 'src/auth/tokens.ts']);
     expect(found[0]).toMatchObject({ path: `${root}/src/auth/session.ts`, size: new TextEncoder().encode(context.state.files['src/auth/session.ts']!).length });
-    expect(found[0]!.lines.map((l) => [l.line, l.text, l.ranges])).toEqual([
-      [1, "import { TokenStore } from './tokens';", [[9, 19]]],
-      [8, 'const store = new TokenStore();', [[18, 28]]]
+    expect(found[0]!.lines.map((l) => [l.line, l.text, l.ranges, l.cutStart, l.cutEnd])).toEqual([
+      [1, "import { TokenStore } from './tokens';", [[9, 19]], false, false],
+      [8, 'const store = new TokenStore();', [[18, 28]], false, false]
     ]);
     expect(found[1]!.lines.map((l) => [l.line, l.ranges])).toEqual([[1, [[13, 23]]]]);
     // The last batch says how far the search got.

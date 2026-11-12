@@ -8,7 +8,7 @@ import type { MenuItem } from '../menu-model';
 import { useApp } from '../store';
 import { firstLine, openResult, openResultToSide } from './actions';
 import { ts } from './copy';
-import { fileKey, resultsText, type Row } from './model';
+import { anyExpanded, buildRows, lineCopy, resultsText, type Row } from './model';
 import { useSearch } from './store';
 
 type FileRow = Extract<Row, { kind: 'file' }>;
@@ -37,7 +37,7 @@ export function searchMatchMenu(row: MatchRow): MenuItem[] {
   return [
     { id: 'open', label: m.open, run: () => openResult(row.file, row.line.line) },
     sideItem(() => openResultToSide(row.file)),
-    { id: 'copy-line', label: ts.copyLine, icon: 'copy', run: () => copy(row.line.text.trimStart()) },
+    { id: 'copy-line', label: ts.copyLine, icon: 'copy', run: () => copy(lineCopy(row.line)) },
     dismissItem(row.key)
   ];
 }
@@ -45,8 +45,9 @@ export function searchMatchMenu(row: MatchRow): MenuItem[] {
 /** The list's empty area and the summary. */
 export function searchAreaMenu(): MenuItem[] {
   const s = useSearch.getState();
-  const shown = s.files.some((f) => !s.dismissed.has(fileKey(f.path)));
-  const anyOpen = s.files.some((f) => !s.collapsed.has(fileKey(f.path)));
+  const rows = buildRows(s.files, s.collapsed, s.dismissed);
+  const shown = rows.length > 0;
+  const anyOpen = anyExpanded(rows);
   return [
     { id: 'copy-all', label: ts.copyAll, icon: 'copy', disabled: !shown, run: () => copy(resultsText(s.spec, s.files, s.dismissed)) },
     'sep',

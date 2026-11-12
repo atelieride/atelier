@@ -239,12 +239,16 @@ export const useSearch = create<SearchState>((set, get) => {
         case 'batch': {
           if (s.phase !== 'running') return;
           const added: SearchFile[] = [];
-          const collapsed = new Set(s.collapsed);
+          // The same set unless a file arrives collapsed: the list rebuilds its rows only when what it shows changed.
+          let collapsed = s.collapsed;
           for (const disk of e.files) {
             // A placeholder stands for a file the page searched itself: its buffer's result, or nothing.
             const f = disk.unsaved ? buffers.get(foldPath(disk.path)) : disk;
             if (!f) continue;
-            if (listedMatches >= AUTO_COLLAPSE_AFTER) collapsed.add(fileKey(f.path));
+            if (listedMatches >= AUTO_COLLAPSE_AFTER) {
+              if (collapsed === s.collapsed) collapsed = new Set(s.collapsed);
+              collapsed.add(fileKey(f.path));
+            }
             added.push(f);
             listedMatches += matchCount(f);
           }

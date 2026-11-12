@@ -12,8 +12,8 @@ import { TREE_GIT_LETTER, treeGitMap, type TreeGit } from '../tree-git';
 import { openResult, openResultToSide } from './actions';
 import { ts } from './copy';
 import { searchAreaMenu, searchFileMenu, searchMatchMenu } from './menus';
-import { fileKey, previewWindow, type Row } from './model';
-import { leadFor, rowTops, scrollToShow, textChars, visibleRange } from './rows-geometry';
+import { fileKey, pillCount, previewWindow, treePositions, type Row } from './model';
+import { centerOn, leadFor, rowTops, scrollToShow, textChars, visibleRange } from './rows-geometry';
 import { useSearch } from './store';
 
 export interface ResultListHandle {
@@ -61,14 +61,17 @@ function LineText({ row, room }: { row: MatchRow; room: number }) {
     at = b;
   });
   if (at < p.text.length) parts.push(p.text.slice(at));
+  // The line goes on past what was kept: said so, as the row's own end (the box's own "…" covers what doesn't fit).
+  if (p.cutEnd) parts.push('…');
   return <span className="fif-text mono">{parts}</span>;
 }
 
-interface RowProps { row: Row; i: number; top: number; selected: boolean; tabbable: boolean; room: number; change: ChangeRow | undefined; git: TreeGit | undefined }
+interface RowProps { row: Row; i: number; top: number; selected: boolean; tabbable: boolean; room: number; pos: { pos: number; size: number }; change: ChangeRow | undefined; git: TreeGit | undefined }
 
-const RowView = memo(function RowView({ row, i, top, selected, tabbable, room, change, git }: RowProps) {
+const RowView = memo(function RowView({ row, i, top, selected, tabbable, room, pos, change, git }: RowProps) {
   const common = {
-    role: 'treeitem', tabIndex: tabbable ? 0 : -1, 'aria-selected': selected, 'data-key': row.key, 'data-rel': row.file.rel, 'data-i': i,
+    role: 'treeitem', tabIndex: tabbable ? 0 : -1, 'aria-selected': selected, 'aria-posinset': pos.pos, 'aria-setsize': pos.size,
+    'data-key': row.key, 'data-rel': row.file.rel, 'data-i': i,
     style: { top }, onContextMenu: (e: MouseEvent) => rowMenu(e, row),
     // The row with the keyboard is the selected one, however it got there (Tab, a click).
     onFocus: () => { const s = useSearch.getState(); if (s.selected !== row.key) s.select(row.key); }
@@ -84,7 +87,7 @@ const RowView = memo(function RowView({ row, i, top, selected, tabbable, room, c
         <span className="fif-dir mono">{dirOf(row.file.rel)}</span>
         {change && change.by.length > 0 && <span className="tree-dots"><OriginMarks row={change} /></span>}
         {git && <span className={`tree-badge mono g-${git}`}>{TREE_GIT_LETTER[git]}</span>}
-        <span className="fif-count mono">{row.count.toLocaleString('en-US')}</span>
+        <span className="fif-count mono" aria-label={ts.results(row.count)} data-tip={ts.results(row.count)}>{pillCount(row.count)}</span>
         {dismissButton(row.key)}
       </div>
     );
@@ -98,6 +101,7 @@ const RowView = memo(function RowView({ row, i, top, selected, tabbable, room, c
     </div>
   );
 }, (a, b) => a.i === b.i && a.top === b.top && a.selected === b.selected && a.tabbable === b.tabbable && a.room === b.room && a.change === b.change && a.git === b.git
+  && a.pos.pos === b.pos.pos && a.pos.size === b.pos.size
   && a.row.key === b.row.key && a.row.file === b.row.file
   && (a.row.kind === 'file' ? b.row.kind === 'file' && a.row.collapsed === b.row.collapsed && a.row.count === b.row.count : b.row.kind === 'match' && a.row.line === b.row.line));
 
@@ -108,6 +112,7 @@ export const ResultList = forwardRef<ResultListHandle, { rows: Row[]; onEscape: 
   const selected = useSearch((s) => s.selected);
   const tops = useMemo(() => rowTops(rows.map((r) => r.kind)), [rows]);
   const index = useMemo(() => new Map(rows.map((r, i) => [r.key, i])), [rows]);
+  const places = useMemo(() => treePositions(rows), [rows]);
   const sel = selected === null ? -1 : index.get(selected) ?? -1;
   /** Set when the keyboard moved the selection: the next render shows that row whole and focuses it. */
   const focusAfter = useRef(false);
@@ -134,6 +139,8 @@ export const ResultList = forwardRef<ResultListHandle, { rows: Row[]; onEscape: 
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
+    // Mounted again (the view shown again) with a row selected: back in sight, in the middle.
+    if (sel >= 0) el.scrollTop = centerOn(tops, sel, el.clientHeight);
     const measure = () => setView({ top: el.scrollTop, height: el.clientHeight, width: el.clientWidth });
     measure();
     const ro = new ResizeObserver(measure);
@@ -219,7 +226,7 @@ export const ResultList = forwardRef<ResultListHandle, { rows: Row[]; onEscape: 
       <div className="fif-canvas" role="presentation" style={{ height: tops[rows.length] }}>
         {shown.map((i) => {
           const r = rows[i]!;
-          return <RowView key={r.key} row={r} i={i} top={tops[i]!} selected={i === sel} tabbable={i === tabbable} room={room}
+          return <RowView key={r.key} row={r} i={i} top={tops[i]!} selected={i === sel} tabbable={i === tabbable} room={room} pos={places[i]!}
             change={r.kind === 'file' ? changes.get(r.file.path) : undefined} git={r.kind === 'file' ? git.get(r.file.path) : undefined} />;
         })}
       </div>

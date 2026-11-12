@@ -30,6 +30,8 @@ const strings = {
   /** "19 results in 5 files" in four pieces, the numbers apart (they are set in mono); past the cap, "20,000+ results". */
   totals: (results: number, inFiles: number, more: boolean): [string, string, string, string] =>
     [`${num(results)}${more ? '+' : ''}`, ` ${results === 1 && !more ? 'result' : 'results'} in `, num(inFiles), ` ${inFiles === 1 ? 'file' : 'files'}`],
+  /** A file's count, in its pill's tip: "3,000 results". */
+  results: (n: number) => `${num(n)} ${n === 1 ? 'result' : 'results'}`,
   searching: 'Searching…',
   progress: (searched: number, total: number) => `${num(searched)} / ${num(total)}`,
   notSearched: (n: number) => `${files(n)} not searched`,

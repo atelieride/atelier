@@ -52,6 +52,8 @@ describe('scanFile', () => {
     const r = lines(await scan(put('a token\r\nb token\r\n')));
     expect(r.lines.map((l) => l.text)).toEqual(['a token', 'b token']);
     expect(r.lines[0]!.ranges).toEqual([[2, 7]]);
+    // Short lines are kept whole: nothing cut at either end.
+    expect(r.lines.map((l) => [l.cutStart, l.cutEnd])).toEqual([[false, false], [false, false]]);
   });
 
   test('a NUL in the first 8 KB is binary', async () => {
@@ -126,6 +128,9 @@ describe('scanFile', () => {
     const r = lines(await scan(p, 'token', { ...SEARCH_LIMITS }, 20_000));
     expect(r.lines.length).toBe(1);
     expect(r.lines[0]!.text.length).toBeLessThanOrEqual(2000);
+    // Kept from its start (the first match is at column 0) up to the cap: the rest of the line is cut, and says so.
+    expect(r.lines[0]).toMatchObject({ start: 0, cutStart: false, cutEnd: true });
+    expect(r.lines[0]!.text.length).toBe(2000);
     expect(r.lines[0]!.ranges.length).toBe(5000);
     expect(r.count).toBe(5000);
   });

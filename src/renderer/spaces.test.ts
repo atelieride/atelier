@@ -19,8 +19,8 @@ describe('spaceOf', () => {
 });
 
 describe('spaceOfActivity', () => {
-  test('Sessions, Files, Services and Source Control show the Sessions space', () => {
-    for (const a of ['sessions', 'files', 'services', 'scm'] as const) expect(spaceOfActivity(a)).toBe('sessions');
+  test('Sessions, Files, Find in Files, Services and Source Control show the Sessions space', () => {
+    for (const a of ['sessions', 'files', 'search', 'services', 'scm'] as const) expect(spaceOfActivity(a)).toBe('sessions');
   });
   test('the other four show their own', () => {
     for (const a of ['docker', 'redis', 'databases', 'automations'] as const) expect(spaceOfActivity(a)).toBe(a);

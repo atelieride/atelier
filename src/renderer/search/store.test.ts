@@ -38,7 +38,7 @@ beforeAll(() => {
 afterAll(() => { g.window = had; g.localStorage = hadStorage; });
 
 const st = () => useSearch.getState();
-const ln = (line: number): SearchLine => ({ line, text: 'token', start: 0, ranges: [[0, 5]] });
+const ln = (line: number): SearchLine => ({ line, text: 'token', start: 0, ranges: [[0, 5]], cutStart: false, cutEnd: false });
 const file = (rel: string, n = 1): SearchFile => ({ path: `/p/${rel}`, rel, size: 5, lines: Array.from({ length: n }, (_, i) => ln(i + 1)) });
 const cur = () => st().searchId;
 const done = (extra: Partial<Extract<SearchEvent, { kind: 'done' }>> = {}): SearchEvent => ({ kind: 'done', searchId: cur(), searched: 1, total: 1, skipped: [], limitHit: false, fileCap: null, stopped: false, ...extra });
@@ -106,6 +106,22 @@ test('a query that cannot match (an invalid regular expression, a line break) st
   vi.advanceTimersByTime(500);
   expect(started).toHaveLength(3);
   expect(st().phase).toBe('idle');
+});
+
+test('a batch that collapses nothing keeps the collapsed set, and one with progress alone keeps the files too', () => {
+  st().setQuery('token');
+  st().run();
+  const collapsed = st().collapsed;
+  emit(batch([file('a.ts', 3)]));
+  expect(st().collapsed).toBe(collapsed);
+  const files = st().files;
+  emit(batch([]));
+  expect(st().files).toBe(files);
+  expect(st().collapsed).toBe(collapsed);
+  // Past the threshold a new file arrives collapsed: a new set then.
+  emit(batch([file('b.ts', 1000), file('c.ts', 1)]));
+  expect(st().collapsed).not.toBe(collapsed);
+  expect(st().collapsed.has(fileKey('/p/c.ts'))).toBe(true);
 });
 
 test('the id is recorded before start, so an error that beats the promise counts', () => {
@@ -260,7 +276,7 @@ test('a placeholder takes its buffer\'s result in main\'s place; one with no mat
   expect(st().files.map((f) => f.rel)).toEqual(['a.ts', 'b.ts', 'd.ts']);
   const b = st().files[1]!;
   expect(b.unsaved).toBeUndefined();
-  expect(b.lines.map((l) => [l.line, l.text])).toEqual([[2, 'buffer token']]);
+  expect(b.lines.map((l) => [l.line, l.text, l.cutStart, l.cutEnd])).toEqual([[2, 'buffer token', false, false]]);
 });
 
 test('a dirty file main never lists (ignored, hidden, filtered out) never shows', () => {

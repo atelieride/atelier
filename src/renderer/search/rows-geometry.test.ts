@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { FILE_ROW_H, MATCH_ROW_H, leadFor, rowTops, scrollToShow, textChars, visibleRange } from './rows-geometry';
+import { FILE_ROW_H, MATCH_ROW_H, centerOn, leadFor, rowTops, scrollToShow, textChars, visibleRange } from './rows-geometry';
 
 const kinds = (s: string): ('file' | 'match')[] => [...s].map((c) => (c === 'f' ? 'file' : 'match'));
 
@@ -64,6 +64,17 @@ describe('textChars and leadFor: a match never pushed out of its row', () => {
     }
     expect(leadFor(200, 5)).toBe(20);
     expect(leadFor(10, 30)).toBe(4);
+  });
+});
+
+describe('centerOn', () => {
+  test('a row brought to the middle of the viewport, the scroll clamped to the list', () => {
+    const big = rowTops(kinds(`f${'m'.repeat(100)}`)); // 26 + 100 × 22 = 2226
+    expect(centerOn(big, 50, 220)).toBe(big[50]! - (220 - MATCH_ROW_H) / 2);
+    expect(centerOn(big, 1, 220)).toBe(0);
+    expect(centerOn(big, 100, 220)).toBe(2226 - 220);
+    expect(centerOn(big, 500, 220)).toBe(0);
+    expect(centerOn(rowTops(kinds('fm')), 1, 600)).toBe(0);
   });
 });
 

@@ -12,8 +12,11 @@ export interface SearchRequest extends SearchSpec {
   unsaved: string[];
 }
 
-/** A line with matches: `text` is the kept slice of the line starting at column `start`; ranges are line columns (UTF-16). */
-export interface SearchLine { line: number; text: string; start: number; ranges: [number, number][] }
+/**
+ * A line with matches: `text` is the kept slice of the line starting at column `start`; ranges are line columns
+ * (UTF-16). `cutStart` / `cutEnd`: the line goes on before / after the kept slice.
+ */
+export interface SearchLine { line: number; text: string; start: number; ranges: [number, number][]; cutStart: boolean; cutEnd: boolean }
 
 /** `unsaved`: a placeholder for a file the page searches itself (its buffer differs from the disk); it has no lines. */
 export interface SearchFile { path: string; rel: string; size: number; lines: SearchLine[]; unsaved?: true }

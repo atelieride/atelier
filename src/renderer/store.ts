@@ -627,7 +627,7 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
   space: SpaceId;
   /** Every space's view; the one in front's entry lags (its live view is in the fields above). */
   spaceViews: SpaceViews;
-  /** The Sessions space's activity last used (Sessions, Files, Services or Source Control), shown when it comes back. */
+  /** The Sessions space's activity last used (Sessions, Files, Find in Files, Services or Source Control), shown when it comes back. */
   sessionsActivity: Activity;
   /**
    * Brings space `to` to the front with its tabs, split and tab in front, in one update; `activity`: the sidebar's

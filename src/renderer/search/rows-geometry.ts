@@ -57,6 +57,14 @@ export function leadFor(room: number, matchLen: number): number {
   return Math.max(4, Math.min(20, room - matchLen - 3));
 }
 
+/** The scroll position that puts row `i` in the middle of a viewport `height` px tall, within the list's bounds. */
+export function centerOn(tops: readonly number[], i: number, height: number): number {
+  if (i < 0 || i >= tops.length - 1) return 0;
+  const total = tops[tops.length - 1]!;
+  const rowH = tops[i + 1]! - tops[i]!;
+  return Math.max(0, Math.min(total - height, tops[i]! - (height - rowH) / 2));
+}
+
 /** The scroll position that shows row `i` whole: unchanged when it already is (or when there is no such row). */
 export function scrollToShow(tops: readonly number[], i: number, scrollTop: number, height: number): number {
   if (i < 0 || i >= tops.length - 1) return scrollTop;

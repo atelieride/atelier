@@ -1,6 +1,6 @@
 /* Find in Files: the sidebar view. Loaded with the view's chunk; Aurora tokens only. The list scrolls on its own, the
    head, the field and the summary stay; notices that can arrive once rows are on screen (the cap, stopped, files
-   changed, an error) sit below the list, so the rows above never move. */
+   changed, an error) sit right below the list, so the rows above never move. */
 .sidebar.is-search { overflow: hidden; }
 
 /* The field: the query in mono, three toggles inside it, the filters' funnel beside it. */
@@ -22,6 +22,10 @@
 .fif-funnel.is-lit { color: var(--violet-light); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
 .fif-funnel.is-open { color: var(--text); background: var(--bg-3); }
 .fif-funnel.is-lit.is-open { color: var(--text-meet); background: var(--tint-violet-hover); }
+/* Lit or open, it still answers the pointer. */
+.fif-funnel.is-lit:hover { color: var(--text-meet); background: var(--tint-violet-hover); }
+.fif-funnel.is-open:hover { color: var(--text); background: var(--tint-violet); }
+.fif-funnel.is-lit.is-open:hover { background: color-mix(in srgb, var(--violet) 28%, transparent); }
 
 .fif-filters { display: flex; flex-direction: column; gap: 6px; padding-bottom: 2px; animation: atl-fade var(--t-med) var(--ease) both; }
 .fif-flab { display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; color: var(--text-4); }
@@ -38,11 +42,13 @@
 
 /* The summary: "19 results in 5 files", the files not searched, the files counter while it runs. */
 .fif-summary { position: relative; flex: none; display: flex; align-items: center; gap: 5px; min-width: 0; padding: 10px 12px 6px 14px; font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
-.fif-totals { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The totals stay whole; the note beside them gives way first. */
+.fif-totals { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .fif-n { color: var(--text-2); font-size: 11px; }
 .fif-sep { flex: none; color: var(--text-4); }
-.fif-summary .fif-skipped-link { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; color: var(--text-4); }
-.fif-summary .fif-skipped-link:hover, .fif-summary .fif-skipped-link[aria-expanded="true"] { color: var(--link); }
+.fif-skipped-link { font-size: 11.5px; color: var(--text-4); }
+.fif-summary .fif-skipped-link { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fif-skipped-link:hover, .fif-skipped-link[aria-expanded="true"] { color: var(--link); }
 .fif-counter { flex: none; font-size: 10.5px; color: var(--text-4); font-variant-numeric: tabular-nums; }
 
 /* Notices and quiet lines. */
@@ -57,11 +63,14 @@
 .fif-refresh, .fif-whole { font-size: inherit; color: var(--link); }
 .fif-foot { flex: none; padding: 4px 0 8px; }
 .fif-list + .fif-foot { border-top: 1px solid var(--line-soft); }
+/* Below the results: the rest of the sidebar, their empty area (its menu). */
+.fif-rest { flex: 1 1 0; min-height: 0; }
 
-/* States: first open, no results, a line break in the query, no project. */
-.fif-empty { padding: 6px 0 0; }
+/* States: first open, no results, a line break in the query, no project. The first open scrolls on its own: ten recent
+   searches and the filters open fit the shortest window. */
+.fif-empty { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 6px 0 8px; overscroll-behavior: contain; }
 .fif-empty > .btn-ghost { margin: 2px 14px 0; }
-.fif-state { margin: 0; padding: 10px 14px 4px; font-size: 12px; line-height: 1.5; color: var(--text-3); }
+.fif-state { position: relative; margin: 0; padding: 10px 14px 4px; font-size: 12px; line-height: 1.5; color: var(--text-3); }
 .fif-recent { display: flex; flex-direction: column; padding: 4px 6px 2px; }
 .fif-recent-label { padding: 6px 8px 4px; }
 .fif-recent-item { display: flex; align-items: center; gap: 8px; min-width: 0; height: 26px; padding: 0 8px; border-radius: var(--r-sm); color: var(--text-2); font-size: 12px; text-align: left;
@@ -76,7 +85,8 @@
 .fif-about .kbd { font-size: 10.5px; }
 
 /* The result list: rows of 26 px (a file) and 22 px (a match), placed by the list, only those on screen drawn. */
-.fif-list { flex: 1; min-height: 0; overflow: auto; padding: 0 6px 12px; overscroll-behavior: contain; }
+/* As tall as its rows, up to the room there is: what comes after it (a notice) sits right under the last row. */
+.fif-list { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 0 6px 12px; overscroll-behavior: contain; }
 .fif-canvas { position: relative; }
 .fif-row { position: absolute; left: 0; right: 0; display: flex; align-items: center; gap: 6px; border-radius: var(--r-sm); color: var(--text-3); cursor: default;
   transition: background var(--t-fast) var(--ease); }

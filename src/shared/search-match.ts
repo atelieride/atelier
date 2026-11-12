@@ -175,11 +175,19 @@ export function compileSearch(spec: SearchSpec): Compiled {
 
 const CONTEXT_CHARS = 40;
 
-/** The kept slice of a line for its matches: `[firstFrom − 40, lastTo + 40]`, at most `keptLineChars`. */
+const isHigh = (c: number) => c >= 0xd800 && c <= 0xdbff;
+const isLow = (c: number) => c >= 0xdc00 && c <= 0xdfff;
+
+/**
+ * The kept slice of a line for its matches: from 40 characters before the first one to the end of the line, at most
+ * `keptLineChars`, never splitting a surrogate pair; `cutStart` / `cutEnd` say whether the line goes on before or after
+ * it (a row shows "…" there, a copy of it too).
+ */
 export function lineResult(line: number, text: string, ranges: [number, number][], keptLineChars: number): SearchLine {
   const first = ranges[0]?.[0] ?? 0;
-  const last = ranges.reduce((m, r) => Math.max(m, r[1]), 0);
-  const start = Math.max(0, first - CONTEXT_CHARS);
-  const end = Math.min(text.length, Math.max(last + CONTEXT_CHARS, start), start + keptLineChars);
-  return { line, text: text.slice(start, end), start, ranges };
+  let start = Math.max(0, first - CONTEXT_CHARS);
+  if (start > 0 && isLow(text.charCodeAt(start)) && isHigh(text.charCodeAt(start - 1))) start--;
+  let end = Math.min(text.length, start + keptLineChars);
+  if (end < text.length && end > start && isHigh(text.charCodeAt(end - 1)) && isLow(text.charCodeAt(end))) end--;
+  return { line, text: text.slice(start, end), start, ranges, cutStart: start > 0, cutEnd: end < text.length };
 }

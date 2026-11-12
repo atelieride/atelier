@@ -56,13 +56,13 @@ const LEAD_DEFAULT = 20;
  * own match when that is further along (`cut`). Ranges are line columns, so they move by the kept text's start and are
  * clamped to it; a row whose own range lies outside the kept text has nothing to mark and shows "…".
  */
-export function previewWindow(line: SearchLine, index: number, lead: number = LEAD_DEFAULT): { text: string; marks: [number, number][]; strong: number; cut: boolean } {
+export function previewWindow(line: SearchLine, index: number, lead: number = LEAD_DEFAULT): { text: string; marks: [number, number][]; strong: number; cut: boolean; cutEnd: boolean } {
   const text = line.text;
   const local = line.ranges.map(([a, b]): [number, number] => [a - line.start, b - line.start]);
   const own = local[index];
-  if (!own || own[1] <= 0 || own[0] >= text.length || own[1] <= own[0]) return { text: '…', marks: [], strong: -1, cut: false };
+  if (!own || own[1] <= 0 || own[0] >= text.length || own[1] <= own[0]) return { text: '…', marks: [], strong: -1, cut: false, cutEnd: false };
   let begin = text.length - text.trimStart().length;
-  let cut = line.start > 0;
+  let cut = line.cutStart;
   const ownFrom = Math.max(0, own[0]);
   if (ownFrom - begin > lead) {
     begin = ownFrom - lead;
@@ -80,7 +80,55 @@ export function previewWindow(line: SearchLine, index: number, lead: number = LE
     if (i === index) strong = marks.length;
     marks.push([from - begin, to - begin]);
   });
-  return { text: text.slice(begin), marks, strong, cut };
+  return { text: text.slice(begin), marks, strong, cut, cutEnd: line.cutEnd };
+}
+
+/** A line as Copy Line gives it: the whole line, or its kept text with "…" where the line goes on. */
+export function lineCopy(line: SearchLine): string {
+  return `${line.cutStart ? '…' : ''}${line.text}${line.cutEnd ? '…' : ''}`;
+}
+
+/** A file's size as the files-not-searched list shows it: "24 B", "1.5 KB", "50 MB" (a round figure without ".0"). */
+export function fileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const [n, unit] = bytes < 1024 * 1024 ? [bytes / 1024, 'KB'] : [bytes / (1024 * 1024), 'MB'];
+  return `${n.toFixed(1).replace(/\.0$/, '')} ${unit}`;
+}
+
+/** A file's match count in its pill: past 999, "999+" (the exact number is in the pill's tip). */
+export const pillCount = (n: number): string => (n > 999 ? '999+' : n.toLocaleString('en-US'));
+
+/** Results and files of rows already built (a collapsed file's row carries its count): `totals` without a second pass. */
+export function rowTotals(rows: Row[]): { results: number; files: number } {
+  let results = 0;
+  let files = 0;
+  for (const r of rows) {
+    if (r.kind !== 'file') continue;
+    files++;
+    results += r.count;
+  }
+  return { results, files };
+}
+
+/** Whether a file shown is open: Collapse All then, else Expand All (the head and the list's menu agree). */
+export const anyExpanded = (rows: Row[]): boolean => rows.some((r) => r.kind === 'file' && !r.collapsed);
+
+/** Each row's place in the tree: a file among the files, a match among its file's matches (aria-posinset / setsize). */
+export function treePositions(rows: Row[]): { pos: number; size: number }[] {
+  const out: { pos: number; size: number }[] = [];
+  let files = 0;
+  for (const r of rows) if (r.kind === 'file') files++;
+  let file = 0;
+  let inFile = 0;
+  let size = 0;
+  for (const r of rows) {
+    if (r.kind === 'file') {
+      out.push({ pos: ++file, size: files });
+      inFile = 0;
+      size = r.count;
+    } else out.push({ pos: ++inFile, size });
+  }
+  return out;
 }
 
 /** Results and files that remain once dismissed rows are left out. */
@@ -116,7 +164,7 @@ export function resultsText(spec: SearchSpec, files: SearchFile[], dismissed: Re
   let listed = 0;
   for (const [line, { file, results }] of perLine) {
     if (listed >= cap) break;
-    out.push(`${file.rel}:${line.line}  ${line.text.trimStart()}`);
+    out.push(`${file.rel}:${line.line}  ${line.cutStart ? '…' : ''}${line.text.trimStart()}${line.cutEnd ? '…' : ''}`);
     listed++;
     shown += results;
   }

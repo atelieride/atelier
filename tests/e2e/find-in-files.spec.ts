@@ -4,7 +4,7 @@
 // menus from the keyboard, and the layout at the sidebar's narrowest width on either side of the window.
 import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { AtelierApi } from '../../src/shared/api';
@@ -82,7 +82,21 @@ const fileRow = (rel: string) => view().locator(`.fif-row.is-file[data-rel="${re
 const matchRows = (rel: string) => view().locator(`.fif-row.is-match[data-rel="${rel}"]`);
 const toggle = (name: string) => view().getByRole('button', { name, exact: true });
 const menuLabels = () => win.locator('.ctx-menu .ctx-label');
+/** The open menu as read: each item's label with its key hint in brackets, a separator as "—". */
+const menuShape = () => win.locator('.ctx-menu').first().evaluate((m) => [...m.children].map((c) => {
+  if (c.classList.contains('ctx-sep')) return '—';
+  const hint = c.querySelector('.ctx-hint')?.textContent;
+  return `${c.querySelector('.ctx-label')?.textContent ?? ''}${hint ? ` [${hint}]` : ''}`;
+}));
+const skippedLink = () => view().locator('.fif-skipped-link');
 const still = (w: Page) => w.addStyleTag({ content: '*, *::before, *::after { animation: none !important; transition: none !important; }' });
+const command = (cmd: string) => app.evaluate(({ BrowserWindow }, c) => BrowserWindow.getAllWindows()[0]!.webContents.send('ev:command', c), cmd);
+const sizeTo = (w: number, h: number) => app.evaluate(({ BrowserWindow }, s) => BrowserWindow.getAllWindows()[0]!.setContentSize(s.w, s.h), { w, h });
+/** What the app copied (the test copy log, never the real clipboard). */
+const copies = (): unknown[] => {
+  const log = join(home, 'test-clipboard.log');
+  return existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as unknown) : [];
+};
 
 /**
  * Whether a match row shows its own match whole: inside the text's box and, when the text runs out of it, clear of the
@@ -133,6 +147,9 @@ test.beforeAll(async () => {
   git(project, 'commit', '-q', '-m', 'first');
   // Changed since the commit: its row carries the git letter, as in the tree.
   write(LONG_FILE, `${LONG_BODY}// changed\n`);
+  // A file nobody may read: every search lists it under "files not searched".
+  write('secret.txt', 'a token nobody can read\n');
+  chmodSync(join(project, 'secret.txt'), 0o000);
   const e = e2eEnv();
   home = e.home;
   app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env: e.env });
@@ -183,19 +200,32 @@ test('typing streams results grouped by file in path order; ignored and binary f
   // Leading whitespace is dropped; a match further along starts a little before it, after "…".
   await expect(matchRows('src/auth/tokens.ts').nth(1).locator('.fif-text')).toHaveText('get(token: string) {');
   await expect(matchRows('src/auth/tokens.ts').nth(1).locator('.fif-ln')).toHaveText('4');
-  await expect(matchRows('src/auth/session.ts').nth(3).locator('.fif-text')).toHaveText(/^….*readSession\(token: string/);
+  // The line is kept to its end: no word cut short, no "…" when nothing follows.
+  await expect(matchRows('src/auth/session.ts').nth(3).locator('.fif-text')).toHaveText(/^….*readSession\(token: string, now = Date\.now\(\)\): Session \| null \{$/);
   await expect(matchRows('src/auth/session.ts').nth(3).locator('mark.is-own')).toHaveText('token');
   // However far along the line, a row's own match is never pushed out of sight.
   for (const r of await view().locator('.fif-row.is-match').all()) expect(await ownShown(r), await r.innerText()).toBe(true);
   await expect(view()).not.toContainText('notes.txt');
   await expect(view()).not.toContainText('blob.bin');
+  // The unreadable file is named among the files not searched.
+  await expect(skippedLink()).toHaveText('1 file not searched');
+  // Each row's place in the tree, for assistive technologies (the list is virtualized).
+  await expect(fileRow('src/auth/session.ts')).toHaveAttribute('aria-posinset', '2');
+  await expect(fileRow('src/auth/session.ts')).toHaveAttribute('aria-setsize', '3');
+  await expect(matchRows('src/auth/session.ts').nth(2)).toHaveAttribute('aria-posinset', '3');
+  await expect(matchRows('src/auth/session.ts').nth(2)).toHaveAttribute('aria-setsize', '6');
   for (const name of ['Refresh', 'Clear Results', 'Collapse All']) await expect(view().getByRole('button', { name })).toBeEnabled();
   await look(win, 'test-results/find-in-files-results.png', { settle: 200 });
 
-  // An empty field: the first-open state again, with the search just done under Recent; a click runs it.
+  // Copy Line: a line kept whole is copied whole.
+  await matchRows('src/auth/session.ts').nth(3).click({ button: 'right' });
+  await win.getByRole('menuitem', { name: 'Copy Line' }).click();
+  await expect.poll(() => copies().at(-1)).toBe('export function readSession(token: string, now = Date.now()): Session | null {');
+
+  // An empty field: the first-open state again, with the search just done first under Recent; a click runs it.
   await search('');
   await expect(rows()).toHaveCount(0);
-  await expect(view().locator('.fif-recent-item')).toHaveText(['token']);
+  await expect(view().locator('.fif-recent-item').first()).toHaveText('token');
   await look(view(), 'test-results/find-in-files-recent.png', { settle: 200 });
   await view().locator('.fif-recent-item', { hasText: 'token' }).click();
   await expect(field()).toHaveValue('token');
@@ -219,6 +249,8 @@ test('an invalid regular expression marks the field and says why and the way out
   await expect(notice).toContainText('Turn off .* to search the text as written.');
   await expect(view().locator('.fif-field')).toHaveClass(/is-error/);
   await expect(field()).toHaveAttribute('aria-invalid', 'true');
+  await expect(field()).toHaveAccessibleDescription(/Unclosed group: add \) or escape the \(/);
+  await expect(view().getByRole('button', { name: 'Refresh' })).toBeDisabled();
   await expect(view()).not.toContainText('No results.');
   await look(view(), 'test-results/find-in-files-invalid.png', { settle: 200 });
   await toggle('Regular Expression').click();
@@ -227,31 +259,71 @@ test('an invalid regular expression marks the field and says why and the way out
   await expect(notice).toHaveCount(0);
 });
 
-test('no match says "No results."; a query holding a line break says searches match within a line', async () => {
+test('no match says "No results." with the files not searched; a query holding a line break says searches match within a line', async () => {
   await fresh();
   await search('zzqqxxnothere');
-  await expect(view().locator('.fif-state')).toHaveText('No results.');
+  await expect(view().locator('.fif-state')).toHaveText('No results. · 1 file not searched');
   await expect(rows()).toHaveCount(0);
   await look(view(), 'test-results/find-in-files-no-results.png', { settle: 200 });
+
+  // The files not searched: each with its reason; Esc closes the list and gives the keyboard back to the link.
+  await skippedLink().click();
+  const pop = view().locator('.fif-skipped');
+  await expect(pop).toContainText('secret.txt');
+  await expect(pop).toContainText('Unreadable · 24 B');
+  await look(view(), 'test-results/find-in-files-skipped.png', { settle: 200 });
+  await win.keyboard.press('Escape');
+  await expect(pop).toHaveCount(0);
+  await expect(skippedLink()).toBeFocused();
+  // A new search closes it.
+  await skippedLink().click();
+  await expect(pop).toBeVisible();
+  await search('zzqqxxnothere2');
+  await expect(view().locator('.fif-state')).toHaveText('No results. · 1 file not searched');
+  await expect(pop).toHaveCount(0);
+
   await search('a\\nb');
   await expect(view().locator('.fif-state')).toHaveText('Searches match within a line.');
+  await expect(field()).toHaveAccessibleDescription('Searches match within a line.');
+  await expect(view().getByRole('button', { name: 'Refresh' })).toBeDisabled();
 });
 
 test('a minified one-line file with 3,000 matches: every row reachable, only what is on screen in the page', async () => {
   await fresh();
   await search('zq');
   await expect(totals()).toHaveText('3,000 results in 1 file');
-  await expect(fileRow('lib/app.min.js').locator('.fif-count')).toHaveText('3,000');
+  // Past 999 the pill says so; the exact count is in its tip.
+  await expect(fileRow('lib/app.min.js').locator('.fif-count')).toHaveText('999+');
+  await expect(fileRow('lib/app.min.js').locator('.fif-count')).toHaveAttribute('aria-label', '3,000 results');
+  await expect(fileRow('lib/app.min.js').locator('.fif-count')).toHaveAttribute('data-tip', '3,000 results');
   // 26 px for the file, 22 px for each match.
   expect(await list().evaluate((el) => el.scrollHeight)).toBeGreaterThanOrEqual(26 + 3000 * 22);
   expect(await rows().count()).toBeLessThan(120);
+  // The line goes on past the kept text (2,000 characters): the row ends with "…", and so does its copy.
+  await expect(view().locator('.fif-row[data-i="1"] .fif-text')).toHaveText(/…$/);
+  await view().locator('.fif-row[data-i="1"]').click({ button: 'right' });
+  await win.getByRole('menuitem', { name: 'Copy Line' }).click();
+  await expect.poll(() => copies().at(-1)).toMatch(/^var a=1;zq;.*…$/);
+  expect((copies().at(-1) as string).length).toBe(2001);
+
   await list().evaluate((el) => { el.scrollTop = el.scrollHeight; });
   await frames(win);
   await expect(view().locator('.fif-row[data-i="3000"]')).toBeVisible();
-  await expect(view().locator('.fif-row[data-i="1"]')).toHaveCount(0);
+  // Row 1 stays in the page (selected by its menu, it keeps the keyboard); its neighbours are gone.
+  await expect(view().locator('.fif-row[data-i="2"]')).toHaveCount(0);
   expect(await rows().count()).toBeLessThan(120);
   // Its match far past the kept text: the row says so with "…".
   await expect(view().locator('.fif-row[data-i="3000"] .fif-text')).toHaveText('…');
+
+  // The selection survives the view going away and coming back: in sight again.
+  await field().focus();
+  await win.keyboard.press('ArrowDown');
+  await win.keyboard.press('End');
+  await expect(view().locator('.fif-row[data-i="3000"]')).toBeFocused();
+  await win.locator('.activity-bar .act[aria-label^="Files"]').click();
+  await expect(view()).toHaveCount(0);
+  await activity().click();
+  await expect(view().locator('.fif-row[data-i="3000"]')).toBeInViewport();
   await list().evaluate((el) => { el.scrollTop = 0; });
 });
 
@@ -286,6 +358,17 @@ test('a file collapses and expands with a click, ← and →, and Collapse All /
   await expect(fileRows()).toHaveCount(3);
   await view().getByRole('button', { name: 'Expand All' }).click();
   await expect(view().locator('.fif-row.is-match')).toHaveCount(14);
+
+  // The head and the list's menu agree on what is open: a dismissed file, open when it went, counts for neither.
+  await fileRow('src/auth/session.ts').click();
+  await fileRow('src/auth/tokens.ts').click();
+  await fileRow('docs/auth.md').hover();
+  await fileRow('docs/auth.md').getByRole('button', { name: 'Dismiss' }).click();
+  await expect(view().getByRole('button', { name: 'Expand All' })).toBeVisible();
+  await view().locator('.fif-summary').click({ button: 'right' });
+  await expect(menuLabels()).toContainText(['Expand All']);
+  await expect(menuLabels()).not.toContainText(['Collapse All']);
+  await win.keyboard.press('Escape');
 });
 
 test('hover turns the line number into ×: dismissing a match or a whole file updates the counts', async () => {
@@ -308,6 +391,11 @@ test('hover turns the line number into ×: dismissing a match or a whole file up
   await fileRow('src/auth/session.ts').click();
   await win.keyboard.press('Meta+Backspace');
   await expect(totals()).toHaveText('6 results in 1 file');
+  // The last row gone, the keyboard goes back to the field rather than nowhere.
+  await expect(fileRow('src/auth/tokens.ts')).toBeFocused();
+  await win.keyboard.press('Meta+Backspace');
+  await expect(rows()).toHaveCount(0);
+  await expect(field()).toBeFocused();
 });
 
 test('Shift+F10 opens the row\'s menu: a file\'s and a match\'s items, in order', async () => {
@@ -319,14 +407,99 @@ test('Shift+F10 opens the row\'s menu: a file\'s and a match\'s items, in order'
   await expect(fileRow('docs/auth.md')).toBeFocused();
   await win.keyboard.press('Shift+F10');
   await expect(menuLabels()).toHaveText(['Open', 'Open to the Side', 'Reveal in Files', 'Copy Path', 'Copy Relative Path', 'Dismiss']);
+  expect(await menuShape()).toEqual(['Open', 'Open to the Side [⌘⏎]', 'Reveal in Files', '—', 'Copy Path', 'Copy Relative Path', '—', 'Dismiss [⌘⌫]']);
   await win.keyboard.press('Escape');
   await expect(menuLabels()).toHaveCount(0);
   await win.keyboard.press('ArrowDown');
   await expect(matchRows('docs/auth.md').first()).toBeFocused();
   await win.keyboard.press('Shift+F10');
   await expect(menuLabels()).toHaveText(['Open', 'Open to the Side', 'Copy Line', 'Dismiss']);
+  expect(await menuShape()).toEqual(['Open', 'Open to the Side [⌘⏎]', 'Copy Line', 'Dismiss [⌘⌫]']);
   await look(win, 'test-results/find-in-files-match-menu.png', { settle: 200, clip: { x: 0, y: 40, width: 640, height: 360 } });
   await win.keyboard.press('Escape');
+});
+
+test('⌥C, ⌥W and ⌥R in the field turn Match Case, Whole Word and Regular Expression on and off', async () => {
+  await fresh();
+  await search('token');
+  await expect(totals()).toHaveText('14 results in 3 files');
+  await field().focus();
+  await win.keyboard.press('Alt+c');
+  await expect(toggle('Match Case')).toHaveAttribute('aria-pressed', 'true');
+  await expect(totals()).toHaveText('11 results in 3 files');
+  await win.keyboard.press('Alt+w');
+  await expect(toggle('Whole Word')).toHaveAttribute('aria-pressed', 'true');
+  await win.keyboard.press('Alt+r');
+  await expect(toggle('Regular Expression')).toHaveAttribute('aria-pressed', 'true');
+  // Nothing typed into the query by the way.
+  await expect(field()).toHaveValue('token');
+  for (const k of ['Alt+c', 'Alt+w', 'Alt+r']) await win.keyboard.press(k);
+  for (const name of ['Match Case', 'Whole Word', 'Regular Expression']) await expect(toggle(name)).toHaveAttribute('aria-pressed', 'false');
+  await expect(totals()).toHaveText('14 results in 3 files');
+});
+
+test('filters: "Search the whole project" clears the paths and leaves Include ignored files as it is; the lit funnel answers the pointer', async () => {
+  await fresh();
+  const funnel = view().getByRole('button', { name: 'Filters' });
+  await funnel.click();
+  await view().getByRole('textbox', { name: 'Files to include' }).fill('docs/');
+  await search('TokenStore');
+  await expect(view().locator('.fif-state')).toHaveText('No results in docs/. Search the whole project');
+  const ignored = view().getByRole('switch', { name: 'Include ignored files' });
+  await ignored.click();
+  await expect(ignored).toHaveAttribute('aria-checked', 'true');
+  await view().getByRole('button', { name: 'Search the whole project' }).click();
+  await expect(view().getByRole('textbox', { name: 'Files to include' })).toHaveValue('');
+  await expect(ignored).toHaveAttribute('aria-checked', 'true');
+  await expect(totals()).toHaveText('3 results in 2 files');
+  // Still lit (Include ignored files is on), and it reacts under the pointer like every button.
+  await funnel.click();
+  await expect(funnel).toHaveClass(/is-lit/);
+  await win.mouse.move(640, 790);
+  const rest = await funnel.evaluate((el) => getComputedStyle(el).backgroundColor);
+  await funnel.hover();
+  await expect.poll(() => funnel.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(rest);
+  await funnel.click();
+  await ignored.click();
+  await funnel.click();
+  await expect(funnel).not.toHaveClass(/is-lit/);
+});
+
+test('a notice that arrives once rows are on screen sits right under the last of them', async () => {
+  await fresh();
+  await search('token');
+  await expect(totals()).toHaveText('14 results in 3 files');
+  appendFileSync(join(project, 'src/auth/tokens.ts'), '// touched\n');
+  const line = view().locator('.fif-foot .fif-quiet', { hasText: 'Files changed since this search' });
+  await expect(line).toBeVisible({ timeout: 15000 });
+  const last = (await rows().last().boundingBox())!;
+  const at = (await line.boundingBox())!;
+  expect(at.y - (last.y + last.height)).toBeLessThan(40);
+  await look(view(), 'test-results/find-in-files-stale.png', { settle: 200 });
+  await line.getByRole('button', { name: 'Refresh' }).click();
+  await expect(line).toHaveCount(0);
+  await expect(totals()).toHaveText('14 results in 3 files');
+});
+
+test('at the 600 px window height, ten recent searches with the filters open still reach the bottom', async () => {
+  await fresh();
+  const recent = Array.from({ length: 10 }, (_, i) => ({ query: `recent query ${i + 1}`, matchCase: i % 2 === 0, wholeWord: false, regex: i % 3 === 0 }));
+  await win.evaluate(({ root, list }) => {
+    const all = JSON.parse(localStorage.getItem('atelier.search.recent') ?? '{}') as Record<string, unknown>;
+    localStorage.setItem('atelier.search.recent', JSON.stringify({ ...all, [root]: list }));
+  }, { root: project, list: recent });
+  // Read again when the field empties.
+  await search('x');
+  await search('');
+  await expect(view().locator('.fif-recent-item')).toHaveCount(10);
+  await sizeTo(1280, 600);
+  await view().getByRole('button', { name: 'Filters' }).click();
+  const end = view().locator('.fif-about.is-keys');
+  await view().locator('.fif-empty').evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  await expect(end).toBeInViewport({ ratio: 1 });
+  await look(win, 'test-results/find-in-files-600.png', { settle: 200 });
+  await view().getByRole('button', { name: 'Filters' }).click();
+  await sizeTo(1280, 800);
 });
 
 test('at the sidebar\'s narrowest (200 px), on the left and swapped to the right: nothing overlaps, wraps or is cut', async () => {
@@ -345,7 +518,8 @@ test('at the sidebar\'s narrowest (200 px), on the left and swapped to the right
     expect(await layoutProblems(head, HEAD_PARTS), `${where}: head`).toEqual(NO_PROBLEMS);
     expect(await oneLine(head.locator('.section-label')), `${where}: the head's name on one line, whole`).toBe(true);
     expect(await layoutProblems(view().locator('.fif-query'), FIELD_PARTS), `${where}: field`).toEqual(NO_PROBLEMS);
-    expect(await layoutProblems(view().locator('.fif-summary'), ['.fif-totals']), `${where}: summary`).toEqual(NO_PROBLEMS);
+    expect(await layoutProblems(view().locator('.fif-summary'), ['.fif-totals', '.fif-skipped-link']), `${where}: summary`).toEqual(NO_PROBLEMS);
+    expect(await oneLine(view().locator('.fif-totals')), `${where}: the totals whole`).toBe(true);
     const f = fileRow(LONG_FILE);
     expect(await layoutProblems(f, FILE_PARTS), `${where}: file row`).toEqual(NO_PROBLEMS);
     for (const m of await matchRows(LONG_FILE).all()) {
@@ -371,4 +545,23 @@ test('at the sidebar\'s narrowest (200 px), on the left and swapped to the right
   await look(win, 'test-results/find-in-files-200-swapped.png');
   await win.evaluate(() => (window as unknown as { atelier: AtelierApi }).atelier.settings.set({ swapSidePanels: false }));
   await sidebarByKeys(win, 264);
+});
+
+test('the sidebar shown again leaves the keyboard where it was; the activity item puts it in the field', async () => {
+  await fresh();
+  await win.getByRole('button', { name: 'Open a terminal' }).click();
+  const term = win.locator('.xterm-helper-textarea:visible');
+  await expect(term).toBeFocused({ timeout: 10000 });
+  await command('toggle-sidebar');
+  await expect(view()).toHaveCount(0);
+  await command('toggle-sidebar');
+  await expect(field()).toBeVisible();
+  await frames(win);
+  await expect(term).toBeFocused();
+  await expect(field()).not.toBeFocused();
+  // In front, its item hides the sidebar; once more, it opens the view on purpose: the field takes the keyboard.
+  await activity().click();
+  await expect(view()).toHaveCount(0);
+  await activity().click();
+  await expect(field()).toBeFocused();
 });
