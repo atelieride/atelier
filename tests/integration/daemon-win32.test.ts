@@ -19,8 +19,16 @@ const SID = '0a1b2c3d-1111-2222-3333-444455556666';
 const running: RunningDaemon[] = [];
 afterEach(async () => { for (const d of running.splice(0)) await d.stop(); });
 
-async function start(statusLine?: string) {
-  const home = mkdtempSync(join(tmpdir(), 'atl-win-'));
+/** PATH without a folder holding a real claude: a shell without Atelier's claude function never reaches Claude Code. */
+function pathWithoutClaude(): Record<string, string> {
+  const key = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH') ?? 'Path';
+  const dirs = (process.env[key] ?? '').split(';').filter((d) => d && !['claude.exe', 'claude.cmd', 'claude'].some((n) => existsSync(join(d, n))));
+  return { [key]: dirs.join(';') };
+}
+
+/** stay: the seconds the fake claude stays before it exits without a SessionEnd (killed, as far as atelierd knows). */
+async function start(statusLine?: string, o: { stay?: number; home?: string } = {}) {
+  const home = o.home ?? mkdtempSync(join(tmpdir(), 'atl-win-'));
   const user = join(home, 'user-settings.json');
   writeFileSync(user, JSON.stringify(statusLine ? { statusLine: { type: 'command', command: statusLine } } : {}));
   // A fake claude: sends a SessionStart through the bridge Atelier's settings name, as Claude Code would.
@@ -28,8 +36,8 @@ async function start(statusLine?: string) {
   const argv = join(home, 'argv.txt');
   const payload = JSON.stringify({ hook_event_name: 'SessionStart', session_id: SID, cwd: 'C:\\atl\\proj', source: 'startup' });
   // It stays a while, as a real Claude does: when it ends, the shell's own prompt mark ends the session.
-  writeFileSync(fake, `@echo %*> "${argv}"\r\n@echo ${payload}| "%ATELIER_HOME%\\bin\\atelier-bridge.exe" hook\r\n@ping -n 30 127.0.0.1 >nul\r\n`);
-  const d = await runDaemon({ home, version: '0.0.0-test', bridges: [BRIDGE], userClaudeSettings: user, extraEnv: { ATELIER_CLAUDE_BIN: fake } });
+  writeFileSync(fake, `@echo %*> "${argv}"\r\n@echo ${payload}| "%ATELIER_HOME%\\bin\\atelier-bridge.exe" hook\r\n@ping -n ${o.stay ?? 30} 127.0.0.1 >nul\r\n`);
+  const d = await runDaemon({ home, version: '0.0.0-test', bridges: [BRIDGE], userClaudeSettings: user, extraEnv: { ATELIER_CLAUDE_BIN: fake, ...pathWithoutClaude() } });
   running.push(d);
   return { d, home, argv };
 }
@@ -93,6 +101,29 @@ for (const shell of ['Git Bash', 'PowerShell'] as const) {
     await c.next((m) => m.t === 'terminals' && m.list.some((t) => t.id === id && t.session?.sessionId === SID), 30_000);
     c.close();
   }, 60_000);
+}
+
+// A Git Bash terminal: claude typed there goes through Atelier's function (ATELIER_CLAUDE_BIN, the fake, with
+// --settings); without it, nothing named claude is on PATH. The fake exits without a SessionEnd: Git Bash's own
+// prompt signal ends the session. A home with a space and an apostrophe: the rcfile still loads, and the bridge
+// found by name is this Atelier's.
+for (const name of ['atl-win-', "atl win o'b "]) {
+  test.runIf(isWin && existsSync(GIT_BASH))(`a claude typed in a Git Bash terminal reaches atelierd, and its prompt ends a killed one (${name.trim()})`, async () => {
+    const { d, argv } = await start(undefined, { stay: 4, home: mkdtempSync(join(tmpdir(), name)) });
+    const c = await connectControl(d.paths.sock, d.info.token);
+    await c.next((m) => m.t === 'welcome');
+    const cwd = tmpdir().replace(/\\/g, '/');
+    c.send({ t: 'create', rid: 1, projectRoot: cwd, cwd, cols: 120, rows: 30, profile: { shell: GIT_BASH.replace(/\\/g, '/') } });
+    const created = await c.next((m) => m.t === 'reply' && m.rid === 1, 20_000) as Extract<ServerMessage, { t: 'reply'; ok: true }>;
+    const id = (created.result as TerminalInfo).id;
+    c.send({ t: 'input', id, data: 'claude --name=demo\r' });
+    await c.next((m) => m.t === 'terminals' && m.list.some((t) => t.id === id && t.session?.sessionId === SID), 30_000);
+    expect(readFileSync(argv, 'utf8').trim()).toMatch(/^--settings .*claude-settings\.json --name=demo$/);
+    // Lists from before the session (session: null too) are still queued: only one sent after it counts.
+    try { for (;;) await c.next(() => true, 100); } catch { /* the queue is empty */ }
+    await c.next((m) => m.t === 'terminals' && m.list.some((t) => t.id === id && t.session === null), 30_000);
+    c.close();
+  }, 90_000);
 }
 
 test.runIf(isWin && existsSync(GIT_CMD))('the user’s status line runs in the Git Bash next to the git on PATH (a per-user install)', async () => {
