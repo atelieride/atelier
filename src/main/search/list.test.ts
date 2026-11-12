@@ -19,7 +19,7 @@ function tmp(): string {
 }
 
 /** root: a repo with tracked, untracked and ignored files; a nested repo; a plain folder; a deep file. */
-function project(): { root: string; nested: string; plain: string } {
+function project(): { root: string; nested: string } {
   const root = join(tmp(), 'proj');
   mkdirSync(root);
   git(root, 'init', '-q', '-b', 'main');
@@ -37,7 +37,7 @@ function project(): { root: string; nested: string; plain: string } {
   git(nested, 'add', '-A');
   git(nested, 'commit', '-q', '-m', 'inner');
   put(nested, 'inner-untracked.ts');
-  return { root, nested, plain: root };
+  return { root, nested };
 }
 
 const rels = (r: { files: { rel: string }[] }) => r.files.map((f) => f.rel);
@@ -126,6 +126,60 @@ describe('listing', () => {
     symlinkSync(root, join(root, 'real', 'loop'));
     symlinkSync(outside, join(root, 'out'));
     const r = await listSearchFiles(root, [], { includeIgnored: true, cap: 1000, filter: all });
+    expect(rels(r)).toEqual(['real/a.txt']);
+  });
+
+  test('the cap never cuts a plain file of a plain folder while ignored ones are listed', async () => {
+    const root = tmp();
+    for (const f of ['build/1.js', 'build/2.js', 'build/3.js','node_modules/x.js', 'z.txt']) put(root, f);
+    const r = await listSearchFiles(root, [], { includeIgnored: true, cap: 2, filter: all });
+    expect(r.capped).toBe(true);
+    expect(r.files).toHaveLength(2);
+    expect(r.files[0]).toMatchObject({ rel: 'z.txt', ignored: false });
+    expect(r.files[1]!.ignored).toBe(true);
+  });
+
+  test('a nested repo with many ignored files does not push out the plain files around it', async () => {
+    const root = tmp();
+    const repo = join(root, 'inner');
+    mkdirSync(repo);
+    git(repo, 'init', '-q', '-b', 'main');
+    put(repo, '.gitignore', 'junk/\n');
+    for (const n of [1, 2, 3, 4]) put(repo, `junk/${n}.js`);
+    put(root, 'z.txt');
+    put(root, 'sub/y.txt');
+    const r = await listSearchFiles(root, [repo], { includeIgnored: true, cap: 3, filter: all });
+    expect(r.capped).toBe(true);
+    expect(rels(r)).toEqual(['inner/.gitignore', 'sub/y.txt', 'z.txt']);
+  });
+
+  test('an ignored listing too large for git stops there: capped, and the plain listing is still git\'s', async () => {
+    const { root, nested } = project();
+    const r = await listSearchFiles(root, [root, nested], { includeIgnored: true, cap: 1000, filter: all, ignoredMaxBytes: 5 });
+    expect(r.capped).toBe(true);
+    // Walked instead, secret.txt (ignored by .gitignore) would show up as a plain file.
+    expect(rels(r)).toEqual(['.gitignore', 'packages/inner/inner-untracked.ts', 'packages/inner/inner.ts', 'src/tracked.ts', 'src/untracked.ts']);
+  });
+
+  test('a repo inside a plain folder is listed by git, the plain files around it by the walk', async () => {
+    const root = tmp();
+    const repo = join(root, 'tools', 'repo');
+    mkdirSync(repo, { recursive: true });
+    git(repo, 'init', '-q', '-b', 'main');
+    put(repo, 'r.txt');
+    put(repo, '.gitignore', 'ig.txt\n');
+    put(repo, 'ig.txt');
+    put(root, 'tools/p.txt');
+    put(root, 'top.txt');
+    const r = await listSearchFiles(root, [repo], { includeIgnored: false, cap: 100, filter: all });
+    expect(rels(r)).toEqual(['tools/p.txt', 'tools/repo/.gitignore', 'tools/repo/r.txt', 'top.txt']);
+  });
+
+  test.skipIf(process.platform === 'win32')('a link to a folder inside the project is not followed: the folder is listed under its own name', async () => {
+    const root = tmp();
+    put(root, 'real/a.txt');
+    symlinkSync(join(root, 'real'), join(root, 'alink'));
+    const r = await listSearchFiles(root, [], { includeIgnored: false, cap: 100, filter: all });
     expect(rels(r)).toEqual(['real/a.txt']);
   });
 });
