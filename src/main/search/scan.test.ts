@@ -2,9 +2,12 @@ import { chmodSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFile
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { useMachinePlatform } from '../../../tests/support/platform';
 import { SEARCH_LIMITS } from '@shared/search';
 import { compileSearch } from '@shared/search-match';
 import { scanFile, type ScanLimits } from './scan';
+
+useMachinePlatform();
 
 const notWindows = process.platform !== 'win32';
 const small: ScanLimits = { wholeReadBytes: 64, maxBytes: 1024, keptLineChars: 2000 };

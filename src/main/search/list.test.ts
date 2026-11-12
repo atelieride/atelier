@@ -2,9 +2,12 @@ import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { useMachinePlatform } from '../../../tests/support/platform';
 import { git } from '../../../tests/support/git-fixture';
 import { validateGitArgs } from '../git/exec';
 import { LS_ARGS, LS_IGNORED_FILES_ARGS, listSearchFiles } from './list';
+
+useMachinePlatform();
 
 const all = () => true;
 
