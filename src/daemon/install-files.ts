@@ -407,6 +407,46 @@ claude() {
   __atelier_claude_run "\${#base[@]}" "\${base[@]}" "$@"
 }
 
+# Your aliases that run Claude's binary directly (cc='~/.local/bin/claude.exe'), as they are when the terminal starts,
+# go through the same rules with that same binary; variables they set in front stay.
+__atelier_claude_with() {
+  if [ -n "\${ATELIER_CLAUDE_BIN:-}" ]; then set -- "$ATELIER_CLAUDE_BIN" "\${@:2}"
+  elif [ -n "\${ATELIER_E2E:-}" ]; then
+    printf '%s\\n' REAL-CLAUDE-BLOCKED >&2
+    return 97
+  fi
+  __atelier_claude_run 1 "$@"
+}
+__atelier_reroute() {
+  local line name value pre word bare
+  local assign="^[A-Za-z_][A-Za-z0-9_]*=('[^']*'|\\"[^\\"]*\\"|[^[:space:]'\\"])*[[:space:]]+"
+  local first="^('[^']*'|\\"[^\\"]*\\"|[^[:space:]'\\";|&<>()]+)"
+  while IFS= read -r line; do
+    case "$line" in "alias "*=\\'*\\') ;; *) continue ;; esac
+    name=\${line#alias }
+    name=\${name%%=*}
+    # bash lists each value single-quoted: assigning it back is the value, nothing runs. A value spread over several
+    # lines doesn't parse here and is left alone.
+    eval "value=\${line#alias "$name"=}" 2>/dev/null || continue
+    pre=
+    if [[ $value =~ ^[[:space:]]+ ]]; then pre=\${BASH_REMATCH[0]}; value=\${value:\${#pre}}; fi
+    while [[ $value =~ $assign ]]; do pre+=\${BASH_REMATCH[0]}; value=\${value:\${#BASH_REMATCH[0]}}; done
+    [[ $value =~ $first ]] || continue
+    word=\${BASH_REMATCH[1]}
+    # Plain claude already reaches Atelier's function.
+    [ "$word" = claude ] && continue
+    bare=$word
+    case "$bare" in \\'*\\'|\\"*\\") bare=\${bare:1:\${#bare}-2} ;; esac
+    case "\${bare##*/}" in
+      [Cc][Ll][Aa][Uu][Dd][Ee]|[Cc][Ll][Aa][Uu][Dd][Ee].[Ee][Xx][Ee]) ;;
+      *) continue ;;
+    esac
+    alias "$name=\${pre}__atelier_claude_with $value"
+  done <<< "$(alias -p)"
+}
+__atelier_reroute
+unset -f __atelier_reroute
+
 # A folder as the path of a file: URI, percent-encoded byte by byte (run in a subshell: LC_ALL=C stays there).
 __atelier_encode() {
   local s=$1 out= c n i

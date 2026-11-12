@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import * as pty from 'node-pty';
 import { expect, test } from 'vitest';
 import { ATELIER_BASH, gitBashArgs } from '../../src/daemon/install-files';
@@ -17,7 +17,8 @@ const BASH = isWin ? GIT_BASH : '/bin/bash';
 const canRun = !isWin || existsSync(GIT_BASH);
 const NONCE = '0123456789abcdef0123456789abcdef';
 
-interface Run { home?: Record<string, string>; dirs?: string[]; env?: Record<string, string>; lines: string[] }
+/** home: the user's files; bins: executables under the home (relative paths); dirs: empty folders under it. */
+interface Run { home?: Record<string, string>; bins?: Record<string, string>; dirs?: string[]; env?: Record<string, string>; lines: string[] }
 
 /** A folder as bash sees it: /c/… for C:\… on Windows (cygpath -u), as is elsewhere. */
 function bashPath(p: string): string {
@@ -26,8 +27,11 @@ function bashPath(p: string): string {
   return /^[A-Za-z]:\//.test(s) ? `/${s[0]!.toLowerCase()}${s.slice(2)}` : s;
 }
 
-/** A fake claude: prints its arguments (printf: macOS's /bin/sh echo would read backslashes in a Windows path). */
-const FAKE_CLAUDE = '#!/bin/sh\nprintf \'%s\\n\' "ARGS:$*"\n';
+/**
+ * A fake claude: prints its arguments (printf: macOS's /bin/sh echo would read backslashes in a Windows path), and
+ * ATL_X when an alias set it in front.
+ */
+const FAKE_CLAUDE = '#!/bin/sh\nprintf \'%s\\n\' "ARGS:$*"\n[ -n "$ATL_X" ] && printf \'X=%s\\n\' "$ATL_X"\nexit 0\n';
 /** In a profile: the fake claude first on PATH. */
 const FAKE_FIRST = 'PATH="$HOME/fakebin:$PATH"\n';
 
@@ -46,6 +50,10 @@ async function runBash(o: Run): Promise<{ out: string; home: string; atelierHome
   mkdirSync(join(home, 'fakebin'), { recursive: true });
   writeFileSync(join(home, 'fakebin', 'claude'), FAKE_CLAUDE, { mode: 0o755 });
   for (const [name, text] of Object.entries(o.home ?? {})) writeFileSync(join(home, name), text);
+  for (const [name, text] of Object.entries(o.bins ?? {})) {
+    mkdirSync(dirname(join(home, name)), { recursive: true });
+    writeFileSync(join(home, name), text, { mode: 0o755 });
+  }
   for (const d of o.dirs ?? []) mkdirSync(join(home, d), { recursive: true });
   const atelierHome = join(dir, 'atelier home');
   mkdirSync(join(atelierHome, 'bin'), { recursive: true });
@@ -73,6 +81,12 @@ async function runBash(o: Run): Promise<{ out: string; home: string; atelierHome
 
 const signals = (out: string, nonce: string) => out.split(`\x1b]133;P;atelier=${nonce}\x07`).length - 1;
 const osc7s = (out: string) => [...out.matchAll(/\x1b\]7;([^\x07]*)\x07/g)].map((m) => m[1]!);
+
+test.runIf(canRun)('a terminal starts without a word from Atelier’s file, also with aliases of every shape', async () => {
+  const profile = "alias a1='ls -l'\nalias a2=\"echo 'q' \\\"d\\\"\"\nalias a3='x=1 y'\nalias a4=''\nalias a5='claude.exe --x'\n";
+  const r = await runBash({ env: { ATELIER_PROMPT_NONCE: NONCE }, home: { '.bash_profile': profile }, lines: ['cd ..', 'true'] });
+  expect(r.out).not.toMatch(/syntax error|command not found|unbound variable|bad substitution|: line \d+:/);
+}, 60_000);
 
 test.runIf(canRun)('the user’s login files load, as bash -l would', async () => {
   const a = await runBash({ home: { '.bash_profile': "export ATL_P=loaded\nalias ll='ls -l'\n" }, lines: ['echo "P=$ATL_P"', 'alias ll'] });
@@ -173,4 +187,42 @@ test.runIf(isWin && existsSync(GIT_BASH))('no claude on PATH: the one Claude’s
   copyFileSync(join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Git', 'usr', 'bin', 'echo.exe'), join(profile, '.local', 'bin', 'claude.exe'));
   const r = await runBash({ env: { USERPROFILE: profile }, lines: ['claude a'] });
   expect(r.out).toContain(`--settings ${r.settings} a`);
+}, 60_000);
+
+test.runIf(canRun)('an alias to Claude’s binary by its path is tracked, and still runs that binary', async () => {
+  const r = await runBash({ bins: { 'tools/claude': FAKE_CLAUDE }, home: { '.bash_profile': 'alias cc="$HOME/tools/claude --model m"\n' }, lines: ['cc a', 'alias cc'] });
+  expect(r.out).toContain(`ARGS:--settings ${r.settings} --model m a`);
+  expect(r.out).toContain(`alias cc='__atelier_claude_with ${bashPath(r.home)}/tools/claude --model m'`);
+}, 60_000);
+
+test.runIf(canRun)('variables an alias sets in front of Claude’s binary stay', async () => {
+  const r = await runBash({
+    bins: { 'tools/claude': FAKE_CLAUDE },
+    home: { '.bash_profile': 'alias cc="ATL_X=1 $HOME/tools/claude"\nalias cq="ATL_X=\'a b\' $HOME/tools/claude"\n' },
+    lines: ['cc a', 'cq b']
+  });
+  expect(r.out).toContain(`ARGS:--settings ${r.settings} a\r\nX=1`);
+  expect(r.out).toContain(`ARGS:--settings ${r.settings} b\r\nX=a b`);
+}, 60_000);
+
+test.runIf(canRun)('claude.exe in any case, bare or by a path, quoted or not, is recognized', async () => {
+  const r = await runBash({
+    bins: { 'my tools/claude': FAKE_CLAUDE },
+    home: { '.bash_profile': "alias c1='claude.exe'\nalias c2='~/x/Claude.EXE --a'\nalias c3=\"'$HOME/my tools/claude'\"\n" },
+    lines: ['alias c1', 'alias c2', 'c3 a']
+  });
+  expect(r.out).toContain("alias c1='__atelier_claude_with claude.exe'");
+  expect(r.out).toContain("alias c2='__atelier_claude_with ~/x/Claude.EXE --a'");
+  expect(r.out).toContain(`ARGS:--settings ${r.settings} a`);
+}, 60_000);
+
+test.runIf(canRun)('other aliases are left alone, and no alias text runs at startup', async () => {
+  const aliases = ["cm='claude-monitor --x'", "ce='claudette'", "cc2='command claude'", "ec='echo claude.exe'", "plain='claude'", 'x=\'echo $(touch "$HOME/RAN")\''];
+  const r = await runBash({
+    home: { '.bash_profile': aliases.map((a) => `alias ${a}\n`).join('') },
+    lines: ['alias cm ce cc2 ec plain x', '[ -e "$HOME/RAN" ] && echo RAN-YES || echo RAN-NO']
+  });
+  for (const a of aliases) expect(r.out).toContain(`alias ${a}`);
+  expect(r.out).not.toContain('__atelier_claude_with');
+  expect(r.out).toContain('RAN-NO');
 }, 60_000);
