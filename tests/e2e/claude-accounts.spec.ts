@@ -202,6 +202,46 @@ async function claudeByHand(win: Page, configDir: string, name: string) {
   await expect(win.locator('.session-row', { hasText: name })).toHaveCount(1, { timeout: 20000 });
 }
 
+test('two accounts: the empty state\'s Start a Claude session asks for the account as ⌘N does, with workspaces off and on', async () => {
+  const { app, home, ops, win } = await launch(true);
+  try {
+    const sheet = win.getByRole('dialog', { name: 'New Session' });
+    const cards = sheet.locator('.new-session-accounts .acct-card');
+    const startButton = () => win.locator('.workspace-empty').getByRole('button', { name: /^Start a Claude session/ });
+    // Workspaces off: the project's empty state. The click opens New Session with the accounts, it starts nothing.
+    await startButton().click();
+    await expect(sheet).toBeVisible();
+    await expect(cards).toHaveCount(2);
+    await expect(cards.nth(0)).toHaveAttribute('aria-checked', 'true');
+    await look(win, 'test-results/claude-accounts-empty-state-sheet.png');
+    await win.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+    expect(await win.evaluate(async () => (await (window as unknown as { atelier: Api }).atelier.terminals.list()).length)).toBe(0);
+
+    // Workspaces on (View › Toggle Workspaces for This Project): the workspace's empty state, the same sheet; the
+    // account picked there is the one the session runs with.
+    await app.evaluate(({ Menu, BrowserWindow }) => {
+      const walk = (items: Electron.MenuItem[]): Electron.MenuItem | undefined => {
+        for (const it of items) { if (it.label === 'Toggle Workspaces for This Project') return it; const sub = it.submenu ? walk(it.submenu.items) : undefined; if (sub) return sub; }
+        return undefined;
+      };
+      walk(Menu.getApplicationMenu()!.items)!.click(undefined, BrowserWindow.getAllWindows()[0]);
+    });
+    await expect(win.locator('.workspace-empty h2')).toHaveText('Nothing running in Workspace 1');
+    await startButton().click();
+    await expect(sheet).toBeVisible();
+    await expect(cards).toHaveCount(2);
+    await win.getByPlaceholder('Session name (optional)').fill('Empty state');
+    await win.keyboard.press('Tab');
+    await expect(cards.nth(1)).toHaveAttribute('aria-checked', 'true');
+    await win.keyboard.press('Enter');
+    await expect(win.locator('.session-row', { hasText: 'Empty state' })).toHaveCount(1, { timeout: 20000 });
+    await expect.poll(() => configDirOf(win, 'Empty state'), { timeout: 15000 }).toBe(ops);
+  } finally {
+    await stop(app, home);
+  }
+});
+
 test('one account: New Session looks and works as it always did; Settings › Claude › Accounts: a folder seen in a session becomes an account in one click; add, check, remove', async () => {
   const { app, home, ops, win } = await launch(false);
   try {

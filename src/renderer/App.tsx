@@ -603,8 +603,10 @@ export function App() {
   }, []);
 
   const newTerminal = () => newTerminalIn();
-  const newSession = (name: string) => newSessionIn(name);
-  const onNewMenu = (el: HTMLElement) => openNewMenu(el, { session: () => useApp.getState().setNewSessionOpen(true), terminal: () => void newTerminal() });
+  // Every "new Claude session" the user asks for goes through the New Session sheet (⌘N's): the name, and the account
+  // when there are two or more. The empty states' buttons show ⌘N, so they open it too.
+  const openNewSession = () => useApp.getState().setNewSessionOpen(true);
+  const onNewMenu = (el: HTMLElement) => openNewMenu(el, { session: openNewSession, terminal: () => void newTerminal() });
 
   if (!projectLoaded) return null;
   // The Welcome window may be the first after an update: it takes What's new from main, so it shows it too.
@@ -671,7 +673,7 @@ export function App() {
               : selectedId && activeTab === 'term' && <ScheduleCountdown terminalId={selectedId} />}
             {/* No terminal, or every tab closed (the sessions keep running in the sidebar): the same invitation. */}
             {/* Workspaces on: the workspace's own empty state, with what it can resume. */}
-            {!multi && wsOn && selectedId === null && activeTab === 'term' && <WorkspaceEmpty onSession={() => void newSession('')} onTerminal={() => void newTerminal()} />}
+            {!multi && wsOn && selectedId === null && activeTab === 'term' && <WorkspaceEmpty onSession={openNewSession} onTerminal={() => void newTerminal()} />}
             {/* Another space with no tab: its own empty state, never a terminal. */}
             {!multi && space !== 'sessions' && activeTab === NO_TAB && <SpaceEmpty space={space} />}
             {!multi && !wsOn && (terminals.length === 0 || selectedId === null) && activeTab === 'term' && (
@@ -681,7 +683,7 @@ export function App() {
                   <h2>{t.emptyTitle}</h2>
                   <p>{t.emptyBody}</p>
                   <div className="ws-empty-actions">
-                    <button type="button" className="btn-primary btn-lg" onClick={() => void newSession('')}><Icon name="sparkle" size={14} />{t.startSession}<span className="kbd-in">{kbd('⌘N')}</span></button>
+                    <button type="button" className="btn-primary btn-lg" onClick={openNewSession}><Icon name="sparkle" size={14} />{t.startSession}<span className="kbd-in">{kbd('⌘N')}</span></button>
                     <button type="button" className="btn-ghost btn-lg" onClick={() => void newTerminal()}><Icon name="terminal" size={14} />{t.openTerminal}<span className="kbd-in">{kbd('⌘T')}</span></button>
                   </div>
                 </div>
