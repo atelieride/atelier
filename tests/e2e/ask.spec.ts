@@ -293,6 +293,14 @@ test('Ask: ⌘I docks the panel beside a narrower terminal and closes it again; 
 
 type Resize = { id: string; cols: number; rows: number };
 
+/** The visible terminal's columns, as the footer shows them ("120×42"); 0 while it shows none. */
+async function viewCols(win: Page): Promise<number> {
+  const label = win.locator('.foot-dim', { hasText: '×' });
+  if (await label.count() === 0) return 0;
+  const m = /(\d+)×\d+/.exec(await label.first().innerText());
+  return m ? Number(m[1]) : 0;
+}
+
 test('Ask keeps its dock across tabs and splits (the terminal gets one size each time, never a passing one) and moves with its tab to a new window and back', async () => {
   const { app, win, home } = await launch();
   try {
@@ -313,11 +321,15 @@ test('Ask keeps its dock across tabs and splits (the terminal gets one size each
     const panel = win.getByRole('complementary', { name: 'Ask about auth-refactor' });
     const slot = '.terminal-slot:visible';
     const full = await widthOf(win, slot);
+    await expect.poll(() => viewCols(win)).toBeGreaterThan(0);
+    const fullCols = await viewCols(win);
     await command(app, 'ask-session');
     await expect(panel).toHaveClass(/is-dock/);
     await expect.poll(() => widthOf(win, slot)).toBeLessThan(full - 380);
-    await expect.poll(async () => (await sizes(id)).at(-1) ?? 0).toBeGreaterThan(0);
-    const docked = (await sizes(id)).at(-1)!;
+    // The docked width as the footer shows it; atelierd gets it once it has settled.
+    await expect.poll(() => viewCols(win)).toBeLessThan(fullCols);
+    const docked = await viewCols(win);
+    await expect.poll(async () => (await sizes(id)).at(-1)).toBe(docked);
     // The on-open Catch me up has landed and every entrance has ended: whatever runs after the tab comes back replays.
     await expect(panel.locator('.ask-item[data-kind="catchup"]')).toHaveCount(1, { timeout: 10000 });
     await expect.poll(() => entrances(panel)).toEqual([]);

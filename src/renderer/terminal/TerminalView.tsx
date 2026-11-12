@@ -15,6 +15,7 @@ import { atelierMenuOnRightClick } from './context-menu';
 import { TREE_PATH_TYPE, dropText, endTreeDrag, treeDragPath } from './drop';
 import { profileShellKind } from '@shared/shell-kind';
 import { onTerminalFind, requestTerminalFind } from './find';
+import { PtySize } from './pty-size';
 
 // Find in the terminal: the card and xterm's search addon are a chunk of their own, never in the
 // first paint (the app's nor the live demo's), fetched once the first terminal is up and the page is idle. Kept here
@@ -85,20 +86,28 @@ export function TerminalView({ id, visible, focused = visible, place }: { id: st
   useEffect(() => {
     if (!visible || !slot.current) return;
     const lt = getLiveTerminal(id);
-    const resize = () => {
-      try { lt.fit.fit(); } catch { return; }
-      if (lt.term.cols < 2 || lt.term.rows < 2) return;
-      window.atelier.terminals.resize(id, lt.term.cols, lt.term.rows);
-      setSize(lt.term.cols, lt.term.rows);
+    // xterm follows the pane every frame; its program gets the size as PtySize decides (once settled while a pane is
+    // dragged, unless it is full screen).
+    const pty = new PtySize((cols, rows) => {
+      window.atelier.terminals.resize(id, cols, rows);
       // Its screen was written at another size (never fitted behind another tab): asked again, after the resize, so
       // atelierd sends it at this size.
-      if (lt.snapshotFit.fitted(lt.term.cols, lt.term.rows) && lt.attached) void window.atelier.terminals.attach(id).catch(() => {});
+      if (lt.snapshotFit.fitted(cols, rows) && lt.attached) void window.atelier.terminals.attach(id).catch(() => {});
+    });
+    /** xterm fitted to the pane; false when it can't be (not laid out yet, too small). */
+    const fit = (): boolean => {
+      try { lt.fit.fit(); } catch { return false; }
+      if (lt.term.cols < 2 || lt.term.rows < 2) return false;
+      setSize(lt.term.cols, lt.term.rows);
+      return true;
     };
-    const ro = new ResizeObserver(resize);
+    const ro = new ResizeObserver(() => { if (fit()) pty.fitted(lt.term.cols, lt.term.rows, lt.term.buffer.active.type === 'alternate'); });
+    // Shown, attached, other font metrics: the program gets the size at once.
+    const now = () => { if (fit()) pty.now(lt.term.cols, lt.term.rows); };
     ro.observe(slot.current);
-    resize();
-    refit.current = resize;
-    return () => { ro.disconnect(); refit.current = null; };
+    now();
+    refit.current = now;
+    return () => { ro.disconnect(); pty.flush(); refit.current = null; };
   }, [id, visible, setSize]);
   // The keyboard goes to the shown terminal; in the split view only to the focused pane's.
   useEffect(() => { if (visible && focused) getLiveTerminal(id).term.focus(); }, [id, visible, focused]);

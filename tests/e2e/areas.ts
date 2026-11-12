@@ -115,6 +115,7 @@ export const SPECS: Record<string, Area[]> = {
   'preview-tabs.spec.ts': ['files'],
   'profiles.spec.ts': ['terminal', 'settings'],
   'reattach-size.spec.ts': ['terminal'],
+  'terminal-resize.spec.ts': ['terminal'],
   'screen-resync.spec.ts': ['terminal'],
   'redis.spec.ts': ['services'],
   'remote.spec.ts': ['connectors'],
