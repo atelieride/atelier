@@ -25,6 +25,7 @@ import { kbd } from '../kbd';
 const items: { id: Activity; icon: IconName; label: string }[] = [
   { id: 'sessions', icon: 'sessions', label: t.activity.sessions },
   { id: 'files', icon: 'files', label: t.activity.files },
+  { id: 'search', icon: 'search', label: t.activity.search },
   { id: 'services', icon: 'services', label: t.activity.services },
   { id: 'scm', icon: 'git', label: t.activity.scm },
   { id: 'docker', icon: 'whale', label: t.activity.docker },

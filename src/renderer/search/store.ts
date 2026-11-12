@@ -178,7 +178,9 @@ export const useSearch = create<SearchState>((set, get) => {
     run() {
       clearTimer();
       const s = get();
-      if (s.spec.query === '') { s.clear(); return; }
+      // Nothing to look for, or nothing that can match (an invalid regular expression, a line break: the view says
+      // why): no search, and the one before it stops.
+      if (s.spec.query === '' || compileSearch(s.spec).kind !== 'ok') { s.clear(); return; }
       ensureSubscribed();
       abandon();
       const searchId = ++lastId;

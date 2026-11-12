@@ -48,7 +48,7 @@ const strings = {
   search: 'Files, sessions, commands…',
   searchLabel: 'Search',
   views: 'Views',
-  activity: { sessions: `Sessions (${kbd('⌘⇧1')})`, files: `Files (${kbd('⌘⇧2')})`, services: `Services (${kbd('⌘⇧3')})`, scm: `Source Control (${kbd('⌃⇧G')})`, docker: `Docker (${kbd('⌃⇧D')})`, redis: `Redis (${kbd('⌃⇧R')})`, databases: `Databases (${kbd('⌃⇧B')})`, automations: `Automations (${kbd('⌘⇧A')})`, settings: 'Settings', hide: 'Hide sidebar',
+  activity: { sessions: `Sessions (${kbd('⌘⇧1')})`, files: `Files (${kbd('⌘⇧2')})`, search: `Find in Files (${kbd('⌘⇧F')})`, services: `Services (${kbd('⌘⇧3')})`, scm: `Source Control (${kbd('⌃⇧G')})`, docker: `Docker (${kbd('⌃⇧D')})`, redis: `Redis (${kbd('⌃⇧R')})`, databases: `Databases (${kbd('⌃⇧B')})`, automations: `Automations (${kbd('⌘⇧A')})`, settings: 'Settings', hide: 'Hide sidebar',
     // Source Control's dot: what is to pull, in its label and its tooltip.
     toPull: (names: string) => `To pull: ${names}`, pullLine: (name: string, n: number) => `${name} · ${n} to pull`, more: (n: number) => `and ${n} more` },
   welcomeTitle: 'Atelier',

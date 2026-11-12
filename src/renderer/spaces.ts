@@ -5,7 +5,7 @@ import { mapLayoutKeys, mapLayoutPanes } from './split';
 import { afterClose, type TabKey } from './tabs-model';
 
 /** The sidebar's views, picked in the activity bar (the store re-exports it). */
-export type Activity = 'sessions' | 'files' | 'services' | 'scm' | 'docker' | 'redis' | 'databases' | 'automations';
+export type Activity = 'sessions' | 'files' | 'search' | 'services' | 'scm' | 'docker' | 'redis' | 'databases' | 'automations';
 export type SpaceId = 'sessions' | 'docker' | 'redis' | 'databases' | 'automations';
 export type OtherSpace = Exclude<SpaceId, 'sessions'>;
 
@@ -14,7 +14,7 @@ export interface SpaceView { order: TabKey[]; front: TabKey | null; layout: unkn
 /** Every space's view; the active space's entry lags (its live view is in the store's fields). */
 export type SpaceViews = Record<SpaceId, SpaceView>;
 
-/** The activity that shows each space other than Sessions (Sessions has four: Sessions, Files, Services, Source Control). */
+/** The activity that shows each space other than Sessions (Sessions has five: Sessions, Files, Find in Files, Services, Source Control). */
 export const SPACE_ACTIVITY: Record<OtherSpace, Activity> = { docker: 'docker', redis: 'redis', databases: 'databases', automations: 'automations' };
 
 export function spaceOf(k: TabKey): SpaceId {

@@ -41,6 +41,8 @@ import { useRowFit, type RowFitParts } from '../row-fit';
 const AutomationsList = lazy(() => import('../automations/AutomationsList').then((m) => ({ default: m.AutomationsList })));
 // The Databases sidebar too, with its stylesheet (the live demo's first paint); its head shows meanwhile.
 const DatabasesList = lazy(() => import('../databases/DatabasesList').then((m) => ({ default: m.DatabasesList })));
+// Find in Files too: the view, its list, its stylesheet and strings come with its chunk; its head shows meanwhile.
+const FindInFiles = lazy(() => import('../search/FindInFiles').then((m) => ({ default: m.FindInFiles })));
 
 /**
  * The Databases head while its chunk loads, laid out as the list's own — title, count, the room of its two buttons — so
@@ -54,6 +56,17 @@ function DbHeadLoading() {
       {count > 0 && <span className="section-label mono db-head-count">{count}</span>}
       <span className="grow" />
       <span className="icon-btn" /><span className="icon-btn" />
+    </div>
+  );
+}
+
+/** Find in Files' head while its chunk loads: its name and the room of its three buttons, as the view lays them out. */
+function SearchHeadLoading() {
+  return (
+    <div className="sidebar-head">
+      <span className="section-label">{t.activity.search.replace(/ \(.*\)$/, '')}</span>
+      <span className="grow" />
+      <span className="icon-btn" /><span className="icon-btn" /><span className="icon-btn" />
     </div>
   );
 }
@@ -358,6 +371,7 @@ export function Sidebar() {
 
   if (hidden) return null;
   if (activity === 'files') return <aside className="sidebar"><FileTree /></aside>;
+  if (activity === 'search') return <aside className="sidebar is-search"><Suspense fallback={<SearchHeadLoading />}><FindInFiles /></Suspense></aside>;
   if (activity === 'services') return <aside className="sidebar"><ServicesList /></aside>;
   if (activity === 'scm') return <aside className="sidebar is-scm"><ScmSidebar /></aside>;
   if (activity === 'docker') return <aside className="sidebar is-docker"><DockerList /></aside>;

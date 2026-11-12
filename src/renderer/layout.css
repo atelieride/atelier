@@ -242,6 +242,10 @@ button.foot-item:disabled { cursor: default; }
 .list { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
 .sidebar-head .icon-btn { margin: -4px 0; }
 .sidebar-head .icon-btn:last-child { margin-right: -6px; }
+/* Find in Files: its name stays on one line at the narrowest sidebar, its three buttons close together (here, not in
+   its lazy stylesheet: the head shown while that loads is laid out the same). */
+.is-search > .sidebar-head { gap: 2px; }
+.is-search > .sidebar-head .section-label { margin-right: 5px; white-space: nowrap; }
 /* Inbox: the grouped sessions list, one list with a head per section, each with its state color. */
 .inbox-head { --tone: var(--text-4); display: flex; align-items: center; gap: 7px; padding: 10px 8px 5px; animation: atl-fade var(--t-med) var(--ease) both; }
 .inbox-head.is-needs { --tone: var(--waiting-mark); }

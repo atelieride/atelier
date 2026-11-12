@@ -87,6 +87,27 @@ test('an empty query clears the results and starts nothing', () => {
   expect(stopped).toEqual([started[0]!.searchId]);
 });
 
+test('a query that cannot match (an invalid regular expression, a line break) starts nothing and stops the search before it', () => {
+  st().setQuery('token');
+  st().run();
+  emit(batch([file('a.ts')]));
+  st().setSpec({ regex: true });
+  expect(started).toHaveLength(2);
+  st().setQuery('readSession(token');
+  vi.advanceTimersByTime(500);
+  st().run();
+  expect(started).toHaveLength(2);
+  expect(stopped).toContain(started[1]!.searchId);
+  expect(st()).toMatchObject({ searchId: 0, phase: 'idle', files: [] });
+  expect(st().spec.query).toBe('readSession(token');
+  st().setSpec({ regex: false });
+  expect(started).toHaveLength(3);
+  st().setQuery('a\\nb');
+  vi.advanceTimersByTime(500);
+  expect(started).toHaveLength(3);
+  expect(st().phase).toBe('idle');
+});
+
 test('the id is recorded before start, so an error that beats the promise counts', () => {
   startImpl = (r) => { emit({ kind: 'error', searchId: r.searchId, message: 'boom', rel: 'x.ts' }); return Promise.resolve(); };
   st().setQuery('a');
