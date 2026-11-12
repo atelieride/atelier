@@ -126,11 +126,12 @@ test.runIf(canRun)('OSC 7 names the folder, percent-encoded', async () => {
 
 test.runIf(canRun)('Atelier’s bin comes first, also if the user’s files moved it, and only once', async () => {
   const r = await runBash({ home: { '.bash_profile': 'PATH="/usr/bin:$PATH"\n' }, lines: ['echo "H=${PATH%%:*}=H"', 'echo "PATH=:$PATH:END"'] });
-  const bin = `${bashPath(r.atelierHome)}/bin`;
-  expect(r.flat).toContain(`H=${bin}=H`);
-  // The command line itself shows $PATH unexpanded: only the output has no `$` in it.
+  // The command lines themselves show $PATH unexpanded: only the outputs have no `$` in them. Git Bash may name the
+  // folder through one of its mounts (%TEMP% is /tmp), so the head is checked by its end.
+  const head = /H=([^$]*?)=H/.exec(r.flat)![1]!;
+  expect(isWin ? head.endsWith('/atelier home/bin') : head === `${r.atelierHome}/bin`).toBe(true);
   const path = /PATH=(:[^$]*?:)END/.exec(r.flat)![1]!;
-  expect(path.split(`:${bin}:`).length - 1).toBe(1);
+  expect(path.split(`:${head}:`).length - 1).toBe(1);
 }, 60_000);
 
 test.runIf(canRun)('a prompt command of the user’s still runs, after ours, with the command’s $?', async () => {
