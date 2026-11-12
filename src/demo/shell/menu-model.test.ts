@@ -35,6 +35,13 @@ describe('buildMenus', () => {
     expect(view.some((l, i) => l === '—' && view[i + 1] === '—')).toBe(false);
   });
 
+  test('View › Find in Files, ⌘⇧F, right after Files: the command the key sends too, a key the browser leaves to the page', () => {
+    expect(item('View', 'Find in Files')).toMatchObject({ keys: '⌘⇧F', effect: { kind: 'command', command: 'find-in-files' } });
+    expect(item('View', 'Find in Files').reserved).toBeUndefined();
+    const view = labels(menu('View').items);
+    expect(view[view.indexOf('Files') + 1]).toBe('Find in Files');
+  });
+
   test('View › Ask About This Session, ⌘I, after Session Panel: the command ⌘I sends', () => {
     expect(item('View', 'Ask About This Session')).toMatchObject({ keys: '⌘I', effect: { kind: 'command', command: 'ask-session' } });
     expect(item('View', 'Ask About This Session').reserved).toBeUndefined();

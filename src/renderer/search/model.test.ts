@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import type { SearchFile, SearchLine } from '@shared/search';
-import { anyExpanded, buildRows, fileKey, fileSize, lineCopy, matchKey, nearestMatch, pillCount, previewWindow, resultsText, rowTotals, stepResult, takesFocusOnMount, totals, treePositions } from './model';
+import { anyExpanded, anyResult, buildRows, fileKey, fileSize, lineCopy, matchKey, nearestMatch, pillCount, previewWindow, resultsText, rowTotals, stepResult, takesFocusOnMount, totals, treePositions } from './model';
 
 const ln = (line: number, text: string, ranges: [number, number][], start = 0, cutEnd = false): SearchLine => ({ line, text, start, ranges, cutStart: start > 0, cutEnd });
 const file = (rel: string, lines: SearchLine[]): SearchFile => ({ path: `/p/${rel}`, rel, size: 10, lines });
@@ -39,6 +39,15 @@ test('stepResult walks match rows across files and wraps both ways', () => {
   expect(stepResult(rows, fileKey(B.path), 1)).toBe(last);
   expect(stepResult(rows, fileKey(B.path), -1)).toBe(matchKey(A.path, 4, 0));
   expect(stepResult([], null, 1)).toBeNull();
+});
+
+test('anyResult: a match left to walk, collapsed files included; none once every one is dismissed', () => {
+  expect(anyResult([A, B], none)).toBe(true);
+  expect(anyResult([], none)).toBe(false);
+  expect(anyResult([B], new Set([matchKey(B.path, 2, 0)]))).toBe(false);
+  expect(anyResult([A, B], new Set([fileKey(A.path), fileKey(B.path)]))).toBe(false);
+  expect(anyResult([A, B], new Set([fileKey(A.path)]))).toBe(true);
+  expect(anyResult([A], new Set([matchKey(A.path, 1, 0), matchKey(A.path, 1, 1)]))).toBe(true);
 });
 
 test("previewWindow drops leading whitespace and marks every range, the row's own one strong", () => {

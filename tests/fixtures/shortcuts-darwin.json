@@ -170,6 +170,14 @@
         "label": "Match case, whole word, regular expression (in Find)"
       },
       {
+        "keys": "⌘⇧F",
+        "label": "Find in files"
+      },
+      {
+        "keys": "F4 · ⇧F4",
+        "label": "Next / previous search result"
+      },
+      {
         "keys": "⌥Z",
         "label": "Word wrap on or off (in the editor and diffs; also View › Word Wrap)"
       },

@@ -26,6 +26,7 @@ import { openSelectedContextSheet } from './context-actions';
 import { commentOnSelection } from './comment-targets';
 import { goToChange } from './change-targets';
 import { revealActive } from './reveal';
+import { findInFilesCommand, installSearchKeys, stepSearchResult } from './search/open';
 import { Palette } from './components/Palette';
 import { SessionBar, type PaneSlot } from './components/SessionBar';
 import { PanePicker } from './components/PanePicker';
@@ -292,6 +293,9 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey, true);
   }, []);
 
+  // F4 / ⇧F4: the next / previous Find in Files result, anywhere but in a terminal.
+  useEffect(() => installSearchKeys(), []);
+
   // Shift+F10 or the menu key: the right-click menu of the focused element (tab, row, tree, editor).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -511,6 +515,9 @@ export function App() {
           case 'redraw-terminal': if (st.selectedId) redrawTerminal(st.selectedId); break;
           case 'view-sessions': st.setActivity('sessions'); break;
           case 'view-files': st.setActivity('files'); break;
+          case 'find-in-files': findInFilesCommand(); break;
+          // F4 / ⇧F4 pressed in a pop-out: the results are this window's; the keyboard goes with the result.
+          case 'next-search-result': case 'prev-search-result': stepSearchResult(cmd === 'next-search-result' ? 1 : -1, false); break;
           case 'view-services': if (servicesView(st.settings.showServices)) st.setActivity('services'); break;
           case 'view-scm': st.setActivity('scm'); break;
           case 'view-docker': st.setActivity('docker'); break;

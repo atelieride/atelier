@@ -164,6 +164,19 @@ export const ResultList = forwardRef<ResultListHandle, { rows: Row[]; onEscape: 
     el.querySelector<HTMLElement>(`.fif-row[data-i="${sel}"]`)?.focus({ preventScroll: true });
   });
 
+  // The selection moved from outside the list (F4, the palette): its row comes into sight, and a keyboard in the list
+  // goes along with it.
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || sel < 0) return;
+    const top = scrollToShow(tops, sel, el.scrollTop, el.clientHeight);
+    if (top !== el.scrollTop) {
+      el.scrollTop = top;
+      setView({ top, height: el.clientHeight, width: el.clientWidth });
+    }
+    if (el.contains(document.activeElement)) el.querySelector<HTMLElement>(`.fif-row[data-i="${sel}"]`)?.focus({ preventScroll: true });
+  }, [selected]);
+
   useLayoutEffect(() => {
     if (after.current === null) return;
     const i = Math.min(after.current, rows.length - 1);

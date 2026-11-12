@@ -6,6 +6,8 @@ import { lastFindSpec, rememberFindQuery } from '../editor/find/find-ext';
 import { regexError, type FindAction, type FindSpec } from '../editor/find/find-logic';
 import { findInText, nextIndex } from './find-text';
 import { isSourceControlKey } from '@shared/keys';
+import { searchAllFrom } from '../search/open';
+import { useApp } from '../store';
 
 const EMPTY: FindSpec = { search: '', caseSensitive: false, wholeWord: false, regexp: false, replace: '' };
 const ALL = 'md-find';
@@ -51,6 +53,7 @@ export function PreviewFind({ page, scroller, version, nonce, onClose }: {
   onClose: () => void;
 }) {
   const [spec, setSpec] = useState<FindSpec>(() => ({ ...EMPTY, ...lastFindSpec(), replace: '' }));
+  const popout = useApp((s) => s.popout !== null);
   const [focus, setFocus] = useState({ field: 'find' as const, nonce: 0 });
   const [found, setFound] = useState<{ ranges: Range[]; capped: boolean; valid: boolean }>({ ranges: [], capped: false, valid: true });
   const [index, setIndex] = useState(-1);
@@ -117,10 +120,13 @@ export function PreviewFind({ page, scroller, version, nonce, onClose }: {
         onAction={act}
         onToggleReplace={() => {}}
         onOtherKey={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { setFocus((f) => ({ field: 'find', nonce: f.nonce + 1 })); return true; }
+          // ⇧⌘F is Find in Files' (the menu's), with this card's query.
+          if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'f') { setFocus((f) => ({ field: 'find', nonce: f.nonce + 1 })); return true; }
           if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g' && !isSourceControlKey(e)) { act(e.shiftKey ? 'prev' : 'next'); return true; }
           return false;
         }}
+        // A pop-out has no sidebar to search in.
+        onSearchAll={popout ? undefined : () => searchAllFrom(spec)}
       />
     </div>
   );

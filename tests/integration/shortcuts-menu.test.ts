@@ -108,6 +108,23 @@ test('Databases: ⌃⇧B in View right after Redis, opening the view unless Neve
   expect(db.find((i) => i.keys === '⌘⏎')?.label).toBe('On a table in the palette: open it as a kept tab (⏎: a preview)');
 });
 
+test('Find in Files: ⌘⇧F in View after Files, the command, the palette\'s three items, F4 at the window; listed in Keyboard', () => {
+  const view = labels('View');
+  expect(view[view.indexOf('Files') + 1]).toBe('Find in Files');
+  expect(item('Find in Files')).toEqual({ label: 'Find in Files', accelerator: 'CmdOrCtrl+Shift+F', command: 'find-in-files' });
+  expect(accels.filter((a) => keysOf(a) === '⌘⇧F')).toHaveLength(1);
+  const app = readFileSync(join(__dirname, '../../src/renderer/App.tsx'), 'utf8');
+  expect(app).toContain("case 'find-in-files': findInFilesCommand(); break;");
+  // F4 / ⇧F4: the page's own keys, at the window (a pop-out's come here through its forwarded command).
+  expect(app).toContain('installSearchKeys()');
+  expect(app).toMatch(/case 'next-search-result': case 'prev-search-result':/);
+  const palette = readFileSync(join(__dirname, '../../src/renderer/components/Palette.tsx'), 'utf8');
+  for (const id of ['find-in-files', 'next-search-result', 'prev-search-result']) expect(palette).toContain(`c('${id}'`);
+  const editor = SHORTCUTS.find((g) => g.title === 'Files & Editor')!.items;
+  expect(editor.find((i) => i.label === 'Find in files')?.keys).toBe('⌘⇧F');
+  expect(editor.find((i) => i.label === 'Next / previous search result')?.keys).toBe('F4 · ⇧F4');
+});
+
 test('Connectors: reachable from the app menu, right after Settings…, opening its Settings section', () => {
   const appMenu = MENU_SPEC[0]!;
   expect('app' in appMenu && appMenu.app).toBe(true);

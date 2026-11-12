@@ -142,8 +142,8 @@ p > .md-img:only-child { display: block; margin: 4px auto; border-radius: var(--
 .md-article .is-cursor { background: var(--tint-violet-soft); border-radius: 6px; box-shadow: 0 0 0 6px var(--tint-violet-soft); transition: background-color var(--t-med) var(--ease), box-shadow var(--t-med) var(--ease); }
 .md-article .md-flash { border-radius: 6px; animation: atl-fade-target 1.2s var(--ease); }
 
-/* Find (⌘F): the editor's card floats top right; matches painted by the CSS Highlight API. */
-.md-find-layer { position: absolute; top: 8px; left: 8px; right: 22px; z-index: 5; display: flex; justify-content: flex-end; pointer-events: none; container-type: inline-size; }
+/* Find (⌘F): the editor's card floats top right, "Search in all files" under it; matches painted by the CSS Highlight API. */
+.md-find-layer { position: absolute; top: 8px; left: 8px; right: 22px; z-index: 5; display: flex; flex-direction: column; align-items: flex-end; pointer-events: none; container-type: inline-size; }
 .md-find-layer > * { pointer-events: auto; }
 ::highlight(md-find) { background-color: var(--hit-bg); }
 ::highlight(md-find-current) { background-color: var(--hit-strong); }

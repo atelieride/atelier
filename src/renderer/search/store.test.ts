@@ -2,14 +2,16 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from 'vi
 import type { SearchEvent, SearchFile, SearchLine, SearchRequest } from '@shared/search';
 
 const dirty = vi.hoisted(() => ({ docs: new Map<string, string>() }));
-vi.mock('../store', () => ({ useApp: { getState: () => ({ project: { root: '/p' } }) } }));
+const app = vi.hoisted(() => ({ openSearchResult: vi.fn() }));
+vi.mock('../store', () => ({ useApp: { getState: () => ({ ...app, project: { root: '/p' } }) } }));
 vi.mock('../editor/savers', () => ({
   dirtyPaths: () => [...dirty.docs.keys()],
   handoffOf: (p: string) => (dirty.docs.has(p) ? { state: { doc: dirty.docs.get(p) } } : undefined)
 }));
 
 import { useSearch } from './store';
-import { fileKey } from './model';
+import { fileKey, matchKey } from './model';
+import { hasSearchResults, selectionSeed, stepSearchResult } from './open';
 import { loadRecent } from './recent';
 
 const g = globalThis as { window?: unknown; localStorage?: unknown };
@@ -340,6 +342,57 @@ test('focusField seeds the spec, bumps the nonce and runs', () => {
   expect(started[0]).toMatchObject({ query: 'seed', matchCase: true });
   st().focusField();
   expect(st().focusNonce).toBe(n + 2);
+});
+
+test('a seeded focus request is one update: the field gets its new text and the request together (its text selected whole)', () => {
+  const seen: [number, string][] = [];
+  const off = useSearch.subscribe((s) => seen.push([s.focusNonce, s.spec.query]));
+  const n = st().focusNonce;
+  st().focusField({ query: 'seed', matchCase: false, wholeWord: false, regex: false });
+  off();
+  expect(seen[0]).toEqual([n + 1, 'seed']);
+});
+
+test('F4 / ⇧F4: the next and previous match across files, wrapping; a collapsed file opens to show its match', () => {
+  const ran = { query: 'token', matchCase: false, wholeWord: false, regex: false };
+  const two: SearchLine = { line: 9, text: 'token token', start: 0, ranges: [[0, 5], [6, 11]], cutStart: false, cutEnd: false };
+  const a: SearchFile = { path: '/p/a.ts', rel: 'a.ts', size: 7, lines: [ln(4), two] };
+  const b: SearchFile = { path: '/p/b.ts', rel: 'b.ts', size: 7, lines: [ln(4)] };
+  useSearch.setState({ ranSpec: ran, files: [a, b], collapsed: new Set([fileKey(b.path)]), dismissed: new Set([matchKey(a.path, 9, 0)]), selected: null });
+  const open = () => app.openSearchResult.mock.lastCall;
+  st().step(1, false);
+  expect(st().selected).toBe(matchKey(a.path, 4, 0));
+  expect(open()).toEqual([a, a.lines[0], 0, { side: false, keepFocus: false, spec: ran }]);
+  // The dismissed match is passed over; through the opener of the first paint.
+  stepSearchResult(1, true);
+  expect(st().selected).toBe(matchKey(a.path, 9, 1));
+  expect(open()).toEqual([a, two, 1, { side: false, keepFocus: true, spec: ran }]);
+  // Into the collapsed file: it opens, so the list shows the selected row.
+  st().step(1, true);
+  expect(st().selected).toBe(matchKey(b.path, 4, 0));
+  expect(st().collapsed.has(fileKey(b.path))).toBe(false);
+  // Wrapping at the end, and back.
+  st().step(1, true);
+  expect(st().selected).toBe(matchKey(a.path, 4, 0));
+  st().step(-1, true);
+  expect(st().selected).toBe(matchKey(b.path, 4, 0));
+  // Nothing left: nothing selected, nothing opened.
+  app.openSearchResult.mockClear();
+  useSearch.setState({ files: [], selected: null });
+  st().step(1, true);
+  expect(st().selected).toBeNull();
+  expect(app.openSearchResult).not.toHaveBeenCalled();
+});
+
+test('the first paint\'s opener reads the store once it has loaded: results to walk and the options a seed is escaped for', () => {
+  st().setQuery('token'); st().run();
+  expect(hasSearchResults()).toBe(false);
+  emit(batch([file('a.ts')]));
+  expect(hasSearchResults()).toBe(true);
+  st().dismiss(fileKey('/p/a.ts'));
+  expect(hasSearchResults()).toBe(false);
+  st().setSpec({ regex: true });
+  expect(selectionSeed({ text: 'a.b' })).toBe('a\\.b');
 });
 
 test('setSpec toggles re-run at once, filters wait for the debounce', () => {

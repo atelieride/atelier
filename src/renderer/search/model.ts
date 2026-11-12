@@ -30,6 +30,17 @@ export function buildRows(files: SearchFile[], collapsed: ReadonlySet<string>, d
   return rows;
 }
 
+/** Whether a match is left to walk to (F4): any not dismissed, a collapsed file's included. */
+export function anyResult(files: SearchFile[], dismissed: ReadonlySet<string>): boolean {
+  for (const file of files) {
+    if (dismissed.has(fileKey(file.path))) continue;
+    for (const line of file.lines) {
+      for (let i = 0; i < line.ranges.length; i++) if (!dismissed.has(matchKey(file.path, line.line, i))) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * The match row after (or before) the selected row, in list order and wrapping at the ends. Nothing selected, or a
  * selection no longer in the rows, starts at the first (or last) match; a selected file row steps from its place.

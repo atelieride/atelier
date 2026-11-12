@@ -23,6 +23,7 @@ import { TriggerHighlights } from './trigger-view';
 import { SnapshotFit } from './snapshot-fit';
 import { withMouseEncoding } from './mouse-encoding';
 import { sendInput } from './drafts';
+import { setTerminalSelection } from '../search/open';
 
 /**
  * findMatch: where Find's current match was last selected, kept after its card closes: a selection
@@ -55,6 +56,11 @@ const triggers = new TriggerEngine({
 });
 setTerminalFocuser((id) => live.get(id)?.term.focus());
 setBracketedProbe((id) => bracketedPaste(id));
+// ⇧⌘F in a terminal: what is selected there becomes the query.
+setTerminalSelection((el) => {
+  for (const lt of live.values()) if (lt.host.contains(el)) return lt.term.hasSelection() ? lt.term.getSelection() : null;
+  return null;
+});
 /** When each mounted terminal last received output: lets a typed Enter wait until a paste has been drawn. */
 const lastOutput = new Map<string, number>();
 setOutputProbe((id) => lastOutput.get(id) ?? 0);

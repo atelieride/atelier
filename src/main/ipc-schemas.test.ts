@@ -490,6 +490,11 @@ describe('pop-out schemas', () => {
     expect(popoutForwardSchema.safeParse('new-session-account:work').success).toBe(true);
     expect(popoutForwardSchema.safeParse('new-session-account:').success).toBe(false);
     expect(popoutForwardSchema.safeParse('new-terminal-profile:fish').success).toBe(true);
+    // F4 / ⇧F4 in a pop-out: its project window holds the results and walks them (no menu item has these).
+    expect(popoutForwardSchema.safeParse('next-search-result').success).toBe(true);
+    expect(popoutForwardSchema.safeParse('prev-search-result').success).toBe(true);
+    expect(popoutForwardSchema.safeParse('next-search-results').success).toBe(false);
+    expect(popoutForwardSchema.safeParse('find-in-files').success).toBe(true);
     // A connector's details page: only a known connector.
     expect(popoutForwardSchema.safeParse('open-connector:clickup').success).toBe(true);
     expect(popoutForwardSchema.safeParse('open-connector:notion').success).toBe(true);

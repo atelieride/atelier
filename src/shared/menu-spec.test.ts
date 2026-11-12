@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
-import { MENU_SPEC, menuItems, type MenuSpecItem } from './menu-spec';
+import { MENU_SPEC, NO_MENU_STATE, menuItems, type MenuSpecItem } from './menu-spec';
+import { windowsMenu, type WinMenuItem } from './windows-menu';
 
 const items = menuItems(MENU_SPEC);
 const accels = items.flatMap((i) => ('accelerator' in i && i.accelerator ? [i.accelerator] : []));
@@ -41,6 +42,23 @@ test('View › Sidebar (⌘B) right after Changes, showing or hiding the sidebar
   const labels = sub.map((i) => ('label' in i ? i.label : '-'));
   expect(labels[labels.indexOf('Changes') + 1]).toBe('Sidebar');
   expect(sub.find((i) => 'label' in i && i.label === 'Sidebar')).toEqual({ label: 'Sidebar', accelerator: 'CmdOrCtrl+B', command: 'toggle-sidebar' });
+});
+
+test('View › Find in Files (⇧⌘F) right after Files; on Windows the keymap gives it Shift+Alt+F, a key no other item has', () => {
+  const view = MENU_SPEC.find((m) => 'label' in m && m.label === 'View');
+  const sub = view && 'submenu' in view ? view.submenu : [];
+  const labels = sub.map((i) => ('label' in i ? i.label : '-'));
+  expect(labels[labels.indexOf('Files') + 1]).toBe('Find in Files');
+  expect(sub.find((i) => 'label' in i && i.label === 'Find in Files')).toEqual({ label: 'Find in Files', accelerator: 'CmdOrCtrl+Shift+F', command: 'find-in-files' });
+  // F4 / ⇧F4 are the page's own keys (a terminal keeps them): never a menu accelerator.
+  expect(accels.filter((a) => /(^|\+)F4$/.test(a))).toEqual([]);
+  const win = windowsMenu(MENU_SPEC, { profiles: [], accounts: [], state: { ...NO_MENU_STATE, hasRepos: true, gitWrites: true }, isPackaged: true });
+  const all: WinMenuItem[] = [];
+  const walk = (items: WinMenuItem[]) => { for (const i of items) { if (i.kind === 'submenu') walk(i.items); else all.push(i); } };
+  for (const m of win) walk(m.items);
+  const item = all.find((i) => i.kind === 'item' && i.label === 'Find in Files');
+  expect(item).toMatchObject({ id: 'command:find-in-files', accel: 'Shift+Alt+F' });
+  expect(all.filter((i) => i.kind === 'item' && i.accel === 'Shift+Alt+F')).toHaveLength(1);
 });
 
 test('every item does one thing: a command, a main-process action, a role, a dynamic submenu, dynamic items or a separator', () => {

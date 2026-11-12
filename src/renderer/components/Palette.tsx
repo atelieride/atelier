@@ -23,6 +23,7 @@ import { goToChange } from '../change-targets';
 import { activeFindTarget, findInActiveTab } from '../editor/find/find-ext';
 import { toggleWordWrap } from '../editor/word-wrap';
 import { revealActive } from '../reveal';
+import { hasSearchResults, openFindInFiles, stepSearchResult } from '../search/open';
 import { shelfCommand } from '../menus';
 import { collapseAllFolders } from './FileTree';
 import { recentForPalette } from '../recent';
@@ -495,6 +496,12 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
       // Word wrap in every editor; ⌥Z in an editor.
       c('word-wrap', t.cmd.wordWrap, `${st.settings.wordWrap ? `${t.paletteOn}  ` : ''}${kbd('⌥Z')}`, 'wrap', toggleWordWrap),
       c('v-sessions', t.cmd.viewSessions, kbd('⌘⇧1'), 'sessions', () => st.setActivity('sessions')), c('v-files', t.cmd.viewFiles, kbd('⌘⇧2'), 'files', () => st.setActivity('files')),
+      // Find in Files, once the palette has closed (the field takes the keyboard); its F4 keys while there are results.
+      c('find-in-files', t.cmd.findInFiles, kbd('⌘⇧F'), 'search', () => setTimeout(() => openFindInFiles(), 0)),
+      ...(hasSearchResults() ? [
+        c('next-search-result', t.cmd.nextResult, 'F4', 'chevronDown', () => setTimeout(() => stepSearchResult(1, false), 0)),
+        c('prev-search-result', t.cmd.prevResult, kbd('⇧F4'), 'chevronUp', () => setTimeout(() => stepSearchResult(-1, false), 0))
+      ] : []),
       ...(servicesView(st.settings.showServices) ? [c('v-services', t.cmd.viewServices, kbd('⌘⇧3'), 'services', () => st.setActivity('services'))] : []), c('terminal', t.cmd.showTerminal, kbd('⌘0'), 'terminal', st.showTerminal),
       ...(selected ? [c('redraw-terminal', t.cmd.redrawTerminal, '', 'terminal', () => redrawTerminal(selected.id))] : []),
       c('v-scm', t.cmd.viewScm, kbd('⌃⇧G'), 'git', () => st.setActivity('scm')),

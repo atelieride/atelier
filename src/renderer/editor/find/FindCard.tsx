@@ -5,6 +5,7 @@ import { Icon } from '../../components/Icon';
 import { t } from '../../i18n/en';
 import { counterText, shortcutAction, swapEnter, type FindAction, type FindSpec, type MatchCount } from './find-logic';
 import { kbd } from '../../kbd';
+import { cardHandsOver } from '../../search/open';
 
 export interface FindCardProps {
   spec: FindSpec;
@@ -26,6 +27,8 @@ export interface FindCardProps {
   enterUp?: boolean;
   /** One neutral line under the field (a terminal on its alternate screen). */
   note?: string | null;
+  /** "Search in all files" under the card: its query and options to Find in Files (⇧⌘F in the card does the same). */
+  onSearchAll?: () => void;
 }
 
 /** A text field whose text is local while typing; the query wins when it changes from outside (⌘F on a selection). */
@@ -44,6 +47,11 @@ export function FindCard(p: FindCardProps) {
   const [search, setSearch] = useField(p.spec.search);
   const [replace, setReplace] = useField(p.spec.replace);
   const showReplace = p.replaceOpen && !p.readOnly;
+  const card = useRef<HTMLDivElement>(null);
+  const searchAll = useRef(p.onSearchAll);
+  searchAll.current = p.onSearchAll;
+  const handsOver = !!p.onSearchAll;
+  useLayoutEffect(() => (handsOver && card.current ? cardHandsOver(card.current, () => searchAll.current?.()) : undefined), [handsOver]);
 
   useLayoutEffect(() => {
     const el = p.focus.field === 'replace' && showReplace ? replaceRef.current : findRef.current;
@@ -76,8 +84,9 @@ export function FindCard(p: FindCardProps) {
   );
 
   return (
-    // The editor's context menu (Copy, Select All of the code) is not the card's.
-    <div className={`find-card cm-search${p.readOnly ? ' is-readonly' : ''}`} role="search" aria-label={t.find.card} onKeyDown={onKeyDown}
+    <>
+    {/* The editor's context menu (Copy, Select All of the code) is not the card's. */}
+    <div ref={card} className={`find-card cm-search${p.readOnly ? ' is-readonly' : ''}`} role="search" aria-label={t.find.card} onKeyDown={onKeyDown}
       onContextMenu={(e) => e.stopPropagation()}>
       <span className="fc-hair" aria-hidden="true" />
       <div className="fc-grid">
@@ -135,5 +144,12 @@ export function FindCard(p: FindCardProps) {
         </button>
       )}
     </div>
+    {p.onSearchAll && (
+      <button type="button" className="fc-all" data-tip={t.find.searchAll} data-kbd={kbd('⇧⌘F')} onClick={p.onSearchAll}
+        onContextMenu={(e) => e.stopPropagation()}>
+        <Icon name="search" size={12} stroke={1.8} />{t.find.searchAll}
+      </button>
+    )}
+    </>
   );
 }

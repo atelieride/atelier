@@ -29,6 +29,9 @@ test('Windows: the Windows keymap, never a Mac glyph; rows Windows has no use fo
   // Ctrl+Enter.
   expect(find('Databases (read-only PostgreSQL: tables, structure, activity)')).toBe('Ctrl+Shift+B');
   expect(find('On a table in the palette: open it as a kept tab (Enter: a preview)')).toBe('Ctrl+Enter');
+  // Find in Files: Shift+Alt+F as in the menu (Ctrl+Shift+F is the terminal's find); its F4 keys spelled out.
+  expect(find('Find in files')).toBe('Shift+Alt+F');
+  expect(find('Next / previous search result')).toBe('F4 · Shift+F4');
   // The sidebar: Ctrl+B is the terminal's, Ctrl+Shift+B Databases'.
   expect(find('Sidebar (also: click the view in front in the activity bar)')).toBe('Shift+Alt+B');
   for (const i of win) expect(`${i.keys} ${i.label}`, i.label).not.toMatch(/[⌘⌥⇧⌃⏎↵↩]/);

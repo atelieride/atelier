@@ -595,4 +595,5 @@ export const popoutRekeySchema = z.object({
 const FORWARDABLE = new Set<string>(menuItems(MENU_SPEC).flatMap((i) => ('command' in i && i.command ? [i.command as string] : [])));
 // Not in the menu: a connector's details page, asked by a pop-out's toast or palette command.
 const OPEN_CONNECTOR = new Set<string>(CONNECTOR_IDS.map((id) => `open-connector:${id}`));
-export const popoutForwardSchema = z.string().max(200).refine((c) => FORWARDABLE.has(c) || OPEN_CONNECTOR.has(c) || /^(tab-[1-9]|new-session-account:.+|new-terminal-profile:.+)$/.test(c));
+// F4 / ⇧F4 in a pop-out: the results it walks are its project window's.
+export const popoutForwardSchema = z.string().max(200).refine((c) => FORWARDABLE.has(c) || OPEN_CONNECTOR.has(c) || /^(tab-[1-9]|new-session-account:.+|new-terminal-profile:.+|(next|prev)-search-result)$/.test(c));

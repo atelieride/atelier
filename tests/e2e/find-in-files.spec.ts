@@ -589,3 +589,220 @@ test('the sidebar shown again leaves the keyboard where it was; the activity ite
   await activity().click();
   await expect(field()).toBeFocused();
 });
+
+const editor = () => win.locator('.file-view:visible').first();
+const content = () => editor().locator('.cm-content');
+const strongLine = () => editor().locator('.cm-fif-hit-strong').evaluate((el) => el.closest('.cm-line')?.textContent ?? '');
+const selectedRow = () => view().locator('.fif-row.is-selected');
+const pageSelection = (w: Page = win) => w.evaluate(() => window.getSelection()?.toString() ?? '');
+const activeTab = () => win.locator('.tab.is-active');
+/** The field's text, and whether all of it is selected (what ⇧⌘F leaves, ready to type over). */
+const fieldSelection = () => field().evaluate((el: HTMLInputElement) => ({ value: el.value, whole: el.selectionStart === 0 && el.selectionEnd === el.value.length }));
+/** The visible terminal's row holding `text`. */
+const termRow = (text: RegExp) => win.locator('.xterm-rows:visible > div', { hasText: text }).last();
+
+test('⇧⌘F with a word selected in the editor: the sidebar comes back on Find in Files with that word searched, its text selected', async () => {
+  await fresh();
+  await search('readSession');
+  await expect(totals()).toHaveText('2 results in 2 files');
+  await matchRows('src/auth/session.ts').first().click();
+  await expect(content()).toBeFocused();
+  // "SKEW_MS" on line 9, selected with the keyboard: after "const ", seven characters.
+  await editor().locator('.cm-line', { hasText: 'const SKEW_MS' }).click();
+  await win.keyboard.press('Home');
+  for (let i = 0; i < 6; i++) await win.keyboard.press('ArrowRight');
+  for (let i = 0; i < 7; i++) await win.keyboard.press('Shift+ArrowRight');
+  await expect.poll(() => pageSelection()).toBe('SKEW_MS');
+  // From anywhere: the sidebar hidden (or on another view) comes back on Find in Files.
+  await command('toggle-sidebar');
+  await expect(view()).toHaveCount(0);
+  await command('find-in-files');
+  await expect(field()).toBeFocused();
+  await expect.poll(fieldSelection).toEqual({ value: 'SKEW_MS', whole: true });
+  await expect(totals()).toHaveText('2 results in 1 file');
+  // Nothing selected: the field as it was, its text selected to type over.
+  await command('view-files');
+  await expect(view()).toHaveCount(0);
+  await content().focus();
+  await win.keyboard.press('ArrowRight');
+  await command('find-in-files');
+  await expect(field()).toBeFocused();
+  await expect.poll(fieldSelection).toEqual({ value: 'SKEW_MS', whole: true });
+});
+
+test('⇧⌘F with text selected in a terminal searches it; F4 there stays the program\'s', async () => {
+  await fresh();
+  const terminals = () => win.evaluate(async () => (await (window as unknown as { atelier: AtelierApi }).atelier.terminals.list()).length);
+  await command((await terminals()) > 0 ? 'show-terminal' : 'new-terminal');
+  const term = win.locator('.xterm-helper-textarea:visible');
+  await expect(term).toBeVisible({ timeout: 10000 });
+  await win.evaluate(async () => {
+    const api = (window as unknown as { atelier: AtelierApi }).atelier;
+    const t = (await api.terminals.list())[0]!;
+    api.terminals.input(t.id, "echo TokenStore'' done\r");
+  });
+  await expect(termRow(/^TokenStore done/)).toBeVisible({ timeout: 10000 });
+  await termRow(/^TokenStore done/).dblclick({ position: { x: 12, y: 6 }, force: true });
+  await expect(term).toBeFocused();
+  await command('find-in-files');
+  await expect(field()).toBeFocused();
+  await expect.poll(fieldSelection).toEqual({ value: 'TokenStore', whole: true });
+  await expect(totals()).toHaveText('3 results in 2 files');
+  // A result chosen, then the keyboard back in the terminal: F4 is the program's, the results stay where they are.
+  await matchRows('src/auth/session.ts').first().click();
+  await expect(selectedRow()).toHaveAttribute('data-line', '1');
+  await command('show-terminal');
+  await term.focus();
+  await win.keyboard.press('F4');
+  await win.keyboard.press('Shift+F4');
+  await frames(win);
+  await frames(win);
+  await expect(term).toBeFocused();
+  await expect(selectedRow()).toHaveAttribute('data-rel', 'src/auth/session.ts');
+  await expect(selectedRow()).toHaveAttribute('data-line', '1');
+  await expect(activeTab()).not.toContainText('.ts');
+});
+
+test('F4 and ⇧F4 walk the results across files from the editor, wrapping; from the list, the keyboard stays in the list', async () => {
+  await fresh();
+  await search('TokenStore');
+  await expect(totals()).toHaveText('3 results in 2 files');
+  await matchRows('src/auth/session.ts').first().click();
+  await expect(content()).toBeFocused();
+  await expect.poll(strongLine).toBe("import { TokenStore } from './tokens';");
+  await win.keyboard.press('F4');
+  await expect(selectedRow()).toHaveAttribute('data-line', '8');
+  await expect.poll(strongLine).toBe('const store = new TokenStore();');
+  await expect(content()).toBeFocused();
+  await expect.poll(() => pageSelection()).toBe('TokenStore');
+  // The next file: its preview tab replaces this one, the keyboard follows into its editor.
+  await win.keyboard.press('F4');
+  await expect(selectedRow()).toHaveAttribute('data-rel', 'src/auth/tokens.ts');
+  await expect(activeTab()).toContainText('tokens.ts');
+  await expect.poll(strongLine).toBe('export class TokenStore {');
+  await expect(content()).toBeFocused();
+  // Past the last result: the first again; ⇧F4 back.
+  await win.keyboard.press('F4');
+  await expect(selectedRow()).toHaveAttribute('data-rel', 'src/auth/session.ts');
+  await expect(selectedRow()).toHaveAttribute('data-line', '1');
+  await expect(activeTab()).toContainText('session.ts');
+  await win.keyboard.press('Shift+F4');
+  await expect(selectedRow()).toHaveAttribute('data-rel', 'src/auth/tokens.ts');
+  await expect.poll(strongLine).toBe('export class TokenStore {');
+  // Every file collapsed: F4 opens the one its next match is in, and the list shows that row.
+  await view().getByRole('button', { name: 'Collapse All' }).click();
+  await expect(view().locator('.fif-row.is-match')).toHaveCount(0);
+  await content().focus();
+  await win.keyboard.press('F4');
+  await expect(selectedRow()).toHaveAttribute('data-line', '1');
+  await expect(selectedRow()).toHaveAttribute('data-rel', 'src/auth/session.ts');
+  await expect(selectedRow()).toBeInViewport();
+  await expect(fileRow('src/auth/session.ts')).toHaveAttribute('aria-expanded', 'true');
+  // The keyboard in the list: F4 moves it with the selection; the editor shows each result without taking it.
+  await selectedRow().focus();
+  await win.keyboard.press('F4');
+  await expect(selectedRow()).toHaveAttribute('data-line', '8');
+  await expect(selectedRow()).toBeFocused();
+  await expect.poll(strongLine).toBe('const store = new TokenStore();');
+  await frames(win);
+  await expect(selectedRow()).toBeFocused();
+  await expect(content()).not.toBeFocused();
+  await look(win, 'test-results/find-in-files-f4.png', { settle: 200 });
+});
+
+test('the palette: Find in Files always; Next and Previous Search Result while there are results', async () => {
+  await fresh();
+  await search('TokenStore');
+  await expect(totals()).toHaveText('3 results in 2 files');
+  await matchRows('src/auth/session.ts').first().click();
+  await win.keyboard.press('F1');
+  await win.locator('.palette-input').fill('>search result');
+  await expect(win.locator('.palette-item', { hasText: 'Next Search Result' }).locator('.palette-hint')).toHaveText('F4');
+  await expect(win.locator('.palette-item', { hasText: 'Previous Search Result' }).locator('.palette-hint')).toHaveText('⇧F4');
+  await look(win.locator('.palette'), 'test-results/find-in-files-palette.png', { settle: 200 });
+  await win.locator('.palette-item', { hasText: 'Next Search Result' }).click();
+  await expect(selectedRow()).toHaveAttribute('data-line', '8');
+  await expect.poll(strongLine).toBe('const store = new TokenStore();');
+  await expect(content()).toBeFocused();
+  await win.keyboard.press('F1');
+  await win.locator('.palette-input').fill('>Find in Files');
+  await expect(win.locator('.palette-item', { hasText: 'Find in Files' }).locator('.palette-hint')).toHaveText('⌘⇧F');
+  // Nothing to walk once the results are cleared: only Find in Files is left.
+  await win.keyboard.press('Escape');
+  await view().getByRole('button', { name: 'Clear Results' }).click();
+  await win.keyboard.press('F1');
+  await win.locator('.palette-input').fill('>search result');
+  await expect(win.locator('.palette-item', { hasText: /Next Search Result|Previous Search Result/ })).toHaveCount(0);
+  await win.locator('.palette-input').fill('>Find in Files');
+  await win.locator('.palette-item', { hasText: 'Find in Files' }).click();
+  await expect(field()).toBeFocused();
+});
+
+test('the find card\'s "Search in all files" hands its query and options to Find in Files; ⇧⌘F in the card does the same', async () => {
+  await fresh();
+  await search('TokenStore');
+  await matchRows('src/auth/session.ts').first().click();
+  await expect(content()).toBeFocused();
+  await win.keyboard.press('Meta+f');
+  const card = editor().locator('.find-card');
+  await expect(card).toBeVisible();
+  await card.getByRole('textbox', { name: 'Find' }).fill('Session');
+  await card.getByRole('button', { name: 'Match Case' }).click();
+  const all = editor().getByRole('button', { name: 'Search in all files' });
+  await expect(all).toBeVisible();
+  await expect(all).toHaveAttribute('data-kbd', '⇧⌘F');
+  // Under the card, at its right edge, whole and on one line; the same in a narrow pane (the card's compact form).
+  const placed = async () => {
+    const [c, b] = [(await card.boundingBox())!, (await all.boundingBox())!];
+    expect(b.y).toBeGreaterThanOrEqual(c.y + c.height);
+    expect(Math.abs(b.x + b.width - (c.x + c.width))).toBeLessThanOrEqual(1);
+    // The card's own parts (its screen-reader line is clipped on purpose), and the pill.
+    expect(await layoutProblems(editor(), ['.fc-field', '.fc-count', '.fc-all'])).toEqual(NO_PROBLEMS);
+  };
+  await placed();
+  await sizeTo(760, 800);
+  await expect(editor().locator('.fc-narrow').first()).toBeVisible();
+  await placed();
+  await look(editor(), 'test-results/find-in-files-card-narrow.png', { settle: 200 });
+  await sizeTo(1280, 800);
+  await all.hover();
+  await look(editor(), 'test-results/find-in-files-card.png', { settle: 300 });
+  await all.click();
+  await expect(field()).toBeFocused();
+  await expect.poll(fieldSelection).toEqual({ value: 'Session', whole: true });
+  await expect(toggle('Match Case')).toHaveAttribute('aria-pressed', 'true');
+  await expect(totals()).toHaveText('4 results in 2 files');
+  // The keyboard in the card: ⇧⌘F carries what it holds.
+  await card.getByRole('textbox', { name: 'Find' }).fill('SKEW_MS');
+  await card.getByRole('button', { name: 'Match Case' }).click();
+  await expect(card.getByRole('textbox', { name: 'Find' })).toBeFocused();
+  await command('find-in-files');
+  await expect(field()).toBeFocused();
+  await expect.poll(fieldSelection).toEqual({ value: 'SKEW_MS', whole: true });
+  await expect(toggle('Match Case')).toHaveAttribute('aria-pressed', 'false');
+  await expect(totals()).toHaveText('2 results in 1 file');
+});
+
+test('F4 in a pop-out showing a result: its project window walks on, the match comes back with its marks', async () => {
+  await fresh();
+  await search('TokenStore');
+  await expect(totals()).toHaveText('3 results in 2 files');
+  await matchRows('src/auth/session.ts').first().click();
+  await win.locator('.tab', { hasText: 'session.ts' }).click({ button: 'right' });
+  const [pop] = await Promise.all([app.waitForEvent('window'), win.getByRole('menuitem', { name: 'Move to New Window' }).click()]);
+  await expect(pop.locator('.popout-bar')).toBeVisible({ timeout: 15000 });
+  await still(pop);
+  const popLine = () => pop.locator('.cm-fif-hit-strong').evaluate((el) => el.closest('.cm-line')?.textContent ?? '');
+  // Walked into the pop-out from the list: it shows the match where it is.
+  await selectedRow().focus();
+  await win.keyboard.press('F4');
+  await expect.poll(popLine).toBe('const store = new TokenStore();');
+  // ⇧F4 in the pop-out: the project window steps back, the pop-out gets the match selected and marked, not only its line.
+  await pop.locator('.cm-content').focus();
+  await pop.keyboard.press('Shift+F4');
+  await expect(selectedRow()).toHaveAttribute('data-line', '1');
+  await expect.poll(popLine).toBe("import { TokenStore } from './tokens';");
+  await expect.poll(() => pageSelection(pop)).toBe('TokenStore');
+  await expect(pop.locator('.cm-content')).toBeFocused();
+  await Promise.all([pop.waitForEvent('close'), pop.locator('.popout-bar').getByRole('button', { name: 'Move Back' }).click()]);
+});

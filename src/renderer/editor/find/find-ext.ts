@@ -12,6 +12,7 @@ import {
 import { undo } from '@codemirror/commands';
 import { useApp } from '../../store';
 import { t } from '../../i18n/en';
+import { searchAllFrom } from '../../search/open';
 import { FindCard } from './FindCard';
 import { withoutShiftModG } from '../editor-keys';
 import { countMatches, initialQuery, matchList, regexError, selectAllMatches, type FindAction, type FindSpec, type MatchCount } from './find-logic';
@@ -181,7 +182,9 @@ class FindPanel implements Panel {
         this.setReplaceOpen(!this.replaceOpen);
         this.focusField(this.replaceOpen ? 'replace' : 'find');
       },
-      onOtherKey: (e) => runScopeHandlers(this.view, e.nativeEvent, 'search-panel')
+      onOtherKey: (e) => runScopeHandlers(this.view, e.nativeEvent, 'search-panel'),
+      // A pop-out has no sidebar to search in.
+      ...(useApp.getState().popout ? {} : { onSearchAll: () => searchAllFrom(specOf(this.query)) })
     }));
   }
 }

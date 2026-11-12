@@ -7,7 +7,8 @@ import { SEARCH_LIMITS, type SearchEvent, type SearchFile, type SearchSpec, type
 import { compileSearch, lineResult } from '@shared/search-match';
 import { dirtyPaths, handoffOf } from '../editor/savers';
 import { useApp } from '../store';
-import { fileKey } from './model';
+import { anyResult, buildRows, fileKey, stepResult } from './model';
+import { searchLoaded } from './open';
 import { pushRecent } from './recent';
 
 export type SearchPhase = 'idle' | 'running' | 'done' | 'stopped' | 'error';
@@ -49,6 +50,12 @@ export interface SearchState {
   setAllCollapsed(v: boolean): void;
   dismiss(key: string): void;
   select(key: string | null): void;
+  /**
+   * F4 / ⇧F4 and the palette's Next / Previous Search Result: the match after (before) the selected row in the list's
+   * order, across files and wrapping, selected and opened in the preview tab; the keyboard stays where it is with
+   * `keepFocus`, else it goes to the editor.
+   */
+  step(dir: 1 | -1, keepFocus: boolean): void;
   onEvent(e: SearchEvent): void;
   focusField(seed?: SearchSpec): void;
 }
@@ -67,6 +74,7 @@ let buffers = new Map<string, SearchFile>();
 let listedMatches = 0;
 const foldPath = (p: string): string => (pathStyle() === 'win32' ? p.toLowerCase() : p);
 const NO_SPEC: SearchSpec = { query: '', matchCase: false, wholeWord: false, regex: false };
+const NONE: ReadonlySet<string> = new Set();
 
 const noResults = {
   files: [] as SearchFile[],
@@ -234,6 +242,19 @@ export const useSearch = create<SearchState>((set, get) => {
     select(key) {
       set({ selected: key });
     },
+    step(dir, keepFocus) {
+      const s = get();
+      // Every match counts, those of collapsed files too; dismissed ones are passed over.
+      const rows = buildRows(s.files, NONE, s.dismissed);
+      const key = stepResult(rows, s.selected, dir);
+      const row = key === null ? undefined : rows.find((r) => r.key === key);
+      if (row?.kind !== 'match') return;
+      // A collapsed file opens, so the list shows the row.
+      const fk = fileKey(row.file.path);
+      if (s.collapsed.has(fk)) s.toggleCollapsed(fk);
+      s.select(row.key);
+      useApp.getState().openSearchResult(row.file, row.line, row.index, { side: false, keepFocus, spec: s.ranSpec });
+    },
 
     onEvent(e) {
       const s = get();
@@ -282,10 +303,17 @@ export const useSearch = create<SearchState>((set, get) => {
     },
 
     focusField(seed) {
-      set({ focusNonce: get().focusNonce + 1 });
-      if (!seed) return;
-      set({ spec: { ...seed } });
-      if (seed.query !== '') { clearTimer(); get().run(); }
+      // One update: the field takes its new text and the request together, so the whole text is what gets selected.
+      set({ focusNonce: get().focusNonce + 1, ...(seed ? { spec: { ...seed } } : {}) });
+      if (seed && seed.query !== '') { clearTimer(); get().run(); }
     }
   };
+});
+
+// What the first paint's opener reaches without importing this module: results to walk (and walking them), the options
+// a seed is escaped for.
+searchLoaded({
+  hasResults: () => { const s = useSearch.getState(); return anyResult(s.files, s.dismissed); },
+  spec: () => useSearch.getState().spec,
+  step: (dir, keepFocus) => useSearch.getState().step(dir, keepFocus)
 });
