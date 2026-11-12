@@ -108,7 +108,7 @@ test('a repository cloned from a terminal while the project is open shows in Fil
   const hub = repoAt(join(root, 'hub'), { '.gitignore': 'ops/\n', 'README.md': '# hub\n' });
   const s = await launch(root);
   try {
-    await s.win.getByRole('button', { name: /Files/ }).click();
+    await s.win.getByRole('button', { name: /^Files/ }).click();
     await treeRow(s.win, 'hub').click();
     await expect(treeRow(s.win, 'hub')).toHaveAttribute('aria-expanded', 'true');
     await expect(treeRow(s.win, 'README.md')).toBeVisible();
@@ -136,7 +136,7 @@ test('a folder renamed from a terminal: Files and Source Control follow, open fo
   writeFileSync(join(root, 'todo.md'), 'x\n');
   const s = await launch(root);
   try {
-    await s.win.getByRole('button', { name: /Files/ }).click();
+    await s.win.getByRole('button', { name: /^Files/ }).click();
     await treeRow(s.win, 'notes').click();
     await expect(treeRow(s.win, 'today.md')).toBeVisible();
     // A rename started on another row, left open.

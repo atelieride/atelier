@@ -100,7 +100,7 @@ test('exact: one writing call → that session (via Bash); a read-only call neve
     await look(panel, 'test-results/exact-attribution.png');
 
     // The tree shows the same ring and tooltip.
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
     const treeRow = (name: string) => win.locator('.tree-row', { has: win.locator('.tree-name', { hasText: new RegExp(`^${name.replace('.', '\\.')}$`) }) });
     await treeRow('app').click();
     await treeRow('src').click();

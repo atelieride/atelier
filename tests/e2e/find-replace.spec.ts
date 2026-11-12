@@ -36,7 +36,7 @@ async function stop(app: ElectronApplication, home: string) {
 
 async function openFile(win: Page, name: string) {
   const row = win.locator('.tree-row', { hasText: name });
-  if (!(await row.isVisible())) await win.getByRole('button', { name: /Files/ }).click();
+  if (!(await row.isVisible())) await win.getByRole('button', { name: /^Files/ }).click();
   await row.dblclick();
   await expect(win.locator('.file-view:visible .cm-content')).toBeVisible();
 }

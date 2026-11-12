@@ -83,7 +83,7 @@ test('an error in the app itself shows the window-wide card; Reload window reloa
 test('a pane beside the code that throws (the JSON tree) shows its card in its place; the code and its unsaved edits stay', async () => {
   const { app, win, home } = await launch('json-tree', { 'app.json': '{\n  "name": "orbit"\n}\n' });
   try {
-    if (!(await win.locator('.tree-row').first().isVisible())) await win.getByRole('button', { name: /Files/ }).click();
+    if (!(await win.locator('.tree-row').first().isVisible())) await win.getByRole('button', { name: /^Files/ }).click();
     await win.locator('.tree-row', { hasText: 'app.json' }).first().dblclick();
     const fv = win.locator('.file-view:visible');
     await expect(fv.locator('.json-switch')).toBeVisible();

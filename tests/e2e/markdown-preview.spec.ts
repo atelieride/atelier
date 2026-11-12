@@ -68,7 +68,7 @@ async function openDesign(win: Page) {
   const file = win.locator('.tree-row', { hasText: 'design.md' });
   if (!(await file.isVisible())) {
     const folder = win.locator('.tree-row', { hasText: 'docs' }).first();
-    if (!(await folder.isVisible())) await win.getByRole('button', { name: /Files/ }).click();
+    if (!(await folder.isVisible())) await win.getByRole('button', { name: /^Files/ }).click();
     await folder.click();
   }
   await file.dblclick();
@@ -326,7 +326,7 @@ test('a crowded file bar: a new file with a long name never wraps its note or pu
   try {
     const win = await app.firstWindow();
     const folder = win.locator('.tree-row', { hasText: 'docs' }).first();
-    if (!(await folder.isVisible())) await win.getByRole('button', { name: /Files/ }).click();
+    if (!(await folder.isVisible())) await win.getByRole('button', { name: /^Files/ }).click();
     await folder.click();
     await win.locator('.tree-row', { hasText: long }).dblclick();
     await sw(win, 'Preview').click();

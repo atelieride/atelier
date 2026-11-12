@@ -128,7 +128,7 @@ test('an image file opens as an image: fitted, at actual size on click, with its
     writeFileSync(join(project, 'broken.png'), 'not an image');
   });
   try {
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
     await win.locator('.tree-row', { hasText: 'screenshot.png' }).click();
     const img = win.locator('.image-stage img');
     await expect(img).toBeVisible();

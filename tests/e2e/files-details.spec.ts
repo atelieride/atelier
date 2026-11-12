@@ -16,7 +16,7 @@ test('editor: mixed line endings declared, files inside .git read-only, word wra
   const app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env });
   try {
     const win = await app.firstWindow();
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
     await win.locator('.tree-row', { hasText: 'misto.txt' }).click();
     await expect(win.locator('.file-view:visible .file-info-band')).toContainText('Mixed line endings');
 
@@ -66,7 +66,7 @@ test('text over 5 MB: Open Anyway, plain and read-only, following the disk; over
   const app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env });
   try {
     const win = await app.firstWindow();
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
     await win.locator('.tree-row', { hasText: 'big.log' }).click();
     const view = win.locator('.file-view:visible');
     await expect(view.locator('.file-empty')).toContainText('File larger than 5 MB.');
