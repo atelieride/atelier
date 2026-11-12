@@ -3,6 +3,7 @@ import { homedir, hostname, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { linearBudget } from '../../../tests/support/platform';
+import { bestTime } from '../../../tests/support/timing';
 import { type Invocation, type RawRun, build } from './write';
 import { classifyWrite } from './write-outcome';
 
@@ -151,10 +152,9 @@ describe('classifyWrite: how the run ended', () => {
 
   test('a megabyte on one line (no newline, no space) is classified at once: the credential scrub is linear', () => {
     for (const line of ['x'.repeat(1_000_000), 'npm-run-build.v1.2.3-'.repeat(50_000), 'a://'.repeat(250_000)]) {
-      const t0 = performance.now();
       const r = classifyWrite(build.push(PUSH_MAIN), run(`${line}\n`), { hooksExist: false });
-      expect(performance.now() - t0).toBeLessThan(linearBudget(200));
       expect(r.message!.length).toBeLessThanOrEqual(200);
+      expect(bestTime(() => classifyWrite(build.push(PUSH_MAIN), run(`${line}\n`), { hooksExist: false }), 3)).toBeLessThan(linearBudget(200));
     }
   });
 

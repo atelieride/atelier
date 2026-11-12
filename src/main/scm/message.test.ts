@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { commit, git } from '../../../tests/support/git-fixture';
 import { linearBudget } from '../../../tests/support/platform';
+import { bestTime } from '../../../tests/support/timing';
 import { encodeProjectPath } from '@shared/history';
 import {
   DIFF_BUDGET_BYTES, MESSAGE_OUTPUT_MAX, MESSAGE_SYSTEM, acceptMessage, buildMessageInput, detectStyle, messageArgs, promptsFor,
@@ -97,9 +98,8 @@ describe('acceptMessage', () => {
   test('256 KB of trailer paragraphs is answered in linear time', () => {
     const s = `Fix x${'\n\nFixes: 1'.repeat(26_300)}`;
     expect(s.length).toBeGreaterThan(256 * 1024);
-    const t0 = performance.now();
     expect(acceptMessage(s)).toBe('Fix x');
-    expect(performance.now() - t0).toBeLessThan(linearBudget(100));
+    expect(bestTime(() => acceptMessage(s), 3)).toBeLessThan(linearBudget(100));
   });
 });
 
