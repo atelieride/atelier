@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { ATELIER_BASH_SUBCOMMANDS, ATELIER_PS1, ATELIER_ZSH_SUBCOMMANDS, POWERSHELL_SUBCOMMANDS, powerShellArgs } from './install-files';
+import { ATELIER_BASH_SUBCOMMANDS, ATELIER_PS1, ATELIER_ZSH_SUBCOMMANDS, POWERSHELL_SUBCOMMANDS, gitBashArgs, powerShellArgs } from './install-files';
 
 // Atelier's PowerShell and Git Bash integrations, the Windows twins of the zsh files: same `claude` rules.
 
@@ -8,6 +8,10 @@ test('the subcommands that get no --settings are the same list as zsh’s, in Po
   expect(ATELIER_BASH_SUBCOMMANDS).toEqual(ATELIER_ZSH_SUBCOMMANDS);
   expect(POWERSHELL_SUBCOMMANDS).toContain('remote-control');
   for (const s of POWERSHELL_SUBCOMMANDS) expect(ATELIER_PS1).toContain(`'${s}'`);
+});
+
+test('Git Bash starts interactive with the integration as its rcfile, the path in forward slashes as one argument', () => {
+  expect(gitBashArgs("C:\\Users\\Mario D'Rossi\\AppData\\atelier.bash")).toEqual(['--rcfile', "C:/Users/Mario D'Rossi/AppData/atelier.bash", '-i']);
 });
 
 test('the script reads the nonce once, emits OSC 133 and OSC 7, and never uses a backtick escape', () => {

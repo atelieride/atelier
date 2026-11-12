@@ -7,7 +7,7 @@ import { pathStyle } from '@shared/platform';
 import { shellQuote } from '@shared/shell';
 import { ensureDir, ensurePrivateFile, writeFileAtomic } from './fsutil';
 import type { IsolationConfig } from './session-pty';
-import { ATELIER_PROFILE_FILES, ATELIER_PS1, HOOK_SCRIPT, STATUSLINE_SCRIPT, ZSH_FILES } from './install-files';
+import { ATELIER_BASH, ATELIER_PROFILE_FILES, ATELIER_PS1, HOOK_SCRIPT, STATUSLINE_SCRIPT, ZSH_FILES } from './install-files';
 
 export const HOOK_EVENTS = [
   'SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PermissionRequest',
@@ -127,12 +127,14 @@ function installer(o: InstallOptions): { step(what: string, fn: () => void): voi
   };
 }
 
-/** Windows: the PowerShell integration, the bridge, the user's status line and Claude's settings. */
+/** Windows: the PowerShell and Git Bash integrations, the bridge, the user's status line and Claude's settings. */
 function installWindowsFiles(paths: DaemonPaths, userClaudeSettings: string | undefined, bridges: readonly string[], o: InstallOptions): void {
   const { step, write, log } = installer(o);
   step(paths.bin, () => ensureDir(paths.bin, 0o700));
   step(paths.shell, () => ensureDir(paths.shell, 0o700));
   step(join(paths.shell, 'atelier.ps1'), () => write(join(paths.shell, 'atelier.ps1'), ATELIER_PS1, 0o644));
+  // Without it Git Bash terminals start as a plain `bash -l` (main.ts checks it is there).
+  step(join(paths.shell, 'atelier.bash'), () => write(join(paths.shell, 'atelier.bash'), ATELIER_BASH, 0o644));
   let bridge: string | null = null;
   step('atelier-bridge.exe', () => { bridge = installBridge(paths.bin, bridges, write, log); });
   const user = readUserStatusLine(userClaudeSettings);
