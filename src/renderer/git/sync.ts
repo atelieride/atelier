@@ -7,7 +7,7 @@ import type { ScmRepoStatus } from '@shared/scm';
 import { t } from '../i18n/en';
 import { useApp } from '../store';
 import { fetchRepo } from '../scm/actions';
-import { failText, pull, push, sync } from './actions';
+import { failText, liveIncoming, pull, push, sync } from './actions';
 import { saveGitPrefs } from './drafts';
 import { liveFiles, overlapFiles } from './live';
 
@@ -62,14 +62,16 @@ export function commitsShown<C>(commits: readonly C[], total: number | undefined
 /**
  * A row of Sync All's list (Pull All's and Push All's too, `op` naming theirs): done; or what it needs — a diverged
  * branch (Show selects it, where Sync asks to rebase), a live session on files the pull changes (Pull…, the guarded
- * pull, which asks first), a failure in git's words.
+ * pull, which asks first), what git reported after an op that went through (a hook that failed), a failure in git's
+ * words.
  */
 export function syncAllRow(r: SyncAllRow, op: 'sync' | 'pull' | 'push' = 'sync'): { ok: boolean; text: string; action: 'show' | 'pull' | null } {
   const s = t.git.sync;
   if (r.needsYou === 'live') return { ok: false, text: s.rowLive, action: 'pull' };
   if (r.needsYou === 'diverged') return { ok: false, text: s.rowDiverged, action: 'show' };
   if (r.needsYou === 'no-upstream') return { ok: false, text: s.rowNoUpstream, action: 'show' };
-  if (!r.result || r.result.outcome === 'ok') return { ok: true, text: s.rowOk, action: null };
+  if (r.result?.outcome === 'ok' && r.result.warning) return { ok: false, text: s.rowDoneBut(op, r.result.warning), action: 'show' };
+  if (!r.result || r.result.outcome === 'ok') return { ok: true, text: op === 'pull' ? s.rowPulled : op === 'push' ? s.rowPushed : s.rowOk, action: null };
   return { ok: false, text: failText(op, r.root, r.result), action: 'show' };
 }
 
@@ -109,9 +111,7 @@ export function runPull(root: string, o: { rebase: boolean; sync: boolean; quiet
  */
 export async function guardedPull(root: string, o: { rebase: boolean; sync: boolean; quiet?: boolean }): Promise<GitOpResult | null> {
   if (!on()) return null;
-  let incoming: string[] = [];
-  try { incoming = await window.atelier.git.incoming(root); } catch { /* none known: a terminal pull wouldn't ask either */ }
-  const { files } = overlapFiles(root, incoming, liveNow());
+  const files = await liveIncoming(root, liveNow());
   if (files.length) { st().setGitSheet({ kind: 'pullOverlap', root, files, rebase: o.rebase, sync: o.sync }); return null; }
   return runPull(root, o);
 }

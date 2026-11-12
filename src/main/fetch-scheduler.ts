@@ -224,7 +224,7 @@ export class FetchScheduler {
     this.pump();
   }
 
-  /** Waiters start in their order while they fit: manual ones first, automatic ones while fewer than two run. */
+  /** Waiters start in their order while they fit: manual ones first, automatic ones below MAX_AUTOMATIC_FETCHES. */
   private pump(): void {
     for (let i = this.waiting.findIndex((w) => this.fits(w.manual)); i >= 0; i = this.waiting.findIndex((w) => this.fits(w.manual))) {
       const [w] = this.waiting.splice(i, 1);

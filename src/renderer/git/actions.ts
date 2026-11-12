@@ -42,7 +42,8 @@ export function failText(op: GitOp, root: string, r: GitOpResult): string {
   switch (r.outcome) {
     case 'busy': return t.git.busy;
     case 'network': return t.git.network;
-    case 'auth': return t.git.pushAuth;
+    // A pull's (and a sync's, which may stop at its pull) in main's words, which name it.
+    case 'auth': return op === 'pull' || op === 'sync' ? r.message ?? t.git.pushAuth : t.git.pushAuth;
     case 'hook': return t.git.hookFailed(r.hook ?? 'A hook', name);
     case 'sign': return t.git.signFailed(name);
     case 'identity': return t.git.identity;
@@ -348,14 +349,27 @@ export async function sync(root: string, o: { rebase: boolean }): Promise<GitOpR
 }
 
 /**
+ * The incoming files of `root` (what a pull would change) that a live session is changing now. None when they can't
+ * be read: a terminal pull wouldn't ask either.
+ */
+export async function liveIncoming(root: string, live = liveFiles(st().terminals, st().attributions)): Promise<string[]> {
+  if (!live.size) return [];
+  let incoming: string[] = [];
+  try { incoming = await api().incoming(root); } catch { /* none known */ }
+  return overlapFiles(root, incoming, live).files;
+}
+
+/** What a bulk run's op answers once Read-only was turned on mid-run: it never started, and says nothing more. */
+const NOT_STARTED: GitOpResult = { outcome: 'cancelled', message: 'Git actions are read-only' };
+
+/**
  * Pull All's pull of one repository, which never asks or toasts mid-run (other repositories are running): its incoming
  * files a live session is changing leave it for you, never pulled; a branch git can't fast-forward any more is
  * diverged; anything else is its result, kept on its block as a single pull's is.
  */
 export async function pullForAll(root: string): Promise<SyncAllRow> {
-  let incoming: string[] = [];
-  try { incoming = await api().incoming(root); } catch { /* none known: a terminal pull wouldn't ask either */ }
-  if (overlapFiles(root, incoming, liveFiles(st().terminals, st().attributions)).files.length) return { root, result: null, needsYou: 'live' };
+  if (!on()) return { root, result: NOT_STARTED };
+  if ((await liveIncoming(root)).length) return { root, result: null, needsYou: 'live' };
   const r = await call(() => api().pull({ root, rebase: false }));
   if (divergedRefusal('pull', false, r)) return { root, result: null, needsYou: 'diverged' };
   st().recordGitResult(root, 'pull', r);
@@ -364,6 +378,7 @@ export async function pullForAll(root: string): Promise<SyncAllRow> {
 
 /** Push All's push of one repository: as pullForAll, no question mid-run (a rejected push is its result). */
 export async function pushForAll(root: string): Promise<SyncAllRow> {
+  if (!on()) return { root, result: NOT_STARTED };
   const r = await call(() => api().push({ root }));
   st().recordGitResult(root, 'push', r);
   return { root, result: r };
@@ -388,9 +403,7 @@ async function liveSkips(): Promise<string[]> {
   const overlaps = new Set<string>();
   // A few reads at once, as many as the sync that follows runs.
   await inLanes(roots, (root) => root, BULK_GIT_PARALLEL, async (root) => {
-    let incoming: string[] = [];
-    try { incoming = await api().incoming(root); } catch { /* none known: a terminal pull wouldn't ask either */ }
-    if (overlapFiles(root, incoming, live).files.length) overlaps.add(root);
+    if ((await liveIncoming(root, live)).length) overlaps.add(root);
   });
   return roots.filter((root) => overlaps.has(root));
 }
@@ -404,7 +417,8 @@ export async function syncAll(): Promise<SyncAllRow[] | null> {
     rows = await api().syncAll({ skip });
   } catch (e) { st().showToast(t.git.failed(t.git.ops.sync, e instanceof Error ? e.message : String(e))); return null; }
   if (!rows.length) { info(t.git.nothingToSync); return rows; }
-  const ok = rows.filter((r) => r.result?.outcome === 'ok').length;
+  // As its list counts them: done with something git reported after it (a hook that failed) needs you too.
+  const ok = rows.filter((r) => r.result?.outcome === 'ok' && !r.result.warning).length;
   const needs = rows.length - ok;
   info(t.git.syncedAll(ok, needs), needs ? { label: t.git.show, run: () => useApp.getState().setGitSheet({ kind: 'syncAll', rows }) } : undefined);
   return rows;

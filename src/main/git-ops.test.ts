@@ -1358,4 +1358,17 @@ describe('more write guards (main)', () => {
     const rows = await w.ops.syncAll(K);
     expect(rows.map((r) => [r.root, r.result?.outcome])).toEqual([['/p', 'network'], ['/p/b', 'ok']]);
   });
+
+  test('syncAll: a repository whose sync throws gets its own error row; the others keep theirs', async () => {
+    const behind: ScmRepoEntry['status'] = { branch: 'main', detached: false, oid: O1, ahead: 0, behind: 1, upstream: 'origin/main', changes: 0 };
+    const entries: ScmRepoEntry[] = ['/p', '/p/b'].map((root) => ({ root, rel: root.slice(3), name: root.split('/').pop()!, worktreeOf: null, nestedIn: null, common: `${root}/.git`, status: behind }));
+    const w = world({ reads: { aheadBehind: async () => ({ ahead: 0, behind: 1 }) } });
+    w.deps.scm.entries = async () => entries;
+    w.deps.scm.entryFor = async (_k, r) => { if (r === '/p') throw new Error('the list moved'); return entries.find((e) => e.root === r) ?? null; };
+    const rows = await w.ops.syncAll(K);
+    expect(rows).toEqual([
+      { root: '/p', result: { outcome: 'error', message: 'the list moved' } },
+      { root: '/p/b', result: expect.objectContaining({ outcome: 'ok' }) }
+    ]);
+  });
 });

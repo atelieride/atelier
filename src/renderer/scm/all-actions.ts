@@ -8,6 +8,7 @@ import { BULK_GIT_PARALLEL, inLanes } from '@shared/lanes';
 import { t } from '../i18n/en';
 import { useApp } from '../store';
 import { pullForAll, pushForAll, syncAll } from '../git/actions';
+import { syncAllRow } from '../git/sync';
 import { allRows } from './all-view';
 
 const st = () => useApp.getState();
@@ -20,7 +21,7 @@ async function run(kind: Bulk, fn: () => Promise<unknown>): Promise<void> {
 }
 
 interface Said {
-  /** Nothing needs you but the diverged ones left out from the start (today's one-line answer). */
+  /** Nothing needs you but the diverged ones left out from the start: one line, no list. */
   done: (n: number, diverged: number) => string;
   /** Some need you: Show lists every repository of the run. */
   some: (n: number, needs: number) => string;
@@ -33,19 +34,23 @@ interface Said {
  */
 async function each(op: 'pull' | 'push', ready: (c: { ahead: number; behind: number }) => boolean, act: (root: string) => Promise<SyncAllRow>, said: Said): Promise<void> {
   if (st().settings.gitActions !== 'on') return;
-  const entries = st().scmRepos;
-  const rows = allRows(st().repos, entries).filter((r) => !r.status.error)
-    .map((r) => ({ root: r.root, common: entries?.find((e) => e.root === r.root)?.common ?? r.root, c: trackedCounts(r.status) }));
+  const commonOf = new Map((st().scmRepos ?? []).map((e) => [e.root, e.common]));
+  // The lane is the object store: Source Control's common dir, else (its list not read yet) the repository a worktree
+  // belongs to, as Changes' status names it.
+  const rows = allRows(st().repos, st().scmRepos).filter((r) => !r.status.error)
+    .map((r) => ({ root: r.root, lane: commonOf.get(r.root) ?? r.status.worktreeOf ?? r.root, c: trackedCounts(r.status) }));
   const diverged = new Set(rows.filter((r) => r.c.ahead > 0 && r.c.behind > 0).map((r) => r.root));
   const todo = rows.filter((r) => ready(r.c));
   const results = new Map<string, SyncAllRow>();
-  await inLanes(todo, (r) => r.common, BULK_GIT_PARALLEL, async (r) => { results.set(r.root, await act(r.root)); });
+  await inLanes(todo, (r) => r.lane, BULK_GIT_PARALLEL, async (r) => { results.set(r.root, await act(r.root)); });
   const cancelled = (x: SyncAllRow) => x.result?.outcome === 'cancelled';
   if (results.size && [...results.values()].every(cancelled)) return;
   const list = rows.flatMap((r): SyncAllRow[] => (diverged.has(r.root) ? [{ root: r.root, result: null, needsYou: 'diverged' }] : results.has(r.root) ? [results.get(r.root)!] : []))
     .filter((x) => !cancelled(x));
-  const ok = list.filter((x) => !x.needsYou && x.result?.outcome === 'ok').length;
-  if (list.every((x) => diverged.has(x.root) || (!x.needsYou && x.result?.outcome === 'ok'))) {
+  // Counted as the list shows them: done with something git reported after it (a hook that failed) needs you too.
+  const done = (x: SyncAllRow) => syncAllRow(x, op).ok;
+  const ok = list.filter(done).length;
+  if (list.every((x) => diverged.has(x.root) || done(x))) {
     st().showToast(said.done(ok, diverged.size), undefined, 'info');
     return;
   }

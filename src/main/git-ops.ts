@@ -964,9 +964,11 @@ export class GitOps {
       rows.push({ root: e.root, result: null });
     }
     // A few repositories at once; a repository's worktrees one after another (they share its object store, which takes
-    // one write at a time). A failure stops nothing: its row says it.
+    // one write at a time). A failure stops nothing, a throw included: its row says it.
     await inLanes(todo, (x) => x.common, BULK_GIT_PARALLEL, async (x) => {
-      rows[x.at] = { root: x.root, result: await this.sync(key, { root: x.root, rebase: false }) };
+      let result: GitOpResult;
+      try { result = await this.sync(key, { root: x.root, rebase: false }); } catch (err) { result = fail('error', (err as Error).message || 'Sync failed'); }
+      rows[x.at] = { root: x.root, result };
     });
     return rows;
   }

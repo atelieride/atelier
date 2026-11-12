@@ -187,7 +187,8 @@ describe('Pull and Sync ask first', () => {
 
   test('Sync in sync: fetches first, then syncs; a failed fetch stops there', async () => {
     await startSync('/p/a');
-    expect(names()).toEqual(['fetchRepo', 'incoming', 'sync']);
+    // No live session: the incoming files have nothing to be compared with, and aren't read.
+    expect(names()).toEqual(['fetchRepo', 'sync']);
     calls = [];
     answers.fetchRepo = { outcome: 'network' };
     await startSync('/p/a');
@@ -279,6 +280,12 @@ describe('Sync All and live sessions', () => {
     expect(calls.at(-1)).toEqual(['syncAll', { skip: roots }]);
   });
 
+  test("Sync All's toast counts as its list does: synced with a hook that failed after it needs you", async () => {
+    answers.syncAll = [{ root: '/p/a', result: { outcome: 'ok', warning: 'The post-merge hook failed' } }, { root: '/p/b', result: { outcome: 'ok' } }];
+    await git.syncAll();
+    expect(toast()?.text).toBe('Synced 1 · 1 needs you');
+  });
+
   test('no live session: nothing to compare, nothing skipped', async () => {
     useApp.setState({ scmRepos: [entry({ behind: 1 })] });
     answers.syncAll = [{ root: '/p/a', result: { outcome: 'ok' } }];
@@ -292,11 +299,26 @@ describe('Sync All and live sessions', () => {
     expect(syncAllRow({ root: '/p/a', result: { outcome: 'network' } })).toEqual({ ok: false, text: "Couldn't reach the remote.", action: 'show' });
   });
 
-  test("Pull All's and Push All's rows name their own op in a failure", () => {
+  test("Pull All's and Push All's rows name their own op: done, and in a failure", () => {
     const r = { root: '/p/a', result: { outcome: 'error' as const, message: 'boom' } };
     expect(syncAllRow(r).text).toBe('Sync failed: boom');
     expect(syncAllRow(r, 'pull').text).toBe('Pull failed: boom');
     expect(syncAllRow(r, 'push').text).toBe('Push failed: boom');
+    const done = { root: '/p/a', result: { outcome: 'ok' as const } };
+    expect(syncAllRow(done, 'pull')).toEqual({ ok: true, text: 'Pulled', action: null });
+    expect(syncAllRow(done, 'push')).toEqual({ ok: true, text: 'Pushed', action: null });
+  });
+
+  test('a pull that went through while the hook after it failed needs you: its row says what git reported', () => {
+    const r = { root: '/p/a', result: { outcome: 'ok' as const, warning: 'The post-merge hook failed: npm ERR! code ERESOLVE' } };
+    expect(syncAllRow(r, 'pull')).toEqual({ ok: false, text: 'Pulled, but the post-merge hook failed: npm ERR! code ERESOLVE', action: 'show' });
+    expect(syncAllRow(r)).toEqual({ ok: false, text: 'Synced, but the post-merge hook failed: npm ERR! code ERESOLVE', action: 'show' });
+  });
+
+  test("sign-in needed: a pull's row says it in main's words (never \"Push needs sign-in\")", () => {
+    const pullAuth = { root: '/p/a', result: { outcome: 'auth' as const, message: "Pull needs sign-in: git asked for a password Atelier can't type" } };
+    expect(syncAllRow(pullAuth, 'pull').text).toBe("Pull needs sign-in: git asked for a password Atelier can't type");
+    expect(syncAllRow({ root: '/p/a', result: { outcome: 'auth' } }, 'push').text).toBe("Push needs sign-in: git asked for a password Atelier can't type");
   });
 });
 

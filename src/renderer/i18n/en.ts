@@ -2904,6 +2904,10 @@ const strings = {
       pushAllTitle: 'Push All Repositories',
       pushAllBody: (ok: number, needs: number) => `${ok} pushed · ${needs} ${needs === 1 ? 'needs' : 'need'} you`,
       rowOk: 'In sync',
+      rowPulled: 'Pulled',
+      rowPushed: 'Pushed',
+      // Done, but git reported something after it (a hook that failed once HEAD had moved).
+      rowDoneBut: (op: 'sync' | 'pull' | 'push', warning: string) => `${{ sync: 'Synced', pull: 'Pulled', push: 'Pushed' }[op]}, but ${warning.charAt(0).toLowerCase()}${warning.slice(1)}`,
       rowDiverged: 'Diverged: Sync it from its card to rebase',
       rowNoUpstream: 'No upstream: publish it from its card',
       rowLive: 'Needs you · a session is working on files this pull changes',

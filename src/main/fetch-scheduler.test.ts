@@ -524,6 +524,27 @@ describe('behind writes', () => {
     expect((await Promise.all([pa, pb, pc])).map((x) => x.outcome)).toEqual(['ok', 'ok', 'ok']);
   });
 
+  test('a manual fetch waiting behind a write holds no slot either: every slot still goes to other fetches', async () => {
+    const q = new WriteQueue();
+    const roots = Array.from({ length: MAX_FETCHES }, (_, i) => `/m${i}`);
+    const { w, s } = world({ writes: q });
+    const endA = hold(q, '/a/.git');
+    const pa = s.request(A, 'manual');
+    const others = roots.map((r) => s.request(repo(r), 'manual'));
+    await flush(); await flush();
+    expect(w.runs.map((r) => r.root)).toEqual(roots);
+    endA();
+    await flush(); await flush();
+    // Its write is done; now it waits for a slot like any other.
+    expect(w.runs).toHaveLength(MAX_FETCHES);
+    w.runs[0]!.finish({ outcome: 'ok' });
+    await flush(); await flush();
+    expect(w.runs.at(-1)!.root).toBe('/a');
+    for (const r of w.runs.slice(1)) r.finish({ outcome: 'ok' });
+    expect((await pa).outcome).toBe('ok');
+    await Promise.all(others);
+  });
+
   test('a write asked while a fetch waits for a slot: the slot it gets goes to the next fetch until the write ends', async () => {
     const q = new WriteQueue();
     const { w, s } = world({ writes: q, remotes: ['/a', '/c', '/d', '/e'] });

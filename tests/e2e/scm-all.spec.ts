@@ -196,7 +196,7 @@ test('Pull All: the repositories pull at the same time; one that can\'t stops no
     await expect(sheet.locator('.git-sheet-row')).toHaveCount(2);
     await expect(sheet.locator('.git-sheet-row.is-needs')).toContainText('billing');
     await expect(sheet.locator('.git-sheet-row.is-ok')).toContainText('web');
-    await expect(sheet.locator('.git-sheet-row.is-ok')).toContainText('In sync');
+    await expect(sheet.locator('.git-sheet-row.is-ok')).toContainText('Pulled');
     await look(sheet, `${SHOTS}/scm-all-pull-all.png`, { settle: 300 });
 
     // Show selects billing in Source Control, where its own Pull says what to do.

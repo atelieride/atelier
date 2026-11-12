@@ -82,6 +82,40 @@ test(`Pull All: up to ${BULK_GIT_PARALLEL} repositories at once; a repository's 
   expect(toast()?.text).toBe('Pulled 6 repositories');
 });
 
+test("Pull All before Source Control's list is read: a worktree still waits for its repository (Changes' status names it)", async () => {
+  const a = st('/p/a', { behind: 1 });
+  const wt = st('/p/a-wt', { behind: 1, worktreeOf: '/p/a' });
+  const others = ['/p/b', '/p/c', '/p/d', '/p/e'].map((r) => st(r, { behind: 1 }));
+  useApp.setState({ repos: [a, wt, ...others], scmRepos: null });
+  const end = heldPulls();
+  const run = pullAll();
+  await flush();
+  expect(rootsOf('pull')).toEqual(['/p/a', '/p/b', '/p/c', '/p/d']);
+  for (const r of ['/p/a', '/p/b', '/p/c', '/p/d', '/p/e', '/p/a-wt']) await end(r);
+  await run;
+});
+
+test('Pull All: a pull that went through while the hook after it failed needs you; Show says what git reported', async () => {
+  answers.pull = (o: { root: string }) => (o.root === '/p/a' ? { outcome: 'ok', warning: 'The post-merge hook failed: npm ERR!' } : { outcome: 'ok' });
+  await pullAll();
+  expect(toast()?.text).toBe('Pulled 1 repository · 2 need you');
+  expect(shown()).toMatchObject({ rows: [{ root: '/p/a', result: { outcome: 'ok', warning: 'The post-merge hook failed: npm ERR!' } }, { root: '/p/b' }, { root: '/p/c' }] });
+});
+
+test('Read-only turned on mid-run: the repositories not started yet never run, and none of them is listed as failed', async () => {
+  useApp.setState({ repos: ['/p/a', '/p/b', '/p/c', '/p/d', '/p/e'].map((r) => st(r, { behind: 1 })) });
+  const end = heldPulls();
+  const run = pullAll();
+  await flush();
+  expect(rootsOf('pull')).toHaveLength(BULK_GIT_PARALLEL);
+  useApp.setState({ settings: { ...DEFAULT_SETTINGS, gitActions: 'read-only' } });
+  for (const r of ['/p/a', '/p/b', '/p/c', '/p/d']) await end(r);
+  await run;
+  expect(rootsOf('pull')).not.toContain('/p/e');
+  expect(useApp.getState().gitResult['/p/e']).toBeUndefined();
+  expect(toast()?.text).toBe('Pulled 4 repositories');
+});
+
 test('Pull All: a failure stops nothing; the toast counts what needs you, and Show lists every repository it touched', async () => {
   answers.pull = (o: { root: string }) => (o.root === '/p/a' ? { outcome: 'network', message: 'Could not resolve host' } : { outcome: 'ok' });
   await pullAll();
