@@ -1,9 +1,9 @@
-// GitHub with linked worktrees, on real repositories: what it prunes on a reopen, what a
-// failed worktree listing keeps, and merge summaries once a repo's last worktree is gone.
+// GitHub with linked worktrees, on real repositories: what it prunes on a first open and on a
+// reopen, what a failed worktree listing keeps, and merge summaries once a repo's last worktree is gone.
 import { mkdtempSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterEach, expect, onTestFinished, test, vi } from 'vitest';
 import { posixTest } from '../support/platform';
 import type { RepoStatus } from '../../src/shared/git';
 import { IPC } from '../../src/shared/api';
@@ -66,6 +66,38 @@ posixTest('reopened after main moved: the first prune of the repo already leaves
   expect(prunes.filter((x) => x.root === root).every((x) => x.exclude.includes(wt))).toBe(true);
   slow.mockRestore();
   w2.close();
+});
+
+// POSIX: git prints C:/ worktree paths on Windows.
+posixTest('opened for the first time, a commit made before the worktrees are listed is pruned once they are, worktrees excluded', async () => {
+  const { root, wt } = project();
+  const { h, prunes } = hub();
+  // The worktrees are listed only once the test lets them (a `git worktree list` slower than the repo's status).
+  let letList!: () => void;
+  const gate = new Promise<void>((r) => { letList = r; });
+  let listedAt = Infinity;
+  const real = repos.listWorkingTrees;
+  const slow = vi.spyOn(repos, 'listWorkingTrees').mockImplementation(async (...a) => {
+    await gate;
+    const trees = await real(...a);
+    listedAt = Math.min(listedAt, Date.now());
+    return trees;
+  });
+  onTestFinished(() => slow.mockRestore());
+  const statuses: RepoStatus[] = [];
+  h.onStatus = (st) => { statuses.push(st); };
+  const w = window();
+  h.open(root, w.wc);
+  // The repo's first status, read while its worktrees are still unlisted: it can't prune, it only sees HEAD.
+  await until(() => !!h.info(root)?.status.get(root));
+  commit(root, 'moved', { 'a.ts': '2\n' });
+  letList();
+  // A status of the repo read after the listing: HEAD moved since the one seen, so it prunes.
+  await until(() => statuses.some((s) => s.root === root && s.checkedAt >= listedAt));
+  const ofRoot = prunes.filter((x) => x.root === root);
+  expect(ofRoot.length).toBeGreaterThan(0);
+  expect(ofRoot.every((x) => x.exclude.includes(wt))).toBe(true);
+  w.close();
 });
 
 // POSIX: git prints C:/ worktree paths on Windows.
