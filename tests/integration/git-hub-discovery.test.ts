@@ -7,7 +7,7 @@
 import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, expect, vi } from 'vitest';
+import { afterEach, expect, onTestFinished, vi } from 'vitest';
 import { posixTest as test } from '../support/platform';
 import { IPC } from '../../src/shared/api';
 import type { RepoStatus } from '../../src/shared/git';
@@ -17,6 +17,7 @@ import * as service from '../../src/main/git/service';
 import * as exec from '../../src/main/git/exec';
 import { gitReadLimiter } from '../../src/main/git/read-limiter';
 import { commit, git } from '../support/git-fixture';
+import { isInside } from '../../src/shared/paths';
 
 function folder(): string {
   return realpathSync(mkdtempSync(join(tmpdir(), 'atl-ghd-')));
@@ -59,6 +60,22 @@ const until = async (ok: () => boolean, ms = 10_000) => {
   const end = Date.now() + ms;
   while (!ok()) { if (Date.now() > end) throw new Error('timed out'); await new Promise((r) => setTimeout(r, 50)); }
 };
+
+/**
+ * The git reads of the project at `root` as they start, each named by `what`. Only that project's: every GitHub shares
+ * one read limiter, and the reads a project of an earlier test still had queued (what git ignores, a listing) start
+ * meanwhile and say nothing about this one's order.
+ */
+function readsIn(root: string, what: (repo: string, args: string[]) => string): string[] {
+  const order: string[] = [];
+  const real = exec.runGit;
+  vi.spyOn(exec, 'runGit').mockImplementation((repo, args, ...rest) => {
+    if (isInside(root, repo)) order.push(what(repo, args));
+    return real(repo, args, ...rest);
+  });
+  return order;
+}
+
 const shown = (h: GitHub, root: string, repo: string) => !!h.info(root)?.repos.includes(repo) && !!h.info(root)?.status.get(repo);
 const gone = (h: GitHub, root: string, repo: string) => !h.info(root)?.repos.includes(repo) && !h.info(root)?.status.has(repo);
 
@@ -102,9 +119,7 @@ test('a repository folder deleted leaves, also while its status read waited for 
 test('opening a project: every status is read before the ignored-file listings (Changes fills first)', async () => {
   const root = folder();
   for (const n of ['a', 'b', 'c', 'd', 'e', 'f']) repoAt(join(root, n));
-  const order: string[] = [];
-  const real = exec.runGit;
-  vi.spyOn(exec, 'runGit').mockImplementation((repo, args, ...rest) => { order.push(args[0]!); return real(repo, args, ...rest); });
+  const order = readsIn(root, (_repo, args) => args[0]!);
   // Every slot busy while the project opens: what it asks for queues, in the order it asked.
   const release: (() => void)[] = [];
   for (let i = 0; i < 4; i++) void gitReadLimiter.run('live', () => new Promise<void>((r) => release.push(r)));
@@ -124,9 +139,7 @@ test('a hidden worktree the first listing finds: the windows hear of it at once,
   for (const n of ['a', 'b', 'c', 'd', 'e', 'f']) repoAt(join(root, n));
   const wt = join(root, '.worktrees', 'v2');
   git(root, 'worktree', 'add', '-q', '-b', 'v2', wt);
-  const order: string[] = [];
-  const real = exec.runGit;
-  vi.spyOn(exec, 'runGit').mockImplementation((repo, args, ...rest) => { order.push(`${args[0]}:${repo}`); return real(repo, args, ...rest); });
+  const order = readsIn(root, (repo, args) => `${args[0]}:${repo}`);
   const { h, w } = open(root);
   // Listed: the windows are told (Source Control reloads its entries) before the worktree has a status.
   await until(() => !!h.info(root)?.trees?.some((t) => t.root === wt));
@@ -145,10 +158,15 @@ test('the first listing tells the windows when it changes the working trees, eve
   writeFileSync(join(root, '.gitignore'), '.worktrees/\n');
   const wt = join(root, '.worktrees', 'v2');
   git(root, 'worktree', 'add', '-q', '-b', 'v2', wt);
-  // The root's status comes at once, the worktree's never: only the listing can tell the windows about it.
-  vi.spyOn(service, 'readRepoStatus').mockImplementation((repo) => (repo === wt ? new Promise(() => {}) : Promise.resolve({
+  // The root's status comes at once, the worktree's not before the test ends: only the listing can tell the windows
+  // about it. It does come then, or its read would hold one of the shared limiter's slots for every later test.
+  const status = (repo: string): RepoStatus => ({
     root: repo, name: 'r', branch: 'main', detached: false, ahead: 0, behind: 0, oid: null, changes: [], checkedAt: Date.now(), truncated: 0
-  })));
+  });
+  let late!: () => void;
+  const held = new Promise<RepoStatus>((r) => { late = () => r(status(wt)); });
+  onTestFinished(() => late());
+  vi.spyOn(service, 'readRepoStatus').mockImplementation((repo) => (repo === wt ? held : Promise.resolve(status(repo))));
   const { h, w } = open(root);
   await until(() => !!h.info(root)?.trees?.some((t) => t.root === wt));
   // The same snapshot sent again right after the listing: that send is the listing's (a send with nothing new is
@@ -159,9 +177,7 @@ test('the first listing tells the windows when it changes the working trees, eve
 test('a file event during the first fill doesn\'t list what git ignores ahead of the statuses', async () => {
   const root = folder();
   for (const n of ['a', 'b', 'c']) repoAt(join(root, n));
-  const order: string[] = [];
-  const real = exec.runGit;
-  vi.spyOn(exec, 'runGit').mockImplementation((repo, args, ...rest) => { order.push(args[0]!); return real(repo, args, ...rest); });
+  const order = readsIn(root, (_repo, args) => args[0]!);
   const release: (() => void)[] = [];
   for (let i = 0; i < 4; i++) void gitReadLimiter.run('live', () => new Promise<void>((r) => release.push(r)));
   const { h } = open(root);
