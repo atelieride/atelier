@@ -354,6 +354,59 @@ if [ -n "\${ATELIER_HOME:-}" ]; then
   unset __atelier_bin __atelier_path
 fi
 
+# \`claude\` launched from here brings Atelier's hooks along, without touching ~/.claude. A claude alias or function of
+# yours stays: Atelier's function goes through it.
+__atelier_claude_alias=
+if __atelier_def=$(alias claude 2>/dev/null); then
+  # bash prints the alias single-quoted: assigning that text back is the alias's value, nothing runs.
+  eval "__atelier_claude_alias=\${__atelier_def#alias claude=}"
+  unalias claude
+fi
+if declare -F claude >/dev/null 2>&1; then
+  __atelier_def=$(declare -f claude)
+  eval "_atelier_user_claude\${__atelier_def#claude}"
+  unset -f claude
+fi
+unset __atelier_def
+
+# The rules, with the first $1 words as the way to run Claude: subcommands and -p start no session the hooks could
+# follow (and Claude Code refuses --settings before remote-control); outside an Atelier terminal nothing is added.
+__atelier_claude_run() {
+  local n=$1 a
+  shift
+  local -a base
+  base=("\${@:1:$n}")
+  shift "$n"
+  if [ -z "\${ATELIER_SOCK:-}" ] || [ ! -r "\${ATELIER_CLAUDE_SETTINGS:-}" ]; then "\${base[@]}" "$@"; return; fi
+  case "\${1:-}" in
+    ${POWERSHELL_SUBCOMMANDS.join('|')}) "\${base[@]}" "$@"; return ;;
+  esac
+  for a in "$@"; do
+    case "$a" in -p|--print|--print=*) "\${base[@]}" "$@"; return ;; esac
+  done
+  "\${base[@]}" --settings "$ATELIER_CLAUDE_SETTINGS" "$@"
+}
+
+claude() {
+  local -a base
+  if [ -n "\${ATELIER_CLAUDE_BIN:-}" ]; then base=("$ATELIER_CLAUDE_BIN")
+  elif [ -n "\${ATELIER_E2E:-}" ]; then
+    # e2e tests only ever run the fake claude: never the user's real Claude Code, whatever PATH says.
+    printf '%s\\n' REAL-CLAUDE-BLOCKED >&2
+    return 97
+  elif declare -F _atelier_user_claude >/dev/null 2>&1; then base=(_atelier_user_claude)
+  elif [ -n "$__atelier_claude_alias" ]; then eval "base=($__atelier_claude_alias)"
+  elif type -P claude >/dev/null 2>&1; then base=(command claude)
+  # Claude's native installer puts claude.exe there without always adding the folder to PATH.
+  elif [ -n "$__atelier_cygpath" ] && [ -n "\${USERPROFILE:-}" ] && [ -f "$(cygpath -u "$USERPROFILE")/.local/bin/claude.exe" ]; then
+    base=("$(cygpath -u "$USERPROFILE")/.local/bin/claude.exe")
+  else base=(command claude)
+  fi
+  # An alias such as claude='claude --flag' would call this function again.
+  if [ "\${base[0]}" = claude ]; then base=(command "\${base[@]}"); fi
+  __atelier_claude_run "\${#base[@]}" "\${base[@]}" "$@"
+}
+
 # A folder as the path of a file: URI, percent-encoded byte by byte (run in a subshell: LC_ALL=C stays there).
 __atelier_encode() {
   local s=$1 out= c n i
@@ -392,6 +445,9 @@ else
   PROMPT_COMMAND=__atelier_prompt
 fi
 `;
+
+/** The same list as the Git Bash function has it (a test keeps the three equal). */
+export const ATELIER_BASH_SUBCOMMANDS: readonly string[] = /case "\$\{1:-\}" in\n\s*([^)]+)\)/.exec(ATELIER_BASH)![1]!.split('|');
 
 /** Git Bash's arguments for an Atelier terminal: the integration as its rcfile (forward slashes), interactive. */
 export function gitBashArgs(rcfile: string): string[] {

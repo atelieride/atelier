@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as pty from 'node-pty';
@@ -26,22 +26,38 @@ function bashPath(p: string): string {
   return /^[A-Za-z]:\//.test(s) ? `/${s[0]!.toLowerCase()}${s.slice(2)}` : s;
 }
 
-async function runBash(o: Run): Promise<{ out: string; home: string; atelierHome: string }> {
+/** A fake claude: prints its arguments (printf: macOS's /bin/sh echo would read backslashes in a Windows path). */
+const FAKE_CLAUDE = '#!/bin/sh\nprintf \'%s\\n\' "ARGS:$*"\n';
+/** In a profile: the fake claude first on PATH. */
+const FAKE_FIRST = 'PATH="$HOME/fakebin:$PATH"\n';
+
+/** PATH without any folder holding a real claude: whatever a test gets wrong, it never starts Claude Code. */
+function pathWithoutClaude(): string[] {
+  const sep = isWin ? ';' : ':';
+  return (process.env.PATH ?? process.env.Path ?? '').split(sep)
+    .filter((d) => d && !['claude', 'claude.exe', 'claude.cmd'].some((n) => existsSync(join(d, n))));
+}
+
+async function runBash(o: Run): Promise<{ out: string; home: string; atelierHome: string; settings: string }> {
   const dir = mkdtempSync(join(tmpdir(), 'atl-gb-'));
   const rc = join(dir, 'atelier.bash');
   writeFileSync(rc, ATELIER_BASH);
   const home = join(dir, 'home');
-  mkdirSync(home);
+  mkdirSync(join(home, 'fakebin'), { recursive: true });
+  writeFileSync(join(home, 'fakebin', 'claude'), FAKE_CLAUDE, { mode: 0o755 });
   for (const [name, text] of Object.entries(o.home ?? {})) writeFileSync(join(home, name), text);
   for (const d of o.dirs ?? []) mkdirSync(join(home, d), { recursive: true });
   const atelierHome = join(dir, 'atelier home');
   mkdirSync(join(atelierHome, 'bin'), { recursive: true });
+  const settings = join(atelierHome, 'claude-settings.json');
+  writeFileSync(settings, '{}');
   const sep = isWin ? ';' : ':';
   // Only what a terminal of atelierd's gets, never this process's own ATELIER_* (it may run inside Atelier).
   const env: Record<string, string> = {
-    PATH: [join(atelierHome, 'bin'), process.env.PATH ?? process.env.Path ?? ''].join(sep),
+    PATH: [join(atelierHome, 'bin'), ...pathWithoutClaude()].join(sep),
     HOME: home, TERM: 'xterm-256color', LANG: 'en_US.UTF-8', BASH_SILENCE_DEPRECATION_WARNING: '1',
-    ATELIER_HOME: atelierHome,
+    ATELIER_HOME: atelierHome, ATELIER_SOCK: isWin ? '\\\\.\\pipe\\atelier-test' : join(dir, 'atelierd.sock'),
+    ATELIER_CLAUDE_SETTINGS: settings,
     ...(isWin ? { SystemRoot: process.env.SystemRoot ?? 'C:\\Windows', ProgramFiles: process.env.ProgramFiles ?? 'C:\\Program Files' } : {}),
     ...o.env
   };
@@ -50,7 +66,7 @@ async function runBash(o: Run): Promise<{ out: string; home: string; atelierHome
     let out = '';
     const timer = setTimeout(() => { p.kill(); reject(new Error(`timeout; output so far: ${JSON.stringify(out)}`)); }, 30_000);
     p.onData((d) => { out += d; });
-    p.onExit(() => { clearTimeout(timer); resolve({ out, home, atelierHome }); });
+    p.onExit(() => { clearTimeout(timer); resolve({ out, home, atelierHome, settings }); });
     for (const l of [...o.lines, 'exit']) p.write(l + '\r');
   });
 }
@@ -106,4 +122,55 @@ test.runIf(canRun)('a prompt command of the user’s still runs, after ours, wit
 test.runIf(isWin && existsSync(GIT_BASH))('an array PROMPT_COMMAND (bash 5.1+) keeps its elements, ours first', async () => {
   const r = await runBash({ env: { ATELIER_PROMPT_NONCE: NONCE }, home: { '.bash_profile': "PROMPT_COMMAND=('echo A1' 'echo A2')\n" }, lines: ['true'] });
   expect(r.out).toMatch(new RegExp(`133;P;atelier=${NONCE}\\x07[\\s\\S]*A1[\\s\\S]*A2`));
+}, 60_000);
+
+test.runIf(canRun)('claude gets Atelier’s settings; subcommands and --print run plain', async () => {
+  const r = await runBash({ home: { '.bash_profile': FAKE_FIRST }, lines: ['claude --name=x', 'claude mcp list', 'claude -p hi', 'claude --print=x'] });
+  expect(r.out).toContain(`ARGS:--settings ${r.settings} --name=x`);
+  expect(r.out).toContain('ARGS:mcp list\r');
+  expect(r.out).toContain('ARGS:-p hi\r');
+  expect(r.out).toContain('ARGS:--print=x\r');
+}, 60_000);
+
+test.runIf(canRun)('outside an Atelier terminal (no atelierd socket) claude runs plain', async () => {
+  const r = await runBash({ env: { ATELIER_SOCK: '' }, home: { '.bash_profile': FAKE_FIRST }, lines: ['claude --name=x'] });
+  expect(r.out).toContain('ARGS:--name=x\r');
+}, 60_000);
+
+test.runIf(canRun)('an alias cc=claude goes through Atelier’s claude', async () => {
+  const r = await runBash({ home: { '.bash_profile': FAKE_FIRST + 'alias cc=claude\n' }, lines: ['cc a'] });
+  expect(r.out).toContain(`ARGS:--settings ${r.settings} a`);
+}, 60_000);
+
+test.runIf(canRun)('the user’s own claude alias and function stay, without calling themselves again', async () => {
+  const a = await runBash({ home: { '.bash_profile': FAKE_FIRST + "alias claude='claude --model m'\n" }, lines: ['claude a'] });
+  expect(a.out).toContain(`ARGS:--model m --settings ${a.settings} a`);
+  const f = await runBash({ home: { '.bash_profile': FAKE_FIRST + 'claude() { command claude --from-fn "$@"; }\n' }, lines: ['claude a'] });
+  expect(f.out).toContain(`ARGS:--from-fn --settings ${f.settings} a`);
+}, 60_000);
+
+test.runIf(canRun)('ATELIER_CLAUDE_BIN wins; in the e2e suite a real claude is refused', async () => {
+  const blocked = await runBash({ env: { ATELIER_E2E: '1' }, lines: ['claude a', 'echo "rc=$?"'] });
+  expect(blocked.out).toContain('REAL-CLAUDE-BLOCKED');
+  expect(blocked.out).toContain('rc=97');
+  const dir = mkdtempSync(join(tmpdir(), 'atl-gb-bin-'));
+  const bin = join(dir, 'fake-claude');
+  writeFileSync(bin, '#!/bin/sh\nprintf \'%s\\n\' "BIN:$*"\n', { mode: 0o755 });
+  const r = await runBash({ env: { ATELIER_E2E: '1', ATELIER_CLAUDE_BIN: bin }, home: { '.bash_profile': FAKE_FIRST }, lines: ['claude a'] });
+  expect(r.out).toContain(`BIN:--settings ${r.settings} a`);
+}, 60_000);
+
+test.runIf(canRun)('set -u in the user’s profile breaks nothing', async () => {
+  const r = await runBash({ env: { ATELIER_PROMPT_NONCE: NONCE }, home: { '.bash_profile': FAKE_FIRST + 'set -u\n' }, lines: ['claude a', 'cd ..', 'true'] });
+  expect(r.out).not.toContain('unbound variable');
+  expect(r.out).toContain(`ARGS:--settings ${r.settings} a`);
+}, 60_000);
+
+test.runIf(isWin && existsSync(GIT_BASH))('no claude on PATH: the one Claude’s native installer puts in ~/.local/bin', async () => {
+  const profile = mkdtempSync(join(tmpdir(), 'atl-gb-up-'));
+  mkdirSync(join(profile, '.local', 'bin'), { recursive: true });
+  // Any program that prints its arguments stands in for claude.exe.
+  copyFileSync(join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Git', 'usr', 'bin', 'echo.exe'), join(profile, '.local', 'bin', 'claude.exe'));
+  const r = await runBash({ env: { USERPROFILE: profile }, lines: ['claude a'] });
+  expect(r.out).toContain(`--settings ${r.settings} a`);
 }, 60_000);
