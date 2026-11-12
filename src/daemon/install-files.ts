@@ -322,7 +322,17 @@ export function powerShellArgs(script: string): string[] {
  * bash 3.2-compatible (macOS runs the same file in tests), safe under the user's `set -u`.
  */
 export const ATELIER_BASH = `# Atelier: Git Bash integration. Atelier starts Git Bash as \`bash --rcfile <this file> -i\`: a login bash would ignore
-# --rcfile, so this file first reads what \`bash -l\` reads. Your prompt, PATH and aliases stay yours.
+# --rcfile, so this file reads what \`bash -l\` reads. Your prompt, PATH and aliases stay yours.
+
+# The prompt signal's nonce (hex only): read first and dropped at once, so nothing started here sees it, not even what
+# your login files start.
+__atelier_signal=
+case "\${ATELIER_PROMPT_NONCE:-}" in
+  ''|*[!0-9a-f]*) ;;
+  *) __atelier_signal=";atelier=\${ATELIER_PROMPT_NONCE}" ;;
+esac
+unset ATELIER_PROMPT_NONCE
+
 if [ -r /etc/profile ]; then . /etc/profile; fi
 if [ -r ~/.bash_profile ]; then . ~/.bash_profile
 elif [ -r ~/.bash_login ]; then . ~/.bash_login
@@ -330,14 +340,6 @@ elif [ -r ~/.profile ]; then . ~/.profile
 fi
 
 if command -v cygpath >/dev/null 2>&1; then __atelier_cygpath=1; else __atelier_cygpath=; fi
-
-# The prompt signal's nonce (hex only): read once, then dropped, so no program started here sees it.
-__atelier_signal=
-case "\${ATELIER_PROMPT_NONCE:-}" in
-  ''|*[!0-9a-f]*) ;;
-  *) __atelier_signal=";atelier=\${ATELIER_PROMPT_NONCE}" ;;
-esac
-unset ATELIER_PROMPT_NONCE
 
 # Claude's settings may call atelier-bridge by name (a home that needs quoting): Atelier's bin first, back in front if
 # your files moved it, and only once.
@@ -354,12 +356,60 @@ if [ -n "\${ATELIER_HOME:-}" ]; then
   unset __atelier_bin __atelier_path
 fi
 
+# Your aliases as bash holds them: from BASH_ALIASES (bash 4 and later, every Git Bash: nothing to parse, no extra
+# process), else from \`alias -p\`, where a value counts only as one whole single-quoted string, unquoted here and never
+# evaluated. No alias text runs at startup.
+__atelier_unquote() {
+  local q="'" b='\\'
+  local re="^$q([^$q]|$q[$b]$q$q)*$q"
+  re+='$'
+  [[ $1 =~ $re ]] || return 1
+  __atelier_value=\${1:1:\${#1}-2}
+  __atelier_value=\${__atelier_value//"$q$b$q$q"/$q}
+}
+__atelier_alias_value() {
+  if [ "\${BASH_VERSINFO[0]:-0}" -ge 4 ]; then
+    [ -n "\${BASH_ALIASES[$1]+set}" ] || return 1
+    __atelier_value=\${BASH_ALIASES[$1]}
+  else
+    local def
+    def=$(alias -- "$1" 2>/dev/null) || return 1
+    __atelier_unquote "\${def#*=}"
+  fi
+}
+# Calls "$1 <name> <value>" for each alias.
+__atelier_each_alias() {
+  local name line
+  if [ "\${BASH_VERSINFO[0]:-0}" -ge 4 ]; then
+    for name in "\${!BASH_ALIASES[@]}"; do "$1" "$name" "\${BASH_ALIASES[$name]}"; done
+  else
+    while IFS= read -r line; do
+      case "$line" in "alias "*=\\'*) ;; *) continue ;; esac
+      name=\${line#alias }
+      name=\${name#-- }
+      name=\${name%%=*}
+      if __atelier_unquote "\${line#*=}"; then "$1" "$name" "$__atelier_value"; fi
+    done <<< "$(alias -p)"
+  fi
+}
+# A command's text split into the variable assignments in front (__atelier_pre, spaces kept) and the rest.
+__atelier_split() {
+  local assign="^[A-Za-z_][A-Za-z0-9_]*=('[^']*'|\\"[^\\"]*\\"|[^[:space:]'\\"])*[[:space:]]+"
+  __atelier_pre=
+  __atelier_rest=$1
+  if [[ $__atelier_rest =~ ^[[:space:]]+ ]]; then __atelier_pre=\${BASH_REMATCH[0]}; __atelier_rest=\${__atelier_rest:\${#__atelier_pre}}; fi
+  while [[ $__atelier_rest =~ $assign ]]; do __atelier_pre+=\${BASH_REMATCH[0]}; __atelier_rest=\${__atelier_rest:\${#BASH_REMATCH[0]}}; done
+}
+
 # \`claude\` launched from here brings Atelier's hooks along, without touching ~/.claude. A claude alias or function of
-# yours stays: Atelier's function goes through it.
+# yours stays: Atelier's function goes through it. Variables your alias sets in front (another Claude account's
+# CLAUDE_CONFIG_DIR) are set again for each claude.
 __atelier_claude_alias=
-if __atelier_def=$(alias claude 2>/dev/null); then
-  # bash prints the alias single-quoted: assigning that text back is the alias's value, nothing runs.
-  eval "__atelier_claude_alias=\${__atelier_def#alias claude=}"
+__atelier_claude_pre=
+if __atelier_alias_value claude; then
+  __atelier_split "$__atelier_value"
+  __atelier_claude_pre=$__atelier_pre
+  __atelier_claude_alias=$__atelier_rest
   unalias claude
 fi
 if declare -F claude >/dev/null 2>&1; then
@@ -389,13 +439,14 @@ __atelier_claude_run() {
 
 claude() {
   local -a base
+  local pre=
   if [ -n "\${ATELIER_CLAUDE_BIN:-}" ]; then base=("$ATELIER_CLAUDE_BIN")
   elif [ -n "\${ATELIER_E2E:-}" ]; then
     # e2e tests only ever run the fake claude: never the user's real Claude Code, whatever PATH says.
     printf '%s\\n' REAL-CLAUDE-BLOCKED >&2
     return 97
   elif declare -F _atelier_user_claude >/dev/null 2>&1; then base=(_atelier_user_claude)
-  elif [ -n "$__atelier_claude_alias" ]; then eval "base=($__atelier_claude_alias)"
+  elif [ -n "$__atelier_claude_alias" ]; then eval "base=($__atelier_claude_alias)"; pre=$__atelier_claude_pre
   elif type -P claude >/dev/null 2>&1; then base=(command claude)
   # Claude's native installer puts claude.exe there without always adding the folder to PATH.
   elif [ -n "$__atelier_cygpath" ] && [ -n "\${USERPROFILE:-}" ] && [ -f "$(cygpath -u "$USERPROFILE")/.local/bin/claude.exe" ]; then
@@ -404,6 +455,8 @@ claude() {
   fi
   # An alias such as claude='claude --flag' would call this function again.
   if [ "\${base[0]}" = claude ]; then base=(command "\${base[@]}"); fi
+  # As the alias would: exported to this claude only, ~ expanded.
+  if [ -n "$pre" ]; then eval "local -x $pre"; fi
   __atelier_claude_run "\${#base[@]}" "\${base[@]}" "$@"
 }
 
@@ -418,34 +471,23 @@ __atelier_claude_with() {
   __atelier_claude_run 1 "$@"
 }
 __atelier_reroute() {
-  local line name value pre word bare
-  local assign="^[A-Za-z_][A-Za-z0-9_]*=('[^']*'|\\"[^\\"]*\\"|[^[:space:]'\\"])*[[:space:]]+"
-  local first="^('[^']*'|\\"[^\\"]*\\"|[^[:space:]'\\";|&<>()]+)"
-  while IFS= read -r line; do
-    case "$line" in "alias "*=\\'*\\') ;; *) continue ;; esac
-    name=\${line#alias }
-    name=\${name%%=*}
-    # bash lists each value single-quoted: assigning it back is the value, nothing runs. A value spread over several
-    # lines doesn't parse here and is left alone.
-    eval "value=\${line#alias "$name"=}" 2>/dev/null || continue
-    pre=
-    if [[ $value =~ ^[[:space:]]+ ]]; then pre=\${BASH_REMATCH[0]}; value=\${value:\${#pre}}; fi
-    while [[ $value =~ $assign ]]; do pre+=\${BASH_REMATCH[0]}; value=\${value:\${#BASH_REMATCH[0]}}; done
-    [[ $value =~ $first ]] || continue
-    word=\${BASH_REMATCH[1]}
-    # Plain claude already reaches Atelier's function.
-    [ "$word" = claude ] && continue
-    bare=$word
-    case "$bare" in \\'*\\'|\\"*\\") bare=\${bare:1:\${#bare}-2} ;; esac
-    case "\${bare##*/}" in
-      [Cc][Ll][Aa][Uu][Dd][Ee]|[Cc][Ll][Aa][Uu][Dd][Ee].[Ee][Xx][Ee]) ;;
-      *) continue ;;
-    esac
-    alias "$name=\${pre}__atelier_claude_with $value"
-  done <<< "$(alias -p)"
+  local first="^('[^']*'|\\"[^\\"]*\\"|[^[:space:]'\\";|&<>()]+)" word bare
+  __atelier_split "$2"
+  [[ $__atelier_rest =~ $first ]] || return 0
+  word=\${BASH_REMATCH[1]}
+  # Plain claude already reaches Atelier's function.
+  [ "$word" = claude ] && return 0
+  bare=$word
+  case "$bare" in \\'*\\'|\\"*\\") bare=\${bare:1:\${#bare}-2} ;; esac
+  case "\${bare##*/}" in
+    [Cc][Ll][Aa][Uu][Dd][Ee]|[Cc][Ll][Aa][Uu][Dd][Ee].[Ee][Xx][Ee]) ;;
+    *) return 0 ;;
+  esac
+  alias -- "$1=\${__atelier_pre}__atelier_claude_with $__atelier_rest"
 }
-__atelier_reroute
-unset -f __atelier_reroute
+__atelier_each_alias __atelier_reroute
+unset -f __atelier_reroute __atelier_each_alias __atelier_alias_value __atelier_unquote __atelier_split
+unset __atelier_value __atelier_pre __atelier_rest
 
 # A folder as the path of a file: URI, percent-encoded byte by byte (run in a subshell: LC_ALL=C stays there).
 __atelier_encode() {
@@ -473,17 +515,25 @@ __atelier_prompt() {
     case "$p" in /*) ;; *) p="/$p" ;; esac
     # A plain assignment: as a prefix of a function call LC_ALL wouldn't switch bash's own locale.
     __atelier_url="file://$(LC_ALL=C; __atelier_encode "$p")"
+    # Under your \`set -a\` every assignment is exported: these stay in this shell.
+    export -n __atelier_pwd __atelier_url
   fi
   printf '\\033]7;%s\\007' "$__atelier_url"
   if [ -n "$__atelier_signal" ]; then printf '\\033]133;P%s\\007' "$__atelier_signal"; fi
   return $s
 }
-# First: an array PROMPT_COMMAND (bash 5.1+) gets it in its first element, its other elements untouched.
+# First, so bash-preexec's own last command stays last: an array PROMPT_COMMAND (bash 5.1+) gets it in its first
+# element, its other elements untouched. Your prompt commands see the last command's $?; PIPESTATUS and $_ are this
+# function's by then.
 if [ -n "\${PROMPT_COMMAND:-}" ]; then
   PROMPT_COMMAND="__atelier_prompt"$'\\n'"$PROMPT_COMMAND"
 else
   PROMPT_COMMAND=__atelier_prompt
 fi
+# Not handed to programs started here: a shell started from this one (or an editor's terminals) would run a prompt
+# function it doesn't have. Each new shell's own files set its PROMPT_COMMAND.
+export -n PROMPT_COMMAND
+export -n __atelier_signal __atelier_cygpath __atelier_claude_alias __atelier_claude_pre __atelier_pwd __atelier_url
 `;
 
 /** The same list as the Git Bash function has it (a test keeps the three equal). */

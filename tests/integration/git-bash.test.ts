@@ -98,6 +98,25 @@ test.runIf(canRun)('a terminal starts without a word from Atelier’s file, also
   expect(r.flat).not.toMatch(/syntax error|command not found|unbound variable|bad substitution|: line \d+:/);
 }, 60_000);
 
+test.runIf(canRun)('an exported PROMPT_COMMAND doesn’t carry Atelier’s prompt into child shells', async () => {
+  // The marker is computed, so the command line the terminal echoes can't match it.
+  const r = await runBash({ home: { '.bash_profile': "export PROMPT_COMMAND='true'\n" }, lines: [`bash -c 'printf "CHILD%s=[%s]\\n" "$((6*7))" "$PROMPT_COMMAND"'`] });
+  const child = /CHILD42=\[([^\]]*)\]/.exec(r.flat);
+  expect(child).not.toBeNull();
+  expect(child![1]).not.toContain('__atelier');
+}, 60_000);
+
+test.runIf(canRun)('the nonce is gone before the user’s login files run, and set -a doesn’t export it again', async () => {
+  const r = await runBash({
+    env: { ATELIER_PROMPT_NONCE: NONCE },
+    home: { '.bash_profile': 'env > "$HOME/login-env.txt"\nset -a\n' },
+    lines: ['cd ..', 'env > "$HOME/later-env.txt"']
+  });
+  expect(readFileSync(join(r.home, 'login-env.txt'), 'utf8')).not.toContain('ATELIER_PROMPT_NONCE');
+  expect(readFileSync(join(r.home, 'later-env.txt'), 'utf8')).not.toContain(NONCE);
+  expect(signals(r.out, NONCE)).toBeGreaterThanOrEqual(2);
+}, 60_000);
+
 test.runIf(canRun)('the user’s login files load, as bash -l would', async () => {
   const a = await runBash({ home: { '.bash_profile': "export ATL_P=loaded\nalias ll='ls -l'\n" }, lines: ['echo "P=$ATL_P"', 'alias ll'] });
   expect(a.flat).toContain('P=loaded');
@@ -178,6 +197,13 @@ test.runIf(canRun)('the user’s own claude alias and function stay, without cal
   expect(f.log).toBe(`ARGS:--from-fn --settings ${f.settings} a\n`);
 }, 60_000);
 
+test.runIf(canRun)('a claude alias that sets variables in front (another Claude account) keeps them', async () => {
+  const r = await runBash({ home: { '.bash_profile': FAKE_FIRST + "alias claude='ATL_X=1 claude --model m'\n" }, lines: ['claude a'] });
+  expect(r.log).toBe(`ARGS:--model m --settings ${r.settings} a\nX=1\n`);
+  const t = await runBash({ home: { '.bash_profile': FAKE_FIRST + "alias claude='ATL_X=~/q claude'\n" }, lines: ['claude a'] });
+  expect(t.log).toMatch(new RegExp(`^ARGS:--settings ${t.settings.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')} a\nX=/.*/q\n$`));
+}, 60_000);
+
 test.runIf(canRun)('ATELIER_CLAUDE_BIN wins; in the e2e suite a real claude is refused', async () => {
   const blocked = await runBash({ env: { ATELIER_E2E: '1' }, lines: ['claude a', 'echo "rc=$?"'] });
   expect(blocked.flat).toContain('REAL-CLAUDE-BLOCKED');
@@ -222,11 +248,12 @@ test.runIf(canRun)('variables an alias sets in front of Claude’s binary stay',
 test.runIf(canRun)('claude.exe in any case, bare or by a path, quoted or not, is recognized', async () => {
   const r = await runBash({
     bins: { 'my tools/claude': FAKE_CLAUDE },
-    home: { '.bash_profile': "alias c1='claude.exe'\nalias c2='~/x/Claude.EXE --a'\nalias c3=\"'$HOME/my tools/claude'\"\n" },
-    lines: ['alias c1', 'alias c2', 'c3 a']
+    home: { '.bash_profile': "alias c1='claude.exe'\nalias c2='~/x/Claude.EXE --a'\nalias c3=\"'$HOME/my tools/claude'\"\nalias -- -c4='claude.exe'\n" },
+    lines: ['alias c1', 'alias c2', 'alias -- -c4', 'c3 a']
   });
   expect(r.flat).toContain("alias c1='__atelier_claude_with claude.exe'");
   expect(r.flat).toContain("alias c2='__atelier_claude_with ~/x/Claude.EXE --a'");
+  expect(r.flat).toContain("-c4='__atelier_claude_with claude.exe'");
   expect(r.log).toBe(`ARGS:--settings ${r.settings} a\n`);
 }, 60_000);
 
@@ -234,9 +261,18 @@ test.runIf(canRun)('other aliases are left alone, and no alias text runs at star
   const aliases = ["cm='claude-monitor --x'", "ce='claudette'", "cc2='command claude'", "ec='echo claude.exe'", "plain='claude'", 'x=\'echo $(touch "$HOME/RAN")\''];
   const r = await runBash({
     home: { '.bash_profile': aliases.map((a) => `alias ${a}\n`).join('') },
-    lines: ['alias cm ce cc2 ec plain x', '[ -e "$HOME/RAN" ] && echo RAN-YES || echo RAN-NO']
+    lines: ['alias cm ce cc2 ec plain x']
   });
   for (const a of aliases) expect(r.flat).toContain(`alias ${a}`);
   expect(r.flat).not.toContain('__atelier_claude_with');
-  expect(r.flat).toContain('RAN-NO');
+  expect(existsSync(join(r.home, 'RAN'))).toBe(false);
+}, 60_000);
+
+test.runIf(canRun)('an alias over several lines whose last line looks like another alias runs nothing at startup', async () => {
+  const r = await runBash({
+    // Listed as `alias m='x` and `alias y=a$(touch "$HOME/RAN")b='\''c'`: the second line parses as a command.
+    home: { '.bash_profile': "alias m=$'x\\nalias y=a$(touch \"$HOME/RAN\")b=\\'c'\n" },
+    lines: ['true']
+  });
+  expect(existsSync(join(r.home, 'RAN'))).toBe(false);
 }, 60_000);
