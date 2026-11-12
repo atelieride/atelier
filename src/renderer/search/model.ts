@@ -50,11 +50,14 @@ export function stepResult(rows: Row[], selected: string | null, dir: 1 | -1): s
 }
 
 const LEAD_DEFAULT = 20;
+/** Characters a row shows at most: a row is a glance at its match, not the line (Copy Line gives the line). */
+export const PREVIEW_CHARS = 250;
 
 /**
  * What a match row shows: the kept text from its first non-blank character, or from `lead` characters before the row's
- * own match when that is further along (`cut`). Ranges are line columns, so they move by the kept text's start and are
- * clamped to it; a row whose own range lies outside the kept text has nothing to mark and shows "…".
+ * own match when that is further along (`cut`), at most PREVIEW_CHARS of it (`cutEnd` when the line goes on). Ranges
+ * are line columns, so they move by the kept text's start and are clamped to what is shown; a row whose own range lies
+ * outside the kept text has nothing to mark and shows "…".
  */
 export function previewWindow(line: SearchLine, index: number, lead: number = LEAD_DEFAULT): { text: string; marks: [number, number][]; strong: number; cut: boolean; cutEnd: boolean } {
   const text = line.text;
@@ -71,16 +74,31 @@ export function previewWindow(line: SearchLine, index: number, lead: number = LE
     if (c >= 0xdc00 && c <= 0xdfff) begin++;
     cut = true;
   }
+  let end = Math.min(text.length, begin + PREVIEW_CHARS);
+  // Never end inside a surrogate pair either.
+  if (end < text.length && end > begin) {
+    const c = text.charCodeAt(end - 1);
+    if (c >= 0xd800 && c <= 0xdbff) end--;
+  }
   const marks: [number, number][] = [];
   let strong = -1;
   local.forEach(([a, b], i) => {
     const from = Math.max(a, begin);
-    const to = Math.min(b, text.length);
+    const to = Math.min(b, end);
     if (to <= from) return;
     if (i === index) strong = marks.length;
     marks.push([from - begin, to - begin]);
   });
-  return { text: text.slice(begin), marks, strong, cut, cutEnd: line.cutEnd };
+  return { text: text.slice(begin, end), marks, strong, cut, cutEnd: line.cutEnd || end < text.length };
+}
+
+/**
+ * Whether the field takes the keyboard when the view mounts: an open on purpose (the activity item holds the keyboard,
+ * as a click or Enter gives it in most browsers), nothing holding it (where a click gives buttons no focus), or a focus
+ * request since the last one answered; never from a terminal or an editor that has it.
+ */
+export function takesFocusOnMount(active: 'activity' | 'none' | 'other', requested: boolean): boolean {
+  return requested || active !== 'other';
 }
 
 /** A line as Copy Line gives it: the whole line, or its kept text with "…" where the line goes on. */

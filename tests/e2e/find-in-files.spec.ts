@@ -66,6 +66,9 @@ const TOKENS = [
   ''
 ].join('\n');
 
+/** A line of about 100 characters whose match is past column 40: kept whole all the same, so copied whole. */
+const IDLE_LINE = 'Idle sessions end after thirty minutes; the next request then meets the zebrafish login page again.';
+
 /** A long name deep in folders, its match far down (line 1234) on a long line: what the narrowest sidebar must fit. */
 const LONG_FILE = 'src/components/checkout/PaymentMethodSelectorWithSavedCards.tsx';
 const LONG_BODY = [...Array.from({ length: 1233 }, (_, i) => `// line ${i + 1}`),
@@ -138,7 +141,7 @@ test.beforeAll(async () => {
   write('.gitignore', 'notes.txt\n');
   write('notes.txt', 'a token in an ignored file\n');
   write('assets/blob.bin', Buffer.concat([Buffer.from('token'), Buffer.alloc(32), Buffer.from('token\n')]));
-  write('docs/auth.md', '# Auth\n\nEvery request carries a session token in a cookie; `readSession` checks it.\n');
+  write('docs/auth.md', `# Auth\n\nEvery request carries a session token in a cookie; \`readSession\` checks it.\n\n${IDLE_LINE}\n`);
   write('src/auth/session.ts', SESSION);
   write('src/auth/tokens.ts', TOKENS);
   write('lib/app.min.js', `var a=1;${'zq;'.repeat(3000)}\n`);
@@ -237,6 +240,13 @@ test('typing streams results grouped by file in path order; ignored and binary f
   await expect(field()).toHaveValue('');
   await expect(rows()).toHaveCount(0);
   await expect(field()).toBeFocused();
+
+  // A line shorter than the cap whose match is far along it is kept, and copied, whole: nothing cut, no "…".
+  await search('zebrafish');
+  await expect(totals()).toHaveText('1 result in 1 file');
+  await matchRows('docs/auth.md').first().click({ button: 'right' });
+  await win.getByRole('menuitem', { name: 'Copy Line' }).click();
+  await expect.poll(() => copies().at(-1)).toBe(IDLE_LINE);
 });
 
 test('an invalid regular expression marks the field and says why and the way out; .* off finds the text as written', async () => {
@@ -299,8 +309,10 @@ test('a minified one-line file with 3,000 matches: every row reachable, only wha
   // 26 px for the file, 22 px for each match.
   expect(await list().evaluate((el) => el.scrollHeight)).toBeGreaterThanOrEqual(26 + 3000 * 22);
   expect(await rows().count()).toBeLessThan(120);
-  // The line goes on past the kept text (2,000 characters): the row ends with "…", and so does its copy.
+  // The line goes on past the kept text (2,000 characters): the row ends with "…", and so does its copy. The row shows
+  // at most 250 characters of it.
   await expect(view().locator('.fif-row[data-i="1"] .fif-text')).toHaveText(/…$/);
+  expect(await view().locator('.fif-row[data-i="1"] .fif-text').evaluate((el) => (el.textContent ?? '').length)).toBeLessThanOrEqual(252);
   await view().locator('.fif-row[data-i="1"]').click({ button: 'right' });
   await win.getByRole('menuitem', { name: 'Copy Line' }).click();
   await expect.poll(() => copies().at(-1)).toMatch(/^var a=1;zq;.*…$/);
@@ -441,7 +453,13 @@ test('⌥C, ⌥W and ⌥R in the field turn Match Case, Whole Word and Regular E
 test('filters: "Search the whole project" clears the paths and leaves Include ignored files as it is; the lit funnel answers the pointer', async () => {
   await fresh();
   const funnel = view().getByRole('button', { name: 'Filters' });
+  /** A color as the page computes it (rgb…), for comparing a token with a computed background. */
+  const bgOf = (css: string) => win.evaluate((c) => { const d = document.createElement('div'); d.style.background = c; document.body.appendChild(d); const v = getComputedStyle(d).backgroundColor; d.remove(); return v; }, css);
   await funnel.click();
+  // Open but not lit: under the pointer, the plain hover, not the lit tint.
+  await expect(funnel).not.toHaveClass(/is-lit/);
+  const neutral = await bgOf('var(--bg-3)');
+  await expect.poll(() => funnel.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(neutral);
   await view().getByRole('textbox', { name: 'Files to include' }).fill('docs/');
   await search('TokenStore');
   await expect(view().locator('.fif-state')).toHaveText('No results in docs/. Search the whole project');
@@ -559,6 +577,12 @@ test('the sidebar shown again leaves the keyboard where it was; the activity ite
   await frames(win);
   await expect(term).toBeFocused();
   await expect(field()).not.toBeFocused();
+  // Nothing holding the keyboard (as in a browser where a click leaves buttons unfocused): the field takes it.
+  await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await command('toggle-sidebar');
+  await expect(view()).toHaveCount(0);
+  await command('toggle-sidebar');
+  await expect(field()).toBeFocused();
   // In front, its item hides the sidebar; once more, it opens the view on purpose: the field takes the keyboard.
   await activity().click();
   await expect(view()).toHaveCount(0);

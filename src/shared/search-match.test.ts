@@ -146,8 +146,20 @@ describe('lineResult', () => {
     expect(r.start).toBe(2960);
     expect(r.text).toBe(text.slice(2960, 4960));
     expect(r).toMatchObject({ cutStart: true, cutEnd: true });
+  });
+
+  it('keeps a line that fits the cap whole, wherever its match is', () => {
+    const text = `${'a'.repeat(60)}token${'b'.repeat(35)}`;
+    expect(lineResult(1, text, [[60, 65]], 2000)).toEqual({ line: 1, text, start: 0, ranges: [[60, 65]], cutStart: false, cutEnd: false });
     const tail = lineResult(1, `${'a'.repeat(100)}token and the rest of the line`, [[100, 105]], 2000);
-    expect(tail).toMatchObject({ start: 60, text: `${'a'.repeat(40)}token and the rest of the line`, cutStart: true, cutEnd: false });
+    expect(tail).toMatchObject({ start: 0, cutStart: false, cutEnd: false });
+  });
+
+  it('a long line whose match is near its end keeps the last cap of it: nothing cut after', () => {
+    const text = 'z'.repeat(5000);
+    const r = lineResult(1, text, [[4990, 4995]], 2000);
+    expect(r).toMatchObject({ start: 3000, cutStart: true, cutEnd: false });
+    expect(r.text).toBe(text.slice(3000));
   });
 
   it('keeps a short line whole: nothing cut', () => {
@@ -159,7 +171,7 @@ describe('lineResult', () => {
   it('never splits a surrogate pair at either edge', () => {
     // An emoji (two UTF-16 units) right where the kept text would start, and right where it would end.
     const before = `${'a'.repeat(9)}😀${'b'.repeat(39)}token`;
-    const r = lineResult(1, before, [[50, 55]], 2000);
+    const r = lineResult(1, before, [[50, 55]], 45);
     expect(r.start).toBe(9);
     expect(r.text.startsWith('😀')).toBe(true);
     const after = `token${'c'.repeat(4)}😀tail`;

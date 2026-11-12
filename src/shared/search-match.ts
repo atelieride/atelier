@@ -179,13 +179,14 @@ const isHigh = (c: number) => c >= 0xd800 && c <= 0xdbff;
 const isLow = (c: number) => c >= 0xdc00 && c <= 0xdfff;
 
 /**
- * The kept slice of a line for its matches: from 40 characters before the first one to the end of the line, at most
- * `keptLineChars`, never splitting a surrogate pair; `cutStart` / `cutEnd` say whether the line goes on before or after
- * it (a row shows "…" there, a copy of it too).
+ * The kept slice of a line for its matches: the whole line when it fits in `keptLineChars`; a longer one from 40
+ * characters before the first match (no later than its last `keptLineChars`) on, at most `keptLineChars`, never
+ * splitting a surrogate pair. `cutStart` / `cutEnd` say whether the line goes on before or after it (a row shows "…"
+ * there, a copy of it too).
  */
 export function lineResult(line: number, text: string, ranges: [number, number][], keptLineChars: number): SearchLine {
   const first = ranges[0]?.[0] ?? 0;
-  let start = Math.max(0, first - CONTEXT_CHARS);
+  let start = text.length <= keptLineChars ? 0 : Math.max(0, Math.min(first - CONTEXT_CHARS, text.length - keptLineChars));
   if (start > 0 && isLow(text.charCodeAt(start)) && isHigh(text.charCodeAt(start - 1))) start--;
   let end = Math.min(text.length, start + keptLineChars);
   if (end < text.length && end > start && isHigh(text.charCodeAt(end - 1)) && isLow(text.charCodeAt(end))) end--;

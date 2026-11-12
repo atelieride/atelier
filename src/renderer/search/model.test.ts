@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import type { SearchFile, SearchLine } from '@shared/search';
-import { anyExpanded, buildRows, fileKey, fileSize, lineCopy, matchKey, nearestMatch, pillCount, previewWindow, resultsText, rowTotals, stepResult, totals, treePositions } from './model';
+import { anyExpanded, buildRows, fileKey, fileSize, lineCopy, matchKey, nearestMatch, pillCount, previewWindow, resultsText, rowTotals, stepResult, takesFocusOnMount, totals, treePositions } from './model';
 
 const ln = (line: number, text: string, ranges: [number, number][], start = 0, cutEnd = false): SearchLine => ({ line, text, start, ranges, cutStart: start > 0, cutEnd });
 const file = (rel: string, lines: SearchLine[]): SearchFile => ({ path: `/p/${rel}`, rel, size: 10, lines });
@@ -44,6 +44,28 @@ test('stepResult walks match rows across files and wraps both ways', () => {
 test("previewWindow drops leading whitespace and marks every range, the row's own one strong", () => {
   const p = previewWindow(ln(1, '    foo bar foo', [[4, 7], [12, 15]], 0), 1);
   expect(p).toEqual({ text: 'foo bar foo', marks: [[0, 3], [8, 11]], strong: 1, cut: false, cutEnd: false });
+});
+
+test('previewWindow shows at most 250 characters from where it starts, and says it cut there', () => {
+  const text = `${'a'.repeat(10)}token${'b'.repeat(600)}`;
+  const p = previewWindow(ln(1, text, [[10, 15], [400, 405]], 0), 0);
+  expect(p.text).toBe(text.slice(0, 250));
+  expect(p.cutEnd).toBe(true);
+  expect(p.marks).toEqual([[10, 15]]);
+  // From a match further along: 250 characters from the start it was given.
+  const q = previewWindow(ln(1, text, [[10, 15], [400, 405]], 0), 1, 10);
+  expect(q.text).toBe(text.slice(390, 640));
+  expect(q.marks).toEqual([[10, 15]]);
+  expect(q.strong).toBe(0);
+  // A short line is shown whole.
+  expect(previewWindow(ln(1, 'abc token', [[4, 9]], 0), 0)).toMatchObject({ text: 'abc token', cutEnd: false });
+});
+
+test('takesFocusOnMount: an open on purpose, or nothing holding the keyboard; never from a terminal or editor', () => {
+  expect(takesFocusOnMount('activity', false)).toBe(true);
+  expect(takesFocusOnMount('none', false)).toBe(true);
+  expect(takesFocusOnMount('other', false)).toBe(false);
+  expect(takesFocusOnMount('other', true)).toBe(true);
 });
 
 test('previewWindow says when the kept text ends before the line does', () => {

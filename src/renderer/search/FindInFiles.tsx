@@ -12,7 +12,7 @@ import { kbd } from '../kbd';
 import { useApp } from '../store';
 import { ts } from './copy';
 import { searchAreaMenu } from './menus';
-import { anyExpanded, buildRows, rowTotals } from './model';
+import { anyExpanded, buildRows, rowTotals, takesFocusOnMount } from './model';
 import { loadRecent } from './recent';
 import { ResultList, type ResultListHandle } from './ResultList';
 import { SkippedPopover } from './SkippedPopover';
@@ -96,11 +96,12 @@ function SearchView({ root }: { root: string }) {
   const list = useRef<ResultListHandle>(null);
   const st = useSearch.getState;
 
-  // The keyboard in the field, its text selected, when asked: an open on purpose (the activity item that showed the
-  // view has the keyboard, as a click or Enter on it gives it), or the store's focus request. The sidebar merely shown
-  // again (⌘B) leaves the keyboard where it is, a terminal's for one.
+  // The keyboard in the field, its text selected, when the view opens on purpose or nothing has the keyboard; the
+  // sidebar merely shown again (⌘B) over a terminal or an editor leaves the keyboard with them.
   useLayoutEffect(() => {
-    const asked = !!document.activeElement?.closest('.activity-bar') || focusNonce !== answeredNonce;
+    const a = document.activeElement;
+    const active = !a || a === document.body ? 'none' : a.closest('.activity-bar') ? 'activity' : 'other';
+    const asked = takesFocusOnMount(active, focusNonce !== answeredNonce);
     answeredNonce = focusNonce;
     if (!asked) return;
     input.current?.focus();
