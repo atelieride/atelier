@@ -52,7 +52,13 @@ export default defineConfig({
     resolve: { alias: shared },
     plugins: [standaloneDaemon()],
     build: {
-      rollupOptions: { input: { index: resolve(__dirname, 'src/main/index.ts') } }
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/main/index.ts'),
+          // Find in Files' worker thread: a plain Node worker, so nothing it imports may need Electron.
+          'search-worker': resolve(__dirname, 'src/main/search/worker.ts')
+        }
+      }
     }
   },
   preload: { resolve: { alias: shared } },
