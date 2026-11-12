@@ -65,8 +65,12 @@ class Collector {
   }
 }
 
-/** Lines of a decoded text: split on `\n`; a final empty piece after a trailing `\n` is no line. */
+/**
+ * Lines of a decoded text: split on `\n`; a final empty piece after a trailing `\n` is no line. A stop is looked for
+ * before the first line (the read that brought the text may have ended after the search did) and every 1,024 lines.
+ */
 function pushText(c: Collector, text: string, cancelled: () => boolean): boolean {
+  if (cancelled()) return false;
   let from = 0;
   let n = 0;
   while (from <= text.length) {

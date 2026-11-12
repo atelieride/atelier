@@ -16,7 +16,23 @@ const hooks = vi.hoisted(() => ({
   onLine: null as null | ((line: string) => void),
   /** A file whose opening takes `ms`, whether it is opened synchronously (blocking the thread) or not. */
   slow: null as null | { path: string; ms: number },
+  /** Whole-file reads held until their promise settles, and the reads that have begun. */
+  readGates: new Map<string, Promise<void>>(),
+  readStarted: new Set<string>(),
+  /** Every line a compiled query really evaluates, with that query. */
+  onMatch: null as null | ((query: string) => void),
 }));
+vi.mock('@shared/search-match', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@shared/search-match')>();
+  return {
+    ...real,
+    compileSearch: (spec: Parameters<typeof real.compileSearch>[0]) => {
+      const c = real.compileSearch(spec);
+      if (c.kind !== 'ok') return c;
+      return { kind: 'ok' as const, ranges: (line: string) => { hooks.onMatch?.(spec.query); return c.ranges(line); } };
+    },
+  };
+});
 vi.mock('./scan', async (importOriginal) => {
   const real = await importOriginal<typeof import('./scan')>();
   return {
@@ -52,6 +68,13 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     open: async (...args: Parameters<typeof real.open>) => {
       if (hooks.slow && args[0] === hooks.slow.path) await new Promise((r) => setTimeout(r, hooks.slow!.ms));
       return real.open(...args);
+    },
+    readFile: async (...args: Parameters<typeof real.readFile>) => {
+      const path = String(args[0]);
+      hooks.readStarted.add(path);
+      const gate = hooks.readGates.get(path);
+      if (gate) await gate;
+      return real.readFile(...args);
     },
   };
 });
@@ -300,6 +323,39 @@ describe('runSearch', () => {
     }
     expect(lines).toBeLessThan(20_000);
     expect(doneOf(ms)).toMatchObject({ stopped: true, searched: 0 });
+  });
+
+  test('a whole-file read that finishes after done never runs the old query, and the next search is unaffected', async () => {
+    const { root, listed } = project({ 'big.txt': 'oldterm here\n'.repeat(5_000) });
+    const big = listed[0]!.path;
+    let release!: () => void;
+    hooks.readGates.set(big, new Promise<void>((r) => { release = r; }));
+    const evaluated: string[] = [];
+    try {
+      // The search stops while its file is being read whole: `done` does not wait for that read.
+      let stop = false;
+      const ms: WorkerMsg[] = [];
+      const first = runSearch(input(root, listed, 'oldterm'), (m) => ms.push(m), () => stop);
+      await vi.waitFor(() => expect(hooks.readStarted.has(big)).toBe(true));
+      stop = true;
+      await first;
+      expect(doneOf(ms)).toMatchObject({ stopped: true, searched: 0 });
+
+      // The next search runs while the old read ends and its text arrives.
+      hooks.onMatch = (q) => { evaluated.push(q); };
+      const other = project({ 'b.txt': 'a newterm\n' });
+      const second = collect(input(other.root, other.listed, 'newterm'));
+      release();
+      const ms2 = await second;
+      await vi.waitFor(() => expect(hooks.finished).toContain(big));
+      expect(evaluated.filter((q) => q === 'oldterm')).toEqual([]);
+      expect(filesOf(ms2).map((f) => [f.rel, f.lines[0]!.text])).toEqual([['b.txt', 'a newterm']]);
+      expect(doneOf(ms2)).toMatchObject({ stopped: false, searched: 1 });
+    } finally {
+      release();
+      hooks.readGates.clear();
+      hooks.onMatch = null;
+    }
   });
 
   test('batches come at most every 50 ms; the first result goes out at once', async () => {

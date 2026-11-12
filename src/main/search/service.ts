@@ -86,6 +86,8 @@ export class SearchService {
   private watchdog: ReturnType<typeof setTimeout> | null = null;
   private seq = 0;
   private disposed = false;
+  /** An emit has failed once already: later failures are not logged again. */
+  private warned = false;
   private readonly limits: RunInput['limits'];
   private readonly watchdogMs: number;
 
@@ -160,12 +162,17 @@ export class SearchService {
     this.dropWorker();
   }
 
-  /** Passes an event on; a window gone mid-search (its sender throwing) must not break the service. */
+  /**
+   * Passes an event on. An emit that throws (a window gone mid-search, or a bug in the caller) must not break the
+   * service: the next search starts as usual, and the first failure is logged so a real bug does not go unseen.
+   */
   private tell(run: Run, e: SearchEvent): void {
     try {
       run.emit(e);
-    } catch {
-      // Nothing to tell any more: the next search starts as usual.
+    } catch (err) {
+      if (this.warned) return;
+      this.warned = true;
+      console.warn('Find in Files: a search event could not be passed on:', err instanceof Error ? err.message : String(err));
     }
   }
 

@@ -253,17 +253,26 @@ describe('SearchService', () => {
     svc.dispose();
   });
 
-  test('an emit that throws (a window gone mid-search) does not break the service', async () => {
-    const listing = project(20);
-    const w = new InProcess();
-    const svc = new SearchService({ spawn: () => w, list: async () => listing });
-    svc.start(req(1), () => { throw new Error('window closed'); });
-    await vi.waitFor(() => expect(w.posted.some((m) => m.kind === 'done')).toBe(true));
-    await new Promise((res) => setImmediate(res));
-    const r = recorder();
-    svc.start(req(2), r.emit);
-    expect(await r.ended).toMatchObject({ kind: 'done', searchId: 2, searched: 20 });
-    svc.dispose();
+  test('an emit that throws does not break the service, and is reported once as a warning', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const listing = project(20);
+      const w = new InProcess();
+      const svc = new SearchService({ spawn: () => w, list: async () => listing });
+      // Every event fails (a batch and the done at least), as an emit with a real bug would.
+      svc.start(req(1), () => { throw new Error('An object could not be cloned.'); });
+      await vi.waitFor(() => expect(w.posted.some((m) => m.kind === 'done')).toBe(true));
+      await new Promise((res) => setImmediate(res));
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]![0])).toMatch(/^Find in Files: /);
+      expect(warn.mock.calls[0]!.map(String).join(' ')).toContain('An object could not be cloned.');
+      const r = recorder();
+      svc.start(req(2), r.emit);
+      expect(await r.ended).toMatchObject({ kind: 'done', searchId: 2, searched: 20 });
+      svc.dispose();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   describe('watchdog', () => {

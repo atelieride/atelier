@@ -121,6 +121,9 @@ export async function runSearch(input: RunInput, post: (m: WorkerMsg) => void, c
   let lines = 0;
   let chars = 0;
   const matcherFor = (index: number): ((line: string) => [number, number][]) => (line) => {
+    // A read that ends after `done` (it was not waited for) may still bring its text: the query never runs on it, so
+    // nothing of this search competes with the next one, or gets stuck in its name.
+    if (halted) return [];
     if (matching !== index + 1) {
       matching = index + 1;
       Atomics.store(shared, SHARED_FILE, matching);
