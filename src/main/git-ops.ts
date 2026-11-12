@@ -929,16 +929,19 @@ export class GitOps {
       if ('outcome' in to) return to;
     }
     if (ab.ahead > 0 && ab.behind > 0 && !rebase) return fail('state', `Your branch and its upstream have diverged: rebase your ${plural(ab.ahead, 'commit')} first`);
+    // What git reported after a pull that went through (a hook that failed once HEAD moved): the sync's answer keeps it.
+    let warning: { warning: string } | Record<string, never> = {};
     if (ab.behind > 0) {
       const p = await this.pullIn(t, x, ab.ahead > 0, false);
       if (p.outcome !== 'ok') return p;
+      if (p.warning) warning = { warning: p.warning };
       ab = await this.reads.aheadBehind(t.root);
     }
     if (ab && ab.ahead > 0) {
       const pushed = await this.pushIn(t, x, {});
-      return withLeft(pushed, { ...pushed.left, behind: 0 });
+      return { ...withLeft(pushed, { ...pushed.left, behind: 0 }), ...warning };
     }
-    return ab ? { outcome: 'ok', left: { ahead: 0, behind: 0 } } : { outcome: 'ok' };
+    return ab ? { outcome: 'ok', left: { ahead: 0, behind: 0 }, ...warning } : { outcome: 'ok', ...warning };
   }
 
   /**

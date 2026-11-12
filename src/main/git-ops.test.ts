@@ -207,6 +207,31 @@ describe('roots, paths and refs come from main’s own reads', () => {
     expect(await session.ops.pull(K, { root: '/p', rebase: false })).toMatchObject({ outcome: 'error' });
   });
 
+  test('sync: a hook that failed after its pull is still reported, with nothing to push after it or once pushed', async () => {
+    const hookAfterPull = (ahead: number) => {
+      let pulled = false;
+      return world({
+        reads: {
+          facts: async () => facts(pulled ? { head: O2 } : {}),
+          aheadBehind: async () => (pulled ? { ahead, behind: 0 } : { ahead, behind: 1 })
+        },
+        run: (inv) => {
+          if (inv.args[0] !== 'pull') return raw();
+          pulled = true;
+          return raw({ code: null, timedOut: true, hookRunning: 'post-merge' });
+        }
+      });
+    };
+    // Only behind: the pull is all the sync does.
+    const behind = hookAfterPull(0);
+    expect(await behind.ops.sync(K, { root: '/p', rebase: false })).toMatchObject({ outcome: 'ok', warning: 'The post-merge hook did not finish in time.', left: { ahead: 0, behind: 0 } });
+    // Ahead too (a rebase, asked for): pulled, then pushed.
+    const both = hookAfterPull(1);
+    const r = await both.ops.sync(K, { root: '/p', rebase: true });
+    expect(both.runs.map((a) => a[0])).toEqual(['pull', 'push']);
+    expect(r).toMatchObject({ outcome: 'ok', warning: 'The post-merge hook did not finish in time.' });
+  });
+
   test('stage: a listed file gone before the op (git refuses the whole list) — the rest is staged; all gone: nothing', async () => {
     let first = true;
     const w = world({

@@ -600,6 +600,16 @@ describe('branches and stashes', () => {
     expect(toast()?.text).toBe(`Worktree ready at /elsewhere/w. ${warning}`);
   });
 
+  test('pulled or synced, but the hook after the pull failed (husky\'s npm install): the toast says both', async () => {
+    const warning = 'The post-merge hook failed: npm ERR! code ERESOLVE';
+    answers.pull = () => ({ outcome: 'ok', warning });
+    await git.pull('/p/a', { rebase: false });
+    expect(toast()?.text).toMatch(/^Pulled from .+\. The post-merge hook failed: npm ERR! code ERESOLVE$/);
+    answers.sync = () => ({ outcome: 'ok', warning });
+    await git.sync('/p/a', { rebase: false });
+    expect(toast()?.text).toMatch(/ is in sync\. The post-merge hook failed: npm ERR! code ERESOLVE$/);
+  });
+
   test('a pop whose stash stays in the list says so, from the row and from Undo of a stash alike', async () => {
     const warning = 'The stash stays in the list: The stash list moved: nothing was dropped. Look again';
     answers.stashApply = () => ({ outcome: 'ok', warning });

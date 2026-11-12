@@ -340,7 +340,7 @@ export async function sync(root: string, o: { rebase: boolean }): Promise<GitOpR
   const r = await call(() => api().sync({ root, rebase: o.rebase }));
   if (divergedRefusal('sync', o.rebase, r)) { st().setGitSheet({ kind: 'pullRebase', root, sync: true, byResult: true }); return r; }
   st().recordGitResult(root, 'sync', r);
-  if (r.outcome === 'ok') info(t.git.synced(nameOf(root)));
+  if (r.outcome === 'ok') info(noted(t.git.synced(nameOf(root)), r));
   else if (r.outcome === 'rejected') st().setGitSheet({ kind: 'rejected', root });
   else if (r.outcome === 'conflict' && r.dirty) offerStashAndPull(root, o.rebase, r, true);
   else if (r.outcome === 'conflict') st().showToast(r.message ?? t.git.rebaseAborted(upstreamOf(root)));
