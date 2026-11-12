@@ -223,6 +223,23 @@ test('clear resets results but keeps the query, and ignores what the cleared sea
   expect(st().files).toEqual([]);
 });
 
+test('the spec of the listed results is the one their search ran with, not what is being typed meanwhile', () => {
+  st().setSpec({ wholeWord: true });
+  st().setQuery('token'); st().run();
+  expect(st().ranSpec).toEqual({ query: 'token', matchCase: false, wholeWord: true, regex: false });
+  emit(batch([file('a.ts')]));
+  // Typed on, the debounce not over yet: the rows on screen are still "token"'s.
+  st().setQuery('tokens');
+  expect(st().ranSpec.query).toBe('token');
+  vi.advanceTimersByTime(250);
+  expect(st().ranSpec.query).toBe('tokens');
+  // The query sent is capped: so is the spec kept.
+  st().setQuery('x'.repeat(1200)); st().run();
+  expect(st().ranSpec.query).toHaveLength(1000);
+  st().clear();
+  expect(st().ranSpec.query).toBe('');
+});
+
 test('the recent list gets the query on done with results only', () => {
   const saved = new Map<string, string>();
   g.localStorage = { getItem: (k: string) => saved.get(k) ?? null, setItem: (k: string, v: string) => void saved.set(k, v), removeItem: () => {} };

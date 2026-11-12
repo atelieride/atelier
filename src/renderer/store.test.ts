@@ -1308,6 +1308,21 @@ describe('Find in Files: opening a result', () => {
     expect(st().settings.jsonView).toBe('tree');
     expect(st().mdViews).toEqual({ '/p/README.md': 'preview', '/p/notes.md': 'split' });
   });
+
+  test('the visit ends with its tab: replaced as the preview tab, or closed', () => {
+    st().setMdView('/p/README.md', 'preview');
+    st().openSearchResult(result('/p/README.md'), LINE, 0, { side: false, keepFocus: false, spec: SPEC });
+    expect(Object.keys(st().mdVisit)).toEqual(['/p/README.md']);
+    // The next result in another file takes the preview tab's place: README.md's visit is over.
+    st().openSearchResult(result('/p/b.ts'), LINE, 0, { side: false, keepFocus: false, spec: SPEC });
+    expect(st().openFiles.map((f) => f.path)).toEqual(['/p/b.ts']);
+    expect(Object.keys(st().mdVisit)).toEqual(['/p/b.ts']);
+    // Back as a tab (the tree, docked back from a pop-out): its own view.
+    st().openFile('/p/README.md', 'README.md');
+    expect(st().mdViewOf('/p/README.md')).toBe('preview');
+    st().closeTab('/p/b.ts');
+    expect(st().mdVisit).toEqual({});
+  });
 });
 
 test("What's new gives way to any overlay opened over it", () => {

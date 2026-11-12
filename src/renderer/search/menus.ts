@@ -49,7 +49,7 @@ export function searchAreaMenu(): MenuItem[] {
   const shown = rows.length > 0;
   const anyOpen = anyExpanded(rows);
   return [
-    { id: 'copy-all', label: ts.copyAll, icon: 'copy', disabled: !shown, run: () => copy(resultsText(s.spec, s.files, s.dismissed)) },
+    { id: 'copy-all', label: ts.copyAll, icon: 'copy', disabled: !shown, run: () => copy(resultsText(s.ranSpec, s.files, s.dismissed)) },
     'sep',
     anyOpen
       ? { id: 'collapse-all', label: ts.collapseAll, icon: 'collapseAll', disabled: !shown, run: () => useSearch.getState().setAllCollapsed(true) }

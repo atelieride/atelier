@@ -569,7 +569,16 @@ export const moveRequestSchema = z.object({
   to: absPathSchema(1, 4096), key: popoutKeySchema, payload: popoutPayloadSchema.optional(), handoff: editorHandoffSchema.optional(), at: clientPoint.optional()
 }).strict();
 export const adoptAnswerSchema = z.object({ id: z.number().int().positive(), ok: z.boolean(), reason: z.literal('open-there').optional() }).strict();
-export const popoutFocusSchema = z.object({ key: popoutKeySchema, reveal: z.object({ line: z.number().int().positive().optional(), payload: popoutPayloadSchema.optional() }).strict().optional() }).strict();
+const position = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+/** A Find in Files result for a popped-out file: its match and the query, as the search's own limits allow. */
+const searchTargetSchema = z.object({
+  line: position.min(1),
+  from: position,
+  to: position,
+  spec: z.object({ query: z.string().max(SEARCH_LIMITS.queryMax), matchCase: z.boolean(), wholeWord: z.boolean(), regex: z.boolean() }).strict(),
+  keepFocus: z.boolean()
+}).strict();
+export const popoutFocusSchema = z.object({ key: popoutKeySchema, reveal: z.object({ line: z.number().int().positive().optional(), payload: popoutPayloadSchema.optional(), found: searchTargetSchema.optional() }).strict().optional() }).strict();
 /** A tab a pop-out shows in its project window (files go through popoutOpenInMainSchema). */
 export const popoutShowInMainSchema = z.object({ key: popoutKeySchema, payload: popoutPayloadSchema.optional() }).strict();
 /** A file a pop-out opens in its project window: on disk (absolute; an untitled buffer lives in one window only). */

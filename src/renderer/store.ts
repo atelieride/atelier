@@ -15,7 +15,7 @@ import type { ScheduledPrompt } from '@shared/scheduled-prompts';
 import type { SignalBookView } from '@shared/claude-signals';
 import type { ClaudeConversation } from '@shared/history';
 import { MAX_FILE_BYTES } from '@shared/files';
-import type { SearchFile, SearchLine, SearchSpec } from '@shared/search';
+import type { SearchFile, SearchLine, SearchSpec, SearchTarget } from '@shared/search';
 import { feedKey, type BackgroundFeed, type Unavailable, type WatchResult } from '@shared/background-feed';
 import type { TimelineEntry, TimelineMeta } from '@shared/transcript';
 import { BUFFER_LINES } from '@shared/output-tail';
@@ -125,12 +125,8 @@ export interface PaletteSend { text: string; cwd: string | null }
 export type FileMode = 'margin' | 'diff';
 export type TreeEdit = { mode: 'new-file' | 'new-folder'; dir: string } | { mode: 'rename'; path: string };
 export type FolderSheet = { kind: 'session' | 'terminal'; cwd?: string };
-/**
- * A Find in Files result to show: its match on `line` (1-based) from column `from` to `to`, the editor selects it (or
- * the nearest occurrence, when the file changed) and marks every occurrence of `spec`; `keepFocus` leaves the keyboard
- * where it is.
- */
-export interface FoundTarget { line: number; from: number; to: number; spec: SearchSpec; keepFocus: boolean }
+/** A Find in Files result for its file's tab to show (it carries it until shown). */
+export type FoundTarget = SearchTarget;
 /** What a search result adds to opening its file: the match to show, and the large view for a file past 5 MB. */
 interface FileOpening { found?: FoundTarget; large?: true }
 /** large: text past 5 MB opened with Open Anyway (or from a search result), read through files.readLarge. */
@@ -988,7 +984,8 @@ export const useApp = create<AppState>((set, get) => ({
     const line = r.line;
     if (typeof line === 'number' && key.startsWith('f:')) {
       const path = key.slice(2);
-      set({ openFiles: get().openFiles.map((f) => (f.path === path ? { ...f, line, nonce: Date.now() + Math.random() } : f)) });
+      // A search result comes with its match (shown as the main window would) or, a plain line, without one.
+      set({ openFiles: get().openFiles.map((f) => (f.path === path ? { ...f, line, nonce: Date.now() + Math.random(), found: r.found } : f)), mdVisit: visit(get().mdVisit, path, !!r.found) });
     }
   },
   projectWindows: [],
@@ -1911,7 +1908,7 @@ export const useApp = create<AppState>((set, get) => ({
     sideOf(get().split, active, key);
   },
   openFileToSide: (path, rel, line = null, at) => {
-    if (popped(`f:${path}`)) return;
+    if (popped(`f:${path}`, line !== null ? { line, found: at?.found } : undefined)) return;
     enter(`f:${path}`);
     const before = get().split;
     const active = get().activeKey();
@@ -2397,7 +2394,7 @@ export const useApp = create<AppState>((set, get) => ({
   openFile: (path, rel, line = null, mode, opts) => {
     // Open in a pop-out (tree, palette, ⌘-click on a path): that window comes forward, at the line asked for. From
     // a pop-out, another file opens in the project window.
-    if (popped(`f:${path}`, line !== null ? { line } : undefined)) return;
+    if (popped(`f:${path}`, line !== null ? { line, found: opts?.found } : undefined)) return;
     enter(`f:${path}`);
     const st = get();
     const files = st.openFiles;
@@ -3300,6 +3297,13 @@ useApp.subscribe((s, prev) => {
 useApp.subscribe((s) => {
   const patch = staleConfirms(s);
   if (patch) useApp.setState(patch);
+});
+
+// A search result's visit ends with its tab (closed, replaced as the preview tab, gone to a pop-out): back as a tab, the
+// file shows its own view.
+useApp.subscribe((s, prev) => {
+  if (s.openFiles === prev.openFiles) return;
+  for (const path in s.mdVisit) if (!s.openFiles.some((f) => f.path === path)) useApp.setState({ mdVisit: visit(useApp.getState().mdVisit, path, false) });
 });
 
 // A Save as sheet whose untitled tab went away (closed with "Don't Save", for example) has nothing left to save:

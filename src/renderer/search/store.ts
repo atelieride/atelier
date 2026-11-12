@@ -18,6 +18,8 @@ export const AUTO_COLLAPSE_AFTER = 1_000;
 
 export interface SearchState {
   spec: SearchSpec;
+  /** The spec the listed results were searched with (the field may already hold a newer query, not run yet). */
+  ranSpec: SearchSpec;
   include: string;
   exclude: string;
   includeIgnored: boolean;
@@ -64,6 +66,7 @@ let buffers = new Map<string, SearchFile>();
 /** Matches in the list so far, for the auto-collapse threshold. */
 let listedMatches = 0;
 const foldPath = (p: string): string => (pathStyle() === 'win32' ? p.toLowerCase() : p);
+const NO_SPEC: SearchSpec = { query: '', matchCase: false, wholeWord: false, regex: false };
 
 const noResults = {
   files: [] as SearchFile[],
@@ -145,7 +148,8 @@ export const useSearch = create<SearchState>((set, get) => {
   }
 
   return {
-    spec: { query: '', matchCase: false, wholeWord: false, regex: false },
+    spec: { ...NO_SPEC },
+    ranSpec: NO_SPEC,
     include: '',
     exclude: '',
     includeIgnored: false,
@@ -192,7 +196,7 @@ export const useSearch = create<SearchState>((set, get) => {
       buffers = unsaved.results;
       listedMatches = 0;
       // The id is current before the request leaves: an event may arrive before `start` settles.
-      set({ ...noResults, collapsed: new Set(), dismissed: new Set(), searchId, phase: 'running' });
+      set({ ...noResults, collapsed: new Set(), dismissed: new Set(), searchId, ranSpec: spec, phase: 'running' });
       window.atelier.search.start({ ...spec, searchId, include, exclude, includeIgnored: s.includeIgnored, unsaved: unsaved.paths }).catch((err: unknown) => {
         if (get().searchId !== searchId) return;
         set({ phase: 'error', error: { message: err instanceof Error ? err.message : String(err), rel: null } });
@@ -211,7 +215,7 @@ export const useSearch = create<SearchState>((set, get) => {
       abandon();
       buffers = new Map();
       listedMatches = 0;
-      set({ ...noResults, collapsed: new Set(), dismissed: new Set(), searchId: 0, phase: 'idle' });
+      set({ ...noResults, collapsed: new Set(), dismissed: new Set(), searchId: 0, ranSpec: NO_SPEC, phase: 'idle' });
     },
 
     toggleCollapsed(key) {

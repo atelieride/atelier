@@ -94,7 +94,9 @@ const RowView = memo(function RowView({ row, i, top, selected, tabbable, room, p
   }
   return (
     <div {...common} aria-level={2} data-line={row.line.line} className={`fif-row is-match${selected ? ' is-selected' : ''}`}
-      onClick={() => { useSearch.getState().select(row.key); openResult(row.file, row.line, row.index, { side: false, keepFocus: false }); }}>
+      onClick={() => { useSearch.getState().select(row.key); openResult(row.file, row.line, row.index, { side: false, keepFocus: false }); }}
+      // As in the Files tree, a double click keeps the preview tab open.
+      onDoubleClick={() => useApp.getState().keepOpen(row.file.path)}>
       <LineText row={row} room={room} />
       <span className="fif-ln mono">{row.line.line}</span>
       {dismissButton(row.key)}

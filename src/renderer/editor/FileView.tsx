@@ -725,12 +725,18 @@ export function FileView({ file, visible, focused = visible, place }: { file: Op
     targeted.current = file.nonce;
     let n = file.line;
     if (diff) { const i = diff.lines.findIndex((l) => l.newNo === file.line); if (i >= 0) n = i + 1; }
-    n = Math.min(Math.max(1, n), v.state.doc.lines);
-    // A search result: its match selected and the query's occurrences marked, by a module loaded with the first one.
+    n = Math.max(1, n);
+    const toLine = () => {
+      const k = Math.min(n, v.state.doc.lines);
+      const pos = v.state.doc.line(k).from;
+      v.dispatch({ effects: [setTargetLine.of(k), EditorView.scrollIntoView(pos, { y: 'center' })], selection: { anchor: pos } });
+    };
+    // A search result: its match selected and the query's occurrences marked, by a module loaded with the first one
+    // (the line alone, should it fail to load).
     const found = file.found;
-    if (found) { void import('./find-in-files-ext').then((m) => { if (view.current === v && targeted.current === file.nonce) m.showFound(v, n, found); }); return; }
-    const pos = v.state.doc.line(n).from;
-    v.dispatch({ effects: [setTargetLine.of(n), EditorView.scrollIntoView(pos, { y: 'center' })], selection: { anchor: pos } });
+    const current = () => view.current === v && targeted.current === file.nonce;
+    if (found) void import('./find-in-files-ext').then((m) => { if (current()) m.showFound(v, n, found); }).catch(() => { if (current()) toLine(); });
+    else toLine();
   }, [file.line, file.nonce, content, diff, hasText]);
 
   // A hidden tab cannot scroll: the position is restored when it becomes visible again.

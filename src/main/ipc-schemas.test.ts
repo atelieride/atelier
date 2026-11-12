@@ -432,6 +432,14 @@ describe('pop-out schemas', () => {
   test('focus, recall, forward', () => {
     expect(popoutFocusSchema.safeParse({ key: 'f:/p/a.ts', reveal: { line: 12 } }).success).toBe(true);
     expect(popoutFocusSchema.safeParse({ key: 'f:/p/a.ts', reveal: { line: 0 } }).success).toBe(false);
+    // A Find in Files result for a popped-out file: its match and the query along, bounded and strict.
+    const spec = { query: 'token', matchCase: false, wholeWord: true, regex: false };
+    const found = { line: 12, from: 2, to: 7, spec, keepFocus: true };
+    expect(popoutFocusSchema.safeParse({ key: 'f:/p/a.ts', reveal: { line: 12, found } }).success).toBe(true);
+    expect(popoutFocusSchema.safeParse({ key: 'f:/p/a.ts', reveal: { line: 12, found: { ...found, from: -1 } } }).success).toBe(false);
+    expect(popoutFocusSchema.safeParse({ key: 'f:/p/a.ts', reveal: { line: 12, found: { ...found, spec: { ...spec, query: 'x'.repeat(1001) } } } }).success).toBe(false);
+    expect(popoutFocusSchema.safeParse({ key: 'f:/p/a.ts', reveal: { line: 12, found: { ...found, spec: { ...spec, extra: 1 } } } }).success).toBe(false);
+    expect(popoutFocusSchema.safeParse({ key: 'f:/p/a.ts', reveal: { line: 12, found: { ...found, extra: 1 } } }).success).toBe(false);
     expect(popoutKeySchema.safeParse('t:a').success).toBe(true);
     expect(popoutKeySchema.safeParse('x'.repeat(5000)).success).toBe(false);
     expect(popoutForwardSchema.safeParse('open-palette').success).toBe(true);

@@ -1,8 +1,10 @@
-// Find in Files, opening a result in the editor: the preview tab at the match, selected, every occurrence of the query
-// highlighted and ticked on the scrollbar ruler; ⏎ leaving the keyboard in the list while the results are walked; ⌘⏎ to
-// the side; a Markdown file saved as Preview shown as source for the visit; a match moved by an edit on disk; Esc, the
-// find card and an emptied query taking the marks away; a file over 5 MB opened straight in the large view.
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+// Find in Files, opening a result in the editor: the preview tab at the match, selected (no "Comment" pill for a
+// selection the user did not make), every occurrence of the query highlighted and ticked on the scrollbar ruler; ⏎
+// leaving the keyboard in the list while the results are walked; ⌘⏎ to the side; a double click keeping the tab; a
+// Markdown file saved as Preview shown as source for the visit; a result shown once (not again when its view is made
+// again); a match moved by an edit on disk; Esc, the find card and an emptied query taking the marks away; a file over
+// 5 MB opened straight in the large view, its ruler ticked without a long task.
+import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -65,6 +67,9 @@ const MOVED = ['// moved', 'export const a = 1;', 'export const b = 2;', "export
 /** Past 5 MB: the editor opens it read-only, in its large view. */
 const BIG_LINES = 56_000;
 const WALRUS_LINE = 30_000;
+const NARWHAL_LINE = 45_000;
+/** A file changed since its commit (Margin and Diff to switch between), with two matches. */
+const DIFFY = ['export const okapi = 1;', 'export const b = 2;', 'export const c = okapi + 1;', ''].join('\n');
 
 const activity = () => win.locator('.activity-bar .act[aria-label^="Find in Files"]');
 const view = () => win.locator('.sidebar.is-search');
@@ -84,6 +89,16 @@ const sw = (name: string) => editor().locator('.md-switch').getByRole('radio', {
 const pageSelection = () => win.evaluate(() => window.getSelection()?.toString() ?? '');
 /** The text of the line the strong mark sits on. */
 const strongLine = () => strong().evaluate((el) => el.closest('.cm-line')?.textContent ?? '');
+/** The "Comment" pill that follows a selection the user made. */
+const commentPill = () => win.locator('.lc-tip');
+/**
+ * Releasing Shift settles a selection at once (its "Comment" pill shows, without waiting for the quiet moment): sent
+ * to `scope`'s editor, then two frames for the pill to be drawn if it is going to be.
+ */
+async function settleSelection(scope: Locator): Promise<void> {
+  await scope.locator('.cm-editor').evaluate((el) => el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift', bubbles: true })));
+  await frames(win);
+}
 const still = (w: Page) => w.addStyleTag({ content: '*, *::before, *::after { animation: none !important; transition: none !important; }' });
 const savedViews = () => win.evaluate(() => localStorage.getItem('atelier.markdownViews'));
 /** A theme token as the page resolves it on a background. */
@@ -108,9 +123,13 @@ test.beforeAll(async () => {
   write('src/auth/session.ts', SESSION);
   write('src/auth/tokens.ts', TOKENS);
   write('src/moved.ts', MOVED);
-  write('logs/big.log', Array.from({ length: BIG_LINES }, (_, i) => (i + 1 === WALRUS_LINE ? `${'x'.repeat(40)} walrus ${'x'.repeat(51)}` : 'x'.repeat(99))).join('\n') + '\n');
+  const big = (i: number) => (i === WALRUS_LINE ? `${'x'.repeat(40)} walrus ${'x'.repeat(51)}` : i === NARWHAL_LINE ? `${'x'.repeat(40)} narwhal ${'x'.repeat(50)}` : 'x'.repeat(99));
+  write('logs/big.log', Array.from({ length: BIG_LINES }, (_, i) => big(i + 1)).join('\n') + '\n');
+  write('src/diffy.ts', DIFFY.replace('b = 2', 'b = 1'));
+  write('src/kept.ts', 'export const quokka = true;\n');
   git(project, 'add', '.');
   git(project, 'commit', '-q', '-m', 'first');
+  write('src/diffy.ts', DIFFY);
   const e = e2eEnv();
   home = e.home;
   app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env: e.env });
@@ -144,7 +163,13 @@ test('a click opens the preview tab at the match, selected, every occurrence hig
   // One tick per line with a match (lines 1, 8, 11, 12 and 15), the selected one lit.
   await expect(ticks()).toHaveCount(5);
   await expect(editor().locator('.cm-ruler-find.is-selected')).toHaveCount(1);
+  // The match was selected for the user, not by them: no "Comment" pill for it.
+  await settleSelection(editor());
+  await expect(commentPill()).toHaveCount(0);
   await look(win, 'test-results/find-in-files-editor-open.png', { settle: 200 });
+  // Their own selection gets it as always.
+  await win.keyboard.press('Shift+ArrowLeft');
+  await expect(commentPill()).toHaveCount(1);
 });
 
 test('⏎ in the list opens the result and leaves the keyboard there; walking on replaces the preview tab', async () => {
@@ -166,6 +191,8 @@ test('⏎ in the list opens the result and leaves the keyboard there; walking on
   await frames(win);
   await expect(selectedRow()).toBeFocused();
   await expect(content()).not.toBeFocused();
+  await settleSelection(editor());
+  await expect(commentPill()).toHaveCount(0);
   // The one before it, in the same file.
   await win.keyboard.press('ArrowUp');
   await win.keyboard.press('Enter');
@@ -215,6 +242,35 @@ test('a Markdown file saved as Preview opens as source for the visit; its switch
   await win.locator('.tree-row', { hasText: 'README.md' }).click();
   await expect(sw('Preview')).toHaveAttribute('aria-checked', 'true');
   await expect(editor().locator('.md-preview')).toBeVisible();
+
+  // ⏎ leaves the keyboard in the list for that open only: the switch's Source afterwards gives it to the code.
+  await activity().click();
+  await field().press('ArrowDown');
+  await expect(selectedRow()).toHaveAttribute('data-line', '3');
+  await win.keyboard.press('Enter');
+  await expect(sw('Source')).toHaveAttribute('aria-checked', 'true');
+  await expect(strong()).toHaveText('expiry');
+  await expect(selectedRow()).toBeFocused();
+  await sw('Preview').click();
+  await expect(editor().locator('.md-preview')).toBeVisible();
+  await sw('Source').click();
+  await expect(content()).toBeFocused();
+});
+
+test('the result shown once: the view made again (Diff and back) brings neither the marks nor the selection back', async () => {
+  await search('okapi');
+  await expect(totals()).toHaveText('2 results in 1 file');
+  await matchRow('src/diffy.ts', 3).click();
+  await expect(strong()).toHaveText('okapi');
+  await expect(hits()).toHaveCount(2);
+  await editor().locator('.seg button', { hasText: 'Diff' }).click();
+  await expect(editor().locator('.seg button', { hasText: 'Diff' })).toHaveClass(/is-on/);
+  await expect(hits()).toHaveCount(0);
+  await editor().locator('.seg button', { hasText: 'Margin' }).click();
+  await expect(editor().locator('.seg button', { hasText: 'Margin' })).toHaveClass(/is-on/);
+  await frames(win);
+  await expect(hits()).toHaveCount(0);
+  await expect(ticks()).toHaveCount(0);
 });
 
 test('the file changed on disk since the search: the moved occurrence is selected; gone, the line without a selection', async () => {
@@ -275,6 +331,34 @@ test('a file over 5 MB opens straight in the read-only large view, at its match'
   await look(win, 'test-results/find-in-files-editor-large.png', { settle: 200 });
 });
 
+test('in a file past 5 MB the ruler\'s ticks come without holding the page: no long task while they are found', async () => {
+  // The file open first, at another result: what follows is the ruler's work alone, not the file's loading.
+  await search('narwhal');
+  await matchRow('logs/big.log', NARWHAL_LINE).click();
+  await expect(strong()).toHaveText('narwhal');
+  await expect(ticks()).toHaveCount(1);
+  const tickTop = () => editor().evaluate((el) => el.querySelector<HTMLElement>('.cm-ruler-find.is-selected')?.style.top ?? null);
+  const narwhalTick = await tickTop();
+  await search('walrus');
+  await expect(field()).toHaveValue('walrus');
+  await expect(matchRow('logs/big.log', WALRUS_LINE)).toBeVisible();
+  // Every task the page runs from here on that holds it past 50 ms.
+  await win.evaluate(() => {
+    const w = window as unknown as { longest: number; watch: PerformanceObserver };
+    w.longest = 0;
+    w.watch = new PerformanceObserver((list) => { for (const e of list.getEntries()) w.longest = Math.max(w.longest, e.duration); });
+    w.watch.observe({ type: 'longtask' });
+  });
+  await matchRow('logs/big.log', WALRUS_LINE).click();
+  await expect(strong()).toHaveText('walrus');
+  // The new tick, higher up than narwhal's (line 30,000 of 56,000), once the whole file has been scanned.
+  await expect.poll(async () => { const top = await tickTop(); return top !== null && top !== narwhalTick; }).toBe(true);
+  await expect(ticks()).toHaveCount(1);
+  await frames(win);
+  const longest = await win.evaluate(() => { const w = window as unknown as { longest: number; watch: PerformanceObserver }; w.watch.disconnect(); return w.longest; });
+  expect(longest).toBeLessThan(100);
+});
+
 test('⌘⏎ opens the result to the side, in a new split, as a kept tab; the keyboard stays in the list', async () => {
   await search('token');
   await expect(totals()).toHaveText('11 results in 2 files');
@@ -300,7 +384,22 @@ test('⌘⏎ opens the result to the side, in a new split, as a kept tab; the ke
   await expect(sideEditor.locator('.cm-fif-hit-strong')).toHaveText('token');
   expect(await sideEditor.locator('.cm-fif-hit-strong').evaluate((el) => el.closest('.cm-line')?.textContent)).toBe("import { TokenStore } from './tokens';");
   await expect(sideEditor.locator('.foot-pos')).toHaveText('Ln 1, Col 36');
+  await settleSelection(sideEditor);
+  await expect(commentPill()).toHaveCount(0);
   await frames(win);
   await expect(selectedRow()).toBeFocused();
   await look(win, 'test-results/find-in-files-editor-side.png', { settle: 200 });
+});
+
+test('a double click on a result keeps its tab: the next result opens beside it', async () => {
+  await search('quokka');
+  await expect(totals()).toHaveText('1 result in 1 file');
+  await matchRow('src/kept.ts', 1).dblclick();
+  await expect(tab('kept.ts')).toBeVisible();
+  await expect(tab('kept.ts')).not.toHaveClass(/is-preview/);
+  await expect(win.locator('section.file-view[aria-label="src/kept.ts"] .cm-fif-hit-strong')).toHaveText('quokka');
+  await search('okapi');
+  await matchRow('src/diffy.ts', 1).click();
+  await expect(tab('diffy.ts')).toHaveClass(/is-preview/);
+  await expect(tab('kept.ts')).toBeVisible();
 });

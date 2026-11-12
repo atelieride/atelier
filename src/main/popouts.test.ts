@@ -233,6 +233,19 @@ describe('PopoutManager', () => {
     expect(t.m.focus('/p/other', 'f:/p/alpha/a.ts')).toBe(false);
   });
 
+  test('4b. a search result walked with the keyboard staying in its list updates the window where it is, without bringing it forward', () => {
+    const t = setup();
+    t.open('f:/p/alpha/a.ts');
+    const w = t.win(0);
+    const found = { line: 12, from: 2, to: 7, spec: { query: 'token', matchCase: false, wholeWord: false, regex: false }, keepFocus: true };
+    expect(t.m.focus(ROOT, 'f:/p/alpha/a.ts', { line: 12, found })).toBe(true);
+    expect(t.revealed).toEqual([]);
+    expect(w.of(IPC.evPopoutReveal)).toEqual([{ line: 12, found }]);
+    // Clicked (the keyboard goes with it): forward as always.
+    expect(t.m.focus(ROOT, 'f:/p/alpha/a.ts', { line: 12, found: { ...found, keepFocus: false } })).toBe(true);
+    expect(t.revealed).toEqual([w.id]);
+  });
+
   test('5. dock sends the tab back to the project window, reveals it and forgets the pop-out', () => {
     const t = setup();
     t.open('f:/p/alpha/a.ts', { payload: { kind: 'file', rel: 'a.ts', mode: 'margin' } });

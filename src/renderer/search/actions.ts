@@ -10,9 +10,12 @@ export interface OpenHow {
   keepFocus: boolean;
 }
 
-/** A match: its file opened at it, selected, every occurrence of the query marked (walking the results replaces the preview tab). */
+/**
+ * A match: its file opened at it, selected, every occurrence of the query its search ran with marked (walking the
+ * results replaces the preview tab).
+ */
 export function openResult(file: SearchFile, line: SearchLine, index: number, how: OpenHow): void {
-  useApp.getState().openSearchResult(file, line, index, { ...how, spec: useSearch.getState().spec });
+  useApp.getState().openSearchResult(file, line, index, { ...how, spec: useSearch.getState().ranSpec });
 }
 
 /** A file row: its first match. */

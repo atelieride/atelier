@@ -3,6 +3,7 @@
 import type { MenuCommand } from './api';
 import type { DbFilter } from './databases-filters';
 import { isAbsPath } from './paths';
+import type { SearchTarget } from './search';
 import { isDbTabKey } from './tabs-state';
 import type { ThemeId } from './themes';
 import { isDockerTabKey, isRedisTabKey } from './view-keys';
@@ -66,8 +67,11 @@ export type PopoutOpenResult = { ok: true } | { ok: false; reason: 'inside' | 'f
 export interface DockRequest { payload?: PopoutPayload; handoff?: EditorHandoff }
 /** To the main window: put this tab back (at: the client point it was dropped on, drag back only). */
 export interface DockEvent { key: string; payload?: PopoutPayload; handoff?: EditorHandoff; at?: Point }
-/** To a pop-out: come forward for this (a line to go to, a newer payload for a singleton tab). */
-export interface PopoutReveal { line?: number; payload?: PopoutPayload }
+/**
+ * To a pop-out: come forward for this (a line to go to, a newer payload for a singleton tab); `found`: a Find in Files
+ * result at that line (one that keeps the keyboard where it is updates the window without bringing it forward).
+ */
+export interface PopoutReveal { line?: number; payload?: PopoutPayload; found?: SearchTarget }
 /** From a pop-out: a tab other than its own to show in the project window (or in the pop-out that holds it). */
 export interface ShowInMainRequest { key: string; payload?: PopoutPayload }
 /** readOnly: a file the project held only read-only when main remembered it. */

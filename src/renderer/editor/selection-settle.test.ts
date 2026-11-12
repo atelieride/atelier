@@ -66,3 +66,16 @@ test('a click (down and up, the selection set on down) settles on up; dispose dr
   vi.advanceTimersByTime(SETTLE_MS * 2);
   expect(settled).toHaveBeenCalledTimes(1);
 });
+
+test('a selection set for the user (a search result\'s match) has nothing left to settle: no timer, no Shift', () => {
+  const { s, settled } = make();
+  s.selectionChanged();
+  s.reset();
+  vi.advanceTimersByTime(SETTLE_MS * 2);
+  s.keyUp('Shift');
+  expect(settled).not.toHaveBeenCalled();
+  // The user's own change afterwards settles as it always does.
+  s.selectionChanged();
+  s.keyUp('Shift');
+  expect(settled).toHaveBeenCalledTimes(1);
+});

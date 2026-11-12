@@ -225,7 +225,8 @@ export class PopoutManager {
   focus(root: string, key: string, reveal?: PopoutReveal): boolean {
     const e = this.find(root, key);
     if (!e) return false;
-    this.deps.reveal(e.win);
+    // A search result walked with the keyboard staying in its list: the window shows it where it is, the keyboard stays.
+    if (!reveal?.found?.keepFocus) this.deps.reveal(e.win);
     if (reveal && (reveal.line !== undefined || reveal.payload)) {
       if (reveal.payload) e.payload = reveal.payload;
       e.win.send(IPC.evPopoutReveal, reveal);

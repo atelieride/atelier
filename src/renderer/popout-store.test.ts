@@ -110,6 +110,36 @@ test('opening a popped-out file again passes the line to its window; the main wi
   expect(st().tabOrder).toEqual(['f:/p/x.ts']);
 });
 
+test('a search result whose file is popped out: its window gets the match along with the line', () => {
+  st().openFile('/p/a.ts', 'a.ts');
+  st().openFile('/p/x.ts', 'x.ts');
+  st().applyPoppedOut(['f:/p/a.ts']);
+  const files = st().openFiles;
+  const spec = { query: 'token', matchCase: false, wholeWord: false, regex: false };
+  const line = { line: 12, text: 'a token', start: 0, ranges: [[2, 7]] as [number, number][], cutStart: false, cutEnd: false };
+  const result = { path: '/p/a.ts', rel: 'a.ts', size: 7, lines: [line] };
+  st().openSearchResult(result, line, 0, { side: false, keepFocus: true, spec });
+  expect(focus).toHaveBeenLastCalledWith('f:/p/a.ts', { line: 12, found: { line: 12, from: 2, to: 7, spec, keepFocus: true } });
+  st().openSearchResult(result, line, 0, { side: true, keepFocus: false, spec });
+  expect(focus).toHaveBeenLastCalledWith('f:/p/a.ts', { line: 12, found: { line: 12, from: 2, to: 7, spec, keepFocus: false } });
+  expect(st().openFiles).toBe(files);
+  expect(st().mdVisit).toEqual({});
+});
+
+test('popout mode for a file: a reveal with a search result shows its match there, the source for the visit', () => {
+  st().enterPopout({ key: 'f:/p/README.md', payload: { kind: 'file', rel: 'README.md', mode: 'margin' } });
+  useApp.setState({ mdViews: { '/p/README.md': 'preview' }, mdVisit: {} });
+  const found = { line: 3, from: 6, to: 12, spec: { query: 'expiry', matchCase: false, wholeWord: false, regex: false }, keepFocus: true };
+  st().revealInPopout({ line: 3, found });
+  expect(st().openFiles[0]).toMatchObject({ line: 3, found });
+  expect(st().mdViewOf('/p/README.md')).toBe('source');
+  // A plain reveal (a link to a line): no result, its own view.
+  st().revealInPopout({ line: 5 });
+  expect(st().openFiles[0]!.found).toBeUndefined();
+  expect(st().mdViewOf('/p/README.md')).toBe('preview');
+  useApp.setState({ mdViews: {}, mdVisit: {} });
+});
+
 test('a popped-out file with unsaved changes leaves its dirty flag with it', () => {
   st().openFile('/p/a.ts', 'a.ts');
   st().setDirty('/p/a.ts', true);

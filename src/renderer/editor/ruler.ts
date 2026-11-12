@@ -1,11 +1,11 @@
 // The editor's overview ruler: a strip at the editor's right edge in place of the
 // vertical scrollbar — the visible part (a thumb to drag), the changes, Find's matches while its card is open (else
-// another query's, such as a Find in Files result's), the cursor. A click on a change goes there; a click elsewhere
-// centers that point; a press moved drags the thumb, wherever it started (a change included). Geometry and words in
-// ruler-model.ts.
+// the matches another extension gives, such as a Find in Files result's), the cursor. A click on a change goes there; a
+// click elsewhere centers that point; a press moved drags the thumb, wherever it started (a change included). Geometry
+// and words in ruler-model.ts.
 import { Facet, type EditorState, type Extension } from '@codemirror/state';
 import { EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view';
-import { getSearchQuery, searchPanelOpen, type SearchQuery } from '@codemirror/search';
+import { getSearchQuery, searchPanelOpen } from '@codemirror/search';
 import { matchList, tickPositions } from './find/find-logic';
 import { changeBlocks, dragScroll, markTip, placeMarks, pressMoved, releaseMissed, scrollFor, thumbOf, type LineChange } from './ruler-model';
 import { setGitMarks, setTargetLine } from './decorations';
@@ -19,8 +19,10 @@ export interface RulerSource {
 
 const NO_CHANGES: RulerSource = { changes: () => [] };
 
-/** A query whose matches the ruler ticks while the find card is closed (null: none). */
-export const rulerQuery = Facet.define<SearchQuery | null, SearchQuery | null>({ combine: (qs) => qs[0] ?? null });
+type Ranges = readonly { from: number; to: number }[];
+
+/** Matches the ruler ticks while the find card is closed, found by whoever gives them (null: none). */
+export const rulerMatches = Facet.define<Ranges | null, Ranges | null>({ combine: (v) => v[0] ?? null });
 
 /**
  * A press on the track. `mark`: the change it landed on, while it may still be a click there (null once it drags);
@@ -64,7 +66,7 @@ export function overviewRuler(source: RulerSource = NO_CHANGES): Extension {
       // which match is the selected one) with the selection: an arrow key never rebuilds the marks.
       if (u.docChanged || u.geometryChanged || u.heightChanged || u.transactions.some((tr) => tr.effects.some((e) => e.is(setGitMarks)))
         || getSearchQuery(u.state) !== getSearchQuery(u.startState) || searchPanelOpen(u.state) !== searchPanelOpen(u.startState)
-        || u.state.facet(rulerQuery) !== u.startState.facet(rulerQuery)) this.schedule();
+        || u.state.facet(rulerMatches) !== u.startState.facet(rulerMatches)) this.schedule();
       else if (u.selectionSet) this.scheduleLight();
     }
 
@@ -211,19 +213,20 @@ export function overviewRuler(source: RulerSource = NO_CHANGES): Extension {
       this.drawCursor();
     }
 
-    /** Find's matches, one tick per line, while its card is open, else `rulerQuery`'s (the selected one brighter). */
+    /** Find's matches, one tick per line, while its card is open, else `rulerMatches`' (the selected one brighter). */
     private drawFinds() {
       const v = this.view;
       const track = v.scrollDOM.clientHeight;
       const content = Math.max(v.contentHeight, 1);
-      const q = searchPanelOpen(v.state) ? getSearchQuery(v.state) : v.state.facet(rulerQuery);
-      if (!q?.search || !q.valid) this.finds.replaceChildren();
+      const q = getSearchQuery(v.state);
+      // The find card's cached list: scrolling and moving the cursor only re-place the ticks.
+      const ranges = searchPanelOpen(v.state) ? (q.search && q.valid ? matchList(v.state, q).ranges : null) : v.state.facet(rulerMatches);
+      if (!ranges) this.finds.replaceChildren();
       else {
         const sel = v.state.selection.main;
         const lines: { top: number; selected: boolean }[] = [];
         let lastLine = -1;
-        // The find card's cached list: scrolling and moving the cursor only re-place the ticks.
-        for (const r of matchList(v.state, q).ranges) {
+        for (const r of ranges) {
           const block = v.lineBlockAt(r.from);
           const selected = r.from === sel.from && r.to === sel.to;
           if (block.from === lastLine) { if (selected) lines[lines.length - 1]!.selected = true; continue; }

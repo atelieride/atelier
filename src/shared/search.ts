@@ -3,6 +3,13 @@ import { MAX_FILE_BYTES, MAX_LARGE_FILE_BYTES } from './files';
 /** What a search looks for: the same four fields the editor's find card has. */
 export interface SearchSpec { query: string; matchCase: boolean; wholeWord: boolean; regex: boolean }
 
+/**
+ * A result to show in its file: its match on `line` (1-based) from column `from` to `to`, which the editor selects (or
+ * the nearest occurrence, when the file changed) while it marks every occurrence of `spec`; `keepFocus` leaves the
+ * keyboard where it is.
+ */
+export interface SearchTarget { line: number; from: number; to: number; spec: SearchSpec; keepFocus: boolean }
+
 export interface SearchRequest extends SearchSpec {
   searchId: number;
   include: string;
