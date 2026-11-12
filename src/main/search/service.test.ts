@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { SearchEvent, SearchRequest } from '@shared/search';
 import { useMachinePlatform } from '../../../tests/support/platform';
 import type { ListedFile } from './list';
-import { searchRunner, type WorkerIn, type WorkerMsg } from './run';
+import { SHARED_FILE, SHARED_STOP, searchRunner, type RunInput, type WorkerIn, type WorkerMsg } from './run';
 import { SearchService, type SearchListing, type WorkerLike } from './service';
 
 useMachinePlatform();
@@ -33,10 +33,14 @@ class FakeBase implements WorkerLike {
   fire(ev: string, x: unknown): void {
     for (const h of this.handlers.get(ev) ?? []) h(x);
   }
-  /** The run id the service gave the last search it started here. */
-  lastRunId(): number {
+  /** The last search the service started here. */
+  lastInput(): RunInput {
     const starts = this.sent.filter((m) => m.type === 'start');
-    return (starts.at(-1) as Extract<WorkerIn, { type: 'start' }>).input.searchId;
+    return (starts.at(-1) as Extract<WorkerIn, { type: 'start' }>).input;
+  }
+  /** The run id the service gave that search. */
+  lastRunId(): number {
+    return this.lastInput().searchId;
   }
 }
 
@@ -63,6 +67,13 @@ class InProcess extends FakeBase {
 class Silent extends FakeBase {
   reply(m: WorkerMsg): void {
     this.fire('message', m);
+  }
+  beat(): void {
+    this.reply({ kind: 'beat', searchId: this.lastRunId() });
+  }
+  /** What the worker writes in the shared slot when it starts matching the `k`th listed file. */
+  matching(k: number): void {
+    Atomics.store(this.lastInput().shared!, SHARED_FILE, k + 1);
   }
 }
 
@@ -91,7 +102,7 @@ function recorder() {
   const batched = new Promise<void>((r) => { firstBatch = r; });
   const emit = (e: SearchEvent) => {
     events.push(e);
-    if (e.kind === 'batch') firstBatch();
+    if (e.kind === 'batch' && e.files.length > 0) firstBatch();
     if (e.kind === 'done' || e.kind === 'error') end(e);
   };
   return { events, emit, ended, batched };
@@ -101,6 +112,9 @@ function recorder() {
 async function settle(): Promise<void> {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 }
+
+const doneWith = (searchId: number, over: Partial<Extract<SearchEvent, { kind: 'done' }>> = {}): WorkerMsg =>
+  ({ kind: 'done', searchId, searched: 1, total: 1, skipped: [], limitHit: false, fileCap: null, stopped: false, ...over });
 
 afterEach(() => {
   vi.useRealTimers();
@@ -127,20 +141,22 @@ describe('SearchService', () => {
     svc.dispose();
   });
 
-  test('the service passes its limits and the listing on to the worker', async () => {
+  test('the service passes its limits, the listing and a shared slot on to the worker', async () => {
     const listing = { ...project(3), capped: true };
     const w = new Silent();
     const svc = new SearchService({ spawn: () => w, list: async () => listing, limits: { maxResults: 9 } });
     svc.start(req(1, 'needle', { matchCase: false, wholeWord: true, regex: true }), recorder().emit);
     await vi.waitFor(() => expect(w.sent).toHaveLength(1));
-    const start = w.sent[0] as Extract<WorkerIn, { type: 'start' }>;
-    expect(start.input).toMatchObject({
+    const { input } = w.sent[0] as Extract<WorkerIn, { type: 'start' }>;
+    expect(input).toMatchObject({
       spec: { query: 'needle', matchCase: false, wholeWord: true, regex: true },
       files: listing.files,
       fileCap: 3,
       realRoot: listing.realRoot,
       limits: { maxResults: 9, wholeReadBytes: 5 * 1024 * 1024, maxBytes: 50 * 1024 * 1024, keptLineChars: 2000 },
     });
+    // Shared memory, not a copy: main reads what the worker writes, even while it is stuck.
+    expect(input.shared!.buffer).toBeInstanceOf(SharedArrayBuffer);
     svc.dispose();
   });
 
@@ -152,13 +168,14 @@ describe('SearchService', () => {
     svc.start(req(1), first.emit);
     await first.batched;
     const heard = first.events.length;
-    const oldRun = w.lastRunId();
+    const old = w.lastInput();
     const second = recorder();
     svc.start(req(2), second.emit);
+    expect(Atomics.load(old.shared!, SHARED_STOP)).toBe(1);
     expect(await second.ended).toMatchObject({ kind: 'done', searchId: 2, searched: 1000, stopped: false });
     // The first was told to stop, and kept talking for a while: none of it reached anyone.
-    expect(w.sent.find((m) => m.type === 'stop')).toEqual({ type: 'stop', searchId: oldRun });
-    expect(w.posted.filter((m) => m.searchId === oldRun && m.kind === 'done')).toEqual([expect.objectContaining({ stopped: true })]);
+    expect(w.sent.find((m) => m.type === 'stop')).toEqual({ type: 'stop', searchId: old.searchId });
+    expect(w.posted.filter((m) => m.searchId === old.searchId && m.kind === 'done')).toEqual([expect.objectContaining({ stopped: true })]);
     expect(first.events).toHaveLength(heard);
     expect(second.events.every((e) => e.searchId === 2)).toBe(true);
     svc.dispose();
@@ -217,6 +234,7 @@ describe('SearchService', () => {
     await vi.waitFor(() => expect(w.sent).toHaveLength(1));
     svc.stop(99);
     expect(w.sent).toHaveLength(1);
+    expect(Atomics.load(w.lastInput().shared!, SHARED_STOP)).toBe(0);
     svc.dispose();
   });
 
@@ -227,27 +245,50 @@ describe('SearchService', () => {
     expect(await r.ended).toEqual({ kind: 'error', searchId: 6, message: 'The search stopped: the project\'s files could not be listed.', rel: null });
   });
 
+  test('a worker that cannot be started ends the search with an error, and nothing is left unhandled', async () => {
+    const svc = new SearchService({ spawn: () => { throw new Error('no worker'); }, list: async () => project(1) });
+    const r = recorder();
+    svc.start(req(1), r.emit);
+    await vi.waitFor(() => expect(r.events).toEqual([{ kind: 'error', searchId: 1, message: 'The search stopped: it could not be started.', rel: null }]));
+    svc.dispose();
+  });
+
+  test('an emit that throws (a window gone mid-search) does not break the service', async () => {
+    const listing = project(20);
+    const w = new InProcess();
+    const svc = new SearchService({ spawn: () => w, list: async () => listing });
+    svc.start(req(1), () => { throw new Error('window closed'); });
+    await vi.waitFor(() => expect(w.posted.some((m) => m.kind === 'done')).toBe(true));
+    await new Promise((res) => setImmediate(res));
+    const r = recorder();
+    svc.start(req(2), r.emit);
+    expect(await r.ended).toMatchObject({ kind: 'done', searchId: 2, searched: 20 });
+    svc.dispose();
+  });
+
   describe('watchdog', () => {
-    test('a worker silent for watchdogMs is terminated; the error names the last beat\'s file; the next search gets a fresh worker', async () => {
+    test('a worker silent for watchdogMs is terminated; the error names the file being matched; the next search gets a fresh worker', async () => {
       vi.useFakeTimers();
       const workers: Silent[] = [];
-      const svc = new SearchService({ spawn: () => { const w = new Silent(); workers.push(w); return w; }, list: async () => project(1), watchdogMs: 1000 });
+      const svc = new SearchService({ spawn: () => { const w = new Silent(); workers.push(w); return w; }, list: async () => project(3), watchdogMs: 1000 });
       const r = recorder();
       svc.start(req(9, '(a+)+$', { regex: true }), r.emit);
       await settle();
       const w = workers[0]!;
       const id = w.lastRunId();
-      w.reply({ kind: 'beat', searchId: id, rel: null });
+      w.beat();
       await vi.advanceTimersByTimeAsync(400);
-      w.reply({ kind: 'beat', searchId: id, rel: 'src/slow.ts' });
+      w.beat();
+      // No message says so: the worker only writes the file it moves to in the shared slot.
+      w.matching(2);
       await vi.advanceTimersByTimeAsync(999);
       expect(w.terminated).toBe(false);
       expect(r.events).toEqual([]);
       await vi.advanceTimersByTimeAsync(1);
       expect(w.terminated).toBe(true);
-      expect(r.events).toEqual([{ kind: 'error', searchId: 9, message: 'The search stopped: a regular expression took too long on src/slow.ts.', rel: 'src/slow.ts' }]);
+      expect(r.events).toEqual([{ kind: 'error', searchId: 9, message: 'The search stopped: a regular expression took too long on f0002.txt.', rel: 'f0002.txt' }]);
       // A late word from the terminated worker reaches no one.
-      w.reply({ kind: 'done', searchId: id, searched: 1, total: 1, skipped: [], limitHit: false, fileCap: null, stopped: false });
+      w.reply(doneWith(id));
       expect(r.events).toHaveLength(1);
 
       svc.start(req(10), recorder().emit);
@@ -257,23 +298,24 @@ describe('SearchService', () => {
       svc.dispose();
     });
 
-    test('without a beat naming a file, or for a plain query, the error says so in other words', async () => {
+    test('without a file being matched, or for a plain query, the error says so in other words', async () => {
       vi.useFakeTimers();
       const workers: Silent[] = [];
       const svc = new SearchService({ spawn: () => { const w = new Silent(); workers.push(w); return w; }, list: async () => project(1), watchdogMs: 1000 });
       const a = recorder();
       svc.start(req(1, 'x', { regex: true }), a.emit);
       await settle();
-      workers[0]!.reply({ kind: 'beat', searchId: workers[0]!.lastRunId(), rel: null });
+      workers[0]!.beat();
       await vi.advanceTimersByTimeAsync(1000);
       expect(a.events).toEqual([{ kind: 'error', searchId: 1, message: 'The search stopped: it took too long.', rel: null }]);
 
       const b = recorder();
       svc.start(req(2, 'x'), b.emit);
       await settle();
-      workers[1]!.reply({ kind: 'beat', searchId: workers[1]!.lastRunId(), rel: 'big.log' });
+      workers[1]!.beat();
+      workers[1]!.matching(0);
       await vi.advanceTimersByTimeAsync(1000);
-      expect(b.events).toEqual([{ kind: 'error', searchId: 2, message: 'The search stopped: searching big.log took too long.', rel: 'big.log' }]);
+      expect(b.events).toEqual([{ kind: 'error', searchId: 2, message: 'The search stopped: searching f0000.txt took too long.', rel: 'f0000.txt' }]);
       svc.dispose();
     });
 
@@ -284,17 +326,32 @@ describe('SearchService', () => {
       const r = recorder();
       svc.start(req(1), r.emit);
       await settle();
-      const id = w.lastRunId();
       for (let k = 0; k < 10; k++) {
         await vi.advanceTimersByTimeAsync(900);
-        w.reply({ kind: 'beat', searchId: id, rel: `f${k}` });
+        w.beat();
       }
       expect(w.terminated).toBe(false);
-      w.reply({ kind: 'done', searchId: id, searched: 1, total: 1, skipped: [], limitHit: false, fileCap: null, stopped: false });
+      w.reply(doneWith(w.lastRunId()));
       await vi.advanceTimersByTimeAsync(60_000);
       expect(w.terminated).toBe(false);
       expect(r.events.map((e) => e.kind)).toEqual(['done']);
       expect(vi.getTimerCount()).toBe(0);
+      svc.dispose();
+    });
+
+    test('a jump of the wall clock (waking from sleep) does not end a healthy search', async () => {
+      vi.useFakeTimers();
+      const w = new Silent();
+      const svc = new SearchService({ spawn: () => w, list: async () => project(1), watchdogMs: 1000 });
+      const r = recorder();
+      svc.start(req(1), r.emit);
+      await settle();
+      await vi.advanceTimersByTimeAsync(400);
+      w.beat();
+      vi.setSystemTime(Date.now() + 3_600_000);
+      await vi.advanceTimersByTimeAsync(600);
+      expect(w.terminated).toBe(false);
+      expect(r.events).toEqual([]);
       svc.dispose();
     });
 
@@ -304,7 +361,8 @@ describe('SearchService', () => {
       const svc = new SearchService({ spawn: () => { const w = new Silent(); workers.push(w); return w; }, list: async () => project(1), watchdogMs: 1000 });
       svc.start(req(1, '(a+)+$', { regex: true }), recorder().emit);
       await settle();
-      workers[0]!.reply({ kind: 'beat', searchId: workers[0]!.lastRunId(), rel: 'src/slow.ts' });
+      workers[0]!.beat();
+      workers[0]!.matching(0);
       await vi.advanceTimersByTimeAsync(300);
       const r = recorder();
       svc.start(req(2, 'fixed'), r.emit);
@@ -320,7 +378,7 @@ describe('SearchService', () => {
       const again = workers[1]!.sent as Extract<WorkerIn, { type: 'start' }>[];
       expect(again.map((m) => [m.type, m.input.spec.query])).toEqual([['start', 'fixed']]);
       // The fresh worker answers: its events reach the new search.
-      workers[1]!.reply({ kind: 'done', searchId: again[0]!.input.searchId, searched: 1, total: 1, skipped: [], limitHit: false, fileCap: null, stopped: false });
+      workers[1]!.reply(doneWith(again[0]!.input.searchId));
       expect(r.events).toEqual([expect.objectContaining({ kind: 'done', searchId: 2 })]);
       svc.dispose();
     });
@@ -332,7 +390,7 @@ describe('SearchService', () => {
       const svc = new SearchService({ spawn: () => { const w = new Silent(); workers.push(w); return w; }, list: async () => listing, watchdogMs: 1000 });
       svc.start(req(1, '(a+)+$', { regex: true }), recorder().emit);
       await settle();
-      workers[0]!.reply({ kind: 'beat', searchId: workers[0]!.lastRunId(), rel: 'src/slow.ts' });
+      workers[0]!.beat();
       const r = recorder();
       svc.start(req(2, 'fixed'), r.emit);
       await settle();
@@ -345,13 +403,51 @@ describe('SearchService', () => {
     });
   });
 
+  test('stop on a worker silent for over a second ends the search at once; the next one gets a fresh worker', async () => {
+    vi.useFakeTimers();
+    const workers: Silent[] = [];
+    const svc = new SearchService({ spawn: () => { const w = new Silent(); workers.push(w); return w; }, list: async () => project(10), watchdogMs: 5000 });
+    const r = recorder();
+    svc.start(req(1, '(a+)+$', { regex: true }), r.emit);
+    await settle();
+    const w = workers[0]!;
+    w.reply({ kind: 'batch', searchId: w.lastRunId(), files: [], searched: 3, total: 10 });
+    await vi.advanceTimersByTimeAsync(1200);
+    svc.stop(1);
+    expect(w.terminated).toBe(true);
+    expect(r.events.at(-1)).toEqual({ kind: 'done', searchId: 1, searched: 3, total: 10, skipped: [], limitHit: false, fileCap: null, stopped: true });
+    svc.start(req(2), recorder().emit);
+    await settle();
+    expect(workers).toHaveLength(2);
+    svc.dispose();
+  });
+
+  test('stop on a worker that spoke recently asks it to stop and waits for its answer', async () => {
+    vi.useFakeTimers();
+    const w = new Silent();
+    const svc = new SearchService({ spawn: () => w, list: async () => project(10), watchdogMs: 5000 });
+    const r = recorder();
+    svc.start(req(1), r.emit);
+    await settle();
+    await vi.advanceTimersByTimeAsync(500);
+    w.beat();
+    await vi.advanceTimersByTimeAsync(500);
+    svc.stop(1);
+    expect(w.terminated).toBe(false);
+    expect(w.sent.at(-1)).toEqual({ type: 'stop', searchId: w.lastRunId() });
+    expect(Atomics.load(w.lastInput().shared!, SHARED_STOP)).toBe(1);
+    expect(r.events).toEqual([]);
+    svc.dispose();
+  });
+
   test('a real worker thread stuck in a regular expression is terminated, and the error names its file', async () => {
-    // A worker speaking the same messages: it names its file in a beat, then backtracks for ever.
+    // A worker speaking the same messages: it notes its file in the shared slot, beats, then backtracks for ever.
     const code = `
       const { parentPort } = require('node:worker_threads');
       parentPort.on('message', (m) => {
         if (m.type !== 'start') return;
-        parentPort.postMessage({ kind: 'beat', searchId: m.input.searchId, rel: 'src/stuck.txt' });
+        Atomics.store(m.input.shared, ${SHARED_FILE}, 1);
+        parentPort.postMessage({ kind: 'beat', searchId: m.input.searchId });
         /(a+)+$/u.test('a'.repeat(40) + 'b');
       });`;
     let exited: Promise<number> | null = null;
@@ -360,10 +456,11 @@ describe('SearchService', () => {
       exited = new Promise<number>((res) => w.once('exit', res));
       return w;
     };
-    const svc = new SearchService({ spawn, list: async () => project(1), watchdogMs: 300 });
+    // Long enough for a thread to start on a busy runner: the beat must arrive before the watchdog fires.
+    const svc = new SearchService({ spawn, list: async () => project(1), watchdogMs: 2_000 });
     const r = recorder();
     svc.start(req(1, '(a+)+$', { regex: true }), r.emit);
-    expect(await r.ended).toEqual({ kind: 'error', searchId: 1, message: 'The search stopped: a regular expression took too long on src/stuck.txt.', rel: 'src/stuck.txt' });
+    expect(await r.ended).toEqual({ kind: 'error', searchId: 1, message: 'The search stopped: a regular expression took too long on f0000.txt.', rel: 'f0000.txt' });
     // The thread is really gone, not just forgotten.
     expect(await exited).toBe(1);
     svc.dispose();
@@ -375,7 +472,7 @@ describe('SearchService', () => {
     const r = recorder();
     svc.start(req(1), r.emit);
     await vi.waitFor(() => expect(workers[0]?.sent).toHaveLength(1));
-    workers[0]!.reply({ kind: 'beat', searchId: workers[0]!.lastRunId(), rel: null });
+    workers[0]!.beat();
     workers[0]!.fire('error', new Error('out of memory'));
     workers[0]!.fire('exit', 1);
     expect(r.events).toEqual([{ kind: 'error', searchId: 1, message: 'The search stopped: its worker quit unexpectedly.', rel: null }]);
@@ -411,10 +508,10 @@ describe('SearchService', () => {
     await settle();
     const w = workers[0]!;
     const id = w.lastRunId();
-    w.reply({ kind: 'beat', searchId: id, rel: null });
+    w.beat();
     svc.dispose();
     expect(w.terminated).toBe(true);
-    w.reply({ kind: 'done', searchId: id, searched: 1, total: 1, skipped: [], limitHit: false, fileCap: null, stopped: false });
+    w.reply(doneWith(id));
     await vi.advanceTimersByTimeAsync(10_000);
     expect(r.events).toEqual([]);
     expect(vi.getTimerCount()).toBe(0);

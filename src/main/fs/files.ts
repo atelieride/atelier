@@ -51,13 +51,21 @@ export function utf16Text(buf: Buffer): string | null {
   return (le ? body : body.swap16()).toString('utf16le');
 }
 
+/** Bytes read from the start of a file to tell whether it is binary. */
+export const BINARY_SNIFF_BYTES = 8192;
+
+/** Whether a file's first bytes (up to BINARY_SNIFF_BYTES) are binary: a NUL, unless UTF-16's BOM says it is text. */
+export function binaryHead(head: Buffer): boolean {
+  // UTF-16 text is full of NULs: its BOM says it is text.
+  return !utf16Bom(head) && head.includes(0);
+}
+
 export function looksBinary(path: string): boolean {
   const fd = openSync(path, 'r');
   try {
-    const buf = Buffer.alloc(8192);
+    const buf = Buffer.alloc(BINARY_SNIFF_BYTES);
     const n = readSync(fd, buf, 0, buf.length, 0);
-    // UTF-16 text is full of NULs: its BOM says it is text.
-    return !utf16Bom(buf.subarray(0, n)) && buf.subarray(0, n).includes(0);
+    return binaryHead(buf.subarray(0, n));
   } finally {
     closeSync(fd);
   }

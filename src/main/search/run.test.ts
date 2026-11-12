@@ -5,25 +5,53 @@ import { beforeAll, describe, expect, test, vi } from 'vitest';
 import { SEARCH_LIMITS, type SearchEvent, type SearchFile, type SearchSpec } from '@shared/search';
 import { useMachinePlatform } from '../../../tests/support/platform';
 import type { ListedFile } from './list';
-import { runSearch, type RunInput, type WorkerMsg } from './run';
+import { runSearch, SHARED_FILE, SHARED_STOP, sharedSlots, type RunInput, type WorkerMsg } from './run';
 
-// scanFile as it is, with two hooks: a file can be held back before it is read, and the order reads finish is noted.
+// scanFile as it is, with hooks: a file can be held back before it is read, the order reads finish is noted, and each
+// line matched can be seen (a test can make it cost time on a fake clock).
 const hooks = vi.hoisted(() => ({
   gates: new Map<string, Promise<void>>(),
   finished: [] as string[],
   onFinish: null as null | (() => void),
+  onLine: null as null | ((line: string) => void),
+  /** A file whose opening takes `ms`, whether it is opened synchronously (blocking the thread) or not. */
+  slow: null as null | { path: string; ms: number },
 }));
 vi.mock('./scan', async (importOriginal) => {
   const real = await importOriginal<typeof import('./scan')>();
   return {
     ...real,
     scanFile: async (...args: Parameters<typeof real.scanFile>) => {
-      const gate = hooks.gates.get(args[0]);
+      const [path, ranges, ...rest] = args;
+      const gate = hooks.gates.get(path);
       if (gate) await gate;
-      const r = await real.scanFile(...args);
-      hooks.finished.push(args[0]);
+      const r = await real.scanFile(path, (line) => { hooks.onLine?.(line); return ranges(line); }, ...rest);
+      hooks.finished.push(path);
       hooks.onFinish?.();
       return r;
+    },
+  };
+});
+vi.mock('node:fs', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...real,
+    openSync: (...args: Parameters<typeof real.openSync>) => {
+      if (hooks.slow && args[0] === hooks.slow.path) {
+        const end = performance.now() + hooks.slow.ms;
+        while (performance.now() < end) { /* a read that blocks the thread */ }
+      }
+      return real.openSync(...args);
+    },
+  };
+});
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...real,
+    open: async (...args: Parameters<typeof real.open>) => {
+      if (hooks.slow && args[0] === hooks.slow.path) await new Promise((r) => setTimeout(r, hooks.slow!.ms));
+      return real.open(...args);
     },
   };
 });
@@ -149,6 +177,21 @@ describe('runSearch', () => {
     expect(doneOf(ms)).toMatchObject({ limitHit: true, searched: 3 });
   });
 
+  test('exactly as many matches as the cap: all kept, and no limit reported until one more is found', async () => {
+    const names = Array.from({ length: 5 }, (_, i) => `f${i}.txt`);
+    const exact = project(Object.fromEntries(names.map((n) => [n, 'one token\n'])));
+    const ms = await collect(input(exact.root, exact.listed, 'token', {}, { maxResults: 5 }));
+    expect(matchCount(ms)).toBe(5);
+    expect(doneOf(ms)).toMatchObject({ limitHit: false, searched: 5, total: 5 });
+
+    // A sixth match, after a file with none: now the cap did cut something.
+    const more = project({ ...Object.fromEntries(names.map((n) => [n, 'one token\n'])), 'g.txt': 'nothing\n', 'h.txt': 'token\n' });
+    const ms2 = await collect(input(more.root, more.listed, 'token', {}, { maxResults: 5 }));
+    expect(matchCount(ms2)).toBe(5);
+    expect(filesOf(ms2).map((f) => f.rel)).toEqual(names);
+    expect(doneOf(ms2)).toMatchObject({ limitHit: true, total: 7 });
+  });
+
   test('a cancelled search ends with stopped and what it found so far', async () => {
     const names = Array.from({ length: 60 }, (_, i) => `f${String(i).padStart(2, '0')}.txt`);
     const { root, listed } = project(Object.fromEntries(names.map((n) => [n, 'token\n'])));
@@ -162,29 +205,101 @@ describe('runSearch', () => {
     expect(filesOf(out)).toHaveLength(d.searched);
   });
 
-  test('a beat comes at least every 250 ms of work, naming the file being matched', async () => {
+  test('a beat comes at least every 250 ms of work, and the shared slot names the file being matched', async () => {
     // One long file read whole (under 5 MB): 300,000 lines, a single match at the end. It waits for the small one.
     const body = 'nothing here\n'.repeat(300_000) + 'token\n';
     const { root, listed } = project({ 'small.txt': 'token\n', 'long.txt': body });
     let release!: () => void;
     hooks.gates.set(listed[1]!.path, new Promise<void>((r) => { release = r; }));
     hooks.onFinish = () => { if (hooks.finished.includes(listed[0]!.path)) release(); };
+    const shared = sharedSlots();
     let t = 0;
     const now = () => (t += 5);
-    const stamped: { m: WorkerMsg; at: number }[] = [];
+    const stamped: { m: WorkerMsg; at: number; file: number }[] = [];
     try {
-      await runSearch(input(root, listed), (m) => stamped.push({ m, at: t }), never, now);
+      await runSearch(input(root, listed, 'token', { shared }), (m) => stamped.push({ m, at: t, file: Atomics.load(shared, SHARED_FILE) }), never, now);
     } finally {
       hooks.gates.clear();
       hooks.onFinish = null;
     }
     for (let k = 1; k < stamped.length; k++) expect(stamped[k]!.at - stamped[k - 1]!.at).toBeLessThanOrEqual(250);
-    const beats = stamped.map((s) => s.m).filter((m) => m.kind === 'beat');
-    expect(beats[0]).toEqual({ kind: 'beat', searchId: 42, rel: null });
-    // Matching moved to each file: a beat says so at once.
-    expect(beats.map((b) => b.rel).filter((r, k, all) => r !== all[k - 1])).toEqual([null, 'small.txt', 'long.txt']);
-    // The long file kept the clock running: several beats while it was matched.
-    expect(beats.filter((b) => b.rel === 'long.txt').length).toBeGreaterThan(5);
+    const beats = stamped.filter((s) => s.m.kind === 'beat');
+    expect(beats[0]).toEqual({ m: { kind: 'beat', searchId: 42 }, at: expect.any(Number), file: 0 });
+    // The long file kept the clock running: several beats while it was matched, the slot naming it (index + 1).
+    expect(beats.filter((b) => b.file === 2).length).toBeGreaterThan(5);
+  });
+
+  test('beats come on time only, not one per file', async () => {
+    const names = Array.from({ length: 200 }, (_, i) => `f${String(i).padStart(3, '0')}.txt`);
+    const { root, listed } = project(Object.fromEntries(names.map((n) => [n, 'token\n'])));
+    const shared = sharedSlots();
+    // A clock that never moves: no silence ever calls for a beat after the first one.
+    const ms = await collect(input(root, listed, 'token', { shared }), never, () => 0);
+    expect(ms.filter((m) => m.kind === 'beat')).toEqual([{ kind: 'beat', searchId: 42 }]);
+    // The slot still followed the matching to the end: the last file matched is one of the last eight read.
+    expect(Atomics.load(shared, SHARED_FILE)).toBeGreaterThan(200 - 8);
+  });
+
+  test('long lines with a slow regular expression still beat at least every 250 ms', async () => {
+    // 300 lines of 10,000 characters, each costing 20 ms of matching on the fake clock.
+    const body = `${'x'.repeat(9_999)}\n`.repeat(300) + 'token\n';
+    const { root, listed } = project({ 'long-lines.txt': body });
+    let t = 0;
+    hooks.onLine = (line) => { t += line.length / 500; };
+    const stamped: { m: WorkerMsg; at: number }[] = [];
+    try {
+      await runSearch(input(root, listed), (m) => stamped.push({ m, at: t }), never, () => t);
+    } finally {
+      hooks.onLine = null;
+    }
+    expect(t).toBeGreaterThan(5_000);
+    for (let k = 1; k < stamped.length; k++) expect(stamped[k]!.at - stamped[k - 1]!.at).toBeLessThanOrEqual(250);
+    expect(stamped.filter((s) => s.m.kind === 'beat').length).toBeGreaterThan(20);
+  });
+
+  test('a slow read never silences the worker: beats keep coming while a file is opened', async () => {
+    const { root, listed } = project({ 'a.txt': 'token\n', 'slow.txt': 'token\n', 'c.txt': 'token\n' });
+    hooks.slow = { path: listed[1]!.path, ms: 1_000 };
+    const t0 = performance.now();
+    const at: number[] = [];
+    try {
+      await runSearch(input(root, listed), () => at.push(performance.now()), never);
+    } finally {
+      hooks.slow = null;
+    }
+    expect(performance.now() - t0).toBeGreaterThanOrEqual(1_000);
+    const gaps = at.map((t, k) => t - (k === 0 ? t0 : at[k - 1]!));
+    // Beats every 200 ms or so; a read that blocked the thread would leave a gap of a whole second.
+    expect(Math.max(...gaps)).toBeLessThan(600);
+  });
+
+  test('a search with no matches still reports its progress', async () => {
+    const names = Array.from({ length: 200 }, (_, i) => `f${String(i).padStart(3, '0')}.txt`);
+    const { root, listed } = project(Object.fromEntries(names.map((n) => [n, 'nothing here\n'])));
+    let t = 0;
+    const ms = await collect(input(root, listed), never, () => (t += 3));
+    const bs = batches(ms);
+    expect(bs.length).toBeGreaterThan(2);
+    for (const b of bs) expect(b).toMatchObject({ files: [], total: 200 });
+    const searched = bs.map((b) => b.searched);
+    for (let k = 1; k < searched.length; k++) expect(searched[k]!).toBeGreaterThan(searched[k - 1]!);
+    expect(doneOf(ms)).toMatchObject({ searched: 200, total: 200 });
+  });
+
+  test('a stop written to the shared slot is seen inside a file being matched, not only between files', async () => {
+    // One file read whole: matching it is a single synchronous run, which no message can interrupt.
+    const { root, listed } = project({ 'big.txt': 'nothing here\n'.repeat(200_000) });
+    const shared = sharedSlots();
+    let lines = 0;
+    hooks.onLine = () => { if (++lines === 10_000) Atomics.store(shared, SHARED_STOP, 1); };
+    let ms: WorkerMsg[];
+    try {
+      ms = await collect(input(root, listed, 'token', { shared }));
+    } finally {
+      hooks.onLine = null;
+    }
+    expect(lines).toBeLessThan(20_000);
+    expect(doneOf(ms)).toMatchObject({ stopped: true, searched: 0 });
   });
 
   test('batches come at most every 50 ms; the first result goes out at once', async () => {
@@ -204,7 +319,8 @@ describe('runSearch', () => {
   });
 
   describe('speed', () => {
-    // 2,500 files, 8 KB each (20 MB), the term in one file of fifty: every byte is read and matched.
+    // 2,500 files, 8 KB each (20 MB), the term in the first file of each folder from the 26th on: every byte is read
+    // and matched, and the first result comes only after half of the files.
     let root = '';
     let listed: ListedFile[] = [];
     beforeAll(() => {
@@ -217,7 +333,7 @@ describe('runSearch', () => {
         for (let f = 0; f < 50; f++) {
           const rel = `dir${String(d).padStart(2, '0')}/file${String(f).padStart(2, '0')}.ts`;
           const path = join(root, rel);
-          writeFileSync(path, f === 0 ? withTerm : plain);
+          writeFileSync(path, f === 0 && d >= 25 ? withTerm : plain);
           listed.push({ path, rel, ignored: false });
         }
       }
@@ -230,11 +346,15 @@ describe('runSearch', () => {
         let first = Infinity;
         let matches = 0;
         await runSearch(input(root, listed, 'needle'), (m) => {
-          if (m.kind !== 'batch') return;
-          first = Math.min(first, performance.now() - t0);
+          if (m.kind !== 'batch' || m.files.length === 0) return;
+          if (first === Infinity) {
+            first = performance.now() - t0;
+            // Progress batches went out before it: the first result really came after half of the files.
+            expect(m.searched).toBeGreaterThan(1250);
+          }
           matches += m.files.length;
         }, never);
-        expect(matches).toBe(50);
+        expect(matches).toBe(25);
         return { total: performance.now() - t0, first };
       };
       // One untimed warm-up, then the best of five (a busy runner can stall any single run).

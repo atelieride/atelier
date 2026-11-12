@@ -5,7 +5,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { isGitDirName, isInside, splitPath } from '@shared/paths';
 import type { SearchLine } from '@shared/search';
 import { lineResult } from '@shared/search-match';
-import { looksBinary, utf16Text } from '../fs/files';
+import { BINARY_SNIFF_BYTES, binaryHead, utf16Text } from '../fs/files';
 
 export interface ScanLimits {
   /** Files up to this size are read whole. */
@@ -148,11 +148,15 @@ async function streamLines(path: string, decoding: Decoding, skip: number, chunk
   }
 }
 
+/**
+ * A file's first bytes, read without blocking the thread: a slow read (a file still to be downloaded) must not stop
+ * the search's heartbeat, or main would take the worker for stuck.
+ */
 async function head(path: string): Promise<Buffer> {
   const fh = await open(path, 'r');
   try {
-    const buf = Buffer.alloc(2);
-    const { bytesRead } = await fh.read(buf, 0, 2, 0);
+    const buf = Buffer.alloc(BINARY_SNIFF_BYTES);
+    const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
     return buf.subarray(0, bytesRead);
   } finally {
     await fh.close();
@@ -185,7 +189,8 @@ export async function scanFile(path: string, ranges: Ranges, limits: ScanLimits,
   }
   try {
     // Binary first: a large video is a binary file, not a text too large to show.
-    if (looksBinary(real)) return { kind: 'binary' };
+    const first = await head(real);
+    if (binaryHead(first)) return { kind: 'binary' };
     if (size > limits.maxBytes) return { kind: 'skipped', size, reason: 'too-large' };
     if (cancelled()) return { kind: 'none' };
     const c = new Collector(ranges, limits.keptLineChars, budget);
@@ -196,8 +201,7 @@ export async function scanFile(path: string, ranges: Ranges, limits: ScanLimits,
       const text = utf16Text(buf) ?? (isUtf8(buf) ? buf.toString('utf8') : buf.toString('latin1'));
       pushText(c, text, cancelled);
     } else {
-      const bom = await head(real);
-      const wide = bom[0] === 0xff && bom[1] === 0xfe ? 'utf16le' : bom[0] === 0xfe && bom[1] === 0xff ? 'utf16be' : null;
+      const wide = first[0] === 0xff && first[1] === 0xfe ? 'utf16le' : first[0] === 0xfe && first[1] === 0xff ? 'utf16be' : null;
       let outcome = await streamLines(real, wide ?? 'utf8', wide ? 2 : 0, chunk, c, cancelled);
       if (outcome === 'decode-error') {
         // Not UTF-8: start over as Latin-1, with nothing kept from the first attempt.
