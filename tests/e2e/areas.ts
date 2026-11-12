@@ -408,6 +408,7 @@ export const SOURCES: Record<string, Area[]> = {
   'src/shared/asks.ts': ['workspace', 'files', 'settings'],
   'src/shared/search.ts': ['files'],
   'src/shared/search-match.ts': ['files'],
+  'src/shared/search-filter.ts': ['files'],
   'src/shared/close-sessions.ts': ['sessions', 'workspace'],
   'src/renderer/components/LanguageSheet.tsx': ['editor'],
   'src/renderer/components/LogLineView.tsx': ['background'],

@@ -37,7 +37,7 @@ export const BACKEND_ONLY_SHARED: readonly string[] = [
   'env.ts', 'git.ts', 'helper-hash.node.ts', 'hook-paths.ts', 'loop-transcript.ts', 'paths.node.ts', 'popout.ts', 'prompt-text.ts', 'protocol.ts', 'readonly-command.ts', 'repo-names.ts', 'schedule-notices.ts', 'services.ts', 'session-name.ts', 'shell.ts',
   // Find in Files' shared types and matcher: nothing reaches them until the renderer and the demo bridge use them,
   // and the entries leave this list with that wiring.
-  'search.ts', 'search-match.ts',
+  'search.ts', 'search-filter.ts', 'search-match.ts',
   'store-updates.ts', 'tool-calls.ts', 'transcript.ts', 'update-sign.node.ts', 'version.ts', 'windows-menu.ts',
   // Ask's backend: the `claude -p` argv builder, the chat digest, the rules and facts it
   // writes (live.ts too), the stream parser. The demo plays
