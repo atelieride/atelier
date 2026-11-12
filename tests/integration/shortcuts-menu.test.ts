@@ -117,7 +117,11 @@ test('Find in Files: ⌘⇧F in View after Files, the command, the palette\'s th
   expect(app).toContain("case 'find-in-files': findInFilesCommand(from === 'popout'); break;");
   // F4 / ⇧F4: the page's own keys, at the window (a pop-out's come here through its forwarded command).
   expect(app).toContain('installSearchKeys()');
-  expect(app).toMatch(/case 'next-search-result': case 'prev-search-result':/);
+  // A pop-out's F4 reaches the project window quietly: handled before Settings would close for a command.
+  const listener = app.slice(app.indexOf('window.atelier.on.command('));
+  const quiet = listener.indexOf("if (cmd === 'next-search-result' || cmd === 'prev-search-result')");
+  expect(quiet).toBeGreaterThan(-1);
+  expect(quiet).toBeLessThan(listener.indexOf('if (st.settingsOpen)'));
   const palette = readFileSync(join(__dirname, '../../src/renderer/components/Palette.tsx'), 'utf8');
   for (const id of ['find-in-files', 'next-search-result', 'prev-search-result']) expect(palette).toContain(`c('${id}'`);
   // Written in the accelerator's own order wherever it is shown (kbd() gives Windows its Shift+Alt+F).

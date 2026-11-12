@@ -24,6 +24,13 @@ test('find matches in the preview are painted with the find tokens; the chosen v
   expect(css).toMatch(/\.md-switch button\.is-on\s*\{[^}]*var\(--seg-on\)/);
 });
 
+test('the outline steps down past the find card\'s "Search in all files" by the pill\'s own height and gap, never a copy', () => {
+  const layout = readFileSync(join(__dirname, '../../src/renderer/layout.css'), 'utf8');
+  expect(layout).toMatch(/:root\s*\{[^}]*--fc-all-h:\s*\d+px;[^}]*--fc-all-gap:\s*\d+px;/);
+  expect(layout).toMatch(/\.fc-all\s*\{[^}]*height:\s*var\(--fc-all-h\);[^}]*margin:\s*var\(--fc-all-gap\) 0 0 auto;/);
+  expect(css).toMatch(/\.md-preview\.has-find:has\(\.fc-all\) \.md-outline\s*\{\s*padding-top:\s*calc\(72px \+ var\(--fc-all-gap\) \+ var\(--fc-all-h\)\);\s*\}/);
+});
+
 test('no HTML string ever reaches the DOM from the preview code (Security)', () => {
   const dir = join(__dirname, '../../src/renderer/markdown');
   const files = readdirSync(dir).filter((n) => /\.tsx?$/.test(n) && !n.includes('.test.'));

@@ -879,7 +879,11 @@ test('F4 in a pop-out: its project window walks the results; one in the pop-out\
   await still(pop);
   const popLine = () => pop.locator('.cm-fif-hit-strong').evaluate((el) => el.closest('.cm-line')?.textContent ?? '');
   // F4 in a pop-out no result was walked into yet: the next match is in its own file, shown there, selected and
-  // marked (not only its line); the project window, which holds the results, is not brought forward.
+  // marked (not only its line); the project window, which holds the results, is not brought forward, and the Settings
+  // sheet left open there stays open.
+  await command('open-settings');
+  const sheet = win.locator('.settings[role="dialog"]');
+  await expect(sheet).toBeVisible();
   await pop.locator('.cm-content').focus();
   revealed();
   await pop.keyboard.press('F4');
@@ -888,17 +892,29 @@ test('F4 in a pop-out: its project window walks the results; one in the pop-out\
   await expect.poll(() => pageSelection(pop)).toBe('TokenStore');
   await expect(pop.locator('.cm-content')).toBeFocused();
   expect(revealed()).not.toContain(mainId);
+  await frames(win);
+  await expect(sheet).toBeVisible();
+  await win.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
   // The next one is in another file: it opens in the project window, which comes forward.
   await pop.keyboard.press('F4');
   await expect(selectedRow()).toHaveAttribute('data-rel', 'src/auth/tokens.ts');
   await expect(activeTab()).toContainText('tokens.ts');
   await expect.poll(revealed).toContain(mainId);
-  // ⇧F4 from the pop-out again: back in its file, the project window left where it is.
+  // Shown, the keyboard in its editor (before the palette opens over it).
+  await expect.poll(strongLine).toBe('export class TokenStore {');
+  await expect(content()).toBeFocused();
+  // ⇧F4 from the pop-out again: back in its file, the project window left where it is, its palette open as it was.
+  await win.keyboard.press('F1');
+  await expect(win.locator('.palette-input')).toBeFocused();
   await pop.locator('.cm-content').focus();
   await pop.keyboard.press('Shift+F4');
   await expect(selectedRow()).toHaveAttribute('data-line', '8');
   await expect.poll(popLine).toBe('const store = new TokenStore();');
   expect(revealed()).not.toContain(mainId);
+  await expect(win.locator('.palette-input')).toBeFocused();
+  await win.keyboard.press('Escape');
+  await expect(win.locator('.palette-input')).toHaveCount(0);
   // View › Find in Files given in the pop-out runs in the project window: a selection the user left in an editor there
   // is not the query (the user is in the pop-out).
   await content().focus();

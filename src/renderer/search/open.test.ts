@@ -91,11 +91,16 @@ test('F4 at the window: no other key is looked at; it yields to the palette, Set
   const listeners: ((e: KeyboardEvent) => void)[] = [];
   const forward = vi.fn(() => Promise.resolve());
   const doc = { activeElement: new FakeEl() as unknown };
-  g.window = { addEventListener: (_t: string, fn: (e: KeyboardEvent) => void) => listeners.push(fn), removeEventListener: () => {}, atelier: { popout: { forward } } };
+  g.window = {
+    addEventListener: (_t: string, fn: (e: KeyboardEvent) => void) => listeners.push(fn),
+    removeEventListener: (_t: string, fn: (e: KeyboardEvent) => void) => { listeners.splice(listeners.indexOf(fn), 1); },
+    atelier: { popout: { forward } }
+  };
   g.document = doc;
   const step = vi.fn();
-  searchLoaded({ hasResults: () => true, spec: () => PLAIN, step });
-  installSearchKeys();
+  let results = false;
+  searchLoaded({ hasResults: () => results, spec: () => PLAIN, step });
+  const off = installSearchKeys();
   /** Whether the window took the key (and stopped it). */
   const press = (k: Partial<KeyboardEvent> = {}): boolean => {
     const e = { ...key(k), preventDefault: vi.fn(), stopPropagation: vi.fn() };
@@ -107,6 +112,9 @@ test('F4 at the window: no other key is looked at; it yields to the palette, Set
   expect(press({ key: 'a' })).toBe(false);
   expect(press({ key: 'Enter' })).toBe(false);
   expect(app.reads).toBe(0);
+  // No results (and no pop-out): the key is not taken.
+  expect(press()).toBe(false);
+  results = true;
   expect(press()).toBe(true);
   expect(step).toHaveBeenLastCalledWith(1, false);
   // From the list or the field the keyboard stays there.
@@ -126,6 +134,7 @@ test('F4 at the window: no other key is looked at; it yields to the palette, Set
   }
   expect(step).not.toHaveBeenCalled();
   // A pop-out has no results of its own: its project window walks them, whatever the pop-out shows.
+  results = false;
   doc.activeElement = new FakeEl(['.cm-editor']);
   app.state = { popout: { key: 'f:/p/a.ts' }, mdVisit: {} };
   expect(press()).toBe(true);
@@ -133,6 +142,8 @@ test('F4 at the window: no other key is looked at; it yields to the palette, Set
   expect(press({ shiftKey: true })).toBe(true);
   expect(forward).toHaveBeenLastCalledWith('prev-search-result');
   expect(step).not.toHaveBeenCalled();
+  off();
+  expect(listeners).toEqual([]);
 });
 
 test('F4 sent from a pop-out: this window comes forward only when the result opened in it', () => {

@@ -806,8 +806,10 @@ button.foot-item:disabled { cursor: default; }
 .fc-error-dot { width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: var(--error); }
 /* A neutral line under the field (a terminal on its alternate screen). */
 .fc-note { grid-column: 1 / -1; padding: 0 2px 2px 9px; font-size: 11.5px; color: var(--text-3); animation: atl-fade var(--t-fast) var(--ease); }
-/* "Search in all files": a quiet pill under the card, at its right edge; the card's query goes to Find in Files. */
-.fc-all { display: flex; align-items: center; gap: 6px; width: max-content; height: 24px; margin: 6px 0 0 auto; padding: 0 10px 0 8px; border-radius: 999px;
+/* "Search in all files": a quiet pill under the card, at its right edge; the card's query goes to Find in Files. Its
+   height and gap are the Markdown outline's too, which steps down past it (markdown.css). */
+:root { --fc-all-h: 24px; --fc-all-gap: 6px; }
+.fc-all { display: flex; align-items: center; gap: 6px; width: max-content; height: var(--fc-all-h); margin: var(--fc-all-gap) 0 0 auto; padding: 0 10px 0 8px; border-radius: 999px;
   background: var(--bg-float); backdrop-filter: blur(18px) saturate(140%); box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text-2); font: 11.5px var(--font);
   white-space: nowrap; pointer-events: auto; transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); animation: atl-fade var(--t-med) var(--ease) both; }
 .fc-all svg { color: var(--text-3); }

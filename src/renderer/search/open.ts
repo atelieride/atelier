@@ -123,7 +123,7 @@ export function installSearchKeys(): () => void {
     const el = document.activeElement;
     const st = useApp.getState();
     if (st.paletteOpen || st.settingsOpen || insideOverlay(el)) return;
-    const dir = f4Action(e, !!el?.closest('.xterm'), st.popout !== null || hasSearchResults());
+    const dir = f4Action(e, !!el?.closest('.xterm'), !!st.popout || hasSearchResults());
     if (dir === null) return;
     e.preventDefault();
     e.stopPropagation();

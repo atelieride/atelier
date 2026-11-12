@@ -414,6 +414,8 @@ export const SOURCES: Record<string, Area[]> = {
   'src/renderer/search/': ['files'],
   // A result's file in the editor: its occurrences marked, its match selected.
   'src/renderer/editor/find-in-files-ext.ts': ['editor', 'files'],
+  // The match a result selected: ⌘⇧F keeps the query that found it.
+  'src/renderer/editor/result-select.ts': ['editor', 'files'],
   'src/shared/close-sessions.ts': ['sessions', 'workspace'],
   'src/renderer/components/LanguageSheet.tsx': ['editor'],
   'src/renderer/components/LogLineView.tsx': ['background'],

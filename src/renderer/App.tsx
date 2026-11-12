@@ -498,6 +498,9 @@ export function App() {
         // A pop-out's toast for one connector: its details page here.
         const connector = CONNECTOR_IDS.find((id) => cmd === `open-connector:${id}`);
         if (connector) { st.setSettingsOpen('connectors'); st.openConnector(connector); return; }
+        // F4 / ⇧F4 pressed in a pop-out: the results are this window's; the keyboard goes with the result. The user is in
+        // the pop-out: Settings or the palette left open here stay as they are.
+        if (cmd === 'next-search-result' || cmd === 'prev-search-result') { stepFromPopout(cmd === 'next-search-result' ? 1 : -1); return; }
         // With Settings open: ⌘W and ⌘, stay on the sheet; any other command closes it and acts on the visible area.
         if (st.settingsOpen) {
           if (cmd === 'close-tab') { st.setSettingsOpen(null); return; }
@@ -516,8 +519,6 @@ export function App() {
           case 'view-sessions': st.setActivity('sessions'); break;
           case 'view-files': st.setActivity('files'); break;
           case 'find-in-files': findInFilesCommand(from === 'popout'); break;
-          // F4 / ⇧F4 pressed in a pop-out: the results are this window's; the keyboard goes with the result.
-          case 'next-search-result': case 'prev-search-result': stepFromPopout(cmd === 'next-search-result' ? 1 : -1); break;
           case 'view-services': if (servicesView(st.settings.showServices)) st.setActivity('services'); break;
           case 'view-scm': st.setActivity('scm'); break;
           case 'view-docker': st.setActivity('docker'); break;
