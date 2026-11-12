@@ -39,12 +39,20 @@ async function problem(p: Promise<unknown>): Promise<DbProblem> {
 const count = async (s: DbSession, table: string) => (await s.run(stmt(`select count(*) from ${table}`))).rows[0]?.[0];
 
 /**
- * Empties the server's logs once everything sent so far has reached it. A run resolves before its ROLLBACK goes out, so
- * clearing at once can leave the previous run's ROLLBACK to land in the fresh log; the test server's exec (unlogged)
- * takes its turn only after a client's open transaction has ended (tests/support/pg-worker.mjs).
+ * Returns once every ROLLBACK the sessions sent so far has reached the server. A run settles as soon as its result is
+ * in, without waiting for its ROLLBACK (written by then after a success, sent once the server is ready again after an
+ * error), and the server reads it in its own time, on another thread: a log read or cleared at once can miss it, or see
+ * it land in the fresh log. The test server's exec (unlogged) takes its turn only after a client's open transaction has
+ * ended (tests/support/pg-worker.mjs), by its ROLLBACK or by the end of its connection, which the proxy reads after
+ * everything sent before it: either way the proxy has logged that ROLLBACK by then.
  */
-async function freshLog(s: PgServer): Promise<void> {
+async function settle(s: PgServer): Promise<void> {
   await s.exec('select 1');
+}
+
+/** Empties the server's logs once every ROLLBACK sent so far has reached it. */
+async function freshLog(s: PgServer): Promise<void> {
+  await settle(s);
   await s.clearLog();
 }
 
@@ -164,6 +172,7 @@ describe('a session on the acme world', () => {
     for (const t of texts) await other.run(stmt(t, t.includes('$1') ? ['7'] : [])).catch(() => {});
     await other.run(stmt('select 2'));
     other.close();
+    await settle(s); // the last run's ROLLBACK, on the wire by now, may not have reached the server yet
     const log = await s.statementsLog();
     expect(log.filter((l) => l !== WRAP && l !== 'ROLLBACK' && !texts.includes(l) && l !== 'select 2')).toEqual([]);
     expect(log.filter((l) => /\b(SET|RESET|COMMIT)\b|set_config/i.test(l) && l !== WRAP && l !== STABLE)).toEqual([]);
