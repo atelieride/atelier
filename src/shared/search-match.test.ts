@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { EditorState } from '@codemirror/state';
 import { SearchQuery } from '@codemirror/search';
 import { compileSearch, lineResult } from './search-match';
+import { linearBudget } from '../../tests/support/platform';
+import { bestTime } from '../../tests/support/timing';
 import type { SearchSpec } from './search';
 
 function spec(query: string, o: Partial<Omit<SearchSpec, 'query'>> = {}): SearchSpec {
@@ -50,6 +52,16 @@ const samples: { name: string; s: SearchSpec; text: string }[] = [
   { name: 'regex case on', s: spec('[A-Z]\\w+', { regex: true, matchCase: true }), text: 'Hello world fooBar' },
   { name: 'regex whole word', s: spec('tok\\w*', { regex: true, wholeWord: true }), text: 'tok token xtok' },
   { name: 'regex unicode', s: spec('\\u{1F642}', { regex: true }), text: 'a 🙂 b' },
+  { name: 'fast path, ASCII line, case off', s: spec('foo'), text: 'Foo foo FOO fOo_x xfoo foofoo' },
+  { name: 'fast path, ASCII line, case on', s: spec('Foo', { matchCase: true }), text: 'Foo foo FOO fOo_x xFoo FooFoo' },
+  { name: 'fast path, overlapping candidates', s: spec('aa'), text: 'aaa aaaa a aa' },
+  { name: 'fast path, whole word rejects then accepts', s: spec('aa', { wholeWord: true }), text: 'aaa aa aaaa aa_ aa' },
+  { name: 'fast path, whole word, case off', s: spec('Foo', { wholeWord: true }), text: 'foo FOO fooo _foo foo.' },
+  { name: 'fast path, escapes', s: spec('a\\tb\\\\'), text: 'a\tb\\ a\\tb' },
+  { name: 'one non-ASCII char switches the line, case off', s: spec('foo'), text: 'foo Foo\nfoo ﬁ FOO\nFOO İ foo\nFoo' },
+  { name: 'one non-ASCII char switches the line, whole word', s: spec('foo', { wholeWord: true }), text: 'foo é foo_ foo\nfoo foo\nfoo ß foo' },
+  { name: 'non-ASCII query, ASCII line', s: spec('é'), text: 'cafe café CAFÉ' },
+  { name: 'ASCII query across an expanding char', s: spec('ss'), text: 'ß ss SS ßs' },
   { name: 'several lines', s: spec('x'), text: 'x\nax\n\nxx' },
 ];
 
@@ -59,6 +71,21 @@ describe('parity with the editor find', () => {
       expect(ours(s, text)).toEqual(editorMatches(s, text));
     });
   }
+});
+
+describe('plain search speed', () => {
+  it('matches a plain ASCII query over 5 MB of ASCII lines without per-character normalisation', () => {
+    const line = 'const readSession = (token: string) => store.get(token) // Token handling, nothing special here\n';
+    const lines = line.repeat(Math.ceil(5_000_000 / line.length)).split('\n');
+    for (const matchCase of [false, true]) {
+      const c = compileSearch(spec(matchCase ? 'Token' : 'token', { matchCase }));
+      if (c.kind !== 'ok') throw new Error('not ok');
+      let hits = 0;
+      const ms = bestTime(() => { hits = 0; for (const l of lines) hits += c.ranges(l).length; });
+      expect(hits).toBeGreaterThan(0);
+      expect(ms).toBeLessThan(linearBudget(50));
+    }
+  });
 });
 
 describe('compileSearch', () => {

@@ -83,6 +83,8 @@ function regexRanges(re: RegExp, wholeWord: boolean): (line: string) => [number,
   };
 }
 
+const ASCII_ONLY = /^[\x00-\x7F]*$/;
+
 function norm(caseOff: boolean, text: string): string {
   const n = text.normalize('NFKD');
   return caseOff ? n.toLowerCase() : n;
@@ -96,8 +98,26 @@ function norm(caseOff: boolean, text: string): string {
 function stringRanges(unquoted: string, matchCase: boolean, wholeWord: boolean): (line: string) => [number, number][] {
   const query = norm(!matchCase, unquoted);
   const cat = wordCategory();
+  // NFKD and lower-casing leave ASCII alone, one unit for one unit: when the query and the line are both ASCII the
+  // normalisation changes nothing and a plain `indexOf` finds exactly the same matches.
+  const asciiQuery = ASCII_ONLY.test(query);
+  const needle = matchCase ? query : query.toLowerCase();
   return (line) => {
     const out: [number, number][] = [];
+    if (asciiQuery && ASCII_ONLY.test(line)) {
+      const hay = matchCase ? line : line.toLowerCase();
+      for (let at = hay.indexOf(needle); at >= 0;) {
+        const to = at + needle.length;
+        if (!wholeWord || atWordEdges(cat, line, at, to)) {
+          out.push([at, to]);
+          at = hay.indexOf(needle, to);
+        } else {
+          // A rejected candidate leaves the next start open, as the string cursor's partial matches do.
+          at = hay.indexOf(needle, at + 1);
+        }
+      }
+      return out;
+    }
     let partials: { from: number; index: number }[] = [];
     let pos = 0;
     while (pos < line.length) {
