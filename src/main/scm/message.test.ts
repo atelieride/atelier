@@ -385,10 +385,27 @@ process.stdin.on('end', async () => {
 
   test('the timeout kills the whole group', async () => {
     const f = fake({ hang: true });
-    const t0 = Date.now();
-    const r = await writeMessage({ claudeBin: f.bin, model: 'haiku', input: 'i', onChunk: () => {}, timeoutMs: 400 });
+    const started = () => { try { return f.read().kid !== null; } catch { return false; } };
+    // The timeout's clock is the test's: it runs out once the fake has started its child, never before (a node start
+    // alone can take longer than the timeout on a busy machine, and then there is no group to look at).
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let r: Awaited<ReturnType<typeof writeMessage>> | null = null;
+    try {
+      const run = writeMessage({ claudeBin: f.bin, model: 'haiku', input: 'i', onChunk: () => {}, timeoutMs: 400 });
+      void run.then((x) => { r = x; });
+      const end = Date.now() + 15_000;
+      while (!started()) {
+        if (Date.now() > end) throw new Error('the fake never started');
+        await new Promise((res) => setImmediate(res));
+      }
+      await vi.advanceTimersByTimeAsync(399);
+      expect(r).toBeNull();
+      await vi.advanceTimersByTimeAsync(1);
+      await run;
+    } finally {
+      vi.useRealTimers();
+    }
     expect(r).toEqual({ ok: false, reason: "Claude didn't answer in time" });
-    expect(Date.now() - t0).toBeLessThan(3000);
     const l = f.read();
     expect(await waitDead(l.pid)).toBe(true);
     expect(await waitDead(l.kid!)).toBe(true);
