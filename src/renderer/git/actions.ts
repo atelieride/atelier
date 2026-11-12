@@ -14,6 +14,7 @@ import { toggleRows, type StageRow } from './staging';
 import { nextTarget, stagedCount, undoTarget } from './target';
 import { divergedRefusal as isDivergedRefusal } from './slice';
 import { isBelow } from '@shared/paths';
+import { BULK_GIT_PARALLEL, inLanes } from '@shared/lanes';
 import { loadRefs } from '../scm/data';
 
 /** A dropped stash's and a deleted branch's Undo stay this long. */
@@ -346,6 +347,28 @@ export async function sync(root: string, o: { rebase: boolean }): Promise<GitOpR
   return r;
 }
 
+/**
+ * Pull All's pull of one repository, which never asks or toasts mid-run (other repositories are running): its incoming
+ * files a live session is changing leave it for you, never pulled; a branch git can't fast-forward any more is
+ * diverged; anything else is its result, kept on its block as a single pull's is.
+ */
+export async function pullForAll(root: string): Promise<SyncAllRow> {
+  let incoming: string[] = [];
+  try { incoming = await api().incoming(root); } catch { /* none known: a terminal pull wouldn't ask either */ }
+  if (overlapFiles(root, incoming, liveFiles(st().terminals, st().attributions)).files.length) return { root, result: null, needsYou: 'live' };
+  const r = await call(() => api().pull({ root, rebase: false }));
+  if (divergedRefusal('pull', false, r)) return { root, result: null, needsYou: 'diverged' };
+  st().recordGitResult(root, 'pull', r);
+  return { root, result: r };
+}
+
+/** Push All's push of one repository: as pullForAll, no question mid-run (a rejected push is its result). */
+export async function pushForAll(root: string): Promise<SyncAllRow> {
+  const r = await call(() => api().push({ root }));
+  st().recordGitResult(root, 'push', r);
+  return { root, result: r };
+}
+
 /** The working trees a pull would change: Source Control's statuses (Changes' where it has none), behind their upstream. */
 function behindRoots(): string[] {
   const out = new Map<string, boolean>();
@@ -361,13 +384,15 @@ function behindRoots(): string[] {
 async function liveSkips(): Promise<string[]> {
   const live = liveFiles(st().terminals, st().attributions);
   if (!live.size) return [];
-  const skip: string[] = [];
-  for (const root of behindRoots()) {
+  const roots = behindRoots();
+  const overlaps = new Set<string>();
+  // A few reads at once, as many as the sync that follows runs.
+  await inLanes(roots, (root) => root, BULK_GIT_PARALLEL, async (root) => {
     let incoming: string[] = [];
     try { incoming = await api().incoming(root); } catch { /* none known: a terminal pull wouldn't ask either */ }
-    if (overlapFiles(root, incoming, live).files.length) skip.push(root);
-  }
-  return skip;
+    if (overlapFiles(root, incoming, live).files.length) overlaps.add(root);
+  });
+  return roots.filter((root) => overlaps.has(root));
 }
 
 /** Sync All Repositories: one toast; Show opens the list when some need you. */

@@ -60,16 +60,17 @@ export function commitsShown<C>(commits: readonly C[], total: number | undefined
 }
 
 /**
- * A row of Sync All's list: done; or what it needs — a diverged branch (Show selects it, where Sync asks to
- * rebase), a live session on files the pull changes (Pull…, the guarded pull, which asks first), a failure in git's words.
+ * A row of Sync All's list (Pull All's and Push All's too, `op` naming theirs): done; or what it needs — a diverged
+ * branch (Show selects it, where Sync asks to rebase), a live session on files the pull changes (Pull…, the guarded
+ * pull, which asks first), a failure in git's words.
  */
-export function syncAllRow(r: SyncAllRow): { ok: boolean; text: string; action: 'show' | 'pull' | null } {
+export function syncAllRow(r: SyncAllRow, op: 'sync' | 'pull' | 'push' = 'sync'): { ok: boolean; text: string; action: 'show' | 'pull' | null } {
   const s = t.git.sync;
   if (r.needsYou === 'live') return { ok: false, text: s.rowLive, action: 'pull' };
   if (r.needsYou === 'diverged') return { ok: false, text: s.rowDiverged, action: 'show' };
   if (r.needsYou === 'no-upstream') return { ok: false, text: s.rowNoUpstream, action: 'show' };
   if (!r.result || r.result.outcome === 'ok') return { ok: true, text: s.rowOk, action: null };
-  return { ok: false, text: failText('sync', r.root, r.result), action: 'show' };
+  return { ok: false, text: failText(op, r.root, r.result), action: 'show' };
 }
 
 /** The live files now (the sheets name the sessions from the same read). */

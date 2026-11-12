@@ -1014,6 +1014,9 @@ const strings = {
       cancel: 'Cancel',
       pulledAll: (n: number, diverged: number) => `${n ? `Pulled ${n} ${n === 1 ? 'repository' : 'repositories'}` : 'Nothing to pull'}${diverged ? ` · ${diverged} diverged: sync ${diverged === 1 ? 'it on its' : 'them on their'} own` : ''}`,
       pushedAll: (n: number, diverged: number) => `${n ? `Pushed ${n} ${n === 1 ? 'repository' : 'repositories'}` : 'Nothing to push'}${diverged ? ` · ${diverged} diverged: sync ${diverged === 1 ? 'it on its' : 'them on their'} own` : ''}`,
+      // Some need you (a failure, a live session's files, a branch that diverged): Show lists them.
+      pulledSome: (n: number, needs: number) => `${n ? `Pulled ${n} ${n === 1 ? 'repository' : 'repositories'}` : 'Nothing pulled'} · ${needs} ${needs === 1 ? 'needs' : 'need'} you`,
+      pushedSome: (n: number, needs: number) => `${n ? `Pushed ${n} ${n === 1 ? 'repository' : 'repositories'}` : 'Nothing pushed'} · ${needs} ${needs === 1 ? 'needs' : 'need'} you`,
       noRemote: 'No remote',
       notOnBranch: 'Not on a branch',
       bodyTip: 'This message has a body: Open in Commit Drawer to see it',
@@ -2895,6 +2898,11 @@ const strings = {
       // Sync All.
       syncAllTitle: 'Sync All Repositories',
       syncAllBody: (ok: number, needs: number) => `${ok} synced · ${needs} ${needs === 1 ? 'needs' : 'need'} you`,
+      // The same list after Pull All and Push All.
+      pullAllTitle: 'Pull All Repositories',
+      pullAllBody: (ok: number, needs: number) => `${ok} pulled · ${needs} ${needs === 1 ? 'needs' : 'need'} you`,
+      pushAllTitle: 'Push All Repositories',
+      pushAllBody: (ok: number, needs: number) => `${ok} pushed · ${needs} ${needs === 1 ? 'needs' : 'need'} you`,
       rowOk: 'In sync',
       rowDiverged: 'Diverged: Sync it from its card to rebase',
       rowNoUpstream: 'No upstream: publish it from its card',

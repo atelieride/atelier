@@ -162,6 +162,54 @@ test('Pull on one block, Sync on another right after: both run on their own, no 
   }
 });
 
+test('Pull All: the repositories pull at the same time; one that can\'t stops nothing, and Show lists it', async () => {
+  const p = project();
+  // billing has a file of its own where the incoming commit adds one: git refuses that pull, web's still goes through.
+  writeFileSync(join(p.root, 'billing', 'b.txt'), 'mine\n');
+  // Git as slow as on a busy PC: both pulls are seen running together.
+  const s = await launch(p.root, e2eEnv({ ATELIER_TEST_GIT_WRITE_DELAY_MS: '1500' }));
+  try {
+    await s.win.getByRole('radio', { name: 'All Repositories' }).click();
+    await s.win.getByRole('button', { name: 'Fetch All Repositories' }).click();
+    await expect(block(s.win, 'billing').locator('.ab-head .ab-counts, .ab-main .ab-counts')).toHaveText('↓1', { timeout: 15000 });
+    await expect(block(s.win, 'web').locator('.ab-main .ab-counts')).toHaveText('↓1', { timeout: 15000 });
+    const main = s.win.locator('.scm-all-sync .git-sync-main');
+    await expect(main).toContainText('Pull All');
+    await main.click();
+
+    // Both at the same moment, not one after the other.
+    await expect(s.win.locator('.ab-btn.is-running')).toHaveCount(2);
+    await expect(block(s.win, 'billing').locator('.ab-btn')).toHaveClass(/is-running/);
+    await expect(block(s.win, 'web').locator('.ab-btn')).toHaveClass(/is-running/);
+
+    const toast = s.win.locator('.toast');
+    await expect(toast).toContainText('Pulled 1 repository · 1 needs you', { timeout: 20000 });
+    await expect(block(s.win, 'web').locator('.sw-chip.is-clean')).toBeVisible({ timeout: 15000 });
+    expect(git(join(p.root, 'web'), 'log', '-1', '--format=%s').trim()).toBe('feat: pushed meanwhile');
+    expect(git(join(p.root, 'billing'), 'log', '-1', '--format=%s').trim()).toBe('feat: first');
+    expect(readFileSync(join(p.root, 'billing', 'b.txt'), 'utf8')).toBe('mine\n');
+
+    await toast.getByRole('button', { name: 'Show' }).click();
+    const sheet = s.win.getByRole('dialog', { name: 'Pull All Repositories' });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.locator('.git-sheet-body')).toHaveText('1 pulled · 1 needs you');
+    await expect(sheet.locator('.git-sheet-row')).toHaveCount(2);
+    await expect(sheet.locator('.git-sheet-row.is-needs')).toContainText('billing');
+    await expect(sheet.locator('.git-sheet-row.is-ok')).toContainText('web');
+    await expect(sheet.locator('.git-sheet-row.is-ok')).toContainText('In sync');
+    await look(sheet, `${SHOTS}/scm-all-pull-all.png`, { settle: 300 });
+
+    // Show selects billing in Source Control, where its own Pull says what to do.
+    await sheet.locator('.git-sheet-row.is-needs').getByRole('button', { name: 'Show' }).click();
+    await expect(sheet).toHaveCount(0);
+    await expect(s.win.getByRole('radio', { name: 'One Repository' })).toHaveAttribute('aria-checked', 'true');
+    await expect(s.win.locator('.scm-sidebar .sw-card')).toContainText('billing');
+  } finally {
+    await expect(s.win.locator('.ab-btn.is-running')).toHaveCount(0, { timeout: 20000 }).catch(() => {});
+    await s.stop();
+  }
+});
+
 test('commit from a block with ⌘↵; nothing staged asks over the block, which keeps its height; Cancel keeps the message', async () => {
   const p = project();
   const s = await launch(p.root);

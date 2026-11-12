@@ -13,6 +13,7 @@ import { IPC } from '@shared/api';
 import { type Attribution, isUnsure } from '@shared/attribution';
 import type { FileChange, RepoStatus } from '@shared/git';
 import { CO_AUTHOR_TRAILER, branchClash, upstreamKind } from '@shared/git-write';
+import { BULK_GIT_PARALLEL, inLanes } from '@shared/lanes';
 import { isBelow, isGitDirName, splitPath } from '@shared/paths';
 import { currentPlatform } from '@shared/platform';
 import type { GitFacts, GitOp, GitOpEvent, GitOpResult, GitPhase, MessageTweak, RemoteCommit, RepoFacts, ScmMessageEvent, StageTarget, SwitchCarry, SyncAllRow } from '@shared/git-write';
@@ -941,13 +942,15 @@ export class GitOps {
   }
 
   /**
-   * Sync for every repository of the project with an upstream that is ahead or behind; diverged ones need you, and so
-   * do the listed ones in `skip` (their incoming changes touch files live sessions are changing): never pulled.
+   * Sync for every repository of the project with an upstream that is ahead or behind, a few at once; diverged ones
+   * need you, and so do the listed ones in `skip` (their incoming changes touch files live sessions are changing):
+   * never pulled. The rows keep the list's order.
    */
   async syncAll(key: string, o: { skip: string[] } = { skip: [] }): Promise<SyncAllRow[]> {
     if (this.readOnly()) return [];
     const skip = new Set(o.skip);
     const rows: SyncAllRow[] = [];
+    const todo: { at: number; root: string; common: string }[] = [];
     for (const e of await this.deps.scm.entries(key)) {
       const st = e.status;
       const up = upstreamKind(st?.branch, st?.upstream, st?.upstreamGone);
@@ -957,8 +960,14 @@ export class GitOps {
       if (!st || up !== 'own' || (st.ahead === 0 && st.behind === 0)) continue;
       if (st.ahead > 0 && st.behind > 0) { rows.push({ root: e.root, result: null, needsYou: 'diverged' }); continue; }
       if (skip.has(e.root)) { rows.push({ root: e.root, result: null, needsYou: 'live' }); continue; }
-      rows.push({ root: e.root, result: await this.sync(key, { root: e.root, rebase: false }) });
+      todo.push({ at: rows.length, root: e.root, common: e.common });
+      rows.push({ root: e.root, result: null });
     }
+    // A few repositories at once; a repository's worktrees one after another (they share its object store, which takes
+    // one write at a time). A failure stops nothing: its row says it.
+    await inLanes(todo, (x) => x.common, BULK_GIT_PARALLEL, async (x) => {
+      rows[x.at] = { root: x.root, result: await this.sync(key, { root: x.root, rebase: false }) };
+    });
     return rows;
   }
 

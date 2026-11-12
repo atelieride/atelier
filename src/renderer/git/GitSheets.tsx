@@ -22,7 +22,7 @@ export function GitSheets() {
     case 'forcePush': return <ForcePushSheet key={sheet.root} root={sheet.root} commits={sheet.commits} total={sheet.total} remoteOid={sheet.remoteOid} />;
     case 'pullRebase': return <PullRebaseSheet key={sheet.root} root={sheet.root} sync={sheet.sync} byResult={!!sheet.byResult} />;
     case 'pullOverlap': return <PullOverlapSheet key={sheet.root} root={sheet.root} files={sheet.files} rebase={sheet.rebase} sync={sheet.sync} />;
-    case 'syncAll': return <SyncAllSheet rows={sheet.rows} />;
+    case 'syncAll': return <SyncAllSheet rows={sheet.rows} run={sheet.run ?? 'sync'} />;
     case 'switch': return <SwitchSheet key={`${sheet.root}\n${sheet.ref}\n${sheet.clash?.join('\n') ?? ''}`} root={sheet.root} refName={sheet.ref} {...(sheet.clash ? { clash: sheet.clash } : {})} />;
     case 'newBranch': return <NewBranchSheet key={`${sheet.root}\n${sheet.from ?? ''}`} root={sheet.root} {...(sheet.from ? { from: sheet.from } : {})} />;
     case 'deleteBranch': return <DeleteBranchSheet key={`${sheet.root}\n${sheet.ref}`} root={sheet.root} refName={sheet.ref} {...(sheet.message ? { message: sheet.message } : {})} />;

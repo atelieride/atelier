@@ -45,7 +45,8 @@ export type GitSheet =
   | { kind: 'worktree'; root: string; ref?: string }
   | { kind: 'stash'; root: string }
   | { kind: 'discard'; targets: { root: string; rels: StageTarget }[] }
-  | { kind: 'syncAll'; rows: SyncAllRow[] };
+  /** run: the list after Pull All or Push All (none: Sync All). */
+  | { kind: 'syncAll'; rows: SyncAllRow[]; run?: 'pull' | 'push' };
 
 export type { CommitAllCard, CommitAllState };
 

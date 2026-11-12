@@ -13,6 +13,7 @@ import type { ScmRef, ScmRefs, ScmRepoEntry, ScmStash } from '@shared/scm';
 import { GitOps, type GitOpsDeps, type GitOpsSettings, type GitReads, READ_ONLY_MESSAGE, quitAnyway, quitPrompt } from './git-ops';
 import type { Invocation, RawRun } from './git/write';
 import { WriteQueue } from './git/write-queue';
+import { BULK_GIT_PARALLEL } from '@shared/lanes';
 import { useMachinePlatform, posixTest } from '../../tests/support/platform';
 
 // Real files with native paths: the app's platform switch reads the machine's (win32 on Windows).
@@ -1316,5 +1317,45 @@ describe('more write guards (main)', () => {
     ];
     expect(await w.ops.syncAll(K)).toEqual([{ root: '/p', result: null, needsYou: 'no-upstream' }]);
     expect(w.runs).toEqual([]);
+  });
+
+  test(`syncAll: up to ${BULK_GIT_PARALLEL} repositories at once, a repository's worktrees one after another; rows in the list's order`, async () => {
+    const behind: ScmRepoEntry['status'] = { branch: 'main', detached: false, oid: O1, ahead: 0, behind: 1, upstream: 'origin/main', changes: 0 };
+    // /p/wt is a worktree of /p (one object store): it waits for /p and holds no slot of its own meanwhile.
+    const entries: ScmRepoEntry[] = ['/p', '/p/wt', '/p/b', '/p/c', '/p/d', '/p/e'].map((root) => ({
+      root, rel: root.slice(3), name: root.split('/').pop()!, worktreeOf: root === '/p/wt' ? '/p' : null, nestedIn: null,
+      common: root === '/p/wt' ? '/p/.git' : `${root}/.git`, status: behind
+    }));
+    const w = world({ reads: { aheadBehind: async () => ({ ahead: 0, behind: 1 }) } });
+    w.deps.scm.entries = async () => entries;
+    w.deps.scm.entryFor = async (_k, r) => entries.find((e) => e.root === r) ?? null;
+    const started: string[] = [];
+    const ends = new Map<string, () => void>();
+    w.deps.run = (root) => new Promise<RawRun>((resolve) => { started.push(root); ends.set(root, () => resolve(raw())); });
+    const until = async (done: () => boolean) => { for (let i = 0; i < 200 && !done(); i++) await new Promise((r) => setTimeout(r, 0)); };
+    const all = w.ops.syncAll(K);
+    await until(() => started.length >= BULK_GIT_PARALLEL);
+    expect([...started].sort()).toEqual(['/p', '/p/b', '/p/c', '/p/d']);
+    ends.get('/p/c')!();
+    await until(() => started.length >= 5);
+    expect(started[4]).toBe('/p/e');
+    ends.get('/p')!();
+    await until(() => started.length >= 6);
+    expect(started[5]).toBe('/p/wt');
+    for (const r of ['/p/b', '/p/d', '/p/e', '/p/wt']) ends.get(r)!();
+    const rows = await all;
+    expect(rows.map((r) => r.root)).toEqual(entries.map((e) => e.root));
+    expect(rows.every((r) => r.result?.outcome === 'ok')).toBe(true);
+  });
+
+  test('syncAll: one repository failing stops nothing; each row says its own outcome', async () => {
+    const behind: ScmRepoEntry['status'] = { branch: 'main', detached: false, oid: O1, ahead: 0, behind: 1, upstream: 'origin/main', changes: 0 };
+    const entries: ScmRepoEntry[] = ['/p', '/p/b'].map((root) => ({ root, rel: root.slice(3), name: root.split('/').pop()!, worktreeOf: null, nestedIn: null, common: `${root}/.git`, status: behind }));
+    const w = world({ reads: { aheadBehind: async () => ({ ahead: 0, behind: 1 }) } });
+    w.deps.scm.entries = async () => entries;
+    w.deps.scm.entryFor = async (_k, r) => entries.find((e) => e.root === r) ?? null;
+    w.deps.run = async (root) => (root === '/p' ? raw({ code: 1, output: 'fatal: unable to access: Could not resolve host: example.invalid' }) : raw());
+    const rows = await w.ops.syncAll(K);
+    expect(rows.map((r) => [r.root, r.result?.outcome])).toEqual([['/p', 'network'], ['/p/b', 'ok']]);
   });
 });

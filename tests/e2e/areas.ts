@@ -547,6 +547,8 @@ export const SOURCES: Record<string, Area[]> = {
   'src/shared/attribution.ts': ['changes'],
   // Same-name repositories told apart in Changes.
   'src/shared/repo-names.ts': ['changes', 'scm'],
+  // Sync All, Pull All and Push All a few repositories at a time.
+  'src/shared/lanes.ts': ['changes', 'scm'],
   'src/shared/automation': ['connectors', 'sessions'],
   'src/shared/background': ['background'],
   'src/shared/bash-attribution.ts': ['changes'],

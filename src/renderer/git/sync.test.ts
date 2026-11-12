@@ -259,6 +259,26 @@ describe('Sync All and live sessions', () => {
     expect(names()).toEqual(['incoming']);
   });
 
+  test('the comparisons before Sync All run a few at once, and the skip list keeps the repositories\' order', async () => {
+    const roots = ['/p/a', '/p/b', '/p/c', '/p/d', '/p/e'];
+    useApp.setState({
+      scmRepos: roots.map((root) => ({ ...entry({ behind: 1 }), root, name: root.slice(3) })),
+      terminals: [term('t1', 'auth-refactor')], attributions: roots.map((root) => attr(`${root}/src/cart.ts`, 't1', 'auth-refactor'))
+    });
+    const ends: (() => void)[] = [];
+    answers.incoming = () => new Promise((resolve) => { ends.push(() => resolve(['src/cart.ts'])); });
+    answers.syncAll = [];
+    const run = git.syncAll();
+    await tick(); await tick();
+    expect(names()).toEqual(['incoming', 'incoming', 'incoming', 'incoming']);
+    // The last one asked answers first: the list still follows the repositories.
+    ends[3]!(); ends[1]!(); ends[0]!(); ends[2]!();
+    await tick(); await tick();
+    ends[4]!();
+    await run;
+    expect(calls.at(-1)).toEqual(['syncAll', { skip: roots }]);
+  });
+
   test('no live session: nothing to compare, nothing skipped', async () => {
     useApp.setState({ scmRepos: [entry({ behind: 1 })] });
     answers.syncAll = [{ root: '/p/a', result: { outcome: 'ok' } }];
@@ -270,6 +290,13 @@ describe('Sync All and live sessions', () => {
     expect(syncAllRow({ root: '/p/a', result: { outcome: 'ok' } })).toEqual({ ok: true, text: 'In sync', action: null });
     expect(syncAllRow({ root: '/p/a', result: null, needsYou: 'diverged' })).toEqual({ ok: false, text: 'Diverged: Sync it from its card to rebase', action: 'show' });
     expect(syncAllRow({ root: '/p/a', result: { outcome: 'network' } })).toEqual({ ok: false, text: "Couldn't reach the remote.", action: 'show' });
+  });
+
+  test("Pull All's and Push All's rows name their own op in a failure", () => {
+    const r = { root: '/p/a', result: { outcome: 'error' as const, message: 'boom' } };
+    expect(syncAllRow(r).text).toBe('Sync failed: boom');
+    expect(syncAllRow(r, 'pull').text).toBe('Pull failed: boom');
+    expect(syncAllRow(r, 'push').text).toBe('Push failed: boom');
   });
 });
 
