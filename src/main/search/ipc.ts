@@ -1,8 +1,9 @@
 // Find in Files' channels: a trusted app page of a project window only, its input parsed strictly. Each window has
 // its own search service (one search at a time, its own worker); the events of a search go back to the window that
-// asked, never to another, and never to a window that is gone. A window that closes, or whose project changes, takes
-// its service and worker with it. A change on disk after a window's last search started tells that window once that
-// its results may be out of date: nothing runs again by itself.
+// asked, never to another, and never to a window that is gone. A window that closes, whose page loads anew (a reload:
+// its ids start over) or whose project changes takes its service and worker with it. A change on disk after a
+// window's last search started tells that window once that its results may be out of date: nothing runs again by
+// itself.
 import { Worker } from 'node:worker_threads';
 import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron';
 import { IPC } from '@shared/api';
@@ -10,6 +11,7 @@ import { SEARCH_LIMITS, type SearchEvent, type SearchRequest } from '@shared/sea
 import { compilePathFilter } from '@shared/search-filter';
 import { realOutAsync } from '../cpath';
 import { searchIdSchema, searchStartSchema } from '../ipc-schemas';
+import { pageReloading } from '../popout-wiring';
 import { listSearchFiles } from './list';
 import { SearchService, type SearchListing, type SearchServiceDeps } from './service';
 
@@ -32,10 +34,13 @@ interface LastSearch { searchId: number; includeIgnored: boolean; told: boolean 
 
 interface Entry { wc: WebContents; project: SearchProject; service: SearchServiceLike; last: LastSearch | null }
 
+/** An entry's service until its own is made. */
+const NO_SERVICE: SearchServiceLike = { start: () => {}, stop: () => {}, dispose: () => {} };
+
 export function installSearchIpc(deps: SearchIpcDeps): { filesChanged(root: string, ignoredOnly?: boolean): void } {
   const create = deps.createService ?? ((d: SearchServiceDeps) => new SearchService({ ...d, spawn: () => new Worker(deps.workerPath) }));
   const entries = new Map<number, Entry>();
-  /** Windows whose `destroyed` is listened to already (once each, whatever their services). */
+  /** Windows whose `destroyed` and navigations are listened to already (once each, whatever their services). */
   const watched = new Set<number>();
 
   // Listings running, by project and filters: while the user types, each search with the same filters takes the one
@@ -81,13 +86,16 @@ export function installSearchIpc(deps: SearchIpcDeps): { filesChanged(root: stri
       return had;
     }
     if (had) drop(wc.id);
-    // The project as it is when the search lists it (a later start may have brought new repositories).
-    const service = create({ list: (req) => listing(en.project, req) });
-    const en: Entry = { wc, project, service, last: null };
+    const en: Entry = { wc, project, service: NO_SERVICE, last: null };
+    // The project as it is when a search lists it (a later start may have brought new repositories).
+    en.service = create({ list: (req) => listing(en.project, req) });
     entries.set(wc.id, en);
     if (!watched.has(wc.id)) {
       watched.add(wc.id);
       wc.once('destroyed', () => { watched.delete(wc.id); drop(wc.id); });
+      // A reload: the new page counts its searches from the start again, so nothing of the old page's may reach it.
+      // An iframe loading or a same-document navigation leaves the page as it is.
+      wc.on('did-start-navigation', (d) => { if (pageReloading(d)) drop(wc.id); });
     }
     return en;
   };

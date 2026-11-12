@@ -21,9 +21,11 @@ export function createSearch(ctx: DemoContext, limits: Partial<DemoSearchLimits>
   return {
     start: (req) => load().then((s) => s.start(req), (err: unknown) => {
       console.error(err);
-      tell({ kind: 'error', searchId: req.searchId, message: 'The search stopped: it could not be started.', rel: null });
+      // After the call's own answer, as every other event.
+      ctx.clock.after(0, () => tell({ kind: 'error', searchId: req.searchId, message: 'The search stopped: it could not be started.', rel: null }));
     }),
-    stop: (searchId) => load().then((s) => s.stop(searchId), () => {}),
+    // No engine yet: no search was ever started, so there is none to stop.
+    stop: (searchId) => engine?.then((s) => s.stop(searchId), () => {}) ?? Promise.resolve(),
     onEvent(cb) {
       listeners.add(cb);
       return () => { listeners.delete(cb); };

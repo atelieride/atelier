@@ -154,13 +154,50 @@ describe('demo Find in Files', () => {
     try {
       const { createSearch: fresh } = await import('./search');
       const search = fresh(make().context);
-      const { ended } = listen(search);
+      const { events, ended } = listen(search);
       await search.start(req(1, 'TokenStore'));
+      // As every other event: after the call's own answer.
+      expect(events).toEqual([]);
       expect(await ended(1)).toEqual({ kind: 'error', searchId: 1, message: 'The search stopped: it could not be started.', rel: null });
     } finally {
       quiet.mockRestore();
       vi.doUnmock('./search-run');
     }
+  });
+
+  test('a stop with no search ever started does not load the engine; the first search does', async () => {
+    vi.resetModules();
+    let loads = 0;
+    vi.doMock('./search-run', async (importOriginal) => { loads++; return importOriginal(); });
+    try {
+      const { createSearch: fresh } = await import('./search');
+      const search = fresh(make().context);
+      const { events, ended } = listen(search);
+      await search.stop(1);
+      expect(loads).toBe(0);
+      await search.start(req(2, 'TokenStore'));
+      await ended(2);
+      expect(loads).toBe(1);
+      expect(events.filter((e) => e.searchId === 1)).toEqual([]);
+    } finally {
+      vi.doUnmock('./search-run');
+    }
+  });
+
+  test('a change only under the hidden folders tells only a search that includes them, as in the app', async () => {
+    const { api, context } = make();
+    const { events, ended } = listen(api.search);
+    const stale = () => events.filter((e) => e.kind === 'stale');
+    await api.search.start(req(1, 'TokenStore'));
+    await ended(1);
+    context.worktree.write('dist/app.js', 'built\n');
+    expect(stale()).toEqual([]);
+    context.worktree.write('README.md', '# acme store\n');
+    expect(stale()).toEqual([{ kind: 'stale', searchId: 1 }]);
+    await api.search.start(req(2, 'TokenStore', { includeIgnored: true }));
+    await ended(2);
+    context.worktree.write('dist/app.js', 'built again\n');
+    expect(stale()).toEqual([{ kind: 'stale', searchId: 1 }, { kind: 'stale', searchId: 2 }]);
   });
 
   test('a listener that unsubscribes hears nothing more', async () => {

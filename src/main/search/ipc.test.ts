@@ -24,7 +24,15 @@ class FakeContents {
   lateSends = 0;
   private destroyed = false;
   private readonly gone: (() => void)[] = [];
+  private readonly navigations: ((d: { isMainFrame: boolean; isSameDocument: boolean }) => void)[] = [];
   constructor(readonly id: number) {}
+  on(ev: string, cb: (d: { isMainFrame: boolean; isSameDocument: boolean }) => void): void {
+    if (ev === 'did-start-navigation') this.navigations.push(cb);
+  }
+  /** A navigation starts in the page: a reload is its main frame, a new document. */
+  navigate(d: { isMainFrame: boolean; isSameDocument: boolean }): void {
+    for (const cb of this.navigations) cb(d);
+  }
   isDestroyed(): boolean {
     return this.destroyed;
   }
@@ -115,6 +123,20 @@ describe('Find in Files IPC', () => {
     expect(services).toEqual([]);
   });
 
+  test('a service may list as soon as it is made: the window and its project are there already', async () => {
+    handlers.clear();
+    const listed: Promise<SearchListing>[] = [];
+    installSearchIpc({
+      projectOf: () => ({ root: '/nowhere/p', discovered: [] }),
+      isTrusted: () => true,
+      workerPath: '/nowhere/search-worker.js',
+      createService: (deps) => { listed.push(deps.list(req(0))); return new FakeService(deps); }
+    });
+    expect(() => handlers.get(IPC.searchStart)!({ sender: new FakeContents(1), senderFrame: { url: APP } }, req(1))).not.toThrow();
+    // A folder that does not exist: the listing fails, as the service expects it may.
+    await expect(listed[0]).rejects.toThrow();
+  });
+
   test('one service per window, its events to that window only; stop reaches the same service', () => {
     const { services, start, stop, win } = setup();
     const a = win(1, '/p/a');
@@ -197,6 +219,32 @@ describe('Find in Files IPC', () => {
     start(a, req(2));
     expect(services[0]!.starts).toHaveLength(1);
     expect(a.lateSends).toBe(0);
+  });
+
+  test('the page loads anew (a reload): its search stops and nothing of it reaches the new page; in-page navigations change nothing', () => {
+    const { ipc, services, start, win } = setup();
+    const a = win(1, '/p/a');
+    start(a, req(1));
+    const s = services[0]!;
+    // An iframe loading, or a same-document navigation: the page is the same one.
+    a.navigate({ isMainFrame: false, isSameDocument: false });
+    a.navigate({ isMainFrame: true, isSameDocument: true });
+    expect(s.disposed).toBe(false);
+    a.navigate({ isMainFrame: true, isSameDocument: false });
+    expect(s.disposed).toBe(true);
+    // The old run's late events and the old search's stale notice never reach the new page (its ids start over).
+    s.emit(batch(1));
+    ipc.filesChanged('/p/a');
+    expect(a.events).toEqual([]);
+    // The new page's first search gets a fresh service, and is told about changes after it.
+    start(a, req(1));
+    expect(services).toHaveLength(2);
+    services[1]!.emit(done(1));
+    ipc.filesChanged('/p/a');
+    expect(a.events).toEqual([done(1), { kind: 'stale', searchId: 1 }]);
+    // A later reload stops the new page's search as well.
+    a.navigate({ isMainFrame: true, isSameDocument: false });
+    expect(services[1]!.disposed).toBe(true);
   });
 
   test("the window's project changes: the old service is disposed, the new project's search gets a fresh one", () => {

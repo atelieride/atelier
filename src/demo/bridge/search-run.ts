@@ -9,7 +9,7 @@ import { SEARCH_LIMITS, type SearchEvent, type SearchFile, type SearchLine, type
 import { compilePathFilter } from '@shared/search-filter';
 import { compileSearch, lineResult } from '@shared/search-match';
 import type { Cancel } from '../engine/clock';
-import type { DemoContext } from './context';
+import { relOf, type DemoContext } from './context';
 import { HIDDEN } from './files';
 
 /** The app's limits (tests make them small). */
@@ -27,11 +27,16 @@ export function createSearchEngine(ctx: DemoContext, limits: Partial<DemoSearchL
   /** The search asked for, waiting for its turn on the clock. */
   let pending: { searchId: number; cancel: Cancel } | null = null;
   /** The last search that ran, and whether a change since was told to it. */
-  let last: { searchId: number; told: boolean } | null = null;
+  let last: { searchId: number; includeIgnored: boolean; told: boolean } | null = null;
+  const { root } = ctx.world.project;
 
-  // Every change to the working tree comes through the worktree, which says so on fsChanged.
-  ctx.events.on.fsChanged(() => {
+  // Every change to the working tree comes through the worktree, which says so on fsChanged. As in the app, a change
+  // only to ignored files concerns only a search that includes them.
+  ctx.events.on.fsChanged((paths) => {
     if (!last || last.told) return;
+    const rels = paths.map((p) => relOf(root, p)).filter((rel): rel is string => rel !== null);
+    if (rels.length === 0) return;
+    if (!last.includeIgnored && rels.every((rel) => rel !== '' && ignoredRel(rel))) return;
     last.told = true;
     tell({ kind: 'stale', searchId: last.searchId });
   });
@@ -44,8 +49,8 @@ export function createSearchEngine(ctx: DemoContext, limits: Partial<DemoSearchL
       const { searchId } = req;
       const cancel = ctx.clock.after(0, () => {
         pending = null;
-        last = { searchId, told: false };
-        for (const e of runSearch(ctx.world.project.root, ctx.state.files, req, lim)) tell(e);
+        last = { searchId, includeIgnored: req.includeIgnored, told: false };
+        for (const e of runSearch(root, ctx.state.files, req, lim)) tell(e);
       });
       pending = { searchId, cancel };
     },
@@ -61,6 +66,8 @@ export function createSearchEngine(ctx: DemoContext, limits: Partial<DemoSearchL
 
 const utf8 = new TextEncoder();
 const byRel = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+/** A file in one of the tree's hidden folders: the demo's ignored files (its project has no .gitignore). */
+const ignoredRel = (rel: string): boolean => rel.split('/').some((part) => HIDDEN.has(part));
 
 /**
  * The files a request covers, in main's order: the others sorted by path, then (when asked for) the ignored ones,
@@ -72,7 +79,7 @@ function listFiles(files: Record<string, string>, req: SearchRequest, cap: numbe
   const ignored: string[] = [];
   for (const rel of Object.keys(files)) {
     if (!filter(rel)) continue;
-    if (!rel.split('/').some((part) => HIDDEN.has(part))) plain.push(rel);
+    if (!ignoredRel(rel)) plain.push(rel);
     else if (req.includeIgnored) ignored.push(rel);
   }
   const all = [...plain.sort(byRel), ...ignored.sort(byRel)];

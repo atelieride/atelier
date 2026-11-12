@@ -158,4 +158,5 @@ describe('globToRegExp', () => {
     expect(globToRegExp('**/build', true).test('a/build/out.js')).toBe(true);
     // An expression that cannot compile still matches its own text, and what is under it.
     expect(globToRegExp('[z-a]', true).test('[z-a]/x')).toBe(true);
-  });});
+  });
+});
