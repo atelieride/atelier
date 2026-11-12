@@ -78,7 +78,7 @@ class Silent extends FakeBase {
 }
 
 function req(searchId: number, query = 'token', over: Partial<SearchRequest> = {}): SearchRequest {
-  return { searchId, query, matchCase: true, wholeWord: false, regex: false, include: '', exclude: '', includeIgnored: false, ...over };
+  return { searchId, query, matchCase: true, wholeWord: false, regex: false, include: '', exclude: '', includeIgnored: false, unsaved: [], ...over };
 }
 
 /** A project of `n` files, each with one match; the listing a search gets for it. */

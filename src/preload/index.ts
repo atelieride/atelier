@@ -380,7 +380,7 @@ const api: AtelierApi = {
   // The request's fields one by one, as for companion: main's schema is strict.
   search: {
     start: (r) => ipcRenderer.invoke(IPC.searchStart, {
-      searchId: r.searchId, query: r.query, matchCase: r.matchCase, wholeWord: r.wholeWord, regex: r.regex, include: r.include, exclude: r.exclude, includeIgnored: r.includeIgnored
+      searchId: r.searchId, query: r.query, matchCase: r.matchCase, wholeWord: r.wholeWord, regex: r.regex, include: r.include, exclude: r.exclude, includeIgnored: r.includeIgnored, unsaved: r.unsaved
     }),
     stop: (searchId) => ipcRenderer.invoke(IPC.searchStop, searchId),
     onEvent: (cb) => listen(IPC.evSearch, cb)

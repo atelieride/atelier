@@ -3,6 +3,7 @@
 // tells main's watchdog the worker is alive.
 import type { SearchEvent, SearchFile, SearchLine, SearchSpec, SkippedFile } from '@shared/search';
 import { compileSearch } from '@shared/search-match';
+import { pathStyle } from '@shared/platform';
 import type { ListedFile } from './list';
 import { scanFile, type ScanLimits, type ScanResult } from './scan';
 
@@ -11,6 +12,11 @@ export interface RunInput {
   spec: SearchSpec;
   /** The files to search, in the order their results are shown. */
   files: ListedFile[];
+  /**
+   * Files the page has unsaved changes in: a listed one is not read; its place in the order is kept by a placeholder
+   * (`unsaved: true`, no lines) the page replaces with its buffer's result. A file that is not listed has none.
+   */
+  unsaved: string[];
   /** The number of files listed when the listing stopped at its cap; null when it covers the whole project. */
   fileCap: number | null;
   limits: ScanLimits & { maxResults: number };
@@ -140,11 +146,14 @@ export async function runSearch(input: RunInput, post: (m: WorkerMsg) => void, c
 
   let halted = false;
   const halt = (): boolean => halted || stopAsked();
-  const reads: Promise<ScanResult>[] = [];
+  const fold = (path: string): string => (pathStyle() === 'win32' ? path.toLowerCase() : path);
+  const unsavedPaths = new Set(input.unsaved.map(fold));
+  const reads: Promise<ScanResult | { kind: 'unsaved' }>[] = [];
   let next = 0;
   // Each read gets the matches still allowed when it starts; a later look at the cap trims what it found.
   const read = (): void => {
     const index = next++;
+    if (unsavedPaths.has(fold(files[index]!.path))) { reads.push(Promise.resolve({ kind: 'unsaved' })); return; }
     reads.push(scanFile(files[index]!.path, matcherFor(index), limits, limits.maxResults - found, halt, input.realRoot));
   };
   // A stop ends the wait for a read, which may never finish (a file that cannot be downloaded).
@@ -168,7 +177,9 @@ export async function runSearch(input: RunInput, post: (m: WorkerMsg) => void, c
         break;
       }
       const f = files[searched++]!;
-      if (r.kind === 'skipped') {
+      if (r.kind === 'unsaved') {
+        pending.push({ path: f.path, rel: f.rel, size: 0, lines: [], unsaved: true });
+      } else if (r.kind === 'skipped') {
         skipped.push({ path: f.path, rel: f.rel, size: r.size, reason: r.reason });
       } else if (r.kind === 'lines') {
         const room = limits.maxResults - found;

@@ -111,6 +111,7 @@ export class SearchService {
             searchId: run.runId,
             spec: { query: req.query, matchCase: req.matchCase, wholeWord: req.wholeWord, regex: req.regex },
             files: listing.files,
+            unsaved: req.unsaved,
             fileCap: listing.capped ? listing.files.length : null,
             limits: this.limits,
             realRoot: listing.realRoot,

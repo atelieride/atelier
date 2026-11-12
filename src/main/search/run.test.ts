@@ -107,6 +107,7 @@ function input(root: string, files: ListedFile[], query = 'token', over: Partial
     spec: spec(query),
     files,
     fileCap: null,
+    unsaved: [],
     realRoot: root,
     limits: { maxResults: SEARCH_LIMITS.maxResults, wholeReadBytes: SEARCH_LIMITS.wholeReadBytes, maxBytes: SEARCH_LIMITS.maxBytes, keptLineChars: SEARCH_LIMITS.keptLineChars, ...limits },
     ...over,
@@ -146,6 +147,23 @@ describe('runSearch', () => {
       hooks.gates.clear();
       hooks.onFinish = null;
     }
+  });
+
+  test('a file the page searches itself is not read: a placeholder takes its place in the order and counts no result', async () => {
+    const { root, listed } = project({ 'a.txt': 'token\n', 'b.txt': 'token\n', 'c.txt': 'token\n' });
+    hooks.finished.length = 0;
+    const ms = await collect(input(root, listed, 'token', { unsaved: [listed[1]!.path] }, { maxResults: 2 }));
+    expect(hooks.finished).not.toContain(listed[1]!.path);
+    expect(filesOf(ms).map((f) => [f.rel, f.unsaved === true, f.lines.length])).toEqual([['a.txt', false, 1], ['b.txt', true, 0], ['c.txt', false, 1]]);
+    const d = doneOf(ms);
+    expect(d.limitHit).toBe(false);
+    expect(d.searched).toBe(3);
+  });
+
+  test('a file not in the list never gets a placeholder', async () => {
+    const { root, listed } = project({ 'a.txt': 'token\n' });
+    const ms = await collect(input(root, listed, 'token', { unsaved: [join(root, 'node_modules/x.js')] }));
+    expect(filesOf(ms).map((f) => f.rel)).toEqual(['a.txt']);
   });
 
   test('every message carries the search id', async () => {

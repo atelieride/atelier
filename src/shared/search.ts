@@ -3,12 +3,20 @@ import { MAX_FILE_BYTES, MAX_LARGE_FILE_BYTES } from './files';
 /** What a search looks for: the same four fields the editor's find card has. */
 export interface SearchSpec { query: string; matchCase: boolean; wholeWord: boolean; regex: boolean }
 
-export interface SearchRequest extends SearchSpec { searchId: number; include: string; exclude: string; includeIgnored: boolean }
+export interface SearchRequest extends SearchSpec {
+  searchId: number;
+  include: string;
+  exclude: string;
+  includeIgnored: boolean;
+  /** Absolute paths of the window's files with unsaved changes: the page searches their buffers, main marks their place. */
+  unsaved: string[];
+}
 
 /** A line with matches: `text` is the kept slice of the line starting at column `start`; ranges are line columns (UTF-16). */
 export interface SearchLine { line: number; text: string; start: number; ranges: [number, number][] }
 
-export interface SearchFile { path: string; rel: string; size: number; lines: SearchLine[] }
+/** `unsaved`: a placeholder for a file the page searches itself (its buffer differs from the disk); it has no lines. */
+export interface SearchFile { path: string; rel: string; size: number; lines: SearchLine[]; unsaved?: true }
 
 export interface SkippedFile { path: string; rel: string; size: number; reason: 'too-large' | 'unreadable' }
 

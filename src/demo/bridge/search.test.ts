@@ -13,7 +13,7 @@ const root = compiled.project.root;
 const make = () => createDemo(compiled, { version: '0.0.0-test', clock: createClock() });
 
 function req(searchId: number, query: string, over: Partial<SearchRequest> = {}): SearchRequest {
-  return { searchId, query, matchCase: false, wholeWord: false, regex: false, include: '', exclude: '', includeIgnored: false, ...over };
+  return { searchId, query, matchCase: false, wholeWord: false, regex: false, include: '', exclude: '', includeIgnored: false, unsaved: [], ...over };
 }
 
 /** Every event the page would get, and a wait for the end of a search. */
@@ -86,6 +86,19 @@ describe('demo Find in Files', () => {
     await api.search.start(req(2, 'TokenStore', { includeIgnored: true }));
     await ended(2);
     expect(filesOf(events.filter((e) => e.searchId === 2)).map((f) => f.rel)).toEqual(['src/auth/session.ts', 'src/auth/tokens.ts', 'dist/app.js']);
+  });
+
+  test('a listed file with unsaved changes is a placeholder in its place and is not read; an unlisted one has none', async () => {
+    const { api, context } = make();
+    context.worktree.write('dist/app.js', 'new TokenStore();\n');
+    const { events, ended } = listen(api.search);
+    const unsaved = [`${root}/src/auth/session.ts`, `${root}/dist/app.js`];
+    await api.search.start(req(1, 'TokenStore', { unsaved }));
+    await ended(1);
+    expect(filesOf(events).map((f) => [f.rel, f.unsaved === true, f.lines.length > 0])).toEqual([['src/auth/session.ts', true, false], ['src/auth/tokens.ts', false, true]]);
+    await api.search.start(req(2, 'TokenStore', { unsaved, includeIgnored: true }));
+    await ended(2);
+    expect(filesOf(events.filter((e) => e.searchId === 2)).map((f) => [f.rel, f.unsaved === true])).toEqual([['src/auth/session.ts', true], ['src/auth/tokens.ts', false], ['dist/app.js', true]]);
   });
 
   test('a query that cannot run (an invalid regular expression) ends at once with nothing found', async () => {

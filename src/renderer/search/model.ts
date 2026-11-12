@@ -147,25 +147,3 @@ export function nearestMatch(lines: string[], ranges: (l: string) => [number, nu
   }
   return null;
 }
-
-/**
- * Disk results with the unsaved buffers' results in their place: a dirty file's disk result is replaced by its buffer's
- * (or dropped when the buffer no longer matches), and a dirty file with no disk result is added in path order.
- */
-export function mergeUnsaved(disk: SearchFile[], unsaved: SearchFile[], dirty: ReadonlySet<string>): SearchFile[] {
-  const buffers = new Map(unsaved.filter((f) => dirty.has(f.path)).map((f) => [f.path, f]));
-  const onDisk = new Set(disk.map((f) => f.path));
-  const extra = [...buffers.values()].filter((f) => !onDisk.has(f.path)).sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
-  const out: SearchFile[] = [];
-  let next = 0;
-  for (const f of disk) {
-    while (next < extra.length && extra[next]!.rel < f.rel) out.push(extra[next++]!);
-    if (!dirty.has(f.path)) out.push(f);
-    else {
-      const buf = buffers.get(f.path);
-      if (buf) out.push(buf);
-    }
-  }
-  while (next < extra.length) out.push(extra[next++]!);
-  return out;
-}

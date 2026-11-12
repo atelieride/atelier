@@ -123,14 +123,17 @@ function runSearch(root: string, files: Record<string, string>, req: SearchReque
   const compiled = compileSearch(req);
   if (compiled.kind !== 'ok') return [done(0, false)];
   const found: SearchFile[] = [];
+  const unsaved = new Set(req.unsaved);
   let searched = 0;
   let count = 0;
   let limitHit = false;
   for (const rel of rels) {
     const text = files[rel]!;
     const path = `${root}/${rel}`;
-    const size = utf8.encode(text).length;
     searched++;
+    // The page searches this file's buffer itself: its place in the order is kept, nothing is read.
+    if (unsaved.has(path)) { found.push({ path, rel, size: 0, lines: [], unsaved: true }); continue; }
+    const size = utf8.encode(text).length;
     if (size > limits.maxBytes) { skipped.push({ path, rel, size, reason: 'too-large' }); continue; }
     const r = scanText(text, compiled.ranges, limits.maxResults - count, limits.keptLineChars);
     if (r.count > 0) { found.push({ path, rel, size, lines: r.lines }); count += r.count; }

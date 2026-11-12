@@ -1,9 +1,10 @@
 // Find in Files: the state of the window's search and the actions that drive it. Not imported by anything on the
 // first-paint path: only the lazily loaded view and its opener use it.
 import { create } from 'zustand';
+import { MAX_FILE_BYTES } from '@shared/files';
+import { pathStyle } from '@shared/platform';
 import { SEARCH_LIMITS, type SearchEvent, type SearchFile, type SearchSpec, type SkippedFile } from '@shared/search';
 import { compileSearch, lineResult } from '@shared/search-match';
-import { compilePathFilter } from '@shared/search-filter';
 import { dirtyPaths, handoffOf } from '../editor/savers';
 import { useApp } from '../store';
 import { fileKey } from './model';
@@ -55,9 +56,14 @@ export interface SearchState {
 let lastId = Math.floor(Math.random() * 2 ** 40) + 1;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let subscribed = false;
-/** The unsaved buffers' results of the running search, in path order, not yet placed in the list. */
-let pendingUnsaved: SearchFile[] = [];
-let dirtySet: Set<string> = new Set();
+/**
+ * The results of the open files with unsaved changes, by path: main keeps each one's place in its order with a
+ * placeholder, and the buffer's result goes there (no entry: the buffer has no match, the placeholder is dropped).
+ */
+let buffers = new Map<string, SearchFile>();
+/** Matches in the list so far, for the auto-collapse threshold. */
+let listedMatches = 0;
+const foldPath = (p: string): string => (pathStyle() === 'win32' ? p.toLowerCase() : p);
 
 const noResults = {
   files: [] as SearchFile[],
@@ -77,24 +83,27 @@ function clearTimer(): void {
   timer = null;
 }
 
-function matchCount(files: SearchFile[]): number {
+function matchCount(f: SearchFile): number {
   let n = 0;
-  for (const f of files) for (const l of f.lines) n += l.ranges.length;
+  for (const l of f.lines) n += l.ranges.length;
   return n;
 }
 
-/** The results of the open files with unsaved changes, as their buffers show them. */
-function unsavedResults(root: string, spec: SearchSpec, include: string, exclude: string): { files: SearchFile[]; dirty: Set<string> } {
-  const dirty = new Set<string>();
-  const files: SearchFile[] = [];
+/**
+ * The open files with unsaved changes, searched as their buffers show them: the paths to tell main (it decides which
+ * of them the search covers and where they sit) and the results by path. An editable buffer is at most 5 MB (larger
+ * files open read-only, never dirty); one over that is left to the disk search rather than scanned on this thread.
+ */
+function unsavedResults(root: string, spec: SearchSpec): { paths: string[]; results: Map<string, SearchFile> } {
+  const paths: string[] = [];
+  const results = new Map<string, SearchFile>();
   const compiled = compileSearch(spec);
-  const allowed = compilePathFilter(include, exclude);
   for (const path of dirtyPaths()) {
     const rel = relativeTo(root, path);
-    if (rel === null || !allowed(rel)) continue;
+    if (rel === null) continue;
     const doc = handoffOf(path)?.state.doc;
-    if (typeof doc !== 'string') continue;
-    dirty.add(path);
+    if (typeof doc !== 'string' || doc.length > MAX_FILE_BYTES) continue;
+    paths.push(path);
     if (compiled.kind !== 'ok') continue;
     const lines = [];
     const text = doc.split('\n');
@@ -104,10 +113,9 @@ function unsavedResults(root: string, spec: SearchSpec, include: string, exclude
       const ranges = compiled.ranges(t);
       if (ranges.length) lines.push(lineResult(i + 1, t, ranges, SEARCH_LIMITS.keptLineChars));
     }
-    if (lines.length) files.push({ path, rel, size: doc.length, lines });
+    if (lines.length) results.set(foldPath(path), { path, rel, size: doc.length, lines });
   }
-  files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
-  return { files, dirty };
+  return { paths, results };
 }
 
 function relativeTo(root: string, path: string): string | null {
@@ -155,9 +163,9 @@ export const useSearch = create<SearchState>((set, get) => {
     setSpec(p) {
       if (p.query !== undefined && Object.keys(p).length === 1) { get().setQuery(p.query); return; }
       set({ spec: { ...get().spec, ...p } });
-      if (get().spec.query === '') return;
       clearTimer();
-      get().run();
+      if (get().spec.query === '') get().clear();
+      else get().run();
     },
     setFilters(p) {
       set({ ...(p.include !== undefined ? { include: p.include } : {}), ...(p.exclude !== undefined ? { exclude: p.exclude } : {}), ...(p.includeIgnored !== undefined ? { includeIgnored: p.includeIgnored } : {}) });
@@ -178,12 +186,12 @@ export const useSearch = create<SearchState>((set, get) => {
       const spec = { ...s.spec, query: s.spec.query.slice(0, SEARCH_LIMITS.queryMax) };
       const include = s.include.slice(0, SEARCH_LIMITS.globMax);
       const exclude = s.exclude.slice(0, SEARCH_LIMITS.globMax);
-      const unsaved = root ? unsavedResults(root, spec, include, exclude) : { files: [], dirty: new Set<string>() };
-      pendingUnsaved = unsaved.files;
-      dirtySet = unsaved.dirty;
+      const unsaved = root ? unsavedResults(root, spec) : { paths: [], results: new Map<string, SearchFile>() };
+      buffers = unsaved.results;
+      listedMatches = 0;
       // The id is current before the request leaves: an event may arrive before `start` settles.
       set({ ...noResults, collapsed: new Set(), dismissed: new Set(), searchId, phase: 'running' });
-      window.atelier.search.start({ ...spec, searchId, include, exclude, includeIgnored: s.includeIgnored }).catch((err: unknown) => {
+      window.atelier.search.start({ ...spec, searchId, include, exclude, includeIgnored: s.includeIgnored, unsaved: unsaved.paths }).catch((err: unknown) => {
         if (get().searchId !== searchId) return;
         set({ phase: 'error', error: { message: err instanceof Error ? err.message : String(err), rel: null } });
       });
@@ -193,17 +201,14 @@ export const useSearch = create<SearchState>((set, get) => {
       const { searchId, phase } = get();
       if (phase !== 'running') return;
       void window.atelier.search.stop(searchId).catch(() => {});
-      // What the search found stays; the unsaved buffers' results not yet placed come after it.
-      const files = [...get().files, ...pendingUnsaved];
-      pendingUnsaved = [];
-      set({ phase: 'stopped', files });
+      set({ phase: 'stopped' });
     },
 
     clear() {
       clearTimer();
       abandon();
-      pendingUnsaved = [];
-      dirtySet = new Set();
+      buffers = new Map();
+      listedMatches = 0;
       set({ ...noResults, collapsed: new Set(), dismissed: new Set(), searchId: 0, phase: 'idle' });
     },
 
@@ -231,31 +236,26 @@ export const useSearch = create<SearchState>((set, get) => {
       switch (e.kind) {
         case 'batch': {
           if (s.phase !== 'running') return;
-          let files = s.files;
+          const added: SearchFile[] = [];
           const collapsed = new Set(s.collapsed);
-          let total = matchCount(files);
-          const add = (f: SearchFile): void => {
-            if (total >= AUTO_COLLAPSE_AFTER) collapsed.add(fileKey(f.path));
-            files = [...files, f];
-            total += matchCount([f]);
-          };
-          for (const f of e.files) {
-            if (dirtySet.has(f.path)) continue;
-            while (pendingUnsaved.length && pendingUnsaved[0]!.rel < f.rel) add(pendingUnsaved.shift()!);
-            add(f);
+          for (const disk of e.files) {
+            // A placeholder stands for a file the page searched itself: its buffer's result, or nothing.
+            const f = disk.unsaved ? buffers.get(foldPath(disk.path)) : disk;
+            if (!f) continue;
+            if (listedMatches >= AUTO_COLLAPSE_AFTER) collapsed.add(fileKey(f.path));
+            added.push(f);
+            listedMatches += matchCount(f);
           }
+          const files = added.length ? [...s.files, ...added] : s.files;
           set({ files, collapsed, progress: { searched: e.searched, total: e.total } });
           return;
         }
         case 'done': {
-          // Every disk file has arrived: what is left of the unsaved results sorts after all of them.
-          const files = pendingUnsaved.length ? [...s.files, ...pendingUnsaved] : s.files;
-          pendingUnsaved = [];
           set({
-            files, phase: e.stopped ? 'stopped' : 'done', progress: { searched: e.searched, total: e.total },
+            phase: e.stopped ? 'stopped' : 'done', progress: { searched: e.searched, total: e.total },
             skipped: e.skipped, limitHit: e.limitHit, fileCap: e.fileCap
           });
-          if (!e.stopped && files.length > 0) {
+          if (!e.stopped && s.files.length > 0) {
             const root = useApp.getState().project?.root;
             if (root) pushRecent(root, s.spec);
           }

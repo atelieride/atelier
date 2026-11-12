@@ -353,7 +353,7 @@ test('backgroundWatchSchema: a terminal id and an item id, nothing else', () => 
 
 test('Find in Files: a bounded query and globs, the four options, a whole non-negative id; nothing else', async () => {
   const { searchIdSchema, searchStartSchema } = await import('./ipc-schemas');
-  const req = { searchId: 7, query: 'TokenStore', matchCase: false, wholeWord: true, regex: false, include: 'src/**', exclude: '*.test.ts', includeIgnored: false };
+  const req = { searchId: 7, query: 'TokenStore', matchCase: false, wholeWord: true, regex: false, include: 'src/**', exclude: '*.test.ts', includeIgnored: false, unsaved: ['/p/src/a.ts'] };
   expect(searchStartSchema.parse(req)).toEqual(req);
   expect(searchStartSchema.safeParse({ ...req, query: 'q'.repeat(1_000), include: 'i'.repeat(2_000), exclude: 'e'.repeat(2_000) }).success).toBe(true);
   expect(searchStartSchema.safeParse({ ...req, searchId: 0 }).success).toBe(true);
@@ -362,7 +362,8 @@ test('Find in Files: a bounded query and globs, the four options, a whole non-ne
     { ...req, extra: 1 }, { ...req, root: '/elsewhere' },
     { ...req, query: 'q'.repeat(1_001) }, { ...req, include: 'i'.repeat(2_001) }, { ...req, exclude: 'e'.repeat(2_001) },
     { ...req, searchId: -1 }, { ...req, searchId: 1.5 }, { ...req, searchId: Number.MAX_SAFE_INTEGER + 2 }, { ...req, searchId: Number.NaN }, { ...req, searchId: '1' },
-    { ...req, regex: 'yes' }, { ...req, includeIgnored: 1 }, { ...req, query: undefined }
+    { ...req, regex: 'yes' }, { ...req, includeIgnored: 1 }, { ...req, query: undefined },
+    { ...req, unsaved: undefined }, { ...req, unsaved: ['rel/a.ts'] }, { ...req, unsaved: Array(501).fill('/p/a.ts') }, { ...req, unsaved: [`/${'a'.repeat(4096)}`] }
   ];
   for (const b of bad) expect(searchStartSchema.safeParse(b).success, JSON.stringify(b)).toBe(false);
   expect(searchIdSchema.safeParse(3).success).toBe(true);

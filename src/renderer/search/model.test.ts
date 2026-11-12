@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import type { SearchFile, SearchLine } from '@shared/search';
-import { buildRows, fileKey, matchKey, mergeUnsaved, nearestMatch, previewWindow, resultsText, stepResult, totals } from './model';
+import { buildRows, fileKey, matchKey, nearestMatch, previewWindow, resultsText, stepResult, totals } from './model';
 
 const ln = (line: number, text: string, ranges: [number, number][], start = 0): SearchLine => ({ line, text, start, ranges });
 const file = (rel: string, lines: SearchLine[]): SearchFile => ({ path: `/p/${rel}`, rel, size: 10, lines });
@@ -117,14 +117,4 @@ test('nearestMatch finds a match moved by two lines and gives up past the distan
   expect(nearestMatch(lines, ranges, 10, 0)).toBeNull();
   expect(nearestMatch(lines, ranges, 8, 0, 4)).toEqual({ line: 4, from: 2, to: 7 });
   expect(nearestMatch(lines, ranges, 9, 0, 4)).toBeNull();
-});
-
-test("mergeUnsaved replaces a dirty file's disk result in place, adds new ones in order and drops stale ones", () => {
-  const C = file('c.ts', [ln(1, 'token', [[0, 5]])]);
-  const aBuf = { ...A, lines: [ln(9, 'token', [[0, 5]])] };
-  const nBuf = file('b2.ts', [ln(1, 'token', [[0, 5]])]);
-  const out = mergeUnsaved([A, B, C], [aBuf, nBuf], new Set([A.path, B.path, nBuf.path]));
-  expect(out.map((f) => f.rel)).toEqual(['a.ts', 'b2.ts', 'c.ts']);
-  expect(out[0]).toBe(aBuf);
-  expect(mergeUnsaved([A, B], [], new Set())).toEqual([A, B]);
 });

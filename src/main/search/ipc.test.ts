@@ -72,7 +72,7 @@ class FakeService {
 }
 
 function req(searchId: number, over: Partial<SearchRequest> = {}): SearchRequest {
-  return { searchId, query: 'token', matchCase: false, wholeWord: false, regex: false, include: '', exclude: '', includeIgnored: false, ...over };
+  return { searchId, query: 'token', matchCase: false, wholeWord: false, regex: false, include: '', exclude: '', includeIgnored: false, unsaved: [], ...over };
 }
 
 const batch = (searchId: number): SearchEvent => ({ kind: 'batch', searchId, files: [], searched: 1, total: 2 });

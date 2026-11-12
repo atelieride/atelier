@@ -221,33 +221,55 @@ test('collapse, expand all, dismiss', () => {
   expect(st().collapsed.size).toBe(0);
 });
 
-test('unsaved buffers: their results replace the disk ones and are placed in path order', () => {
-  dirty.docs.set('/p/b.ts', 'one\nbuffer token\r\nthree');
-  dirty.docs.set('/p/c.ts', 'nothing here');
+const placeholder = (rel: string): SearchFile => ({ path: `/p/${rel}`, rel, size: 0, lines: [], unsaved: true });
+
+test('the dirty files inside the project go to main as unsaved paths; nothing else', () => {
+  dirty.docs.set('/p/b.ts', 'token');
+  dirty.docs.set('/p/sub/c.ts', 'x');
   dirty.docs.set('/other/x.ts', 'token');
   st().setQuery('token'); st().run();
-  emit(batch([file('a.ts'), file('b.ts', 3)]));
-  // The disk result of b.ts is dropped; its buffer waits until a later file (or done) shows nothing can come before it.
-  expect(st().files.map((f) => f.rel)).toEqual(['a.ts']);
-  emit(batch([file('d.ts')]));
-  expect(st().files.map((f) => f.rel)).toEqual(['a.ts', 'b.ts', 'd.ts']);
-  expect(st().files[1]!.lines.map((l) => l.line)).toEqual([2]);
-  expect(st().files[1]!.lines[0]!.text).toBe('buffer token');
-  emit(done());
-  expect(st().files.map((f) => f.rel)).toEqual(['a.ts', 'b.ts', 'd.ts']);
+  expect(started[0]!.unsaved.sort()).toEqual(['/p/b.ts', '/p/sub/c.ts']);
 });
 
-test('unsaved files with no disk result come out on done, in order', () => {
-  dirty.docs.set('/p/new.ts', 'token');
+test('a placeholder takes its buffer\'s result in main\'s place; one with no match vanishes', () => {
+  dirty.docs.set('/p/b.ts', 'one\nbuffer token\r\nthree');
+  dirty.docs.set('/p/c.ts', 'nothing here');
+  st().setQuery('token'); st().run();
+  emit(batch([file('a.ts'), placeholder('b.ts'), placeholder('c.ts'), file('d.ts')]));
+  expect(st().files.map((f) => f.rel)).toEqual(['a.ts', 'b.ts', 'd.ts']);
+  const b = st().files[1]!;
+  expect(b.unsaved).toBeUndefined();
+  expect(b.lines.map((l) => [l.line, l.text])).toEqual([[2, 'buffer token']]);
+});
+
+test('a dirty file main never lists (ignored, hidden, filtered out) never shows', () => {
+  dirty.docs.set('/p/node_modules/x.js', 'token');
+  dirty.docs.set('/p/ign.txt', 'token');
   st().setQuery('token'); st().run();
   emit(batch([file('a.ts')]));
-  expect(st().files.map((f) => f.rel)).toEqual(['a.ts']);
-  emit(batch([file('z.ts')]));
-  expect(st().files.map((f) => f.rel)).toEqual(['a.ts', 'new.ts', 'z.ts']);
-  dirty.docs.set('/p/zz.ts', 'token');
-  st().run();
   emit(done());
-  expect(st().files.map((f) => f.rel)).toEqual(['new.ts', 'zz.ts']);
+  expect(st().files.map((f) => f.rel)).toEqual(['a.ts']);
+});
+
+test('a dirty file in an ignored section keeps main\'s order', () => {
+  dirty.docs.set('/p/node_modules/x.js', 'token');
+  st().setQuery('token'); st().run();
+  emit(batch([file('z.ts'), placeholder('node_modules/x.js'), file('node_modules/y.js')]));
+  expect(st().files.map((f) => f.rel)).toEqual(['z.ts', 'node_modules/x.js', 'node_modules/y.js']);
+});
+
+test('a buffer over the editable size is left to the disk search', () => {
+  dirty.docs.set('/p/big.ts', 'token\n'.repeat(1_000_000));
+  st().setQuery('token'); st().run();
+  expect(started[0]!.unsaved).toEqual([]);
+});
+
+test('an empty query through setSpec stops the search like an empty field', () => {
+  st().setQuery('a'); st().run();
+  const id = cur();
+  st().setSpec({ query: '', regex: true });
+  expect(stopped).toEqual([id]);
+  expect(st().phase).toBe('idle');
 });
 
 test('focusField seeds the spec, bumps the nonce and runs', () => {
