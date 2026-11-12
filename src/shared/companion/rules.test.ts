@@ -27,6 +27,12 @@ describe('rulesText', () => {
     expect(first).toContain('Cite paths relative to that folder, with forward slashes');
     expect(t).toMatch(/^- Cite code as a backticked project-relative path with forward slashes/m);
   });
+  it('teaches links with a full http(s) URL (the panel opens those in the browser), never forbids them', () => {
+    const t = rulesText(o);
+    expect(t).not.toMatch(/no links/i);
+    expect(t).toContain('Answer format (Markdown; no HTML, no images):');
+    expect(t).toMatch(/^- Links: `\[label\]\(https:\/\/…\)` with the full http\(s\) URL/m);
+  });
   it('fences what the user knows, as data', () => {
     const t = rulesText({ ...o, known: 'I know the auth flow' });
     expect(t).toMatch(/<what_i_know>\nI know the auth flow\n<\/what_i_know>/);

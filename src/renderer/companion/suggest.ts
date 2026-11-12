@@ -1,7 +1,7 @@
 // Ask companion: the suggestion chips a Catch me up leads to, and the Why? a choice asks.
 // Pure and light (the answer grammar and the strings only), so the live demo's tests check its script against the very
 // chips the panel builds (src/demo/engine/ask.test.ts). view.ts re-exports them for the panel.
-import { parseInline } from '@shared/companion/answer';
+import { parseInline, plainText } from '@shared/companion/answer';
 import type { CatchUp } from '@shared/companion/types';
 import { t } from '../i18n/en';
 
@@ -10,11 +10,11 @@ const SUGGESTION_MAX = 60;
 const fits = (q: string) => q.length <= SUGGESTION_MAX;
 
 /**
- * Why? on a choice: "Why <choice>?" — a plain first word lowercased ("Skew window…" → "skew window…"; names,
- * acronyms and "I" kept), the trailing stop and the code ticks dropped.
+ * Why? on a choice: "Why <choice>?" — the choice as it reads (no code ticks, no bold stars, a link by its label), a
+ * plain first word lowercased ("Skew window…" → "skew window…"; names, acronyms and "I" kept), the trailing stop dropped.
  */
 export function whyQuestion(choice: string): string {
-  let s = choice.replace(/`/g, '').trim().replace(/[\s.…?!]+$/u, '');
+  let s = plainText(parseInline(choice)).replace(/`/g, '').trim().replace(/[\s.…?!]+$/u, '');
   const first = /^\S+/.exec(s)?.[0] ?? '';
   if (/^[A-Z][a-z'’-]*[,;:]?$/.test(first) && first !== 'I' && !/^I['’]/.test(first)) s = s.charAt(0).toLowerCase() + s.slice(1);
   return t.companion.whyQuestion(s);

@@ -1,8 +1,10 @@
 // Ask's formatted copies: every copy carries clean HTML, which ClickUp, Word and the like
 // paste with its bold, lists and code, and plain text. Chromium's own copy would carry the dark theme's computed colors
-// (light grey on Word's white page), so Ask writes its own: only p, br, strong, em, code, ol/ul/li, never a class or a
-// style. Pure: a selection arrives as plain nodes (copy-dom.ts turns a Range into them), an answer as its Markdown.
+// (light grey on Word's white page), so Ask writes its own: only p, br, strong, em, code, a (http and https only),
+// ol/ul/li, never a class or a style. Pure: a selection arrives as plain nodes (copy-dom.ts turns a Range into them), an
+// answer as its Markdown.
 import { parseAnswer, parseInline, type AnswerBlock, type Inline } from '@shared/companion/answer';
+import { isSafeUrl } from '@shared/links';
 import type { PointStatus, Thread, ThreadItem } from '@shared/companion/types';
 import { t } from '../i18n/en';
 import { itemHeading, pointTimes, threadMarkdown } from './view';
@@ -17,13 +19,14 @@ export const POINT_GLYPH: Record<PointStatus, string> = { done: '✓', in_progre
 
 // --- the model both flavours are written from -------------------------------------------------------------------------
 
-interface Fmt { b: boolean; i: boolean; code: boolean }
+/** A run's formatting: bold, italic, code, and the URL of the link it is part of. */
+interface Fmt { b: boolean; i: boolean; code: boolean; a: string | null }
 type Run = (Fmt & { s: string }) | 'br';
 type ListItem = { value: number | null; runs: Run[] };
 type Block = { k: 'p'; runs: Run[] } | { k: 'list'; ordered: boolean; start: number | null; items: ListItem[] };
 
-const PLAIN: Fmt = { b: false, i: false, code: false };
-const sameFmt = (a: Fmt, b: Fmt) => a.b === b.b && a.i === b.i && a.code === b.code;
+const PLAIN: Fmt = { b: false, i: false, code: false, a: null };
+const sameFmt = (a: Fmt, b: Fmt) => a.b === b.b && a.i === b.i && a.code === b.code && a.a === b.a;
 const endsBlank = (runs: Run[]) => { const last = runs.at(-1); return last === undefined || last === 'br' || /\s$/.test(last.s); };
 
 /** Text into a run list: whitespace collapses as the page shows it (pre: kept, its line breaks become breaks). */
@@ -40,7 +43,7 @@ function pushText(runs: Run[], s: string, f: Fmt, pre = false): void {
 function pushRun(runs: Run[], s: string, f: Fmt): void {
   const last = runs.at(-1);
   if (last !== undefined && last !== 'br' && sameFmt(last, f)) last.s += s;
-  else runs.push({ s, b: f.b, i: f.i, code: f.code });
+  else runs.push({ s, b: f.b, i: f.i, code: f.code, a: f.a });
 }
 
 /** A paragraph's or item's runs without the blank they end with; null when nothing is left. */
@@ -79,6 +82,8 @@ function resolve(n: CopyEl, c: Ctx): { tag: string; kids: CopyNode[]; c: Ctx; be
     b: c.b || tag === 'strong' || tag === 'b' || HEADINGS.test(tag) || wrap === 'strong',
     i: c.i || tag === 'em' || tag === 'i' || wrap === 'em',
     code: c.code || tag === 'code' || wrap === 'code',
+    // A link copies as one only to an http(s) URL, as the browser reads it; any other is its text.
+    a: tag === 'a' ? (a.href !== undefined && isSafeUrl(a.href) ? new URL(a.href.trim()).href : null) : c.a,
     pre: c.pre || a['data-copy-pre'] !== undefined
   };
   return { tag, kids: text !== undefined ? [text] : n.kids, c: next, before: a['data-copy-before'] ?? null };
@@ -187,6 +192,7 @@ function inlineModel(inline: readonly Inline[], runs: Run[], base: Fmt = PLAIN):
       case 'italic': pushText(runs, i.s, { ...base, i: true }); break;
       case 'code': pushRun(runs, i.s, { ...base, code: true }); break;
       case 'file': pushRun(runs, i.raw, { ...base, code: true }); break;
+      case 'link': inlineModel(i.label, runs, { ...base, a: i.url }); break;
     }
   }
   return runs;
@@ -260,9 +266,14 @@ export function threadCopy(thread: Thread, title: string): Copied {
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 const TAGS = ['strong', 'em', 'code'] as const;
-const tagsOf = (f: Fmt) => TAGS.filter((x) => (x === 'strong' ? f.b : x === 'em' ? f.i : f.code));
+/** A run's opening tags, outermost first: its link, then the formatting inside it. */
+const tagsOf = (f: Fmt): string[] => [
+  ...(f.a !== null ? [`a href="${esc(f.a).replace(/"/g, '&quot;')}"`] : []),
+  ...TAGS.filter((x) => (x === 'strong' ? f.b : x === 'em' ? f.i : f.code))
+];
+const isPlain = (f: Fmt) => !f.b && !f.i && !f.code && f.a === null;
 /** The formatting two neighbours share (a blank between them takes only that). */
-const meet = (a: Fmt, b: Run | undefined): Fmt => (b === undefined || b === 'br' ? PLAIN : { b: a.b && b.b, i: a.i && b.i, code: a.code && b.code });
+const meet = (a: Fmt, b: Run | undefined): Fmt => (b === undefined || b === 'br' ? PLAIN : { b: a.b && b.b, i: a.i && b.i, code: a.code && b.code, a: a.a === b.a ? a.a : null });
 
 /**
  * Runs as HTML: a tag stays open across the runs that share it (`<strong>Why <code>x</code></strong>`), and the blanks
@@ -271,7 +282,7 @@ const meet = (a: Fmt, b: Run | undefined): Fmt => (b === undefined || b === 'br'
 function runsHtml(runs: readonly Run[]): string {
   const parts: Run[] = [];
   runs.forEach((r, k) => {
-    if (r === 'br' || (!r.b && !r.i && !r.code)) { parts.push(r); return; }
+    if (r === 'br' || isPlain(r)) { parts.push(r); return; }
     const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(r.s)!;
     if (!m[2]) { parts.push({ ...meet(meet(r, runs[k - 1]), runs[k + 1]), s: r.s }); return; }
     if (m[1]) parts.push({ ...meet(r, runs[k - 1]), s: m[1] });
@@ -280,7 +291,7 @@ function runsHtml(runs: readonly Run[]): string {
   });
   let out = '';
   const open: string[] = [];
-  const close = (to: number) => { while (open.length > to) out += `</${open.pop()}>`; };
+  const close = (to: number) => { while (open.length > to) out += `</${open.pop()!.split(' ')[0]}>`; };
   for (const r of parts) {
     if (r === 'br') { out += '<br>'; continue; }
     const want = tagsOf(r);
@@ -294,7 +305,27 @@ function runsHtml(runs: readonly Run[]): string {
   return out;
 }
 
-const runsText = (runs: readonly Run[]) => runs.map((r) => (r === 'br' ? '\n' : r.s)).join('');
+/** Whether a link's label is its URL as written (a bare URL): the text then names it once. */
+function labelIsUrl(label: string, url: string): boolean {
+  try { return new URL(label.trim()).href === url; } catch { return false; }
+}
+
+/** Runs as plain text: a link's URL follows its label in parentheses, unless the label is the URL. */
+function runsText(runs: readonly Run[]): string {
+  let out = '';
+  let from = 0;
+  const linkOf = (r: Run | undefined) => (r === undefined || r === 'br' ? null : r.a);
+  runs.forEach((r, k) => {
+    if (r === 'br') { out += '\n'; return; }
+    if (r.a !== null && linkOf(runs[k - 1]) !== r.a) from = out.length;
+    out += r.s;
+    if (r.a === null || linkOf(runs[k + 1]) === r.a) return;
+    const label = out.slice(from);
+    const trimmed = label.trimEnd();
+    if (!labelIsUrl(label, r.a)) out = `${out.slice(0, from)}${trimmed} (${r.a})${label.slice(trimmed.length)}`;
+  });
+  return out;
+}
 
 function written(blocks: readonly Block[], text: string): Copied {
   const html = blocks.map((b) => {

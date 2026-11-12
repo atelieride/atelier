@@ -1335,6 +1335,10 @@ const strings = {
   // Ask: a read-only companion inside each session's pane.
   companion: {
     ask: 'Ask',
+    opensInBrowser: 'Opens in your browser',
+    linkTip: (url: string) => `${url} · Opens in your browser`,
+    openLink: 'Open Link',
+    copyLink: 'Copy Link',
     pill: 'Ask about this session',
     pillTip: (title: string) => `Ask about this session\nRead-only. It never interrupts ${title}.`,
     close: 'Close Ask',

@@ -1,10 +1,17 @@
 // Ask companion: the answer Markdown the model writes (see rules.ts) as blocks the renderer draws.
-// Deliberately tiny: verdict line, `:::detail` folds, paragraphs, lists, bold/italic/code and file references.
-// HTML and links stay literal text. Never throws; input is capped so a runaway answer can't hang the renderer.
+// Deliberately tiny: verdict line, `:::detail` folds, paragraphs, lists, bold/italic/code, file references and
+// http(s) links. HTML, images and any other link stay literal text. Never throws; input is capped so a runaway answer
+// can't hang the renderer.
+import { isSafeUrl } from '../links';
+
+/** A run of text with at most one formatting: also what a link's label is made of. */
+export type Span = { t: 'text' | 'bold' | 'italic' | 'code'; s: string };
 
 export type Inline =
-  | { t: 'text' | 'bold' | 'italic' | 'code'; s: string }
-  | { t: 'file'; path: string; from: number | null; to: number | null; raw: string };
+  | Span
+  | { t: 'file'; path: string; from: number | null; to: number | null; raw: string }
+  /** An http(s) link: `url` as the browser reads it (what opens, and what the tooltip shows), never the raw spelling. */
+  | { t: 'link'; url: string; label: Span[] };
 
 export type AnswerBlock =
   | { k: 'verdict'; state: 'done' | 'in-progress' | 'not-started' | 'unclear'; label: string; progress: { n: number; m: number } | null }
@@ -37,8 +44,168 @@ function fileRef(code: string): Inline | null {
 
 const isWord = (c: string | undefined): boolean => c !== undefined && /[A-Za-z0-9]/.test(c);
 
-/** One paragraph's spans (bold, italic, code, file references): also the Catch me up card's texts. */
-export function parseInline(src: string): Inline[] {
+// --- links -----------------------------------------------------------------------------------------------------------
+
+/** The longest URL read as a link: a longer one stays text rather than link to a part of it. */
+const URL_MAX = 2048;
+/** The longest URL the app opens, as the browser spells it (non-ASCII grows ninefold once encoded). */
+const HREF_MAX = 4096;
+/** Invisible and direction marks: never in a URL, where they would hide or reorder what the text shows. */
+const INVISIBLE = '\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2069\\uFEFF';
+/** A delimited URL's characters (`<…>`, `(…)`): no blank, quote, backtick, angle or square bracket, invisible mark. */
+const URL_CHAR = `[^\\s<>"\`[\\]${INVISIBLE}]`;
+/**
+ * A bare URL's: printable ASCII without those, so the text written right after one (Japanese, full-width punctuation,
+ * no blank between) is never part of it.
+ */
+const BARE_CHAR = new RegExp('[\\x21\\x23-\\x3B\\x3D\\x3F-\\x5A\\x5C\\x5E\\x5F\\x61-\\x7E]');
+const BARE = new RegExp(`https?://${BARE_CHAR.source}{1,${URL_MAX}}`, 'iy');
+const AUTO = new RegExp(`<(https?://${URL_CHAR}{1,${URL_MAX}})>`, 'iy');
+// `[label](url)`: one level of balanced parentheses in the URL (a wiki page's `Token_(auth)`), as GitHub reads it.
+const P = `[^\\s<>"\`[\\]()${INVISIBLE}]`;
+const MD_LINK = new RegExp(`\\[([^[\\]\\n]{0,300})\\]\\((https?://${P}{1,${URL_MAX}}(?:\\(${P}{0,${URL_MAX}}\\)${P}{0,${URL_MAX}})?)\\)`, 'iy');
+/** What ends a sentence rather than a bare URL. */
+const TRAILING = /[.,;:!?'*_~]/;
+const VISIBLE = new RegExp(`[^\\s${INVISIBLE}]`);
+
+/** A bare URL without the punctuation after it: a closing parenthesis only when the URL opened none for it. */
+function trimBare(url: string): string {
+  let opens = 0;
+  let closes = 0;
+  for (const ch of url) { if (ch === '(') opens++; else if (ch === ')') closes++; }
+  let end = url.length;
+  for (;;) {
+    const last = url[end - 1];
+    if (last !== undefined && TRAILING.test(last)) { end--; continue; }
+    if (last === ')' && closes > opens) { end--; closes--; continue; }
+    return url.slice(0, end);
+  }
+}
+
+/**
+ * The URL as the browser reads it; null when it isn't an http(s) one, is too long to be read whole, or opens another
+ * host than the one written: credentials before it (`github.com@evil.test`), anything encoded in it.
+ */
+function target(raw: string): string | null {
+  if (raw.length > `https://`.length + URL_MAX || !isSafeUrl(raw)) return null;
+  const u = new URL(raw);
+  const written = /^https?:\/\/([^/?#\\]*)/i.exec(raw)?.[1] ?? '';
+  if (u.username || u.password || /[@%]/.test(written)) return null;
+  return u.href.length > HREF_MAX ? null : u.href;
+}
+
+/** The hosts a label's words name (`github.com/acme`, `https://…`, `README.md`), as a URL spells them. */
+function namedHosts(label: string): string[] {
+  const out: string[] = [];
+  for (const word of label.split(/[\s,;()<>"'`*]+/)) {
+    const host = word.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').split(/[/?#:@\\]/)[0]!.replace(/\.+$/, '');
+    if (!/^[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,63}$/u.test(host)) continue;
+    try { out.push(new URL(`http://${host}`).hostname); } catch { /* not a host after all */ }
+  }
+  return out;
+}
+
+const sameSite = (a: string, b: string) => a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
+
+/** Whether `[label](…)` holds a code span that runs past it: code binds tighter than a link (`[a \`b](…)\``). */
+function codeCrosses(src: string, label: string, after: number): boolean {
+  return (label.split('`').length - 1) % 2 === 1 && src.indexOf('`', after) !== -1;
+}
+
+/**
+ * A link at `i`: `[label](https://…)`, `<https://…>` or a bare http(s) URL at a word's start. `url` is null when it reads
+ * as one but can't be opened: its whole run then stays text, and the scan goes on after it (each character is read by
+ * one bounded match at most once, so the parse stays linear).
+ */
+function linkAt(src: string, i: number): { end: number; url: string | null; label: string | null } | null {
+  const c = src[i];
+  if (c === '[') {
+    MD_LINK.lastIndex = i;
+    const m = MD_LINK.exec(src);
+    if (!m) return null;
+    if (codeCrosses(src, m[1]!, i + m[1]!.length + 2)) return null;
+    return { end: MD_LINK.lastIndex, url: target(m[2]!), label: m[1]! };
+  }
+  if (c === '<') {
+    AUTO.lastIndex = i;
+    const m = AUTO.exec(src);
+    if (!m) return null;
+    return { end: AUTO.lastIndex, url: target(m[1]!), label: null };
+  }
+  if ((c === 'h' || c === 'H') && !isWord(src[i - 1])) {
+    BARE.lastIndex = i;
+    const m = BARE.exec(src);
+    if (!m) return null;
+    // Cut at the cap with more URL after it: too long to be the address written; all of it stays text.
+    if (BARE_CHAR.test(src[BARE.lastIndex] ?? ' ')) {
+      let end = BARE.lastIndex;
+      while (end < src.length && BARE_CHAR.test(src[end]!)) end++;
+      return { end, url: null, label: null };
+    }
+    // The URL of a Markdown link not read as one (a title after it, or not closed yet while it streams): text, never a
+    // live link to a part of it.
+    if (src[i - 1] === '(' && src[i - 2] === ']') return { end: BARE.lastIndex, url: null, label: null };
+    const raw = trimBare(m[0]);
+    return { end: i + raw.length, url: target(raw), label: null };
+  }
+  return null;
+}
+
+/**
+ * A link's spans: its label's (no link, no file chip inside one), or the URL as written; `as` formats the plain text.
+ * A label with nothing to see, or naming another site than the one it opens, shows the URL instead.
+ */
+function linkOf(src: string, i: number, l: { end: number; url: string; label: string | null }, as: Span['t'] = 'text'): Inline {
+  const auto = src[i] === '<' ? 1 : 0;
+  let label: Span[] = l.label === null ? [{ t: 'text', s: src.slice(i + auto, l.end - auto) }] : parseInline(l.label, false) as Span[];
+  if (l.label !== null) {
+    const words = label.map((x) => x.s).join('');
+    const host = new URL(l.url).hostname;
+    if (!VISIBLE.test(words) || namedHosts(words).some((h) => !sameSite(h, host))) label = [{ t: 'text', s: l.url }];
+  }
+  return { t: 'link', url: l.url, label: label.map((x) => (x.t === 'text' ? { t: as, s: x.s } : x)) };
+}
+
+/**
+ * A bold or italic run: plain, or cut around the links it holds (each a link with a label in that formatting). A code
+ * span inside stays as written (emphasis holds plain text), never a link.
+ */
+function emphasized(as: 'bold' | 'italic', s: string, links: boolean): Inline[] {
+  if (!links) return [{ t: as, s }];
+  const out: Inline[] = [];
+  let text = '';
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === '`') {
+      const end = s.indexOf('`', i + 1);
+      if (end !== -1) { text += s.slice(i, end + 1); i = end + 1; continue; }
+    }
+    const l = linkAt(s, i);
+    if (l) {
+      if (l.url === null) text += s.slice(i, l.end);
+      else { if (text) out.push({ t: as, s: text }); text = ''; out.push(linkOf(s, i, { ...l, url: l.url }, as)); }
+      i = l.end;
+      continue;
+    }
+    text += s[i];
+    i++;
+  }
+  if (text) out.push({ t: as, s: text });
+  return out;
+}
+
+/** Spans as they read, without their Markdown: a file reference as written, a link by its label. */
+export function plainText(inline: readonly Inline[]): string {
+  return inline.map((i) => (i.t === 'file' ? i.raw : i.t === 'link' ? plainText(i.label) : i.s)).join('');
+}
+
+// --- spans -----------------------------------------------------------------------------------------------------------
+
+/**
+ * One paragraph's spans (bold, italic, code, file references, links): also the Catch me up card's texts. `links` false
+ * reads a link's label: no link inside it, and its code stays code (a file chip is a button: never inside a link).
+ */
+export function parseInline(src: string, links = true): Inline[] {
   const out: Inline[] = [];
   let text = '';
   // A failed closer search from `s` to the end of the line means no later opener on that line finds one either.
@@ -47,12 +214,19 @@ export function parseInline(src: string): Inline[] {
   let i = 0;
   while (i < src.length) {
     const c = src[i]!;
+    const l = links ? linkAt(src, i) : null;
+    if (l) {
+      if (l.url === null) text += src.slice(i, l.end);
+      else { flush(); out.push(linkOf(src, i, { ...l, url: l.url })); }
+      i = l.end;
+      continue;
+    }
     if (c === '`') {
       const end = src.indexOf('`', i + 1);
       if (end > i + 1) {
         flush();
         const code = src.slice(i + 1, end);
-        out.push(fileRef(code) ?? { t: 'code', s: code });
+        out.push((links ? fileRef(code) : null) ?? { t: 'code', s: code });
         i = end + 1;
         continue;
       }
@@ -60,7 +234,7 @@ export function parseInline(src: string): Inline[] {
       const end = src.indexOf('**', i + 2);
       if (end > i + 2) {
         flush();
-        out.push({ t: 'bold', s: src.slice(i + 2, end) });
+        out.push(...emphasized('bold', src.slice(i + 2, end), links));
         i = end + 2;
         continue;
       }
@@ -73,7 +247,7 @@ export function parseInline(src: string): Inline[] {
         while (end !== -1 && end < lineEnd && (/\s/.test(src[end - 1]!) || (c === '_' && isWord(src[end + 1])))) end = src.indexOf(c, end + 1);
         if (end !== -1 && end < lineEnd && end > i + 1) {
           flush();
-          out.push({ t: 'italic', s: src.slice(i + 1, end) });
+          out.push(...emphasized('italic', src.slice(i + 1, end), links));
           i = end + 1;
           continue;
         }

@@ -1,5 +1,5 @@
 // Ask companion: what the panel shows, pure. The panel and its host only render these.
-import { parseAnswer, type Inline } from '@shared/companion/answer';
+import { parseAnswer, plainText } from '@shared/companion/answer';
 import type { CatchPoint, CompanionModel, Thread, ThreadItem } from '@shared/companion/types';
 import { clockTime } from '../work-view';
 import { agoLower } from '../connectors-view';
@@ -278,7 +278,6 @@ export function liveRuns(thread: Thread | null, runs: Record<string, RunView>, t
 }
 
 const ANNOUNCE_MAX = 200;
-const plain = (inline: readonly Inline[]) => inline.map((i) => (i.t === 'file' ? i.raw : i.s)).join('');
 
 /** What a screen reader hears when an answer lands: its verdict and its opening text, no Markdown, cut short. */
 export function plainAnswer(markdown: string): string {
@@ -287,8 +286,8 @@ export function plainAnswer(markdown: string): string {
   const verdict = blocks[0]?.k === 'verdict' ? blocks[0] : null;
   if (verdict) parts.push(`${verdict.label.trim().replace(/[.!?]?$/, '.')}`);
   const first = blocks.find((b) => b.k === 'para' || b.k === 'list' || b.k === 'detail');
-  if (first?.k === 'para') parts.push(plain(first.inline));
-  else if (first?.k === 'list' && first.items[0]) parts.push(plain(first.items[0]));
+  if (first?.k === 'para') parts.push(plainText(first.inline));
+  else if (first?.k === 'list' && first.items[0]) parts.push(plainText(first.items[0]));
   else if (first?.k === 'detail') parts.push(first.title);
   const text = parts.join(' ').replace(/\s+/g, ' ').trim();
   return text.length > ANNOUNCE_MAX ? `${text.slice(0, ANNOUNCE_MAX)}…` : text;

@@ -12,7 +12,8 @@
 // - FAIL: Claude starts, then exits with an error on stderr (an `exit` error item with its first line).
 // - anything else: an answer streamed in chunks after reading the chat (its cwd, by its real path as Claude Code reports
 //   it), searching the code and reading src/app.ts: a Verdict line, a numbered list, a Detail block and `src/app.ts:2`.
-//   SLOW in the question streams it slowly (a test stops it midway).
+//   SLOW in the question streams it slowly (a test stops it midway). LINKS: the same reading, then an answer with
+//   links instead (a Markdown link with a bold label, a bare URL, a javascript: one that must stay text).
 // ATELIER_TEST_COMPANION_DELAY: the pause between chunks in ms, and before the first one (default 40; SLOW: 700).
 // ATELIER_TEST_COMPANION_CATCHUP_MS: a Catch me up's pause after reading the chat, before its result (default none).
 // ATELIER_TEST_COMPANION_SCRIPT (the website's shots, tests/e2e/site-shots.manual.ts): a JSON file with the demo world's
@@ -84,7 +85,13 @@ async function main() {
   await read('t-chat', join(process.cwd(), 'chat.md'));
   await tool('t-grep', 'Grep', { pattern: 'expired', path: project });
   await read('t-app', join(project, 'src', 'app.ts'));
-  const answer = [
+  // LINKS: an answer with links (a Markdown one with a bold label, a bare URL) and one that must stay text.
+  const answer = /\bLINKS\b/.test(input) ? [
+    'I commented on two tasks:\n\n',
+    '- Created: [**F15**, the export case](https://tasks.acme-store.test/t/86c0f15)\n',
+    '- Commented on https://tasks.acme-store.test/t/86c0f11.\n\n',
+    'Not a link: [notes](javascript:alert(1)).\n'
+  ] : [
     'Verdict: in-progress — Not yet · 2/3 tests fixed\n\n',
     'Two of the three failing auth tests pass now; ',
     'the boundary one is still red.\n\n',

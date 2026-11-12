@@ -29,7 +29,7 @@ export function rulesText(o: { title: string; project: string; answers: AnswerSt
     '7. Answer in the language of the question.',
   ];
   const grammar = [
-    'Answer format (Markdown; no HTML, no links, no images):',
+    'Answer format (Markdown; no HTML, no images):',
     '- The first line of a status answer is exactly `Verdict: <done|in-progress|not-started|unclear> — <label>`. An `n/m` in the label draws a meter.',
     '  Example: `Verdict: in-progress — 2/3 tests fixed`',
     '- Specialist detail goes in a folded block, with `:::detail <title>` and `:::` each on their own line.',
@@ -38,6 +38,7 @@ export function rulesText(o: { title: string; project: string; answers: AnswerSt
     '  The cache is keyed by user id.',
     '  :::',
     '- Cite code as a backticked project-relative path with forward slashes, on every system, and an optional line or range: `src/a.ts:58` or `src/a.ts:41–77`.',
+    '- Links: `[label](https://…)` with the full http(s) URL, never in backticks; they open in the user\'s browser. Only URLs you read or are sure of; a project file is a path, never a link.',
   ];
   const out = [
     ...lines, '', ...grammar,

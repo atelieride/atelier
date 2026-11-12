@@ -618,6 +618,110 @@ test('Ask answers: a question streams with its trace into a verdict chip, steps,
   }
 });
 
+// The fake's answer to a question with LINKS in it.
+const LINKS_ANSWER = 'I commented on two tasks:\n\n- Created: [**F15**, the export case](https://tasks.acme-store.test/t/86c0f15)\n'
+  + '- Commented on https://tasks.acme-store.test/t/86c0f11.\n\nNot a link: [notes](javascript:alert(1)).\n';
+
+test('Ask answers with links: a Markdown link and a bare URL, their real target in the tooltip, open in the browser on a click, Enter or their menu (Shift+F10 too: Open Link, Copy Link); a javascript: link stays text; Copy and a selection keep the links', async () => {
+  const urlLog = join(mkdtempSync(join(tmpdir(), 'atl-ask-urls-')), 'urls.log');
+  writeFileSync(urlLog, '');
+  const { app, win, home } = await launch({ ATELIER_TEST_URL_LOG: urlLog });
+  try {
+    await askOff(app, win);
+    await newSession(win, 'auth-refactor');
+    const panel = win.getByRole('complementary', { name: 'Ask about auth-refactor' });
+    const composer = panel.getByRole('textbox', { name: 'Ask about auth-refactor' });
+    await command(app, 'ask-session');
+    await expect(composer).toBeFocused();
+    await composer.fill('Did you comment on the tasks? Send me the LINKS');
+    await composer.press('Enter');
+    const answer = panel.getByRole('log', { name: 'Thread' }).locator('.ask-item[data-kind="answer"]');
+    await expect(answer).toHaveCount(1, { timeout: 15000 });
+
+    const F15 = 'https://tasks.acme-store.test/t/86c0f15', F11 = 'https://tasks.acme-store.test/t/86c0f11';
+    // Two links, named by their label (the ↗ is for the eyes); the javascript: one reads as written.
+    const created = answer.getByRole('link', { name: 'F15, the export case' });
+    const bare = answer.getByRole('link', { name: F11 });
+    await expect(answer.getByRole('link')).toHaveCount(2);
+    await expect(created.locator('strong')).toHaveText('F15');
+    await expect(created).toHaveAccessibleDescription('Opens in your browser');
+    await expect(answer.locator('.ask-p').last()).toHaveText('Not a link: [notes](javascript:alert(1)).');
+    // Hovered: where it really goes, and that it leaves the app.
+    await created.hover();
+    await expect(win.locator('.tooltip')).toHaveText(`${F15} · Opens in your browser`);
+    await look(win, `${SHOTS}/ask-links.png`, { settle: 300 });
+
+    // A click opens it in the browser (main checks the URL again), never in the app's window.
+    const opened = () => readFileSync(urlLog, 'utf8').split('\n').filter(Boolean);
+    await created.click();
+    await expect.poll(opened).toEqual([F15]);
+    expect(win.url()).not.toContain('acme-store.test');
+    // The keyboard: Enter on a focused link opens it.
+    await bare.focus();
+    await win.keyboard.press('Enter');
+    await expect.poll(opened).toEqual([F15, F11]);
+
+    // Its menu, from the keyboard (Shift+F10) or a right-click: Open Link, Copy Link.
+    const clipLog = join(home, 'test-clipboard.log');
+    const copies = () => (existsSync(clipLog) ? readFileSync(clipLog, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as string | { text: string; html: string }) : []);
+    await win.keyboard.press('Shift+F10');
+    await expect(win.getByRole('menuitem')).toHaveText(['Open Link', 'Copy Link']);
+    await look(win, `${SHOTS}/ask-link-menu.png`, { settle: 200 });
+    await win.getByRole('menuitem', { name: 'Copy Link' }).click();
+    await expect.poll(copies).toEqual([F11]);
+    await created.click({ button: 'right' });
+    await win.getByRole('menuitem', { name: 'Open Link' }).click();
+    await expect.poll(opened).toEqual([F15, F11, F15]);
+
+    // A few of its words picked with the mouse are a selection, never a click: the browser stays closed (the next link
+    // opened comes right after the last one).
+    const box = (await created.boundingBox())!;
+    await win.mouse.move(box.x + box.width * 0.4, box.y + box.height / 2);
+    await win.mouse.down();
+    await win.mouse.move(box.x + box.width * 0.85, box.y + box.height / 2, { steps: 6 });
+    await win.mouse.up();
+    expect(await win.evaluate(() => window.getSelection()?.toString() ?? '')).toMatch(/\w+ \w+/);
+    await bare.focus();
+    await win.keyboard.press('Enter');
+    await expect.poll(opened).toEqual([F15, F11, F15, F11]);
+
+    // Copy under the answer: its Markdown as the text, the links as links in the HTML (ClickUp and Word keep them).
+    await answer.getByRole('button', { name: 'Copy' }).click();
+    await expect.poll(() => copies().at(-1)).toEqual({
+      text: LINKS_ANSWER,
+      html: `<p>I commented on two tasks:</p><ul><li>Created: <a href="${F15}"><strong>F15</strong>, the export case</a></li><li>Commented on <a href="${F11}">${F11}</a>.</li></ul>`
+        + '<p>Not a link: [notes](javascript:alert(1)).</p>'
+    });
+
+    // A selection (Edit › Copy): the link comes along, its URL after its label in the text. A guard at the window keeps
+    // Chromium's own copy from ever reaching the real clipboard, and counts the copies Ask took.
+    type Guard = { copyEvents: { seen: number; ask: number } };
+    await win.evaluate(() => {
+      const w = window as unknown as Guard;
+      w.copyEvents = { seen: 0, ask: 0 };
+      window.addEventListener('copy', (e) => { w.copyEvents.seen++; if (e.defaultPrevented) w.copyEvents.ask++; else e.preventDefault(); });
+    });
+    const taken = () => win.evaluate(() => (window as unknown as Guard).copyEvents);
+    const copySelection = async () => {
+      const before = await taken();
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.copy());
+      await expect.poll(taken).toEqual({ seen: before.seen + 1, ask: before.ask + 1 });
+    };
+    await win.evaluate(() => window.getSelection()!.selectAllChildren(document.querySelector('.ask-item[data-kind="answer"] .ask-ul li')!));
+    await copySelection();
+    await expect.poll(() => copies().at(-1)).toEqual({ text: `Created: F15, the export case (${F15})`, html: `<p>Created: <a href="${F15}"><strong>F15</strong>, the export case</a></p>` });
+    // A few words inside a link: still a link to it.
+    await win.evaluate(() => {
+      const label = document.querySelector('.ask-item[data-kind="answer"] .ask-link')!.childNodes[1]!;
+      window.getSelection()!.setBaseAndExtent(label, 2, label, ', the export'.length);
+    });
+    await copySelection();
+    await expect.poll(() => copies().at(-1)).toEqual({ text: `the export (${F15})`, html: `<p><a href="${F15}">the export</a></p>` });
+  } finally {
+    await stop(app, home);
+  }
+});
+
 test("Ask's thread is selectable and copies formatted: a mouse selection and ⌘C, a selection across blocks, a file chip, a card's points, Copy Thread (clean HTML for documents, text too); Catch me up any time: the composer's button after a question, the ⋯ menu, the palette", async () => {
   const { app, win, home, log } = await launch({ ATELIER_TEST_COMPANION_DELAY: '450', ATELIER_TEST_COMPANION_CATCHUP_MS: '1200' });
   try {

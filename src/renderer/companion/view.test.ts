@@ -207,6 +207,10 @@ describe('whyQuestion', () => {
     expect(whyQuestion('Compared expiry with `<=`…')).toBe('Why compared expiry with <=?');
     expect(whyQuestion('  Kept it?  ')).toBe('Why kept it?');
   });
+  test('asks about what the choice reads as: a link by its label, bold without its stars', () => {
+    expect(whyQuestion('Based it on [F15](https://acme-store.test/t/15), the **export** case.')).toBe('Why based it on F15, the export case?');
+    expect(whyQuestion('https://acme-store.test/t/15 as the base')).toBe('Why https://acme-store.test/t/15 as the base?');
+  });
 });
 
 describe('pointTimes', () => {
@@ -372,5 +376,9 @@ describe('plainAnswer (what a screen reader hears when an answer lands)', () => 
     expect(plainAnswer('1. one\n2. two')).toBe('one');
     expect(plainAnswer('x'.repeat(400))).toHaveLength(201);
     expect(plainAnswer('')).toBe('');
+  });
+  test('a link reads as its label, never its Markdown', () => {
+    expect(plainAnswer('Created [the **F15** task](https://acme-store.test/t/15), see https://acme-store.test/t/11.')).toBe('Created the F15 task, see https://acme-store.test/t/11.');
+    expect(plainAnswer('- [F15](https://acme-store.test/t/15)')).toBe('F15');
   });
 });

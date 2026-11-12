@@ -3,8 +3,9 @@
 // a list). Only the attributes the copy reads come along.
 import { copyOf, POINT_GLYPH, type Copied, type CopyEl, type CopyNode } from './copy';
 
-const READ = ['data-copy', 'data-copy-text', 'data-copy-wrap', 'data-copy-before', 'data-copy-pre', 'aria-hidden', 'start', 'value'];
-const FORMAT = new Set(['strong', 'b', 'em', 'i', 'code']);
+const READ = ['data-copy', 'data-copy-text', 'data-copy-wrap', 'data-copy-before', 'data-copy-pre', 'aria-hidden', 'start', 'value', 'href'];
+// A few words of a link stay a link to it, as a few words of a bold run stay bold.
+const FORMAT = new Set(['strong', 'b', 'em', 'i', 'code', 'a']);
 
 function shallow(el: Element): CopyEl {
   const attrs: Record<string, string> = {};

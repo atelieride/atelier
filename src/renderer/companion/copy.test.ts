@@ -86,6 +86,25 @@ describe('copyOf (a selection)', () => {
     expect(copyOf([el('div', {}, 'loose ', el('em', {}, 'text'), el('div', {}, p('inner')), 'after')])).toEqual({ html: '<p>loose <em>text</em></p><p>inner</p><p>after</p>', text: 'loose text\n\ninner\n\nafter' });
   });
 
+  test('a link copies as a link to its URL; its text names the URL after a label that differs from it', () => {
+    const U = 'https://tasks.acme-store.test/t/86c0f15?a=1&b=2';
+    const a = (href: string, ...kids: CopyNode[]) => el('a', { href }, ...kids, el('span', { 'aria-hidden': 'true' }, '↗'));
+    expect(copyOf([p('See ', a(U, 'the ', el('strong', {}, 'F15'), ' task'), '.')])).toEqual({
+      html: '<p>See <a href="https://tasks.acme-store.test/t/86c0f15?a=1&amp;b=2">the <strong>F15</strong> task</a>.</p>',
+      text: `See the F15 task (${U}).`
+    });
+    expect(copyOf([p(a(U, U))])).toEqual({ html: `<p><a href="${U.replace('&', '&amp;')}">${U.replace('&', '&amp;')}</a></p>`, text: U });
+  });
+
+  test('two links side by side stay two; a few words of a link keep it; a link to anything but http(s) is its text', () => {
+    const one = 'https://acme-store.test/1', two = 'https://acme-store.test/2';
+    expect(copyOf([p(el('a', { href: one }, 'one'), el('a', { href: two }, 'two'))]).html).toBe(`<p><a href="${one}">one</a><a href="${two}">two</a></p>`);
+    expect(copyOf(['F1'], [el('p'), el('a', { href: one })])).toEqual({ html: `<p><a href="${one}">F1</a></p>`, text: `F1 (${one})` });
+    expect(copyOf([p(el('a', { href: 'javascript:alert(1)' }, 'x'))])).toEqual({ html: '<p>x</p>', text: 'x' });
+    // An href is written as the browser reads it, never as spelled (control characters, case).
+    expect(copyOf([p(el('a', { href: '\u0001HTTPS://ACME-STORE.TEST/a' }, 'x'))]).html).toBe('<p><a href="https://acme-store.test/a">x</a></p>');
+  });
+
   test('HTML in the text is text', () => {
     expect(copyOf([p('<script>alert("x")</script> & co')]).html).toBe('<p>&lt;script&gt;alert("x")&lt;/script&gt; &amp; co</p>');
   });
@@ -107,6 +126,17 @@ describe('answerCopy (Copy under an answer)', () => {
 
   test('HTML the model wrote stays text', () => {
     expect(answerCopy('<b>x</b>').html).toBe('<p>&lt;b&gt;x&lt;/b&gt;</p>');
+  });
+
+  test('links: a link to the URL the panel opens, with its label as written (bold kept), in lists and Detail boxes too', () => {
+    const U = 'https://tasks.acme-store.test/t/86c0f15';
+    const md = `See [the **F15** task](${U}).\n\n- **[F11](https://acme-store.test/t/1)**, then https://acme-store.test/t/2.\n\n:::detail Where\n<${U}>\n:::\n`;
+    expect(answerCopy(md)).toEqual({
+      text: md,
+      html: `<p>See <a href="${U}">the <strong>F15</strong> task</a>.</p>`
+        + '<ul><li><a href="https://acme-store.test/t/1"><strong>F11</strong></a>, then <a href="https://acme-store.test/t/2">https://acme-store.test/t/2</a>.</li></ul>'
+        + `<p><strong>Where</strong></p><p><a href="${U}">${U}</a></p>`
+    });
   });
 });
 

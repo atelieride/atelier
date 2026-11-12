@@ -3828,6 +3828,14 @@ button.rd-jrow:hover { background: var(--bg-hover); }
 .ask-ans-stopped { color: var(--text-3); }
 .ask-p { margin: 0; overflow-wrap: anywhere; }
 .ask-ans strong { font-weight: 600; color: var(--text); }
+/* A link in an answer or a card: the Markdown preview's look (a soft underline that firms on hover), ↗ for leaving the app. */
+.ask-link { color: var(--link); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--link) 30%, transparent); cursor: pointer; overflow-wrap: anywhere; transition: border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.ask-link:hover { color: var(--text); border-bottom-color: var(--link); }
+.ask-link:active { border-bottom-color: var(--violet); }
+.ask-link:focus-visible { outline: none; border-radius: 3px; box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); }
+.ask-ans .ask-link strong, .ask-link b { color: inherit; }
+.ask-ext { user-select: none; margin-left: 2px; font-size: 10.5px; color: var(--text-4); transition: color var(--t-fast) var(--ease); }
+.ask-link:hover .ask-ext { color: var(--link); }
 .ask-ans code { padding: 1px 4px; border-radius: 4px; font: 11.5px var(--mono); font-variant-ligatures: none; color: var(--md-code); background: var(--tint-pink); overflow-wrap: anywhere; }
 .ask-verdict { align-self: flex-start; max-width: 100%; display: inline-flex; align-items: center; gap: 7px; min-height: 24px; margin: 0; padding: 3px 11px 3px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1.35; color: var(--text-2); background: var(--bg-3); box-shadow: inset 0 0 0 1px var(--line-strong); animation: atl-pop var(--t-med) var(--ease) both; }
 .ask-verdict.is-done { color: var(--done); background: var(--tint-done); box-shadow: inset 0 0 0 1px var(--edge-done); }

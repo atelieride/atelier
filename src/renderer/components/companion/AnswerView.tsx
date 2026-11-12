@@ -8,7 +8,8 @@ import { useApp } from '../../store';
 import { t } from '../../i18n/en';
 import { chipLookups, resolveChip, type ChipTarget, type RunView } from '../../companion/model';
 import { MODEL_LABEL, answerMeta, liveMarkdown, meterOf } from '../../companion/view';
-import { InlineText } from './InlineText';
+import { InlineText, LinkLabel, SpanView } from './InlineText';
+import { AnswerLink } from './AnswerLink';
 import { Trace } from './Trace';
 import { AnswerActions } from './AnswerActions';
 import { StaleBar } from './StaleBar';
@@ -179,14 +180,12 @@ function Inlines({ inline, chips }: { inline: readonly Inline[]; chips: Chips })
     <>
       {inline.map((i, k) => {
         switch (i.t) {
-          case 'text': return <Fragment key={k}>{i.s}</Fragment>;
-          case 'bold': return <strong key={k}>{i.s}</strong>;
-          case 'italic': return <em key={k}>{i.s}</em>;
-          case 'code': return <code key={k}>{i.s}</code>;
           case 'file': {
             const target = chips[i.path];
             return target ? <FileChip key={k} r={i} target={target} /> : <code key={k}>{i.raw}</code>;
           }
+          case 'link': return <AnswerLink key={k} url={i.url}><LinkLabel label={i.label} strong /></AnswerLink>;
+          default: return <SpanView key={k} s={i} strong />;
         }
       })}
     </>
@@ -243,7 +242,7 @@ function Detail({ title, body, chips, open: initial, fold, tail }: { title: stri
       <div className={`ask-detail${open ? ' is-open' : ''}`}>
         <button type="button" className="ask-detail-hd" aria-expanded={open} aria-controls={open ? id : undefined} onClick={toggle} data-copy="keep" data-copy-wrap="strong">
           <span className="ask-detail-label" data-copy="skip">{t.companion.detail}</span>{' '}
-          <span className="ask-detail-t"><InlineText text={title} /></span>
+          <span className="ask-detail-t"><InlineText text={title} links={false} /></span>
           <Icon name="chevronDown" size={14} stroke={1.7} />
         </button>
         {open && <div id={id} className="ask-detail-bd"><Blocks blocks={body} chips={chips} open={false} folds={null} tail={tail} /></div>}
