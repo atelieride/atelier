@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import type { FetchResult } from './git/fetch';
 import type { ScmFetchState } from '@shared/scm';
 import type { AutoFetch } from '@shared/settings';
-import { FetchScheduler, VIEW_GATE_MS, type FetchRepo } from './fetch-scheduler';
+import { FetchScheduler, MAX_FETCHES, VIEW_GATE_MS, type FetchRepo } from './fetch-scheduler';
 import { WriteQueue } from './git/write-queue';
 
 const MIN = 60_000;
@@ -208,23 +208,105 @@ describe('manual fetches', () => {
     expect((await v).outcome).toBe('ok');
   });
 
-  test('at most 2 at once app-wide; a manual request goes before waiting automatic ones', async () => {
+  test('automatic fetches: at most 2 at once app-wide; a manual request starts beside them', async () => {
     const { w, s } = world();
     const ps = ['/a', '/b', '/c'].map((r) => s.request(repo(r), 'view'));
     await flush();
     expect(w.runs.map((r) => r.root)).toEqual(['/a', '/b']);
+    expect(s.state('/c/.git').running).toBe(true);
     const d = s.request(repo('/d'), 'manual');
     await flush();
-    expect(s.state('/d/.git').running).toBe(true);
+    expect(w.runs.map((r) => r.root)).toEqual(['/a', '/b', '/d']);
+    w.runs[2]!.finish({ outcome: 'ok' });
+    await flush(); await flush();
+    // A manual fetch ending frees no automatic slot: /c still waits for /a or /b.
+    expect(w.runs.map((r) => r.root)).toEqual(['/a', '/b', '/d']);
     w.runs[0]!.finish({ outcome: 'ok' });
     await flush(); await flush();
-    expect(w.runs.map((r) => r.root)).toEqual(['/a', '/b', '/d']);
-    w.runs[1]!.finish({ outcome: 'ok' });
-    await flush(); await flush();
     expect(w.runs.map((r) => r.root)).toEqual(['/a', '/b', '/d', '/c']);
-    w.runs[2]!.finish({ outcome: 'ok' });
+    w.runs[1]!.finish({ outcome: 'ok' });
     w.runs[3]!.finish({ outcome: 'ok' });
     await Promise.all([...ps, d]);
+  });
+
+  test(`manual fetches: up to ${MAX_FETCHES} at once app-wide (Fetch All), then one starts as one ends`, async () => {
+    const roots = Array.from({ length: MAX_FETCHES + 2 }, (_, i) => `/m${i}`);
+    const { w, s } = world({ remotes: roots });
+    const all = s.fetchAll(roots.map((r) => repo(r)));
+    await flush(); await flush();
+    expect(w.runs.map((r) => r.root)).toEqual(roots.slice(0, MAX_FETCHES));
+    w.runs[3]!.finish({ outcome: 'ok' });
+    await flush(); await flush();
+    expect(w.runs.map((r) => r.root)).toEqual(roots.slice(0, MAX_FETCHES + 1));
+    for (const r of w.runs) if (r.root !== '/m3') r.finish({ outcome: 'ok' });
+    await flush(); await flush();
+    w.runs.at(-1)!.finish({ outcome: 'ok' });
+    expect(await all).toEqual(roots.map(() => 'ok'));
+  });
+
+  test('every slot taken: a manual request goes before the automatic ones waiting', async () => {
+    const roots = Array.from({ length: MAX_FETCHES }, (_, i) => `/m${i}`);
+    const { w, s } = world();
+    const busy = roots.map((r) => s.request(repo(r), 'manual'));
+    await flush();
+    const v = s.request(A, 'view');
+    await flush();
+    const m = s.request(repo('/b'), 'manual');
+    await flush();
+    expect(w.runs).toHaveLength(MAX_FETCHES);
+    w.runs[0]!.finish({ outcome: 'ok' });
+    await flush(); await flush();
+    expect(w.runs.at(-1)!.root).toBe('/b');
+    w.runs[1]!.finish({ outcome: 'ok' });
+    await flush(); await flush();
+    expect(w.runs.at(-1)!.root).toBe('/a');
+    for (const r of w.runs.slice(2)) r.finish({ outcome: 'ok' });
+    await Promise.all([...busy, v, m]);
+  });
+
+  test('a manual request for a repo whose automatic fetch waits starts it at once, as a manual one', async () => {
+    const { w, s } = world();
+    const ps = ['/a', '/b', '/c'].map((r) => s.request(repo(r), 'view'));
+    await flush();
+    const m = s.request(repo('/c'), 'manual');
+    await flush();
+    expect(w.runs.map((r) => r.root)).toEqual(['/a', '/b', '/c']);
+    // /c holds a manual slot: a fourth automatic fetch still waits for /a or /b.
+    const d = s.request(repo('/d'), 'view');
+    await flush();
+    expect(w.runs).toHaveLength(3);
+    w.runs[2]!.finish({ outcome: 'ok' });
+    await flush(); await flush();
+    expect(w.runs).toHaveLength(3);
+    w.runs[0]!.finish({ outcome: 'ok' });
+    await flush(); await flush();
+    expect(w.runs.map((r) => r.root)).toEqual(['/a', '/b', '/c', '/d']);
+    w.runs[1]!.finish({ outcome: 'ok' });
+    w.runs[3]!.finish({ outcome: 'ok' });
+    expect((await m).outcome).toBe('ok');
+    await Promise.all([...ps, d]);
+  });
+
+  test('an automatic fetch a manual request joined while it ran gives back an automatic slot', async () => {
+    const { w, s } = world();
+    const ps = ['/a', '/b', '/c'].map((r) => s.request(repo(r), 'view'));
+    await flush();
+    const m = s.request(A, 'manual');
+    await flush();
+    expect(w.runs.map((r) => r.root)).toEqual(['/a', '/b']);
+    w.runs[0]!.finish({ outcome: 'ok' });
+    await flush(); await flush();
+    expect(w.runs.map((r) => r.root)).toEqual(['/a', '/b', '/c']);
+    w.runs[1]!.finish({ outcome: 'ok' });
+    w.runs[2]!.finish({ outcome: 'ok' });
+    await Promise.all([...ps, m]);
+    // Every slot is free again: as many manual fetches as ever start at once.
+    const roots = Array.from({ length: MAX_FETCHES }, (_, i) => `/m${i}`);
+    const more = roots.map((r) => s.request(repo(r), 'manual'));
+    await flush();
+    expect(w.runs.slice(3).map((r) => r.root)).toEqual(roots);
+    for (const r of w.runs.slice(3)) r.finish({ outcome: 'ok' });
+    await Promise.all(more);
   });
 
   test('fetchAll: every repo with a remote once (worktrees share), manual', async () => {
@@ -275,7 +357,7 @@ describe('periodic fetches', () => {
     await flush();
     const d = s.request(repo('/d'), 'manual');
     await flush();
-    expect(w.runs.map((r) => r.root)).toEqual(['/a', '/b']);
+    expect(w.runs.map((r) => r.root)).toEqual(['/a', '/b', '/d']);
     w.setting = 'off';
     s.settingsChanged();
     w.runs[0]!.finish({ outcome: 'ok' });
@@ -314,7 +396,10 @@ describe('review fixes', () => {
 
   test('M2: an automatic fetch a manual request joined is not dropped when auto-fetch goes off (first in line too)', async () => {
     const { w, s } = world();
-    const ps = ['/a', '/b', '/c'].map((r) => s.request(repo(r), 'view'));
+    // Every slot taken by hand: the automatic fetches of /a and /c wait.
+    const busy = Array.from({ length: MAX_FETCHES }, (_, i) => s.request(repo(`/m${i}`), 'manual'));
+    await flush();
+    const ps = ['/a', '/c'].map((r) => s.request(repo(r), 'view'));
     await flush();
     const m = s.request(repo('/c'), 'manual');
     await flush();
@@ -322,11 +407,14 @@ describe('review fixes', () => {
     s.settingsChanged();
     w.runs[0]!.finish({ outcome: 'ok' });
     await flush(); await flush();
-    expect(w.runs.map((r) => r.root)).toEqual(['/a', '/b', '/c']);
+    expect(w.runs.at(-1)!.root).toBe('/c');
     w.runs[1]!.finish({ outcome: 'ok' });
-    w.runs[2]!.finish({ outcome: 'ok' });
+    await flush(); await flush();
+    expect(w.runs).toHaveLength(MAX_FETCHES + 1);
+    expect((await ps[0]!).outcome).toBeNull();
+    for (const r of w.runs.slice(2)) r.finish({ outcome: 'ok' });
     expect((await m).outcome).toBe('ok');
-    await Promise.all(ps);
+    await Promise.all([...busy, ...ps]);
   });
 
   test('M4: a repo without a remote is asked about once per 10 minutes, not on every tick and view', async () => {
@@ -414,9 +502,9 @@ describe('behind writes', () => {
     const { w, s } = world({ writes: q });
     const endA = hold(q, '/a/.git');
     const endB = hold(q, '/b/.git');
-    const pa = s.request(A, 'manual');
-    const pb = s.request(repo('/b'), 'manual');
-    const pc = s.request(repo('/c'), 'manual');
+    const pa = s.request(A, 'view');
+    const pb = s.request(repo('/b'), 'view');
+    const pc = s.request(repo('/c'), 'view');
     await flush(); await flush();
     expect(w.runs.map((r) => r.root)).toEqual(['/c']);
     // Still shown as running: it is asked and waits for its turn.
@@ -426,7 +514,7 @@ describe('behind writes', () => {
     expect(w.runs.map((r) => r.root)).toEqual(['/c', '/a']);
     endB();
     await flush(); await flush();
-    // Two app-wide: /b waits for a slot now that its write is done.
+    // Two automatic ones app-wide: /b waits for a slot now that its write is done.
     expect(w.runs.map((r) => r.root)).toEqual(['/c', '/a']);
     w.runs[0]!.finish({ outcome: 'ok' });
     await flush(); await flush();
@@ -438,12 +526,12 @@ describe('behind writes', () => {
 
   test('a write asked while a fetch waits for a slot: the slot it gets goes to the next fetch until the write ends', async () => {
     const q = new WriteQueue();
-    const { w, s } = world({ writes: q });
-    const ps = ['/c', '/d', '/a'].map((r) => s.request(repo(r), 'manual'));
+    const { w, s } = world({ writes: q, remotes: ['/a', '/c', '/d', '/e'] });
+    const ps = ['/c', '/d', '/a'].map((r) => s.request(repo(r), 'view'));
     await flush(); await flush();
     expect(w.runs.map((r) => r.root)).toEqual(['/c', '/d']);
     const endA = hold(q, '/a/.git');
-    const pe = s.request(repo('/e'), 'manual');
+    const pe = s.request(repo('/e'), 'view');
     await flush();
     w.runs[0]!.finish({ outcome: 'ok' });
     await flush(); await flush();

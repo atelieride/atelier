@@ -7,7 +7,10 @@ export const VIEW_GATE_MS = 10 * 60_000;
 export const BUSY_RETRY_MS = 60_000;
 export const BACKOFF_MAX_MS = 60 * 60_000;
 export const FETCH_TICK_MS = 60_000;
-const MAX_RUNNING = 2;
+/** Fetches at once app-wide: the ones asked by hand (Fetch All) may use every slot. */
+export const MAX_FETCHES = 6;
+/** Of those, automatic ones (view, periodic): fetches nobody is waiting for never crowd the network. */
+export const MAX_AUTOMATIC_FETCHES = 2;
 
 /** A working tree and its git common dir (a repo and its worktrees share one). */
 export interface FetchRepo { root: string; common: string }
@@ -57,15 +60,20 @@ interface Rec {
   last: ScmFetchState['last'];
 }
 
-interface Waiter { common: string; manual: boolean; go: (got: boolean) => void }
+/** What a slot was taken as: it is given back as that, even when a manual request joined its fetch since. */
+type Slot = 'manual' | 'automatic';
+
+interface Waiter { common: string; manual: boolean; go: (got: Slot | null) => void }
 
 /**
  * When Source Control fetches: view fetches the renderer asks for, periodic ones from the setting,
- * manual ones always. One fetch per git common dir at a time, at most two app-wide, manual requests first.
+ * manual ones always. One fetch per git common dir at a time; at most six app-wide, two of them automatic; manual
+ * requests first.
  */
 export class FetchScheduler {
   private recs = new Map<string, Rec>();
   private running = 0;
+  private automatic = 0;
   private waiting: Waiter[] = [];
   private timer: NodeJS.Timeout | null = null;
 
@@ -124,7 +132,7 @@ export class FetchScheduler {
   /** The setting changed: automatic fetches still waiting for a slot are dropped when off (checked as they start). */
   settingsChanged(): void {
     if (this.deps.setting() !== 'off') return;
-    for (const w of [...this.waiting]) if (!w.manual) { this.waiting.splice(this.waiting.indexOf(w), 1); w.go(false); }
+    for (const w of [...this.waiting]) if (!w.manual) { this.waiting.splice(this.waiting.indexOf(w), 1); w.go(null); }
   }
 
   private rec(common: string): Rec {
@@ -150,15 +158,15 @@ export class FetchScheduler {
         const got = await this.slot(repo.common, r.manual);
         // Switched off while waiting: an automatic fetch nobody asked for by hand never starts.
         if (!got || (!r.manual && this.deps.setting() === 'off')) {
-          if (got) this.release();
+          if (got) this.release(got);
           r.active = false;
           this.deps.emit(this.state(repo.common));
           return null;
         }
         // Checked in the same step that starts `run` (and its place in the queue): nothing can get ahead in between.
-        if (!this.deps.writes?.busy(repo.common)) return this.run(repo, r);
+        if (!this.deps.writes?.busy(repo.common)) return this.run(repo, r, got);
         // A write was asked while this fetch waited for its slot: the slot goes on, the fetch waits for the write.
-        this.release();
+        this.release(got);
       }
     })().finally(() => { if (r.job === job) { r.job = null; r.manual = false; } });
     r.job = job;
@@ -185,9 +193,21 @@ export class FetchScheduler {
     return false;
   }
 
-  /** True once a slot is taken (manual requests first; the caller releases it), false when dropped while waiting. */
-  private slot(common: string, manual: boolean): Promise<boolean> {
-    if (this.running < MAX_RUNNING) { this.running++; return Promise.resolve(true); }
+  /** Whether a fetch of that kind may start now. */
+  private fits(manual: boolean): boolean {
+    return this.running < MAX_FETCHES && (manual || this.automatic < MAX_AUTOMATIC_FETCHES);
+  }
+
+  private take(manual: boolean): Slot {
+    this.running++;
+    if (manual) return 'manual';
+    this.automatic++;
+    return 'automatic';
+  }
+
+  /** The slot once taken (manual requests first; the caller releases it), null when dropped while waiting. */
+  private slot(common: string, manual: boolean): Promise<Slot | null> {
+    if (this.fits(manual)) return Promise.resolve(this.take(manual));
     return new Promise((resolve) => {
       const w: Waiter = { common, manual, go: (got) => resolve(got) };
       if (manual) {
@@ -197,13 +217,22 @@ export class FetchScheduler {
     });
   }
 
-  /** A slot is handed straight to the next waiter (the count stays), or freed. */
-  private release(): void {
-    const next = this.waiting.shift();
-    if (next) next.go(true); else this.running--;
+  /** A slot is freed and handed at once to the waiters that fit now (in the same step: nothing gets ahead of them). */
+  private release(slot: Slot): void {
+    this.running--;
+    if (slot === 'automatic') this.automatic--;
+    this.pump();
   }
 
-  /** A manual request for a repo whose automatic fetch is still waiting: it moves to the front. */
+  /** Waiters start in their order while they fit: manual ones first, automatic ones while fewer than two run. */
+  private pump(): void {
+    for (let i = this.waiting.findIndex((w) => this.fits(w.manual)); i >= 0; i = this.waiting.findIndex((w) => this.fits(w.manual))) {
+      const [w] = this.waiting.splice(i, 1);
+      w!.go(this.take(w!.manual));
+    }
+  }
+
+  /** A manual request for a repo whose automatic fetch is still waiting: it moves to the front, and starts if it fits. */
   private promote(common: string): void {
     const i = this.waiting.findIndex((w) => w.common === common);
     if (i < 0) return;
@@ -211,12 +240,13 @@ export class FetchScheduler {
     w!.manual = true;
     const firstAuto = this.waiting.findIndex((x) => !x.manual);
     this.waiting.splice(firstAuto === -1 ? this.waiting.length : firstAuto, 0, w!);
+    this.pump();
   }
 
-  private async run(repo: FetchRepo, r: Rec): Promise<FetchResult> {
+  private async run(repo: FetchRepo, r: Rec, slot: Slot): Promise<FetchResult> {
     const res = await this.deps.run(repo.root, repo.common).catch((err: Error): FetchResult => ({ outcome: 'error', message: err.message }));
     const at = this.deps.now();
-    this.release();
+    this.release(slot);
     r.active = false;
     switch (res.outcome) {
       case 'ok':
