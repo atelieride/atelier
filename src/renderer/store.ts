@@ -14,6 +14,8 @@ import type { Resumable } from '@shared/protocol';
 import type { ScheduledPrompt } from '@shared/scheduled-prompts';
 import type { SignalBookView } from '@shared/claude-signals';
 import type { ClaudeConversation } from '@shared/history';
+import { MAX_FILE_BYTES } from '@shared/files';
+import type { SearchFile, SearchLine, SearchSpec } from '@shared/search';
 import { feedKey, type BackgroundFeed, type Unavailable, type WatchResult } from '@shared/background-feed';
 import type { TimelineEntry, TimelineMeta } from '@shared/transcript';
 import { BUFFER_LINES } from '@shared/output-tail';
@@ -123,8 +125,16 @@ export interface PaletteSend { text: string; cwd: string | null }
 export type FileMode = 'margin' | 'diff';
 export type TreeEdit = { mode: 'new-file' | 'new-folder'; dir: string } | { mode: 'rename'; path: string };
 export type FolderSheet = { kind: 'session' | 'terminal'; cwd?: string };
-/** large: text past 5 MB opened with Open Anyway, read through files.readLarge. */
-export interface OpenFile { path: string; rel: string; line: number | null; nonce: number; mode: FileMode; large?: true }
+/**
+ * A Find in Files result to show: its match on `line` (1-based) from column `from` to `to`, the editor selects it (or
+ * the nearest occurrence, when the file changed) and marks every occurrence of `spec`; `keepFocus` leaves the keyboard
+ * where it is.
+ */
+export interface FoundTarget { line: number; from: number; to: number; spec: SearchSpec; keepFocus: boolean }
+/** What a search result adds to opening its file: the match to show, and the large view for a file past 5 MB. */
+interface FileOpening { found?: FoundTarget; large?: true }
+/** large: text past 5 MB opened with Open Anyway (or from a search result), read through files.readLarge. */
+export interface OpenFile { path: string; rel: string; line: number | null; nonce: number; mode: FileMode; large?: true; found?: FoundTarget }
 /** Where a tab dragged back from its pop-out lands: before a strip tab (null: at the end), or on a pane's zone. */
 export type DockTarget = { kind: 'strip'; pane: number; before: TabKey | null } | { kind: 'pane'; pane: number; zone: DropZone };
 /** Where a tab dragged inside the window lands: as a pop-out dragged back, or on the Shelf, before a file. */
@@ -209,6 +219,11 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
   setLanguage(path: string, lang: LanguageId | null): void;
   /** Markdown preview: the view chosen per file (real files saved between launches). */
   mdViews: MdViews;
+  /**
+   * Files a Find in Files result opened: their source shows for this visit (the match is selected there), whatever view
+   * is saved for them; choosing a view or opening the file any other way ends it. In memory only.
+   */
+  mdVisit: Record<string, true>;
   /** The view a Markdown or JSON tab shows (`preview`: JSON's Tree): its own choice, otherwise Settings › Editor's default. */
   mdViewOf(path: string): MdView;
   /** Chooses a Markdown tab's view; Split and Preview take a tab out of the Diff view. */
@@ -582,8 +597,8 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
   focusPrevPane(): void;
   /** Open to the Side: the tab in the pane right of the focused one; a hidden terminal gets its tab back. */
   openToSide(key: TabKey): void;
-  /** Open to the Side for a file (opened as a normal tab, never the preview). */
-  openFileToSide(path: string, rel: string): void;
+  /** Open to the Side for a file (opened as a normal tab, never the preview), at `line` when given. */
+  openFileToSide(path: string, rel: string, line?: number | null, at?: FileOpening): void;
   /** A tab dropped on a pane's body: into it at the end (middle) or into a new pane on that side (edge). */
   dropTab(key: TabKey, pane: number, zone: DropZone): void;
   /** Widths of the panes (a divider moved); a list of the wrong length is ignored. */
@@ -686,7 +701,12 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
   setSize(cols: number, rows: number): void;
   setUsage(list: UsageEntry[]): void;
   /** Opens (or activates) a file tab; with preview (single click, link, palette) it goes into the preview tab if enabled. */
-  openFile(path: string, rel: string, line?: number | null, mode?: FileMode, opts?: { preview?: boolean }): void;
+  openFile(path: string, rel: string, line?: number | null, mode?: FileMode, opts?: { preview?: boolean } & FileOpening): void;
+  /**
+   * A Find in Files result: its file in the preview tab (walking the results replaces it) or, `side`, in the other pane
+   * of a split (a new split when there is none), at the match; a file past 5 MB straight in the large view.
+   */
+  openSearchResult(file: SearchFile, line: SearchLine, index: number, opts: { side: boolean; keepFocus: boolean; spec: SearchSpec }): void;
   setFileMode(path: string, mode: FileMode): void;
   /** Open Anyway on a tab whose text is past 5 MB. */
   setFileLarge(path: string): void;
@@ -1049,9 +1069,15 @@ export const useApp = create<AppState>((set, get) => ({
   // What the name already says needs no override (same as Auto).
   setLanguage: (path, lang) => setOverrides(withOverride(get().langOverrides, path, lang && lang !== languageFor(path) ? lang : null)),
   mdViews: loadMdViews(),
-  mdViewOf: (path) => mdViewOf(get().mdViews, path, defaultView(path, get().langOverrides, get().settings)),
+  mdVisit: {},
+  mdViewOf: (path) => {
+    const view = mdViewOf(get().mdViews, path, defaultView(path, get().langOverrides, get().settings));
+    // Split shows the code already: only Preview (Tree, Table) gives way to it.
+    return view === 'preview' && get().mdVisit[path] ? 'source' : view;
+  },
   setMdView: (path, view) => {
     const st = get();
+    if (st.mdVisit[path]) set({ mdVisit: visit(st.mdVisit, path, false) });
     setMdViews(withMdView(st.mdViews, path, view, defaultView(path, st.langOverrides, st.settings)));
     if (view !== 'source' && st.openFiles.some((f) => f.path === path && f.mode === 'diff')) st.setFileMode(path, 'margin');
   },
@@ -1884,13 +1910,13 @@ export const useApp = create<AppState>((set, get) => ({
     if (!get().tabOrder.includes(key)) return;
     sideOf(get().split, active, key);
   },
-  openFileToSide: (path, rel) => {
+  openFileToSide: (path, rel, line = null, at) => {
     if (popped(`f:${path}`)) return;
     enter(`f:${path}`);
     const before = get().split;
     const active = get().activeKey();
     // Opened without following (the focused pane keeps its tab), then placed on the side.
-    hush(() => get().openFile(path, rel, null, undefined, { preview: false }));
+    hush(() => get().openFile(path, rel, line, undefined, { ...at, preview: false }));
     sideOf(before, active, `f:${path}`);
   },
   dropTab: (key, pane, zone) => {
@@ -2382,14 +2408,18 @@ export const useApp = create<AppState>((set, get) => ({
     const cur = st.preview && !isDirtyNow(st.preview, !!st.dirty[st.preview]) ? (`f:${st.preview}` as TabKey) : null;
     const placed = placeOpened(st.split, st.tabOrder, st.activeKey(), `f:${path}`, cur, !!opts?.preview && st.settings.previewTabs && !isUntitled(path));
     const gone = placed.replaced?.slice(2);
-    const entry = { path, rel, line, nonce, mode: mode ?? 'margin' };
+    // A search result's match goes with this open only: any other open of the file shows no result.
+    const found = opts?.found;
+    const large = opts?.large ? { large: true as const } : {};
+    const entry = { path, rel, line, nonce, mode: mode ?? 'margin', found, ...large };
     // The preview it replaces leaves with its tab, unless another workspace shows that file.
     // With workspaces off nothing is shown elsewhere: as before.
     const goneHere = gone && !shownElsewhere(st, `f:${gone}`) ? gone : undefined;
     set({
       openFiles: exists
-        ? files.filter((f) => !(wsOn(st) && f.path === goneHere)).map((f) => (f.path === path ? { ...f, line, nonce, mode: mode ?? f.mode } : f))
+        ? files.filter((f) => !(wsOn(st) && f.path === goneHere)).map((f) => (f.path === path ? { ...f, line, nonce, mode: mode ?? f.mode, found, ...large } : f))
         : goneHere ? files.map((f) => (f.path === goneHere ? entry : f)) : [...files, entry],
+      mdVisit: visit(st.mdVisit, path, !!found),
       tabOrder: placed.order,
       // Split view: the new preview takes the replaced one's place in its pane, in the same update.
       ...(placed.split !== st.split ? { split: placed.split } : {}),
@@ -2397,6 +2427,12 @@ export const useApp = create<AppState>((set, get) => ({
       activeTab: path,
       ...(isUntitled(path) ? {} : { recentFiles: pushRecent(st.recentFiles, { path, rel }) })
     });
+  },
+  openSearchResult: (file, line, index, o) => {
+    const [from, to] = line.ranges[index] ?? [0, 0];
+    const at: FileOpening = { found: { line: line.line, from, to, spec: o.spec, keepFocus: o.keepFocus }, ...(file.size > MAX_FILE_BYTES ? { large: true } : {}) };
+    if (o.side) get().openFileToSide(file.path, file.rel, line.line, at);
+    else get().openFile(file.path, file.rel, line.line, undefined, { ...at, preview: true });
   },
   setFileMode: (path, mode) => set({ openFiles: get().openFiles.map((f) => (f.path === path ? { ...f, mode } : f)) }),
   setFileLarge: (path) => set({ openFiles: get().openFiles.map((f) => (f.path === path ? { ...f, large: true as const } : f)) }),
@@ -3339,6 +3375,13 @@ function setCsvOptionsMap(all: CsvOptionsMap) {
   if (all === useApp.getState().csvOptions) return;
   useApp.setState({ csvOptions: all });
   saveCsvOptions(all);
+}
+
+/** The files on a search result's visit with `path` on it or off (the same object when nothing changes). */
+function visit(all: Record<string, true>, path: string, on: boolean): Record<string, true> {
+  if (!!all[path] === on) return all;
+  const { [path]: _, ...rest } = all;
+  return on ? { ...rest, [path]: true } : rest;
 }
 
 /** New Markdown views: state and storage, only when they changed. */

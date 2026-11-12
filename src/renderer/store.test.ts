@@ -11,6 +11,8 @@ import { useDb } from './databases/store';
 import type { WorkspacesState } from './workspaces';
 import { askCloseWorkspace } from './workspace-menus';
 import { emptyViews } from './spaces';
+import { MAX_FILE_BYTES } from '@shared/files';
+import type { SearchFile, SearchLine } from '@shared/search';
 
 const term = (id: string): TerminalInfo => ({ id, projectRoot: '/p', cwd: '/p', title: id, name: null, color: '#B794F6', foreground: 'zsh', createdAt: 0, session: null });
 
@@ -1212,6 +1214,99 @@ describe('table tabs: db: keys with their own preview slot', () => {
     st().revealInPopout({ payload: { kind: 'db', connId: C, schema: 'public', name: 'customers', view: 'data', open: { preview: true, view: false, filters: FILTERS } } });
     expect(st().dbTabs[0]!.view).toBe('structure');
     expect(useDb.getState().tab(K('customers')).handoff?.filters).toEqual(FILTERS);
+  });
+});
+
+describe('Find in Files: opening a result', () => {
+  const st = () => useApp.getState();
+  const SPEC = { query: 'token', matchCase: false, wholeWord: false, regex: false };
+  const result = (path: string, size = 120): SearchFile => ({ path, rel: path.slice(3), size, lines: [LINE] });
+  const LINE: SearchLine = { line: 12, text: '  if (token && token.length) {', start: 0, ranges: [[6, 11], [15, 20]], cutStart: false, cutEnd: false };
+  const fileOf = (path: string) => st().openFiles.find((f) => f.path === path);
+  const saved = new Map<string, string>();
+  const g = globalThis as { localStorage?: unknown };
+
+  beforeEach(() => {
+    saved.clear();
+    g.localStorage = { getItem: (k: string) => saved.get(k) ?? null, setItem: (k: string, v: string) => void saved.set(k, v) };
+    useApp.setState({
+      project: null, popout: null, poppedOut: [], terminals: [], selectedId: null, activeTab: 'term', tabOrder: [], hidden: [], pins: [], openFiles: [],
+      preview: null, pendingAnchor: null, split: single(), ws: null, dirty: {}, toast: null, menu: null, mdViews: {}, mdVisit: {}, langOverrides: {},
+      space: 'sessions', spaceViews: emptyViews(), activity: 'sessions', sessionsActivity: 'sessions',
+      settings: { ...DEFAULT_SETTINGS, previewTabs: true }
+    });
+  });
+  afterEach(() => {
+    delete g.localStorage;
+    useApp.setState({ split: single(), tabOrder: [], openFiles: [], preview: null, activeTab: 'term', selectedId: null, terminals: [], mdViews: {}, mdVisit: {} });
+  });
+
+  test('a result opens in the preview tab at its line, with its match as the target and a new nonce each time', () => {
+    st().openSearchResult(result('/p/a.ts'), LINE, 1, { side: false, keepFocus: true, spec: SPEC });
+    expect(st().preview).toBe('/p/a.ts');
+    expect(st().activeKey()).toBe('f:/p/a.ts');
+    const first = fileOf('/p/a.ts')!;
+    expect(first.line).toBe(12);
+    expect(first.found).toEqual({ line: 12, from: 15, to: 20, spec: SPEC, keepFocus: true });
+    expect(first.large).toBeUndefined();
+    // The same result again (⏎ twice): a new nonce, so the editor shows it again.
+    st().openSearchResult(result('/p/a.ts'), LINE, 0, { side: false, keepFocus: false, spec: SPEC });
+    expect(fileOf('/p/a.ts')!.nonce).not.toBe(first.nonce);
+    expect(fileOf('/p/a.ts')!.found).toEqual({ line: 12, from: 6, to: 11, spec: SPEC, keepFocus: false });
+    // Walking on to another file's result replaces the preview tab.
+    st().openSearchResult(result('/p/b.ts'), LINE, 0, { side: false, keepFocus: true, spec: SPEC });
+    expect(st().preview).toBe('/p/b.ts');
+    expect(st().openFiles.map((f) => f.path)).toEqual(['/p/b.ts']);
+    // Opened any other way (the tree, a link), the file has no result to show any more.
+    st().openFile('/p/b.ts', 'b.ts', 3);
+    expect(fileOf('/p/b.ts')!.found).toBeUndefined();
+    expect(fileOf('/p/b.ts')!.line).toBe(3);
+  });
+
+  test('side: in the other pane of a split, a new split when there is none, as a kept tab', () => {
+    st().setTerminals([term('a')]);
+    st().openSearchResult(result('/p/a.ts'), LINE, 0, { side: true, keepFocus: true, spec: SPEC });
+    expect(isSplit(st().split)).toBe(true);
+    expect(st().split.panes.map((p) => p.tabs)).toEqual([['t:a'], ['f:/p/a.ts']]);
+    expect(st().preview).toBeNull();
+    expect(fileOf('/p/a.ts')!.found).toEqual({ line: 12, from: 6, to: 11, spec: SPEC, keepFocus: true });
+    expect(fileOf('/p/a.ts')!.line).toBe(12);
+  });
+
+  test('a file over 5 MB opens straight in the large view', () => {
+    st().openSearchResult(result('/p/big.log', MAX_FILE_BYTES + 1), LINE, 0, { side: false, keepFocus: false, spec: SPEC });
+    expect(fileOf('/p/big.log')!.large).toBe(true);
+    st().openSearchResult(result('/p/small.log', MAX_FILE_BYTES), LINE, 0, { side: false, keepFocus: false, spec: SPEC });
+    expect(fileOf('/p/small.log')!.large).toBeUndefined();
+  });
+
+  test('a Markdown file saved as Preview shows its source for the visit, its saved view untouched; choosing a view ends the visit', () => {
+    st().setMdView('/p/README.md', 'preview');
+    const views = st().mdViews;
+    const stored = saved.get('atelier.markdownViews');
+    st().openSearchResult(result('/p/README.md'), LINE, 0, { side: false, keepFocus: false, spec: SPEC });
+    expect(st().mdViewOf('/p/README.md')).toBe('source');
+    expect(st().mdViews).toBe(views);
+    expect(saved.get('atelier.markdownViews')).toBe(stored);
+    // The tab's switch goes back to Preview: the visit is over.
+    st().setMdView('/p/README.md', 'preview');
+    expect(st().mdViewOf('/p/README.md')).toBe('preview');
+    expect(st().mdVisit).toEqual({});
+    // Another result: source again; the file opened any other way: its own view.
+    st().openSearchResult(result('/p/README.md'), LINE, 0, { side: false, keepFocus: false, spec: SPEC });
+    expect(st().mdViewOf('/p/README.md')).toBe('source');
+    st().openFile('/p/README.md', 'README.md');
+    expect(st().mdViewOf('/p/README.md')).toBe('preview');
+    // Split shows the code already: it stays.
+    st().setMdView('/p/notes.md', 'split');
+    st().openSearchResult(result('/p/notes.md'), LINE, 0, { side: false, keepFocus: false, spec: SPEC });
+    expect(st().mdViewOf('/p/notes.md')).toBe('split');
+    // A JSON file shown as Tree by the Settings default: the same, and the default stays.
+    useApp.setState({ settings: { ...DEFAULT_SETTINGS, previewTabs: true, jsonView: 'tree' } });
+    st().openSearchResult(result('/p/data.json'), LINE, 0, { side: false, keepFocus: false, spec: SPEC });
+    expect(st().mdViewOf('/p/data.json')).toBe('source');
+    expect(st().settings.jsonView).toBe('tree');
+    expect(st().mdViews).toEqual({ '/p/README.md': 'preview', '/p/notes.md': 'split' });
   });
 });
 

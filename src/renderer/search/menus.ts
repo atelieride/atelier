@@ -6,7 +6,7 @@ import { t } from '../i18n/en';
 import { kbd } from '../kbd';
 import type { MenuItem } from '../menu-model';
 import { useApp } from '../store';
-import { firstLine, openResult, openResultToSide } from './actions';
+import { openFileResult, openResult } from './actions';
 import { ts } from './copy';
 import { anyExpanded, buildRows, lineCopy, resultsText, type Row } from './model';
 import { useSearch } from './store';
@@ -22,8 +22,8 @@ const sideItem = (run: () => void): MenuItem => ({ id: 'open-to-side', label: m.
 export function searchFileMenu(row: FileRow): MenuItem[] {
   const { file } = row;
   return [
-    { id: 'open', label: m.open, run: () => openResult(file, firstLine(file)) },
-    sideItem(() => openResultToSide(file)),
+    { id: 'open', label: m.open, run: () => openFileResult(file, { side: false, keepFocus: false }) },
+    sideItem(() => openFileResult(file, { side: true, keepFocus: false })),
     { id: 'reveal-tree', label: m.revealInFiles, icon: 'files', run: () => useApp.getState().revealInTree(file.path) },
     'sep',
     { id: 'copy-path', label: m.copyPath, run: () => copy(toNative(file.path)) },
@@ -35,8 +35,8 @@ export function searchFileMenu(row: FileRow): MenuItem[] {
 
 export function searchMatchMenu(row: MatchRow): MenuItem[] {
   return [
-    { id: 'open', label: m.open, run: () => openResult(row.file, row.line.line) },
-    sideItem(() => openResultToSide(row.file)),
+    { id: 'open', label: m.open, run: () => openResult(row.file, row.line, row.index, { side: false, keepFocus: false }) },
+    sideItem(() => openResult(row.file, row.line, row.index, { side: true, keepFocus: false })),
     { id: 'copy-line', label: ts.copyLine, icon: 'copy', run: () => copy(lineCopy(row.line)) },
     dismissItem(row.key)
   ];

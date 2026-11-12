@@ -69,6 +69,7 @@ export const SPECS: Record<string, Area[]> = {
   'fast-open.spec.ts': ['files'],
   'files-details.spec.ts': ['files'],
   'find-in-files.spec.ts': ['files'],
+  'find-in-files-editor.spec.ts': ['files', 'editor'],
   'find-replace.spec.ts': ['editor'],
   'terminal-find.spec.ts': ['terminal', 'editor'],
   'diff-ruler.spec.ts': ['editor'],
@@ -411,6 +412,8 @@ export const SOURCES: Record<string, Area[]> = {
   'src/shared/search': ['files'],
   'src/main/search/': ['files'],
   'src/renderer/search/': ['files'],
+  // A result's file in the editor: its occurrences marked, its match selected.
+  'src/renderer/editor/find-in-files-ext.ts': ['editor', 'files'],
   'src/shared/close-sessions.ts': ['sessions', 'workspace'],
   'src/renderer/components/LanguageSheet.tsx': ['editor'],
   'src/renderer/components/LogLineView.tsx': ['background'],

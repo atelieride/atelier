@@ -9,7 +9,7 @@ import { Icon } from '../components/Icon';
 import { OriginMarks } from '../components/OriginMarks';
 import { useApp } from '../store';
 import { TREE_GIT_LETTER, treeGitMap, type TreeGit } from '../tree-git';
-import { openResult, openResultToSide } from './actions';
+import { openFileResult, openResult } from './actions';
 import { ts } from './copy';
 import { searchAreaMenu, searchFileMenu, searchMatchMenu } from './menus';
 import { fileKey, pillCount, previewWindow, treePositions, type Row } from './model';
@@ -94,7 +94,7 @@ const RowView = memo(function RowView({ row, i, top, selected, tabbable, room, p
   }
   return (
     <div {...common} aria-level={2} data-line={row.line.line} className={`fif-row is-match${selected ? ' is-selected' : ''}`}
-      onClick={() => { useSearch.getState().select(row.key); openResult(row.file, row.line.line); }}>
+      onClick={() => { useSearch.getState().select(row.key); openResult(row.file, row.line, row.index, { side: false, keepFocus: false }); }}>
       <LineText row={row} room={room} />
       <span className="fif-ln mono">{row.line.line}</span>
       {dismissButton(row.key)}
@@ -190,13 +190,10 @@ export const ResultList = forwardRef<ResultListHandle, { rows: Row[]; onEscape: 
         break;
       case 'Enter':
         if (!row) return;
-        if (mod) openResultToSide(row.file);
-        else if (row.kind === 'file') useSearch.getState().toggleCollapsed(row.key);
-        else {
-          openResult(row.file, row.line.line);
-          // The keyboard stays in the list, to walk on to the next result.
-          requestAnimationFrame(() => { if (!scroller.current?.contains(document.activeElement)) move(sel); });
-        }
+        // The keyboard stays in the list, to walk on to the next result.
+        if (row.kind === 'match') openResult(row.file, row.line, row.index, { side: mod, keepFocus: true });
+        else if (mod) openFileResult(row.file, { side: true, keepFocus: true });
+        else useSearch.getState().toggleCollapsed(row.key);
         break;
       case 'Backspace':
       case 'Delete':

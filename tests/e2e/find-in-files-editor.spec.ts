@@ -1,0 +1,306 @@
+// Find in Files, opening a result in the editor: the preview tab at the match, selected, every occurrence of the query
+// highlighted and ticked on the scrollbar ruler; ⏎ leaving the keyboard in the list while the results are walked; ⌘⏎ to
+// the side; a Markdown file saved as Preview shown as source for the visit; a match moved by an edit on disk; Esc, the
+// find card and an emptied query taking the marks away; a file over 5 MB opened straight in the large view.
+import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { e2eEnv } from './env';
+import { frames } from './narrow-fixture';
+import { look } from './shots';
+
+let app: ElectronApplication;
+let win: Page;
+let home: string;
+let project: string;
+
+const git = (cwd: string, ...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd, env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } });
+const write = (rel: string, body: string) => {
+  mkdirSync(dirname(join(project, rel)), { recursive: true });
+  writeFileSync(join(project, rel), body);
+};
+
+const SESSION = [
+  "import { TokenStore } from './tokens';",
+  '',
+  'export interface Session {',
+  '  userId: string;',
+  '  expiresAt: number;',
+  '}',
+  '',
+  'const store = new TokenStore();',
+  'const SKEW_MS = 30_000;',
+  '',
+  'export function readSession(token: string, now = Date.now()): Session | null {',
+  '  const entry = store.get(token);',
+  '  if (!entry) return null;',
+  '  if (entry.expiresAt - SKEW_MS < now) {',
+  '    store.delete(token);',
+  '    return null;',
+  '  }',
+  '  return { userId: entry.userId, expiresAt: entry.expiresAt };',
+  '}',
+  ''
+].join('\n');
+
+const TOKENS = [
+  'export class TokenStore {',
+  '  private entries = new Map<string, { userId: string; expiresAt: number }>();',
+  '',
+  '  get(token: string) {',
+  '    return this.entries.get(token);',
+  '  }',
+  '',
+  '  delete(token: string) {',
+  '    this.entries.delete(token);',
+  '  }',
+  '}',
+  ''
+].join('\n');
+
+const README = '# Sessions\n\nEach session has an expiry.\n\n## Expiry\n\nThe expiry is one hour.\n';
+const MOVED = ['// moved', 'export const a = 1;', 'export const b = 2;', "export const zebra = 'stripes';", 'export const c = 3;', ''].join('\n');
+/** Past 5 MB: the editor opens it read-only, in its large view. */
+const BIG_LINES = 56_000;
+const WALRUS_LINE = 30_000;
+
+const activity = () => win.locator('.activity-bar .act[aria-label^="Find in Files"]');
+const view = () => win.locator('.sidebar.is-search');
+const field = () => view().getByRole('textbox', { name: 'Search files' });
+const totals = () => view().locator('.fif-summary .fif-totals');
+const matchRow = (rel: string, line: number) => view().locator(`.fif-row.is-match[data-rel="${rel}"][data-line="${line}"]`);
+const selectedRow = () => view().locator('.fif-row.is-selected');
+const editor = () => win.locator('.file-view:visible').first();
+const content = () => editor().locator('.cm-content');
+const hits = () => editor().locator('.cm-fif-hit, .cm-fif-hit-strong');
+const strong = () => editor().locator('.cm-fif-hit-strong');
+const ticks = () => editor().locator('.cm-ruler-find');
+const footPos = () => editor().locator('.foot-pos');
+const fileTabs = () => win.locator('.tab[data-key^="f:"]');
+const tab = (name: string) => win.locator('.tab[data-key^="f:"]', { hasText: name });
+const sw = (name: string) => editor().locator('.md-switch').getByRole('radio', { name });
+const pageSelection = () => win.evaluate(() => window.getSelection()?.toString() ?? '');
+/** The text of the line the strong mark sits on. */
+const strongLine = () => strong().evaluate((el) => el.closest('.cm-line')?.textContent ?? '');
+const still = (w: Page) => w.addStyleTag({ content: '*, *::before, *::after { animation: none !important; transition: none !important; }' });
+const savedViews = () => win.evaluate(() => localStorage.getItem('atelier.markdownViews'));
+/** A theme token as the page resolves it on a background. */
+const tokenColor = (name: string) => win.evaluate((n) => {
+  const probe = document.createElement('div');
+  probe.style.background = `var(${n})`;
+  document.body.append(probe);
+  const c = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return c;
+}, name);
+
+async function search(q: string): Promise<void> {
+  if (!(await view().isVisible())) await activity().click();
+  await field().fill(q);
+}
+
+test.beforeAll(async () => {
+  project = realpathSync(mkdtempSync(join(tmpdir(), 'atl-prj-')));
+  git(project, 'init', '-q', '-b', 'main');
+  write('README.md', README);
+  write('src/auth/session.ts', SESSION);
+  write('src/auth/tokens.ts', TOKENS);
+  write('src/moved.ts', MOVED);
+  write('logs/big.log', Array.from({ length: BIG_LINES }, (_, i) => (i + 1 === WALRUS_LINE ? `${'x'.repeat(40)} walrus ${'x'.repeat(51)}` : 'x'.repeat(99))).join('\n') + '\n');
+  git(project, 'add', '.');
+  git(project, 'commit', '-q', '-m', 'first');
+  const e = e2eEnv();
+  home = e.home;
+  app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env: e.env });
+  win = await app.firstWindow();
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 800));
+  await expect(win.locator('.sidebar')).toBeVisible();
+  await still(win);
+});
+
+test.afterAll(async () => {
+  await app.close();
+  try { process.kill((JSON.parse(readFileSync(join(home, 'atelierd.json'), 'utf8')) as { pid: number }).pid, 'SIGTERM'); } catch { /* already stopped */ }
+});
+
+test('a click opens the preview tab at the match, selected, every occurrence highlighted and ticked on the ruler', async () => {
+  await search('token');
+  await expect(totals()).toHaveText('11 results in 2 files');
+  await matchRow('src/auth/session.ts', 15).click();
+  await expect(tab('session.ts')).toHaveClass(/is-preview/);
+  await expect(tab('session.ts').locator('.tab-name')).toHaveCSS('font-style', 'italic');
+  // A click moves the keyboard to the editor, the match selected there.
+  await expect(content()).toBeFocused();
+  await expect.poll(pageSelection).toBe('token');
+  await expect(footPos()).toHaveText('Ln 15, Col 23');
+  await expect(strong()).toHaveText('token');
+  expect(await strongLine()).toBe('    store.delete(token);');
+  // Every occurrence (the query ignores case): six, the selected one strong.
+  await expect(hits()).toHaveText(['Token', 'token', 'Token', 'token', 'token', 'token']);
+  await expect(hits().first()).toHaveCSS('background-color', await tokenColor('--hit-bg'));
+  await expect(strong()).toHaveCSS('background-color', await tokenColor('--hit-strong'));
+  // One tick per line with a match (lines 1, 8, 11, 12 and 15), the selected one lit.
+  await expect(ticks()).toHaveCount(5);
+  await expect(editor().locator('.cm-ruler-find.is-selected')).toHaveCount(1);
+  await look(win, 'test-results/find-in-files-editor-open.png', { settle: 200 });
+});
+
+test('⏎ in the list opens the result and leaves the keyboard there; walking on replaces the preview tab', async () => {
+  await search('');
+  await search('token');
+  await expect(totals()).toHaveText('11 results in 2 files');
+  await field().press('ArrowDown');
+  await expect(selectedRow()).toBeFocused();
+  await expect(selectedRow()).toHaveAttribute('data-rel', 'src/auth/session.ts');
+  // The last result, in a file not open yet: its editor loads after the key.
+  await win.keyboard.press('End');
+  await win.keyboard.press('Enter');
+  await expect(tab('tokens.ts')).toHaveClass(/is-preview/);
+  await expect(fileTabs()).toHaveCount(1);
+  await expect(strong()).toHaveText('token');
+  expect(await strongLine()).toBe('    this.entries.delete(token);');
+  await expect(footPos()).toHaveText('Ln 9, Col 30');
+  // The editor has loaded and shown the match: nothing took the keyboard from the list since.
+  await frames(win);
+  await expect(selectedRow()).toBeFocused();
+  await expect(content()).not.toBeFocused();
+  // The one before it, in the same file.
+  await win.keyboard.press('ArrowUp');
+  await win.keyboard.press('Enter');
+  await expect(footPos()).toHaveText('Ln 8, Col 15');
+  await expect(selectedRow()).toBeFocused();
+  // Back to the first file's first result: the preview tab is replaced again, the keyboard still in the list.
+  await win.keyboard.press('Home');
+  await win.keyboard.press('ArrowDown');
+  await win.keyboard.press('Enter');
+  await expect(tab('session.ts')).toHaveClass(/is-preview/);
+  await expect(fileTabs()).toHaveCount(1);
+  await expect(strong()).toHaveText('Token');
+  await expect(footPos()).toHaveText('Ln 1, Col 15');
+  await frames(win);
+  await expect(selectedRow()).toBeFocused();
+  await expect(content()).not.toBeFocused();
+  await look(win, 'test-results/find-in-files-editor-enter.png', { settle: 200 });
+});
+
+test('a Markdown file saved as Preview opens as source for the visit; its switch goes back to Preview; the saved view stays', async () => {
+  await win.getByRole('button', { name: /^Files/ }).click();
+  await win.locator('.tree-row', { hasText: 'README.md' }).click();
+  await expect(tab('README.md')).toBeVisible();
+  await sw('Preview').click();
+  await expect(editor().locator('.md-preview')).toBeVisible();
+  expect(JSON.parse((await savedViews())!)).toEqual({ [join(project, 'README.md')]: 'preview' });
+
+  await search('expiry');
+  await expect(totals()).toHaveText('3 results in 1 file');
+  await matchRow('README.md', 7).click();
+  await expect(sw('Source')).toHaveAttribute('aria-checked', 'true');
+  await expect(editor().locator('.md-preview')).toHaveCount(0);
+  await expect(content()).toBeFocused();
+  await expect.poll(pageSelection).toBe('expiry');
+  expect(await strongLine()).toBe('The expiry is one hour.');
+  expect(JSON.parse((await savedViews())!)).toEqual({ [join(project, 'README.md')]: 'preview' });
+  await look(win, 'test-results/find-in-files-editor-markdown.png', { settle: 200 });
+  // The tab's switch: Preview again, nothing saved differently.
+  await sw('Preview').click();
+  await expect(editor().locator('.md-preview')).toBeVisible();
+  expect(JSON.parse((await savedViews())!)).toEqual({ [join(project, 'README.md')]: 'preview' });
+  // Another result: source again; the file opened from the tree afterwards shows its own view.
+  await matchRow('README.md', 3).click();
+  await expect(sw('Source')).toHaveAttribute('aria-checked', 'true');
+  await expect.poll(pageSelection).toBe('expiry');
+  await win.getByRole('button', { name: /^Files/ }).click();
+  await win.locator('.tree-row', { hasText: 'README.md' }).click();
+  await expect(sw('Preview')).toHaveAttribute('aria-checked', 'true');
+  await expect(editor().locator('.md-preview')).toBeVisible();
+});
+
+test('the file changed on disk since the search: the moved occurrence is selected; gone, the line without a selection', async () => {
+  await search('zebra');
+  await expect(totals()).toHaveText('1 result in 1 file');
+  write('src/moved.ts', `// added one\n// added two\n${MOVED}`);
+  await matchRow('src/moved.ts', 4).click();
+  await expect(tab('moved.ts')).toBeVisible();
+  await expect(footPos()).toHaveText('Ln 6, Col 19');
+  await expect.poll(pageSelection).toBe('zebra');
+  expect(await strongLine()).toBe("export const zebra = 'stripes';");
+  // No occurrence left near the line: the cursor at the result's line, nothing selected.
+  write('src/moved.ts', MOVED.replace('zebra', 'horse'));
+  await expect(content()).toContainText('horse');
+  await matchRow('src/moved.ts', 4).click();
+  await expect(footPos()).toHaveText('Ln 4, Col 1');
+  await expect(strong()).toHaveCount(0);
+  await expect.poll(pageSelection).toBe('');
+});
+
+test('Esc in the editor, the find card opening and an emptied query take the highlights and ticks away', async () => {
+  await search('token');
+  await expect(totals()).toHaveText('11 results in 2 files');
+  await matchRow('src/auth/session.ts', 12).click();
+  await expect(strong()).toHaveText('token');
+  await expect(ticks()).toHaveCount(5);
+  await win.keyboard.press('Escape');
+  await expect(hits()).toHaveCount(0);
+  await expect(ticks()).toHaveCount(0);
+  // Esc took only the marks: the match is still selected.
+  await expect.poll(pageSelection).toBe('token');
+
+  await matchRow('src/auth/session.ts', 12).click();
+  await expect(hits()).toHaveCount(6);
+  await win.keyboard.press('Meta+f');
+  await expect(win.locator('.find-card')).toBeVisible();
+  await expect(hits()).toHaveCount(0);
+  await win.keyboard.press('Escape');
+  await expect(win.locator('.find-card')).toHaveCount(0);
+
+  await matchRow('src/auth/session.ts', 12).click();
+  await expect(hits()).toHaveCount(6);
+  await expect(ticks()).toHaveCount(5);
+  await field().fill('');
+  await expect(hits()).toHaveCount(0);
+  await expect(ticks()).toHaveCount(0);
+});
+
+test('a file over 5 MB opens straight in the read-only large view, at its match', async () => {
+  await search('walrus');
+  await expect(totals()).toHaveText('1 result in 1 file');
+  await matchRow('logs/big.log', WALRUS_LINE).click();
+  await expect(editor().locator('.file-foot')).toContainText('Read-only · large file');
+  await expect(editor().locator('.file-large')).toHaveCount(0);
+  // The strong mark is the occurrence the selection holds.
+  await expect(strong()).toHaveText('walrus');
+  expect(await strongLine()).toBe(`${'x'.repeat(40)} walrus ${'x'.repeat(51)}`);
+  await look(win, 'test-results/find-in-files-editor-large.png', { settle: 200 });
+});
+
+test('⌘⏎ opens the result to the side, in a new split, as a kept tab; the keyboard stays in the list', async () => {
+  await search('token');
+  await expect(totals()).toHaveText('11 results in 2 files');
+  // Another file in front first: the result goes beside it.
+  await matchRow('src/auth/tokens.ts', 4).click();
+  await expect(tab('tokens.ts')).toBeVisible();
+  // The click's editor has the keyboard (and its match) before the list takes it back.
+  await expect(content()).toBeFocused();
+  await expect(strong()).toHaveText('token');
+  await field().press('ArrowDown');
+  await win.keyboard.press('Home');
+  await win.keyboard.press('ArrowDown');
+  await win.keyboard.press('ArrowDown');
+  await expect(selectedRow()).toHaveAttribute('data-line', '1');
+  await expect(selectedRow()).toBeFocused();
+  await win.keyboard.press('Meta+Enter');
+  await expect(win.locator('.workspace-body.is-split')).toBeVisible();
+  const side = win.locator('.pane-strip[data-pane="1"] .tab[data-key^="f:"]');
+  await expect(side).toHaveText([/session\.ts/]);
+  await expect(side).not.toHaveClass(/is-preview/);
+  const sideEditor = win.locator('section.file-view[aria-label="src/auth/session.ts"]');
+  await expect(sideEditor).toBeVisible();
+  await expect(sideEditor.locator('.cm-fif-hit-strong')).toHaveText('token');
+  expect(await sideEditor.locator('.cm-fif-hit-strong').evaluate((el) => el.closest('.cm-line')?.textContent)).toBe("import { TokenStore } from './tokens';");
+  await expect(sideEditor.locator('.foot-pos')).toHaveText('Ln 1, Col 36');
+  await frames(win);
+  await expect(selectedRow()).toBeFocused();
+  await look(win, 'test-results/find-in-files-editor-side.png', { settle: 200 });
+});

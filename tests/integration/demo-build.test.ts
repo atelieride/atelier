@@ -13,7 +13,8 @@ import { SENSITIVE, SHOTS_ONLY, findBanned } from '../support/banned-strings';
 // none of the state-detection functions (their output ships, never they); the first-paint budget; the page's CSP,
 // noindex, manifest and licence notices; no sourcemaps and no comments.
 
-const BUDGET = 900 * 1024;
+// +1 KB for Find in Files: a result's file opened at its match (the store's action, the editor's hand-off to its module).
+const BUDGET = 901 * 1024;
 const SHARED = resolve('src/shared');
 const INSTALL = resolve('src/demo/install.ts');
 

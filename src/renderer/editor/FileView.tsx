@@ -120,6 +120,10 @@ export function FileView({ file, visible, focused = visible, place }: { file: Op
   useEffect(() => { view.current?.requestMeasure(); }, [editorFont]);
   const scroll = useRef(0);
   const targeted = useRef<number | null>(null);
+  // A search result opened with the keyboard staying in the list: this open never moves the keyboard (the editor made,
+  // the tab shown, the code view back) until the tab is hidden or its pane loses the focus (`released`).
+  const released = useRef(0);
+  const held = () => !!file.found?.keepFocus && released.current !== file.nonce;
   const [content, setContent] = useState<FileContent | null>(null);
   const [original, setOriginal] = useState<string | null>(null);
   const [plain, setPlain] = useState(false);
@@ -637,7 +641,7 @@ export function FileView({ file, visible, focused = visible, place }: { file: Op
     hlLang.current = lang;
     // CSV colors itself (rainbow columns): no grammar, and no "Plain text" note.
     if (hasGrammar(lang)) void highlight(doc, lang, hlKey).then((spans) => { if (view.current === v && spans !== 'dropped' && langRef.current === lang) { if (spans) v.dispatch({ effects: setTokens.of(spans) }); else setPlain(true); } });
-    if (visible && focusedRef.current) focusShown();
+    if (visible && focusedRef.current && !held()) focusShown();
     targeted.current = null;
     pushText();
     readCursor(v.state);
@@ -722,6 +726,9 @@ export function FileView({ file, visible, focused = visible, place }: { file: Op
     let n = file.line;
     if (diff) { const i = diff.lines.findIndex((l) => l.newNo === file.line); if (i >= 0) n = i + 1; }
     n = Math.min(Math.max(1, n), v.state.doc.lines);
+    // A search result: its match selected and the query's occurrences marked, by a module loaded with the first one.
+    const found = file.found;
+    if (found) { void import('./find-in-files-ext').then((m) => { if (view.current === v && targeted.current === file.nonce) m.showFound(v, n, found); }); return; }
     const pos = v.state.doc.line(n).from;
     v.dispatch({ effects: [setTargetLine.of(n), EditorView.scrollIntoView(pos, { y: 'center' })], selection: { anchor: pos } });
   }, [file.line, file.nonce, content, diff, hasText]);
@@ -729,9 +736,10 @@ export function FileView({ file, visible, focused = visible, place }: { file: Op
   // A hidden tab cannot scroll: the position is restored when it becomes visible again.
   useEffect(() => {
     const v = view.current;
+    if (!visible || !focused) released.current = file.nonce;
     if (!visible || !v) return;
     if (Math.abs(v.scrollDOM.scrollTop - scroll.current) > 1) v.scrollDOM.scrollTop = scroll.current;
-    if (focused) focusShown();
+    if (focused && !held()) focusShown();
   }, [visible, focused]);
 
   // CSV: new parse options parse again; the source's toggles reach the editor at once;
@@ -787,7 +795,7 @@ export function FileView({ file, visible, focused = visible, place }: { file: Op
     pendingPos.current = null;
     if (line !== null) requestAnimationFrame(() => revealLine(line));
     else if (pos !== null) requestAnimationFrame(() => revealPos(pos));
-    else if (visible && focused) v.focus();
+    else if (visible && focused && !held()) v.focus();
   }, [previewOnly]);
 
   const reload = () => {

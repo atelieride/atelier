@@ -1,16 +1,22 @@
 // Find in Files: what opening a result does, shared by the list (click, ⏎, ⌘⏎) and the rows' menus.
-import type { SearchFile } from '@shared/search';
+import type { SearchFile, SearchLine } from '@shared/search';
 import { useApp } from '../store';
+import { useSearch } from './store';
 
-/** A result's file in the preview tab, at the match's line (walking the results replaces that tab). */
-export function openResult(file: SearchFile, line: number | null): void {
-  useApp.getState().openFile(file.path, file.rel, line, undefined, { preview: true });
+export interface OpenHow {
+  /** In the other pane of a split (a new split when there is none), as a kept tab; else the preview tab. */
+  side: boolean;
+  /** The keyboard stays where it is (⏎ and ⌘⏎ in the list, to walk on); else it moves to the editor. */
+  keepFocus: boolean;
 }
 
-/** A result's file in the other pane of a split, a new split made when there is none. */
-export function openResultToSide(file: SearchFile): void {
-  useApp.getState().openFileToSide(file.path, file.rel);
+/** A match: its file opened at it, selected, every occurrence of the query marked (walking the results replaces the preview tab). */
+export function openResult(file: SearchFile, line: SearchLine, index: number, how: OpenHow): void {
+  useApp.getState().openSearchResult(file, line, index, { ...how, spec: useSearch.getState().spec });
 }
 
-/** The first line with a match of a file: where its file row opens it. */
-export const firstLine = (file: SearchFile): number | null => file.lines[0]?.line ?? null;
+/** A file row: its first match. */
+export function openFileResult(file: SearchFile, how: OpenHow): void {
+  const line = file.lines[0];
+  if (line) openResult(file, line, 0, how);
+}
