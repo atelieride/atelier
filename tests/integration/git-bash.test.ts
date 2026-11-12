@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import * as pty from 'node-pty';
@@ -28,10 +28,11 @@ function bashPath(p: string): string {
 }
 
 /**
- * A fake claude: prints its arguments (printf: macOS's /bin/sh echo would read backslashes in a Windows path), and
- * ATL_X when an alias set it in front.
+ * A fake claude: logs its arguments, and ATL_X when an alias set it in front, to ~/claude.log (a file: ConPTY redraws
+ * the screen, wrapping and reordering what a program prints). printf: macOS's /bin/sh echo would read backslashes.
  */
-const FAKE_CLAUDE = '#!/bin/sh\nprintf \'%s\\n\' "ARGS:$*"\n[ -n "$ATL_X" ] && printf \'X=%s\\n\' "$ATL_X"\nexit 0\n';
+const fakeClaude = (tag: string) => `#!/bin/sh\nprintf '%s\\n' "${tag}:$*" >> "$HOME/claude.log"\n[ -n "$ATL_X" ] && printf 'X=%s\\n' "$ATL_X" >> "$HOME/claude.log"\nexit 0\n`;
+const FAKE_CLAUDE = fakeClaude('ARGS');
 /** In a profile: the fake claude first on PATH. */
 const FAKE_FIRST = 'PATH="$HOME/fakebin:$PATH"\n';
 
@@ -42,7 +43,11 @@ function pathWithoutClaude(): string[] {
     .filter((d) => d && !['claude', 'claude.exe', 'claude.cmd'].some((n) => existsSync(join(d, n))));
 }
 
-async function runBash(o: Run): Promise<{ out: string; home: string; atelierHome: string; settings: string }> {
+/**
+ * out: what the terminal shows; flat: the same without line breaks (ConPTY wraps lines where it likes); log: what the
+ * fake claude logged.
+ */
+async function runBash(o: Run): Promise<{ out: string; flat: string; log: string; home: string; atelierHome: string; settings: string }> {
   const dir = mkdtempSync(join(tmpdir(), 'atl-gb-'));
   const rc = join(dir, 'atelier.bash');
   writeFileSync(rc, ATELIER_BASH);
@@ -74,7 +79,12 @@ async function runBash(o: Run): Promise<{ out: string; home: string; atelierHome
     let out = '';
     const timer = setTimeout(() => { p.kill(); reject(new Error(`timeout; output so far: ${JSON.stringify(out)}`)); }, 30_000);
     p.onData((d) => { out += d; });
-    p.onExit(() => { clearTimeout(timer); resolve({ out, home, atelierHome, settings }); });
+    p.onExit(() => {
+      clearTimeout(timer);
+      const logFile = join(home, 'claude.log');
+      const log = existsSync(logFile) ? readFileSync(logFile, 'utf8').replace(/\r/g, '') : '';
+      resolve({ out, flat: out.replace(/[\r\n]/g, ''), log, home, atelierHome, settings });
+    });
     for (const l of [...o.lines, 'exit']) p.write(l + '\r');
   });
 }
@@ -85,27 +95,28 @@ const osc7s = (out: string) => [...out.matchAll(/\x1b\]7;([^\x07]*)\x07/g)].map(
 test.runIf(canRun)('a terminal starts without a word from Atelier’s file, also with aliases of every shape', async () => {
   const profile = "alias a1='ls -l'\nalias a2=\"echo 'q' \\\"d\\\"\"\nalias a3='x=1 y'\nalias a4=''\nalias a5='claude.exe --x'\n";
   const r = await runBash({ env: { ATELIER_PROMPT_NONCE: NONCE }, home: { '.bash_profile': profile }, lines: ['cd ..', 'true'] });
-  expect(r.out).not.toMatch(/syntax error|command not found|unbound variable|bad substitution|: line \d+:/);
+  expect(r.flat).not.toMatch(/syntax error|command not found|unbound variable|bad substitution|: line \d+:/);
 }, 60_000);
 
 test.runIf(canRun)('the user’s login files load, as bash -l would', async () => {
   const a = await runBash({ home: { '.bash_profile': "export ATL_P=loaded\nalias ll='ls -l'\n" }, lines: ['echo "P=$ATL_P"', 'alias ll'] });
-  expect(a.out).toContain('P=loaded');
-  expect(a.out).toContain("alias ll='ls -l'");
+  expect(a.flat).toContain('P=loaded');
+  expect(a.flat).toContain("alias ll='ls -l'");
   const b = await runBash({ home: { '.profile': 'export ATL_P=profile\n' }, lines: ['echo "P=$ATL_P"'] });
-  expect(b.out).toContain('P=profile');
+  expect(b.flat).toContain('P=profile');
 }, 60_000);
 
 test.runIf(canRun)('the prompt signal carries the nonce, which no program sees', async () => {
   const a = await runBash({ env: { ATELIER_PROMPT_NONCE: NONCE }, lines: ['echo "N=${ATELIER_PROMPT_NONCE:-none}"'] });
   expect(signals(a.out, NONCE)).toBeGreaterThanOrEqual(2);
-  expect(a.out).toContain('N=none');
+  expect(a.flat).toContain('N=none');
   const b = await runBash({ env: { ATELIER_PROMPT_NONCE: 'xyz!' }, lines: ['true'] });
   expect(b.out).not.toContain('\x1b]133;P');
 }, 60_000);
 
 test.runIf(canRun)('OSC 7 names the folder, percent-encoded', async () => {
-  const name = 'a b#%é?';
+  // `?` can't be in a Windows file name.
+  const name = isWin ? 'a b#%é' : 'a b#%é?';
   const r = await runBash({ dirs: [name], lines: [`cd "$HOME/${name}"`] });
   const last = osc7s(r.out).at(-1)!;
   expect(last).not.toMatch(/[ #?é]/);
@@ -114,10 +125,11 @@ test.runIf(canRun)('OSC 7 names the folder, percent-encoded', async () => {
 }, 60_000);
 
 test.runIf(canRun)('Atelier’s bin comes first, also if the user’s files moved it, and only once', async () => {
-  const r = await runBash({ home: { '.bash_profile': 'PATH="/usr/bin:$PATH"\n' }, lines: ['echo "H=${PATH%%:*}"', 'echo "PATH=:$PATH:"'] });
+  const r = await runBash({ home: { '.bash_profile': 'PATH="/usr/bin:$PATH"\n' }, lines: ['echo "H=${PATH%%:*}=H"', 'echo "PATH=:$PATH:END"'] });
   const bin = `${bashPath(r.atelierHome)}/bin`;
-  expect(r.out).toContain(`H=${bin}`);
-  const path = /PATH=(:[^\r\n]*:)\r?\n/.exec(r.out.slice(r.out.lastIndexOf('PATH=:')))![1]!;
+  expect(r.flat).toContain(`H=${bin}=H`);
+  // The command line itself shows $PATH unexpanded: only the output has no `$` in it.
+  const path = /PATH=(:[^$]*?:)END/.exec(r.flat)![1]!;
   expect(path.split(`:${bin}:`).length - 1).toBe(1);
 }, 60_000);
 
@@ -127,57 +139,59 @@ test.runIf(canRun)('a prompt command of the user’s still runs, after ours, wit
     home: { '.bash_profile': `PROMPT_COMMAND='echo "UPC=$?"'\n` },
     lines: ['false', 'true']
   });
-  expect(r.out).toMatch(/UPC=1[\s\S]*UPC=0/);
-  expect(r.out.indexOf(`133;P;atelier=${NONCE}`)).toBeLessThan(r.out.indexOf('UPC='));
+  expect(r.flat).toMatch(/UPC=1.*UPC=0/);
+  // ConPTY may move an OSC relative to the text around it: the order is checked where the stream is the shell's own.
+  if (!isWin) expect(r.out.indexOf(`133;P;atelier=${NONCE}`)).toBeLessThan(r.out.indexOf('UPC='));
   const ps1 = await runBash({ home: { '.bash_profile': "PS1='[$?] '\n" }, lines: ['false'] });
-  expect(ps1.out).toContain('[1] ');
+  expect(ps1.flat).toContain('[1] ');
 }, 60_000);
 
-test.runIf(isWin && existsSync(GIT_BASH))('an array PROMPT_COMMAND (bash 5.1+) keeps its elements, ours first', async () => {
+test.runIf(isWin && existsSync(GIT_BASH))('an array PROMPT_COMMAND (bash 5.1+) keeps its elements, and the prompt signal comes too', async () => {
   const r = await runBash({ env: { ATELIER_PROMPT_NONCE: NONCE }, home: { '.bash_profile': "PROMPT_COMMAND=('echo A1' 'echo A2')\n" }, lines: ['true'] });
-  expect(r.out).toMatch(new RegExp(`133;P;atelier=${NONCE}\\x07[\\s\\S]*A1[\\s\\S]*A2`));
+  expect(r.flat).toMatch(/A1.*A2.*A1.*A2/);
+  expect(signals(r.out, NONCE)).toBeGreaterThanOrEqual(2);
 }, 60_000);
 
 test.runIf(canRun)('claude gets Atelier’s settings; subcommands and --print run plain', async () => {
   const r = await runBash({ home: { '.bash_profile': FAKE_FIRST }, lines: ['claude --name=x', 'claude mcp list', 'claude -p hi', 'claude --print=x'] });
-  expect(r.out).toContain(`ARGS:--settings ${r.settings} --name=x`);
-  expect(r.out).toContain('ARGS:mcp list\r');
-  expect(r.out).toContain('ARGS:-p hi\r');
-  expect(r.out).toContain('ARGS:--print=x\r');
+  expect(r.log).toContain(`ARGS:--settings ${r.settings} --name=x\n`);
+  expect(r.log).toContain('ARGS:mcp list\n');
+  expect(r.log).toContain('ARGS:-p hi\n');
+  expect(r.log).toContain('ARGS:--print=x\n');
 }, 60_000);
 
 test.runIf(canRun)('outside an Atelier terminal (no atelierd socket) claude runs plain', async () => {
   const r = await runBash({ env: { ATELIER_SOCK: '' }, home: { '.bash_profile': FAKE_FIRST }, lines: ['claude --name=x'] });
-  expect(r.out).toContain('ARGS:--name=x\r');
+  expect(r.log).toBe('ARGS:--name=x\n');
 }, 60_000);
 
 test.runIf(canRun)('an alias cc=claude goes through Atelier’s claude', async () => {
   const r = await runBash({ home: { '.bash_profile': FAKE_FIRST + 'alias cc=claude\n' }, lines: ['cc a'] });
-  expect(r.out).toContain(`ARGS:--settings ${r.settings} a`);
+  expect(r.log).toBe(`ARGS:--settings ${r.settings} a\n`);
 }, 60_000);
 
 test.runIf(canRun)('the user’s own claude alias and function stay, without calling themselves again', async () => {
   const a = await runBash({ home: { '.bash_profile': FAKE_FIRST + "alias claude='claude --model m'\n" }, lines: ['claude a'] });
-  expect(a.out).toContain(`ARGS:--model m --settings ${a.settings} a`);
+  expect(a.log).toBe(`ARGS:--model m --settings ${a.settings} a\n`);
   const f = await runBash({ home: { '.bash_profile': FAKE_FIRST + 'claude() { command claude --from-fn "$@"; }\n' }, lines: ['claude a'] });
-  expect(f.out).toContain(`ARGS:--from-fn --settings ${f.settings} a`);
+  expect(f.log).toBe(`ARGS:--from-fn --settings ${f.settings} a\n`);
 }, 60_000);
 
 test.runIf(canRun)('ATELIER_CLAUDE_BIN wins; in the e2e suite a real claude is refused', async () => {
   const blocked = await runBash({ env: { ATELIER_E2E: '1' }, lines: ['claude a', 'echo "rc=$?"'] });
-  expect(blocked.out).toContain('REAL-CLAUDE-BLOCKED');
-  expect(blocked.out).toContain('rc=97');
+  expect(blocked.flat).toContain('REAL-CLAUDE-BLOCKED');
+  expect(blocked.flat).toContain('rc=97');
   const dir = mkdtempSync(join(tmpdir(), 'atl-gb-bin-'));
   const bin = join(dir, 'fake-claude');
-  writeFileSync(bin, '#!/bin/sh\nprintf \'%s\\n\' "BIN:$*"\n', { mode: 0o755 });
+  writeFileSync(bin, fakeClaude('BIN'), { mode: 0o755 });
   const r = await runBash({ env: { ATELIER_E2E: '1', ATELIER_CLAUDE_BIN: bin }, home: { '.bash_profile': FAKE_FIRST }, lines: ['claude a'] });
-  expect(r.out).toContain(`BIN:--settings ${r.settings} a`);
+  expect(r.log).toBe(`BIN:--settings ${r.settings} a\n`);
 }, 60_000);
 
 test.runIf(canRun)('set -u in the user’s profile breaks nothing', async () => {
   const r = await runBash({ env: { ATELIER_PROMPT_NONCE: NONCE }, home: { '.bash_profile': FAKE_FIRST + 'set -u\n' }, lines: ['claude a', 'cd ..', 'true'] });
-  expect(r.out).not.toContain('unbound variable');
-  expect(r.out).toContain(`ARGS:--settings ${r.settings} a`);
+  expect(r.flat).not.toContain('unbound variable');
+  expect(r.log).toBe(`ARGS:--settings ${r.settings} a\n`);
 }, 60_000);
 
 test.runIf(isWin && existsSync(GIT_BASH))('no claude on PATH: the one Claude’s native installer puts in ~/.local/bin', async () => {
@@ -186,13 +200,13 @@ test.runIf(isWin && existsSync(GIT_BASH))('no claude on PATH: the one Claude’s
   // Any program that prints its arguments stands in for claude.exe.
   copyFileSync(join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Git', 'usr', 'bin', 'echo.exe'), join(profile, '.local', 'bin', 'claude.exe'));
   const r = await runBash({ env: { USERPROFILE: profile }, lines: ['claude a'] });
-  expect(r.out).toContain(`--settings ${r.settings} a`);
+  expect(r.flat).toContain(`--settings ${r.settings} a`);
 }, 60_000);
 
 test.runIf(canRun)('an alias to Claude’s binary by its path is tracked, and still runs that binary', async () => {
   const r = await runBash({ bins: { 'tools/claude': FAKE_CLAUDE }, home: { '.bash_profile': 'alias cc="$HOME/tools/claude --model m"\n' }, lines: ['cc a', 'alias cc'] });
-  expect(r.out).toContain(`ARGS:--settings ${r.settings} --model m a`);
-  expect(r.out).toContain(`alias cc='__atelier_claude_with ${bashPath(r.home)}/tools/claude --model m'`);
+  expect(r.log).toBe(`ARGS:--settings ${r.settings} --model m a\n`);
+  expect(r.flat).toContain(`alias cc='__atelier_claude_with ${bashPath(r.home)}/tools/claude --model m'`);
 }, 60_000);
 
 test.runIf(canRun)('variables an alias sets in front of Claude’s binary stay', async () => {
@@ -201,8 +215,7 @@ test.runIf(canRun)('variables an alias sets in front of Claude’s binary stay',
     home: { '.bash_profile': 'alias cc="ATL_X=1 $HOME/tools/claude"\nalias cq="ATL_X=\'a b\' $HOME/tools/claude"\n' },
     lines: ['cc a', 'cq b']
   });
-  expect(r.out).toContain(`ARGS:--settings ${r.settings} a\r\nX=1`);
-  expect(r.out).toContain(`ARGS:--settings ${r.settings} b\r\nX=a b`);
+  expect(r.log).toBe(`ARGS:--settings ${r.settings} a\nX=1\nARGS:--settings ${r.settings} b\nX=a b\n`);
 }, 60_000);
 
 test.runIf(canRun)('claude.exe in any case, bare or by a path, quoted or not, is recognized', async () => {
@@ -211,9 +224,9 @@ test.runIf(canRun)('claude.exe in any case, bare or by a path, quoted or not, is
     home: { '.bash_profile': "alias c1='claude.exe'\nalias c2='~/x/Claude.EXE --a'\nalias c3=\"'$HOME/my tools/claude'\"\n" },
     lines: ['alias c1', 'alias c2', 'c3 a']
   });
-  expect(r.out).toContain("alias c1='__atelier_claude_with claude.exe'");
-  expect(r.out).toContain("alias c2='__atelier_claude_with ~/x/Claude.EXE --a'");
-  expect(r.out).toContain(`ARGS:--settings ${r.settings} a`);
+  expect(r.flat).toContain("alias c1='__atelier_claude_with claude.exe'");
+  expect(r.flat).toContain("alias c2='__atelier_claude_with ~/x/Claude.EXE --a'");
+  expect(r.log).toBe(`ARGS:--settings ${r.settings} a\n`);
 }, 60_000);
 
 test.runIf(canRun)('other aliases are left alone, and no alias text runs at startup', async () => {
@@ -222,7 +235,7 @@ test.runIf(canRun)('other aliases are left alone, and no alias text runs at star
     home: { '.bash_profile': aliases.map((a) => `alias ${a}\n`).join('') },
     lines: ['alias cm ce cc2 ec plain x', '[ -e "$HOME/RAN" ] && echo RAN-YES || echo RAN-NO']
   });
-  for (const a of aliases) expect(r.out).toContain(`alias ${a}`);
-  expect(r.out).not.toContain('__atelier_claude_with');
-  expect(r.out).toContain('RAN-NO');
+  for (const a of aliases) expect(r.flat).toContain(`alias ${a}`);
+  expect(r.flat).not.toContain('__atelier_claude_with');
+  expect(r.flat).toContain('RAN-NO');
 }, 60_000);
