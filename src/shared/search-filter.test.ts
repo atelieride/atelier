@@ -149,4 +149,13 @@ describe('globToRegExp', () => {
     expect(globToRegExp('a.b').test('axb')).toBe(false);
     expect(globToRegExp('a+(b)').test('a+(b)')).toBe(true);
   });
-});
+  it('orBelow: every path under a match too, never a sibling that only starts the same', () => {
+    expect(globToRegExp('src', true).test('src')).toBe(true);
+    expect(globToRegExp('src', true).test('src/a/b.ts')).toBe(true);
+    expect(globToRegExp('src', true).test('srcs/a.ts')).toBe(false);
+    expect(globToRegExp('src').test('src/a.ts')).toBe(false);
+    expect(globToRegExp('src/**', true).test('src')).toBe(true);
+    expect(globToRegExp('**/build', true).test('a/build/out.js')).toBe(true);
+    // An expression that cannot compile still matches its own text, and what is under it.
+    expect(globToRegExp('[z-a]', true).test('[z-a]/x')).toBe(true);
+  });});

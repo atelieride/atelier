@@ -121,6 +121,7 @@ import { broadcastCompanion, installCompanionIpc, transcriptExists } from './com
 import { configRootsFor } from './claude-config';
 import { ContextService } from './context/service';
 import { installContextIpc } from './context/ipc';
+import { installSearchIpc } from './search/ipc';
 import { branchAt, companionAccountDir, companionFacts, sessionFiles } from './companion/wiring';
 import { randomUUID } from 'node:crypto';
 import { installMedia, registerMediaScheme } from './media-ipc';
@@ -1352,6 +1353,18 @@ if (!app.requestSingleInstanceLock()) {
       claudeTempDeps
     });
     gitHub.installIpc((id) => windowProjects.get(id) ?? null, (e) => isAppUrl(e.senderFrame?.url ?? ''));
+    // Find in Files: the project's real root and the repositories found in it, as ⌘K lists them; its worker is bundled
+    // next to this file. The project's watcher says when files change after a search.
+    const findInFiles = installSearchIpc({
+      projectOf: (e) => {
+        const root = windowProjects.get(e.sender.id);
+        const info = root ? gitHub.info(root) : null;
+        return info ? { root: info.root, discovered: info.discovered } : null;
+      },
+      isTrusted: (e) => isAppUrl(e.senderFrame?.url ?? ''),
+      workerPath: join(__dirname, 'search-worker.js')
+    });
+    gitHub.onFilesChanged = (root, ignoredOnly) => findInFiles.filesChanged(root, ignoredOnly);
     scmHub.installIpc((id) => windowProjects.get(id) ?? null, (e) => isAppUrl(e.senderFrame?.url ?? ''));
     // Git writes: project windows' app pages only (a tab pop-out has no commit drawer, no sheets).
     gitOps.installIpc((id) => (isPopoutWindow(windowsView, id) ? null : windowProjects.get(id) ?? null), (e) => isAppUrl(e.senderFrame?.url ?? ''),

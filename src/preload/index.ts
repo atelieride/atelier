@@ -377,6 +377,14 @@ const api: AtelierApi = {
     newThread: (sessionId) => ipcRenderer.invoke(IPC.companionNew, { sessionId }),
     seen: (sessionId) => ipcRenderer.invoke(IPC.companionSeen, { sessionId })
   },
+  // The request's fields one by one, as for companion: main's schema is strict.
+  search: {
+    start: (r) => ipcRenderer.invoke(IPC.searchStart, {
+      searchId: r.searchId, query: r.query, matchCase: r.matchCase, wholeWord: r.wholeWord, regex: r.regex, include: r.include, exclude: r.exclude, includeIgnored: r.includeIgnored
+    }),
+    stop: (searchId) => ipcRenderer.invoke(IPC.searchStop, searchId),
+    onEvent: (cb) => listen(IPC.evSearch, cb)
+  },
   on: {
     backgroundFeed: (cb) => listen(IPC.evBackgroundFeed, cb),
     terminals: (cb) => listen(IPC.evTerminals, cb),

@@ -9,7 +9,7 @@ import { notInDemo } from './not-in-demo';
 import { relOf, resolved, type DemoContext } from './context';
 
 /** main's DEFAULT_HIDDEN (src/main/fs/files.ts): folders the tree hides unless asked. */
-const HIDDEN = new Set(['.git', 'node_modules', 'dist', 'out', 'build', '.next', 'coverage', '.turbo', '.cache', '.DS_Store']);
+export const HIDDEN: ReadonlySet<string> = new Set(['.git', 'node_modules', 'dist', 'out', 'build', '.next', 'coverage', '.turbo', '.cache', '.DS_Store']);
 /** main's MAX_BYTES for a save. */
 const MAX_BYTES = 5 * 1024 * 1024;
 

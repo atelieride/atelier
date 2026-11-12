@@ -414,6 +414,7 @@ export const SOURCES: Record<string, Area[]> = {
   'src/main/search/run.ts': ['files'],
   'src/main/search/worker.ts': ['files'],
   'src/main/search/service.ts': ['files'],
+  'src/main/search/ipc.ts': ['files'],
   'src/shared/close-sessions.ts': ['sessions', 'workspace'],
   'src/renderer/components/LanguageSheet.tsx': ['editor'],
   'src/renderer/components/LogLineView.tsx': ['background'],

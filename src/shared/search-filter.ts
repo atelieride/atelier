@@ -123,18 +123,22 @@ function body(glob: string): string {
 }
 
 /** A regular expression that matches a whole relative path against `glob`: `*` and `?` stay inside a path
- *  segment, `**` crosses segments, `{a,b}` and `[...]` work, and case is ignored. */
-export function globToRegExp(glob: string): RegExp {
+ *  segment, `**` crosses segments, `{a,b}` and `[...]` work, and case is ignored. `orBelow`: every path under one
+ *  it matches too, as if the glob were followed by a trailing `**` segment. */
+export function globToRegExp(glob: string, orBelow = false): RegExp {
+  // A suffix on the expression rather than a glob that ends in a slash and two stars: the live demo's bundle carries
+  // this module, and a check of that bundle reads a slash followed by two stars as the start of a comment.
+  const below = orBelow ? '(?:/.*)?' : '';
   try {
-    return new RegExp(`^${body(glob)}$`, 'i');
+    return new RegExp(`^${body(glob)}${below}$`, 'i');
   } catch {
-    return new RegExp(`^${[...glob].map(escapeChar).join('')}$`, 'i'); // never throw while the user types
+    return new RegExp(`^${[...glob].map(escapeChar).join('')}${below}$`, 'i'); // never throw while the user types
   }
 }
 
 /** The globs one user pattern stands for. Without a `/` (once a leading `./` and a trailing `/` are dropped) a
  *  pattern matches anywhere in the tree; with one it is anchored at the project root. Either way it also matches
- *  everything under a directory it names, so a plain `src` is a name or path prefix. */
+ *  everything under a directory it names (compiled with `orBelow`), so a plain `src` is a name or path prefix. */
 function expand(pattern: string): string[] {
   return expandBraces(pattern.trim()).flatMap(expandOne);
 }
@@ -144,13 +148,11 @@ function expandOne(pattern: string): string[] {
   while (p.startsWith('./')) p = p.slice(2);
   p = p.replace(/^\/+/, '').replace(/\/+$/, '');
   if (!p) return [];
-  const anchored = p.includes('/');
-  const base = anchored ? p : `**/${p}`;
-  return [base, `${base}/**`];
+  return [p.includes('/') ? p : `**/${p}`];
 }
 
 function compileList(text: string): RegExp[] {
-  return splitTopLevel(text).flatMap(expand).map(globToRegExp);
+  return splitTopLevel(text).flatMap(expand).map((glob) => globToRegExp(glob, true));
 }
 
 /** A predicate over project-relative paths: true when the path matches the include list (or it is empty) and

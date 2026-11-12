@@ -25,6 +25,7 @@ import { DB_CONN_ID, dbConnectionFields, hasEndpoint, sshOverTcp, sshTarget } fr
 import { DB_SLOT_MAX } from '@shared/databases';
 import { scheduleAddFields, scheduleUpdateFields } from '@shared/scheduled-prompts';
 import { THEME_IDS, type ThemeId } from '@shared/themes';
+import { SEARCH_LIMITS } from '@shared/search';
 
 export const idSchema = z.string().min(1).max(64);
 /** Terminals stopped together (Close Workspace's Stop). */
@@ -96,6 +97,19 @@ export const filesClaudeTempSchema = abs;
  */
 export const filesOutsideSchema = z.string().min(1).max(4096).refine((p) => abs.safeParse(p).success || p.startsWith('~/'), 'path');
 export const urlSchema = z.string().min(1).max(8192);
+/** The id a page gives each of its Find in Files searches: a whole number it counts up from 0. */
+export const searchIdSchema = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+/** A Find in Files search: what the editor's find card has, the path filters and whether ignored files count. */
+export const searchStartSchema = z.object({
+  searchId: searchIdSchema,
+  query: z.string().max(SEARCH_LIMITS.queryMax),
+  matchCase: z.boolean(),
+  wholeWord: z.boolean(),
+  regex: z.boolean(),
+  include: z.string().max(SEARCH_LIMITS.globMax),
+  exclude: z.string().max(SEARCH_LIMITS.globMax),
+  includeIgnored: z.boolean()
+}).strict();
 /** A page's answer to main's question: which one, and the answer's word. */
 export const askAnswerSchema = z.object({ id: z.string().min(1).max(32), answer: z.string().min(1).max(16) }).strict();
 export const askShownSchema = z.object({ id: z.string().min(1).max(32) }).strict();

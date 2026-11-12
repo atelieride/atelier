@@ -38,6 +38,7 @@ import type { IfBusy, ScheduledPrompt } from './scheduled-prompts';
 import type { ScheduleNotice } from './schedule-notices';
 import type { Binding, CompanionEvent, CompanionModel, Thread } from './companion/types';
 import type { SignalBookView } from './claude-signals';
+import type { SearchEvent, SearchRequest } from './search';
 
 /** One automation as the windows see it: its settings, its last runs, its state. */
 export interface AutomationView { automation: Automation; runs: Run[]; status: AutomationStatus }
@@ -424,6 +425,15 @@ export const IPC = {
   backgroundWatch: 'background:watch',
   backgroundUnwatch: 'background:unwatch',
   backgroundLoop: 'background:loop',
+  /**
+   * Find in Files: a trusted app page of a project window (pop-outs included), strict schemas. One search at a time
+   * per window; its events (SearchEvent) go back to that window only, on ev:search, a `stale` among them once files
+   * change after its search.
+   *   search:start   SearchRequest
+   *   search:stop    searchId
+   */
+  searchStart: 'search:start',
+  searchStop: 'search:stop',
   // main → renderer events
   evTerminals: 'ev:terminals',
   evBackgroundFeed: 'ev:background-feed',
@@ -482,6 +492,7 @@ export const IPC = {
   evGitOp: 'ev:git-op',
   evScmMessage: 'ev:scm-message',
   evCompanion: 'ev:companion',
+  evSearch: 'ev:search',
   // Tab pop-out windows.
   popoutOpen: 'popout:open',
   popoutTearStart: 'popout:tear-start',
@@ -1049,6 +1060,15 @@ export interface AtelierApi {
   };
   /** Ask, the read-only companion of a session. */
   companion: CompanionApi;
+  /**
+   * Find in Files over the window's project. `start` stops the window's search before it; every event carries the id
+   * the page gave its search, so a late event of an older one is told apart.
+   */
+  search: {
+    start(req: SearchRequest): Promise<void>;
+    stop(searchId: number): Promise<void>;
+    onEvent(cb: (e: SearchEvent) => void): () => void;
+  };
   on: {
     backgroundFeed(cb: (feed: BackgroundFeed) => void): () => void;
     terminals(cb: (list: TerminalInfo[]) => void): () => void;
