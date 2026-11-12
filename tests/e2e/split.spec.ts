@@ -31,6 +31,28 @@ async function menu(app: ElectronApplication, label: string) {
   }, label);
 }
 
+type Resize = { id: string; cols: number; rows: number };
+
+/** From now on, every size the window tells atelierd for a terminal, as main receives them. */
+const recordPtySizes = (app: ElectronApplication) => app.evaluate(({ ipcMain }) => {
+  const g = globalThis as unknown as { ptySizes: Resize[] };
+  g.ptySizes = [];
+  ipcMain.on('term:resize', (_e, a: Resize) => { g.ptySizes.push(a); });
+});
+
+/**
+ * Waits until a terminal's program was told the size its view shows (the footer's "cols×rows"): a pane that closes or
+ * opens resizes the view at once and tells the program once the size has settled. Typed before that, zsh prints for
+ * the old width, then redraws its prompt for the new one over the line above it (a command's output).
+ */
+async function ptySettled(app: ElectronApplication, win: Page, id: string) {
+  await expect.poll(async () => {
+    const shown = /\d+×\d+/.exec(await win.locator('.foot-dim', { hasText: '×' }).first().innerText())?.[0];
+    const told = (await app.evaluate((_e, t) => (globalThis as unknown as { ptySizes: Resize[] }).ptySizes.filter((r) => r.id === t), id)).at(-1);
+    return told !== undefined && shown === `${told.cols}×${told.rows}`;
+  }).toBe(true);
+}
+
 /** The visible terminal views, left to right: their grid column and screen text. */
 const slots = (win: Page) => win.evaluate(() => [...document.querySelectorAll<HTMLElement>('.workspace-body > .terminal-slot')]
   .filter((el) => el.style.display !== 'none')
@@ -350,6 +372,7 @@ test('tabs move between panes with ⌃⌘←/→ and the strip; a file with unsa
   try {
     const win = await app.firstWindow();
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 800));
+    await recordPtySizes(app);
     await alphaBravo(app, win);
     if (await win.locator('.changes-toggle.is-on').count()) await win.locator('.changes-toggle').click();
 
@@ -410,6 +433,7 @@ test('tabs move between panes with ⌃⌘←/→ and the strip; a file with unsa
     await expect(win.locator('.workspace-body.is-split')).toHaveCount(0);
     expect(await strips(win)).toEqual([['Alpha', 'notes.md']]);
     await expect(win.locator('.tab.is-active')).toHaveText([/Alpha/]);
+    await ptySettled(app, win, await idOf(win, 'Alpha'));
     await win.keyboard.type('echo AF""TERCLOSE\n');
     await expect.poll(() => textOf(win, 1)).toContain('AFTERCLOSE');
   } finally {
