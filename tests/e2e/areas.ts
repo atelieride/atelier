@@ -369,7 +369,8 @@ export const SOURCES: Record<string, Area[]> = {
   'src/renderer/components/AccountsSettings.tsx': ['accounts', 'settings'],
   'src/renderer/components/LaunchFlags.tsx': ['accounts', 'settings'],
   'src/renderer/components/ClaudeCompatibility.tsx': ['settings'],
-  'src/renderer/components/ActivityBar.tsx': ['workspace'],
+  // Its Source Control dot follows Changes' ↓ (changes-sync).
+  'src/renderer/components/ActivityBar.tsx': ['workspace', 'changes'],
   'src/renderer/components/Avatar.tsx': ['sessions'],
   // Session avatars off: tabs, pane headers, the session bar.
   'src/renderer/components/SessionTile.tsx': ['sessions', 'workspace'],

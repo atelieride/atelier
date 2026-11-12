@@ -59,6 +59,14 @@ test('autoFetch: "when viewing" by default; intervals and off accepted, anything
   expect(settingsPatchSchema.safeParse({ autoFetch: '1m' }).success).toBe(false);
 });
 
+test('scmPullDot: Source Control\'s dot for commits to pull is on by default; a boolean, anything else back to on', () => {
+  expect(DEFAULT_SETTINGS.scmPullDot).toBe(true);
+  expect(normalizeSettings({ scmPullDot: false }).scmPullDot).toBe(false);
+  expect(normalizeSettings({ scmPullDot: 'no' }).scmPullDot).toBe(true);
+  expect(settingsPatchSchema.safeParse({ scmPullDot: false }).success).toBe(true);
+  expect(settingsPatchSchema.safeParse({ scmPullDot: 0 }).success).toBe(false);
+});
+
 test('git writes: actions on, ✦ with Haiku, prompts used, like my commits, co-author on; anything else back to the default', () => {
   expect(DEFAULT_SETTINGS).toMatchObject({ gitActions: 'on', commitMessages: 'haiku', commitUsePrompts: true, commitLanguage: 'commits', commitCoAuthor: true });
   const accepted = { gitActions: ['on', 'read-only'], commitMessages: ['haiku', 'sonnet', 'off'], commitLanguage: ['commits', 'english'], commitUsePrompts: [true, false], commitCoAuthor: [true, false] } as const;

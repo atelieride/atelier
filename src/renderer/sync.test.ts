@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import type { FileChange, RepoStatus } from '@shared/git';
 import type { WtView } from './worktrees';
-import { syncLabel, syncOf, syncTip, toSyncOf } from './sync';
+import { pullLabel, pullTipLines, syncLabel, syncOf, syncTip, toPull, toSyncOf } from './sync';
 
 // Sync arrows in Changes: ↓/↑ only against the branch's own upstream, only
 // when something is to pull or push; the tooltip names the upstream.
@@ -68,4 +68,44 @@ test('"To sync": a main repo whose changes are all hidden (This workspace) is no
   const hidden = repo('api', { ahead: 2, changes: [ch('/p/api', 'a.ts')] });
   expect(toSyncOf([hidden], [], [])).toEqual([]);
   expect(toSyncOf([hidden], [{ repo: '/p/api' }], [])).toEqual([{ kind: 'repo', status: hidden }]);
+});
+
+// Source Control's dot: the working trees with a ↓, clean or not, worktrees included, by name; pushing alone is not
+// pulling, and the arrows' own rule decides (own upstream, readable).
+test('to pull: every working tree with a ↓ of its own upstream and how many, by name', () => {
+  const repos = [
+    repo('web', { behind: 2, changes: [ch('/p/web', 'a.ts')] }),
+    repo('api', { behind: 1, ahead: 3 }),
+    repo('docs', { ahead: 4 }),
+    repo('infra'),
+    repo('odd', { behind: 5, error: 'safe.directory' }),
+    repo('lib', { behind: 2, branch: 'feat/x', upstream: 'origin/main' }),
+    repo('cli', { behind: 2, upstream: null }),
+    wtv('alpha', { upstream: 'origin/worktree-alpha', branch: 'worktree-alpha', behind: 7 }).status
+  ];
+  expect(toPull(repos, ['/p'])).toEqual([{ name: 'api', behind: 1 }, { name: 'web', behind: 2 }, { name: 'web › alpha', behind: 7 }]);
+  expect(toPull([repo('docs', { ahead: 1 }), repo('infra')], ['/p'])).toEqual([]);
+  expect(toPull([], ['/p'])).toEqual([]);
+});
+
+// Named as Source Control names them: a worktree after its repository, and two repositories of one name (one in sync
+// is enough) by their path in the project — under the root the window opened or its real path.
+test('to pull: two repositories of one name by their path in the project, the others by name', () => {
+  const repos = [
+    repo('api', { root: '/p/services/api', behind: 2 }),
+    repo('api', { root: '/p/legacy/api' }),
+    repo('web', { root: '/p/web', behind: 1 })
+  ];
+  expect(toPull(repos, ['/p'])).toEqual([{ name: 'services/api', behind: 2 }, { name: 'web', behind: 1 }]);
+  expect(toPull(repos, ['/link/p', '/p'])).toEqual([{ name: 'services/api', behind: 2 }, { name: 'web', behind: 1 }]);
+  // Outside every root, its name is all there is.
+  expect(toPull(repos, ['/elsewhere'])).toEqual([{ name: 'api', behind: 2 }, { name: 'web', behind: 1 }]);
+});
+
+test('the label and the tooltip lines: five names whole; past five, four and how many more', () => {
+  const items = (n: number) => ['a', 'b', 'c', 'd', 'e', 'f'].slice(0, n).map((name, i) => ({ name, behind: i + 1 }));
+  expect(pullLabel(items(5))).toBe('To pull: a, b, c, d, e');
+  expect(pullTipLines(items(5))).toEqual(['a · 1 to pull', 'b · 2 to pull', 'c · 3 to pull', 'd · 4 to pull', 'e · 5 to pull']);
+  expect(pullLabel(items(6))).toBe('To pull: a, b, c, d and 2 more');
+  expect(pullTipLines(items(6))).toEqual(['a · 1 to pull', 'b · 2 to pull', 'c · 3 to pull', 'd · 4 to pull', 'and 2 more']);
 });

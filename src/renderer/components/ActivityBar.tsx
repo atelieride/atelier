@@ -1,5 +1,7 @@
 import { Fragment, useEffect } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { spaceOfActivity } from '../spaces';
+import { pullLabel, pullTipLines, toPull } from '../sync';
 import { Icon, type IconName } from './Icon';
 import { t } from '../i18n/en';
 import { useApp, type Activity } from '../store';
@@ -87,21 +89,34 @@ export function ActivityBar() {
   const redisBad = useRedis((s) => Object.keys(s.status?.unseen ?? {}).length > 0);
   // Automations: this project's runs at work.
   const autoRuns = useApp((s) => activeCount(s.automations, s.project?.root ?? null));
+  // Source Control: a quiet dot in the pull colour while a working tree of the window has commits to pull (its ↓, as of
+  // the last fetch), its label and tooltip saying which; Settings › Source Control turns it off. Strings, compared as
+  // such: a status broadcast with nothing new to pull leaves the bar alone.
+  const pull = useApp(useShallow((s) => {
+    const items = s.settings.scmPullDot ? toPull(s.repos, s.project ? [s.project.root, s.project.realRoot] : []) : [];
+    return items.length ? { label: pullLabel(items), lines: pullTipLines(items).join('\n') } : { label: '', lines: '' };
+  }));
   const shown = items.filter((it) => (it.id !== 'docker' || docker) && (it.id !== 'redis' || redis) && (it.id !== 'databases' || databases) && (it.id !== 'services' || services) && (it.id !== 'automations' || automations));
   // The spaces: Docker, Redis, Databases and Automations change the whole window; a hairline
   // with a little gap sets them apart from Sessions' own views.
   const firstSpace = shown.find((it) => spaceOfActivity(it.id) !== 'sessions')?.id;
   return (
     <nav className="activity-bar" aria-label={t.views}>
-      {shown.map((it) => (
+      {shown.map((it) => {
+        const name = it.label.replace(/ \(.*\)$/, '');
+        const toPullHere = it.id === 'scm' && pull.label !== '';
+        return (
         <Fragment key={it.id}>
         {it.id === firstSpace && <span className="act-gap" aria-hidden="true" />}
-        <button type="button" className={`act ${front === it.id ? 'is-active' : ''} ${it.id === 'docker' ? 'act-docker' : ''} ${it.id === 'redis' && redisDim ? 'is-dim' : ''}`} aria-label={it.label}
-          // The view in front: a click hides the sidebar, and its tip says so.
-          data-tip={front === it.id ? t.activity.hide : it.label.replace(/ \(.*\)$/, '')} data-kbd={front === it.id ? kbd('⌘B') : it.label.match(/\((.*)\)$/)?.[1]}
+        <button type="button" className={`act ${front === it.id ? 'is-active' : ''} ${it.id === 'docker' ? 'act-docker' : ''} ${it.id === 'redis' && redisDim ? 'is-dim' : ''}`}
+          aria-label={toPullHere ? `${it.label} · ${pull.label}` : it.label}
+          // The view in front: a click hides the sidebar, and its tip says so. With something to pull, a rich tip: the
+          // view's name, then one line per working tree.
+          data-tip={front === it.id ? t.activity.hide : toPullHere ? `${name}\n${pull.lines}` : name} data-kbd={front === it.id ? kbd('⌘B') : it.label.match(/\((.*)\)$/)?.[1]}
           aria-pressed={front === it.id} onClick={() => clickActivity(it.id)}>
           <span className="act-bar" />
           <Icon name={it.icon} />
+          {toPullHere && <span className="act-dot is-pull" />}
           {it.id === 'sessions' && waiting > 0 && <span key={waitKey} className="act-dot is-waiting pulse" />}
           {it.id === 'services' && svcErrors && <span className="act-dot is-error" />}
           {it.id === 'docker' && dockerBad && <span className="act-dot is-error" />}
@@ -109,7 +124,8 @@ export function ActivityBar() {
           {it.id === 'automations' && autoRuns > 0 && <span className="act-count">{autoRuns}</span>}
         </button>
         </Fragment>
-      ))}
+        );
+      })}
       <button type="button" className={`act act-bottom ${settingsOpen ? 'is-active' : ''}`} aria-label={settingsLabel} data-tip={settingsLabel} data-kbd={kbd('⌘,')}
         onClick={() => {
           const st = useApp.getState();

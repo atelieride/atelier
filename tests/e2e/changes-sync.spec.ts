@@ -87,6 +87,54 @@ test('the arrows follow commits, pushes, fetches, pulls and branch switches', as
   }
 });
 
+test('Source Control\'s icon: a dot while a repository has commits to pull, fetched on its own; the setting turns it off; a pull takes it away', async () => {
+  const p = gitWritesProject(['app', 'lib'], undefined, { remote: true });
+  const app = p.repo('app');
+  const other = otherClone(p.remote('app'));
+  commitIn(other, 'feat: from another clone');
+  commitIn(other, 'fix: from another clone');
+  git(other, 'push', '-q');
+  const { win, panel, stop, command } = await launchGitApp(p.root);
+  try {
+    const scm = win.locator('.activity-bar button[aria-label^="Source Control"]');
+    const dot = scm.locator('.act-dot.is-pull');
+    // Nobody fetched yet, and the window opens on Sessions: Changes fetches once its repositories settle ("When
+    // viewing"), and the ↓ and the dot come with that fetch.
+    await expect(repoRow(panel, 'app').locator('.sync-counts')).toHaveText('↓2', { timeout: 20000 });
+    await expect(dot).toBeVisible();
+    await expect(scm).toHaveAttribute('aria-label', 'Source Control (⌃⇧G) · To pull: app');
+    await expect(scm).toHaveAttribute('data-tip', 'Source Control\napp · 2 to pull');
+    await scm.hover();
+    await expect(win.locator('.tooltip')).toContainText('app · 2 to pull');
+    const b = await box(scm);
+    await look(win, `${SHOTS}/scm-pull-dot.png`, { clip: { x: 0, y: Math.max(0, b.y - 60), width: 360, height: 160 } });
+
+    // Settings › Source Control: "Show commits to pull", on by default; off takes the dot away at once, on brings it back.
+    await command('open-settings');
+    const dialog = win.getByRole('dialog', { name: 'Settings' });
+    await dialog.locator('.set-nav-item', { hasText: 'Source Control' }).click();
+    const sw = dialog.getByRole('switch', { name: 'Show commits to pull' });
+    await expect(sw).toHaveAttribute('aria-checked', 'true');
+    await expect(dialog.getByText('A dot on Source Control’s icon while a repository has commits to pull, as of the last fetch.', { exact: true })).toBeVisible();
+    await look(dialog, `${SHOTS}/scm-pull-dot-setting.png`);
+    await sw.click();
+    await expect(dot).toHaveCount(0);
+    await expect(scm).toHaveAttribute('aria-label', 'Source Control (⌃⇧G)');
+    await sw.click();
+    await expect(dot).toHaveCount(1);
+    await win.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(dot).toBeVisible();
+
+    // A pull: gone with the ↓.
+    git(app, 'pull', '-q', '--ff-only');
+    await expect(dot).toHaveCount(0, { timeout: 10000 });
+    await expect(scm).toHaveAttribute('aria-label', 'Source Control (⌃⇧G)');
+  } finally {
+    await stop();
+  }
+});
+
 test('grouped by repository and by session: the head, the Clean chip, the "To sync" strip right above Clean; the heads stay put', async () => {
   const p = gitWritesProject(['app', 'lib'], undefined, { remote: true });
   const [app, lib] = [p.repo('app'), p.repo('lib')];

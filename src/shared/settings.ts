@@ -198,6 +198,8 @@ export interface Settings {
   openNotionTasksInApp: boolean;
   /** Settings › Source Control: when Atelier runs `git fetch` on its own; manual fetches always work. */
   autoFetch: AutoFetch;
+  /** Settings › Source Control: a dot on Source Control's icon while a working tree has commits to pull (last fetch). */
+  scmPullDot: boolean;
   /**
    * Settings › Source Control: how many folder levels below the project root repositories are looked for (the root
    * is level 0), inside other repositories too.
@@ -311,6 +313,7 @@ export const DEFAULT_SETTINGS: Settings = {
   openTasksInApp: true,
   openNotionTasksInApp: true,
   autoFetch: 'viewing',
+  scmPullDot: true,
   // `group/subgroup/project` layouts and repositories cloned inside another one, at little cost on a normal project.
   repoSearchDepth: 3,
   gitActions: 'on',
@@ -459,6 +462,7 @@ export const SETTINGS_FIELDS: { [K in keyof Settings]: Field } = {
   openTasksInApp: { kind: 'bool' },
   openNotionTasksInApp: { kind: 'bool' },
   autoFetch: { kind: 'enum', values: ['viewing', '15m', '30m', '60m', 'off'] },
+  scmPullDot: { kind: 'bool' },
   repoSearchDepth: { kind: 'int', min: 1, max: 5 },
   gitActions: { kind: 'enum', values: ['on', 'read-only'] },
   commitMessages: { kind: 'enum', values: ['haiku', 'sonnet', 'off'] },

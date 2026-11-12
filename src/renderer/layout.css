@@ -113,6 +113,8 @@
 .act-dot { position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 2px var(--bg-0); }
 .act-dot.is-waiting { background: var(--waiting-mark); }
 .act-dot.is-error { background: var(--error); }
+/* Commits to pull: the ↓'s colour, fading in when a fetch brings them; quiet, never a pulse. */
+.act-dot.is-pull { background: var(--working); animation: atl-fade var(--t-slow) var(--ease); }
 
 .body { flex: 1; display: flex; min-height: 0; }
 /* The smallest window: the work area keeps 240 px and the side panels give way, Changes first
