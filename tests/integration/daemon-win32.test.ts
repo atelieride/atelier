@@ -95,6 +95,45 @@ for (const shell of ['Git Bash', 'PowerShell'] as const) {
   }, 60_000);
 }
 
+/** PATH without a folder holding a real claude: a shell without Atelier's claude function never reaches Claude Code. */
+function pathWithoutClaude(): Record<string, string> {
+  const key = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH') ?? 'Path';
+  const dirs = (process.env[key] ?? '').split(';').filter((d) => d && !['claude.exe', 'claude.cmd', 'claude'].some((n) => existsSync(join(d, n))));
+  return { [key]: dirs.join(';') };
+}
+
+// A Git Bash terminal: claude typed there goes through Atelier's function (ATELIER_CLAUDE_BIN, the fake, with
+// --settings); without it, nothing named claude is on PATH. The fake, a script Git Bash runs, calls the bridge by name
+// as Claude's settings do for a home that needs quoting (found through Atelier's bin, first on the terminal's PATH),
+// then exits without a SessionEnd: Git Bash's own prompt signal ends the session. A home with a space and an
+// apostrophe: the rcfile still loads.
+for (const name of ['atl-win-', "atl win o'b "]) {
+  test.runIf(isWin && existsSync(GIT_BASH))(`a claude typed in a Git Bash terminal reaches atelierd, and its prompt ends a killed one (${name.trim()})`, async () => {
+    const home = mkdtempSync(join(tmpdir(), name));
+    const user = join(home, 'user-settings.json');
+    writeFileSync(user, '{}');
+    const argv = join(home, 'argv.txt').replace(/\\/g, '/');
+    const payload = JSON.stringify({ hook_event_name: 'SessionStart', session_id: SID, cwd: 'C:\\atl\\proj', source: 'startup' });
+    const fake = join(home, 'claude-fake');
+    writeFileSync(fake, `#!/bin/sh\nprintf '%s\\n' "$*" > "${argv}"\natelier-bridge hook <<'EOF'\n${payload}\nEOF\nsleep 3\n`);
+    const d = await runDaemon({ home, version: '0.0.0-test', bridges: [BRIDGE], userClaudeSettings: user, extraEnv: { ATELIER_CLAUDE_BIN: fake, ...pathWithoutClaude() } });
+    running.push(d);
+    const c = await connectControl(d.paths.sock, d.info.token);
+    await c.next((m) => m.t === 'welcome');
+    const cwd = tmpdir().replace(/\\/g, '/');
+    c.send({ t: 'create', rid: 1, projectRoot: cwd, cwd, cols: 120, rows: 30, profile: { shell: GIT_BASH.replace(/\\/g, '/') } });
+    const created = await c.next((m) => m.t === 'reply' && m.rid === 1, 20_000) as Extract<ServerMessage, { t: 'reply'; ok: true }>;
+    const id = (created.result as TerminalInfo).id;
+    c.send({ t: 'input', id, data: 'claude --name=demo\r' });
+    await c.next((m) => m.t === 'terminals' && m.list.some((t) => t.id === id && t.session?.sessionId === SID), 30_000);
+    expect(readFileSync(argv, 'utf8').trim()).toMatch(/^--settings .*claude-settings\.json --name=demo$/);
+    // Lists from before the session (session: null too) are still queued: only one sent after it counts.
+    try { for (;;) await c.next(() => true, 100); } catch { /* the queue is empty */ }
+    await c.next((m) => m.t === 'terminals' && m.list.some((t) => t.id === id && t.session === null), 30_000);
+    c.close();
+  }, 90_000);
+}
+
 test.runIf(isWin && existsSync(GIT_CMD))('the user’s status line runs in the Git Bash next to the git on PATH (a per-user install)', async () => {
   const { d, home } = await start('echo "BASH:$BASH_VERSION"');
   const env: Record<string, string> = {};

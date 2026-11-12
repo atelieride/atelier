@@ -5,6 +5,7 @@ import { afterEach, expect, test } from 'vitest';
 import { daemonPaths } from '@shared/paths.node';
 import { initPlatform, resetPlatformForTests } from '@shared/platform';
 import { writeFileAtomic } from './fsutil';
+import { ATELIER_BASH } from './install-files';
 import { HOOK_EVENTS, WINDOWS_HOOK_TIMEOUT_S, bridgeCommand, buildWindowsClaudeSettings, installAtelierFiles, installBridge, readUserStatusLine } from './install';
 
 afterEach(() => resetPlatformForTests());
@@ -103,6 +104,15 @@ test('Windows install: Claude’s settings point at the installed bridge when th
   writeFileSync(join(p.bin, 'atelier-bridge.exe'), 'old');
   installAtelierFiles(p, join(p.home, 'none.json'), [join(p.home, 'gone.exe')]);
   expect(Object.keys(JSON.parse(readFileSync(p.settings, 'utf8')).hooks ?? {})).toEqual([...HOOK_EVENTS]);
+});
+
+test('Windows install: Git Bash’s integration is written next to atelier.ps1, with LF line ends', () => {
+  const p = daemonPaths(mkdtempSync(join(tmpdir(), 'atl-iw-')));
+  initPlatform('win32');
+  installAtelierFiles(p, join(p.home, 'none.json'), []);
+  const text = readFileSync(join(p.shell, 'atelier.bash'), 'utf8');
+  expect(text).toBe(ATELIER_BASH);
+  expect(text).not.toContain('\r');
 });
 
 // One file an antivirus holds past writeFileAtomic's retries made atelierd's start fail ("atelierd did not start"):

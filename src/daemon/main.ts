@@ -17,8 +17,8 @@ import { loadRegistry, saveRegistry, toResumables } from './registry';
 import { shellQuote, withConfigDir } from '@shared/shell';
 import type { Resumable, ShellEnvState, TerminalInfo, TerminalProfile } from '@shared/protocol';
 import { atelierOwn, buildTerminalEnv } from './env';
-import { defaultPowerShell, listedShell, loginArgs, windowsShells } from './profiles';
-import { powerShellArgs } from './install-files';
+import { defaultPowerShell, isGitBash, listedShell, loginArgs, windowsShells } from './profiles';
+import { gitBashArgs, powerShellArgs } from './install-files';
 import { toNative } from '@shared/paths';
 import { currentPlatform } from '@shared/platform';
 import { closeWaitsForPrograms, windowsPtyFor } from '@shared/windows-pty';
@@ -207,7 +207,14 @@ export async function runDaemon(o: RunDaemonOptions): Promise<RunningDaemon> {
     const file = listedShell(profile.shell, o.etcShells);
     // macOS's bash 3.2 would greet every terminal with "The default interactive shell is now zsh".
     const quiet: Record<string, string> = path.basename(file) === 'bash' ? { BASH_SILENCE_DEPRECATION_WARNING: '1' } : {};
-    return { file, args: loginArgs(file), env: buildTerminalEnv(process.env, { ...quiet, ...atelierVars(id), ...o.extraEnv }) };
+    const env = buildTerminalEnv(process.env, { ...quiet, ...atelierVars(id), ...o.extraEnv });
+    // Windows: Git Bash with Atelier's integration (claude with the hooks, the prompt signal, the folder), which reads
+    // the user's login files itself; a plain login bash if the file couldn't be installed.
+    if (currentPlatform() === 'win32' && isGitBash(file)) {
+      const rc = path.win32.join(paths.shell, 'atelier.bash');
+      if (existsSync(rc)) return { file, args: gitBashArgs(rc), env, promptSignal: true };
+    }
+    return { file, args: loginArgs(file), env };
   };
   // Terminal isolation: the host socket first, then this home's stale jobs (an atelierd that died or stopped left them,
   // finished) go.

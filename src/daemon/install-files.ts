@@ -314,6 +314,236 @@ export function powerShellArgs(script: string): string[] {
   return ['-NoLogo', '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', `try { ${load} } catch [System.Management.Automation.PSSecurityException] { ${POLICY_BLOCKED} }`];
 }
 
+/**
+ * Windows: Atelier's Git Bash integration, the file Git Bash terminals start with (`bash --rcfile <it> -i`). A login
+ * bash ignores --rcfile, so it first reads what `bash -l` would; then, as "PowerShell (your profile)": Atelier's bin
+ * first on PATH (the bridge by name), OSC 7 with the folder and the prompt signal atelierd reads (OSC 133;P with the
+ * terminal's nonce) at every prompt. Nothing else changes: the user's prompt, PATH, aliases and history stay theirs.
+ * bash 3.2-compatible (macOS runs the same file in tests), safe under the user's `set -u`.
+ */
+export const ATELIER_BASH = `# Atelier: Git Bash integration. Atelier starts Git Bash as \`bash --rcfile <this file> -i\`: a login bash would ignore
+# --rcfile, so this file reads what \`bash -l\` reads. Your prompt, PATH and aliases stay yours.
+
+# The prompt signal's nonce (hex only): read first and dropped at once, so nothing started here sees it, not even what
+# your login files start.
+__atelier_signal=
+case "\${ATELIER_PROMPT_NONCE:-}" in
+  ''|*[!0-9a-f]*) ;;
+  *) __atelier_signal=";atelier=\${ATELIER_PROMPT_NONCE}" ;;
+esac
+unset ATELIER_PROMPT_NONCE
+
+if [ -r /etc/profile ]; then . /etc/profile; fi
+if [ -r ~/.bash_profile ]; then . ~/.bash_profile
+elif [ -r ~/.bash_login ]; then . ~/.bash_login
+elif [ -r ~/.profile ]; then . ~/.profile
+fi
+
+if command -v cygpath >/dev/null 2>&1; then __atelier_cygpath=1; else __atelier_cygpath=; fi
+
+# Claude's settings may call atelier-bridge by name (a home that needs quoting): Atelier's bin first, back in front if
+# your files moved it, and only once.
+if [ -n "\${ATELIER_HOME:-}" ]; then
+  if [ -n "$__atelier_cygpath" ]; then __atelier_bin="$(cygpath -u "$ATELIER_HOME")/bin"; else __atelier_bin="$ATELIER_HOME/bin"; fi
+  __atelier_path=":\${PATH:-}:"
+  while [ "\${__atelier_path#*":$__atelier_bin:"}" != "$__atelier_path" ]; do
+    __atelier_path="\${__atelier_path//":$__atelier_bin:"/:}"
+  done
+  __atelier_path="\${__atelier_path#:}"
+  __atelier_path="\${__atelier_path%:}"
+  PATH="$__atelier_bin\${__atelier_path:+:$__atelier_path}"
+  export PATH
+  unset __atelier_bin __atelier_path
+fi
+
+# Your aliases as bash holds them: from BASH_ALIASES (bash 4 and later, every Git Bash: nothing to parse, no extra
+# process), else from \`alias -p\`, where a value counts only as one whole single-quoted string, unquoted here and never
+# evaluated. No alias text runs at startup.
+__atelier_unquote() {
+  local q="'" b='\\'
+  local re="^$q([^$q]|$q[$b]$q$q)*$q"
+  re+='$'
+  [[ $1 =~ $re ]] || return 1
+  __atelier_value=\${1:1:\${#1}-2}
+  __atelier_value=\${__atelier_value//"$q$b$q$q"/$q}
+}
+__atelier_alias_value() {
+  if [ "\${BASH_VERSINFO[0]:-0}" -ge 4 ]; then
+    [ -n "\${BASH_ALIASES[$1]+set}" ] || return 1
+    __atelier_value=\${BASH_ALIASES[$1]}
+  else
+    local def
+    def=$(alias -- "$1" 2>/dev/null) || return 1
+    __atelier_unquote "\${def#*=}"
+  fi
+}
+# Calls "$1 <name> <value>" for each alias.
+__atelier_each_alias() {
+  local name line
+  if [ "\${BASH_VERSINFO[0]:-0}" -ge 4 ]; then
+    for name in "\${!BASH_ALIASES[@]}"; do "$1" "$name" "\${BASH_ALIASES[$name]}"; done
+  else
+    while IFS= read -r line; do
+      case "$line" in "alias "*=\\'*) ;; *) continue ;; esac
+      name=\${line#alias }
+      name=\${name#-- }
+      name=\${name%%=*}
+      if __atelier_unquote "\${line#*=}"; then "$1" "$name" "$__atelier_value"; fi
+    done <<< "$(alias -p)"
+  fi
+}
+# A command's text split into the variable assignments in front (__atelier_pre, spaces kept) and the rest.
+__atelier_split() {
+  local assign="^[A-Za-z_][A-Za-z0-9_]*=('[^']*'|\\"[^\\"]*\\"|[^[:space:]'\\"])*[[:space:]]+"
+  __atelier_pre=
+  __atelier_rest=$1
+  if [[ $__atelier_rest =~ ^[[:space:]]+ ]]; then __atelier_pre=\${BASH_REMATCH[0]}; __atelier_rest=\${__atelier_rest:\${#__atelier_pre}}; fi
+  while [[ $__atelier_rest =~ $assign ]]; do __atelier_pre+=\${BASH_REMATCH[0]}; __atelier_rest=\${__atelier_rest:\${#BASH_REMATCH[0]}}; done
+}
+
+# \`claude\` launched from here brings Atelier's hooks along, without touching ~/.claude. A claude alias or function of
+# yours stays: Atelier's function goes through it. Variables your alias sets in front (another Claude account's
+# CLAUDE_CONFIG_DIR) are set again for each claude.
+__atelier_claude_alias=
+__atelier_claude_pre=
+if __atelier_alias_value claude; then
+  __atelier_split "$__atelier_value"
+  __atelier_claude_pre=$__atelier_pre
+  __atelier_claude_alias=$__atelier_rest
+  unalias claude
+fi
+if declare -F claude >/dev/null 2>&1; then
+  __atelier_def=$(declare -f claude)
+  eval "_atelier_user_claude\${__atelier_def#claude}"
+  unset -f claude
+fi
+unset __atelier_def
+
+# The rules, with the first $1 words as the way to run Claude: subcommands and -p start no session the hooks could
+# follow (and Claude Code refuses --settings before remote-control); outside an Atelier terminal nothing is added.
+__atelier_claude_run() {
+  local n=$1 a
+  shift
+  local -a base
+  base=("\${@:1:$n}")
+  shift "$n"
+  if [ -z "\${ATELIER_SOCK:-}" ] || [ ! -r "\${ATELIER_CLAUDE_SETTINGS:-}" ]; then "\${base[@]}" "$@"; return; fi
+  case "\${1:-}" in
+    ${POWERSHELL_SUBCOMMANDS.join('|')}) "\${base[@]}" "$@"; return ;;
+  esac
+  for a in "$@"; do
+    case "$a" in -p|--print|--print=*) "\${base[@]}" "$@"; return ;; esac
+  done
+  "\${base[@]}" --settings "$ATELIER_CLAUDE_SETTINGS" "$@"
+}
+
+claude() {
+  local -a base
+  local pre=
+  if [ -n "\${ATELIER_CLAUDE_BIN:-}" ]; then base=("$ATELIER_CLAUDE_BIN")
+  elif [ -n "\${ATELIER_E2E:-}" ]; then
+    # e2e tests only ever run the fake claude: never the user's real Claude Code, whatever PATH says.
+    printf '%s\\n' REAL-CLAUDE-BLOCKED >&2
+    return 97
+  elif declare -F _atelier_user_claude >/dev/null 2>&1; then base=(_atelier_user_claude)
+  elif [ -n "$__atelier_claude_alias" ]; then eval "base=($__atelier_claude_alias)"; pre=$__atelier_claude_pre
+  elif type -P claude >/dev/null 2>&1; then base=(command claude)
+  # Claude's native installer puts claude.exe there without always adding the folder to PATH.
+  elif [ -n "$__atelier_cygpath" ] && [ -n "\${USERPROFILE:-}" ] && [ -f "$(cygpath -u "$USERPROFILE")/.local/bin/claude.exe" ]; then
+    base=("$(cygpath -u "$USERPROFILE")/.local/bin/claude.exe")
+  else base=(command claude)
+  fi
+  # An alias such as claude='claude --flag' would call this function again.
+  if [ "\${base[0]}" = claude ]; then base=(command "\${base[@]}"); fi
+  # As the alias would: exported to this claude only, ~ expanded.
+  if [ -n "$pre" ]; then eval "local -x $pre"; fi
+  __atelier_claude_run "\${#base[@]}" "\${base[@]}" "$@"
+}
+
+# Your aliases that run Claude's binary directly (cc='~/.local/bin/claude.exe'), as they are when the terminal starts,
+# go through the same rules with that same binary; variables they set in front stay.
+__atelier_claude_with() {
+  if [ -n "\${ATELIER_CLAUDE_BIN:-}" ]; then set -- "$ATELIER_CLAUDE_BIN" "\${@:2}"
+  elif [ -n "\${ATELIER_E2E:-}" ]; then
+    printf '%s\\n' REAL-CLAUDE-BLOCKED >&2
+    return 97
+  fi
+  __atelier_claude_run 1 "$@"
+}
+__atelier_reroute() {
+  local first="^('[^']*'|\\"[^\\"]*\\"|[^[:space:]'\\";|&<>()]+)" word bare
+  __atelier_split "$2"
+  [[ $__atelier_rest =~ $first ]] || return 0
+  word=\${BASH_REMATCH[1]}
+  # Plain claude already reaches Atelier's function.
+  [ "$word" = claude ] && return 0
+  bare=$word
+  case "$bare" in \\'*\\'|\\"*\\") bare=\${bare:1:\${#bare}-2} ;; esac
+  case "\${bare##*/}" in
+    [Cc][Ll][Aa][Uu][Dd][Ee]|[Cc][Ll][Aa][Uu][Dd][Ee].[Ee][Xx][Ee]) ;;
+    *) return 0 ;;
+  esac
+  alias -- "$1=\${__atelier_pre}__atelier_claude_with $__atelier_rest"
+}
+__atelier_each_alias __atelier_reroute
+unset -f __atelier_reroute __atelier_each_alias __atelier_alias_value __atelier_unquote __atelier_split
+unset __atelier_value __atelier_pre __atelier_rest
+
+# A folder as the path of a file: URI, percent-encoded byte by byte (run in a subshell: LC_ALL=C stays there).
+__atelier_encode() {
+  local s=$1 out= c n i
+  for (( i = 0; i < \${#s}; i++ )); do
+    c=\${s:i:1}
+    case "$c" in
+      [A-Za-z0-9/._~:-]) out+=$c ;;
+      *) printf -v n '%d' "'$c"; if (( n < 0 )); then n=$(( n + 256 )); fi; printf -v c '%%%02X' "$n"; out+=$c ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+# At every prompt, before your own prompt commands (which still see the last command's status): the folder for Atelier
+# (OSC 7, worked out again only when it changed) and the prompt signal atelierd reads (a Claude killed here is gone).
+__atelier_pwd=
+__atelier_url=
+__atelier_prompt() {
+  local s=$? p
+  if [ "$PWD" != "$__atelier_pwd" ]; then
+    __atelier_pwd=$PWD
+    p=$PWD
+    if [ -n "$__atelier_cygpath" ]; then p=$(cygpath -m "$PWD" 2>/dev/null) || p=$PWD; fi
+    case "$p" in /*) ;; *) p="/$p" ;; esac
+    # A plain assignment: as a prefix of a function call LC_ALL wouldn't switch bash's own locale.
+    __atelier_url="file://$(LC_ALL=C; __atelier_encode "$p")"
+    # Under your \`set -a\` every assignment is exported: these stay in this shell.
+    export -n __atelier_pwd __atelier_url
+  fi
+  printf '\\033]7;%s\\007' "$__atelier_url"
+  if [ -n "$__atelier_signal" ]; then printf '\\033]133;P%s\\007' "$__atelier_signal"; fi
+  return $s
+}
+# First, so bash-preexec's own last command stays last: an array PROMPT_COMMAND (bash 5.1+) gets it in its first
+# element, its other elements untouched. Your prompt commands see the last command's $?; PIPESTATUS and $_ are this
+# function's by then.
+if [ -n "\${PROMPT_COMMAND:-}" ]; then
+  PROMPT_COMMAND="__atelier_prompt"$'\\n'"$PROMPT_COMMAND"
+else
+  PROMPT_COMMAND=__atelier_prompt
+fi
+# Not handed to programs started here: a shell started from this one (or an editor's terminals) would run a prompt
+# function it doesn't have. Each new shell's own files set its PROMPT_COMMAND.
+export -n PROMPT_COMMAND
+export -n __atelier_signal __atelier_cygpath __atelier_claude_alias __atelier_claude_pre __atelier_pwd __atelier_url
+`;
+
+/** The same list as the Git Bash function has it (a test keeps the three equal). */
+export const ATELIER_BASH_SUBCOMMANDS: readonly string[] = /case "\$\{1:-\}" in\n\s*([^)]+)\)/.exec(ATELIER_BASH)![1]!.split('|');
+
+/** Git Bash's arguments for an Atelier terminal: the integration as its rcfile (forward slashes), interactive. */
+export function gitBashArgs(rcfile: string): string[] {
+  return ['--rcfile', rcfile.replace(/\\/g, '/'), '-i'];
+}
+
 export const ZSH_FILES: Record<string, string> = {
   '.zshenv': `# Atelier\n${load('.zshenv')}`,
   '.zprofile': `# Atelier\n${load('.zprofile')}`,

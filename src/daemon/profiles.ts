@@ -73,6 +73,11 @@ export function windowsShells(env: Record<string, string | undefined>, exists: (
   });
 }
 
+/** Whether a shell is Git for Windows' Git Bash (it gets Atelier's integration; WSL, posix too, doesn't). */
+export function isGitBash(file: string, win: WindowsProbe = machineProbe()): boolean {
+  return windowsShells(win.env, win.exists).some((s) => s.name === 'Git Bash' && samePath(s.path, toCanonical(file, 'win32'), 'win32'));
+}
+
 /** The PowerShell the built-in profiles run: 7 when installed, else Windows PowerShell (always there). */
 export function defaultPowerShell(list: WindowsShell[]): WindowsShell | undefined {
   return list.find((s) => s.kind === 'powershell');

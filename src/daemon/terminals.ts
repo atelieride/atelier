@@ -112,6 +112,11 @@ export interface Launch {
   initCommandEnv?: string;
   /** The profile this launch really is, when it differs from the one asked for. */
   profile?: TerminalProfile;
+  /**
+   * Windows, a shell with Atelier's integration other than the built-in profiles (Git Bash): it prints OSC 133;P with
+   * ATELIER_PROMPT_NONCE at each prompt, and wants Atelier's bin first on PATH (the bridge by name).
+   */
+  promptSignal?: boolean;
 }
 
 export interface TerminalManagerOptions {
@@ -200,11 +205,13 @@ export class TerminalManager extends EventEmitter {
     // it): the app tells them from marks a program prints.
     const markNonce = profile === 'atelier' ? randomBytes(16).toString('hex') : undefined;
     if (markNonce) env.ATELIER_MARK_NONCE = markNonce;
-    // Windows' PowerShell (your profile) runs atelier.ps1 too, without command marks: its prompt sends atelierd alone a
-    // signal (OSC 133;P, which the app ignores) with this nonce, kept out of the terminal's info.
-    const promptNonce = pathStyle() === 'win32' && profile === 'user' ? randomBytes(16).toString('hex') : undefined;
+    // Windows' PowerShell (your profile) runs atelier.ps1 too, without command marks, and Git Bash its own integration:
+    // their prompt sends atelierd alone a signal (OSC 133;P, which the app ignores) with this nonce, kept out of the
+    // terminal's info.
+    const builtIn = profile === 'user' || profile === 'atelier';
+    const promptNonce = pathStyle() === 'win32' && (profile === 'user' || launch.promptSignal) ? randomBytes(16).toString('hex') : undefined;
     if (promptNonce) env.ATELIER_PROMPT_NONCE = promptNonce;
-    if (pathStyle() === 'win32' && (profile === 'user' || profile === 'atelier')) {
+    if (pathStyle() === 'win32' && (builtIn || launch.promptSignal)) {
       // Claude's settings may call atelier-bridge by name (a home that needs quoting): this Atelier's bin first, before
       // $PROFILE runs, so another Atelier's bin (a dev build started from a terminal) or a relative entry never answers.
       const pathKey = Object.keys(env).find((k) => k.toUpperCase() === 'PATH') ?? 'Path';
@@ -214,8 +221,8 @@ export class TerminalManager extends EventEmitter {
         env[pathKey] = pathListJoin([bin, ...rest], 'win32');
       }
       // atelier.ps1 runs after your $PROFILE: it adds to PATH only folders Windows' settings gained since this one,
-      // never one your profile took off.
-      env.ATELIER_START_PATH = env[pathKey] ?? '';
+      // never one your profile took off. (Git Bash keeps atelierd's environment.)
+      if (builtIn) env.ATELIER_START_PATH = env[pathKey] ?? '';
     }
     const spawn = this.opts.spawnFor ? this.opts.spawnFor(id) : nodePtySpawn;
     const proc = spawn(launch.file, launch.args, {

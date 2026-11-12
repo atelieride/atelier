@@ -44,7 +44,7 @@ function manager(env: () => Record<string, string> = () => ({}), log?: (msg: str
     ...extra,
     ...(log ? { log } : {}),
     ...(isAlive ? { isAlive } : {}),
-    launch: () => ({ file: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe', args: ['-NoLogo'], env: env() }),
+    launch: extra.launch ?? (() => ({ file: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe', args: ['-NoLogo'], env: env() })),
     spawnFor: () => (file, args, o) => {
       const kills: (string | undefined)[] = [];
       const data: ((d: string) => void)[] = [];
@@ -239,6 +239,28 @@ test('Windows: Atelier’s bin comes first on PATH (the bridge by name: never an
   const env = fakes[0]!.spawned.o.env;
   expect(env.PATH).toBe('C:\\h\\bin;C:\\outer\\bin;.;C:\\a');
   expect(Object.keys(env).filter((k) => k.toUpperCase() === 'PATH')).toEqual(['PATH']);
+  tm.disposeAll();
+});
+
+test('Windows: Git Bash with Atelier’s integration gets the prompt signal and Atelier’s bin first, no command marks', () => {
+  initPlatform('win32');
+  const gitBash = () => ({ file: 'C:\\Program Files\\Git\\bin\\bash.exe', args: ['--rcfile', 'C:/h/shell/atelier.bash', '-i'], env: { Path: 'C:\\a;C:\\h\\bin', ATELIER_HOME: 'C:\\h' }, promptSignal: true });
+  const { tm, fakes } = manager(undefined, undefined, undefined, { launch: gitBash });
+  const a = tm.create({ projectRoot: 'C:/p', cwd: 'C:/p', cols: 80, rows: 24, profile: { shell: 'C:/Program Files/Git/bin/bash.exe' } });
+  const env = fakes[0]!.spawned.o.env;
+  expect(env.ATELIER_MARK_NONCE).toBeUndefined();
+  expect(a.markNonce).toBeUndefined();
+  // atelier.ps1's registry refresh only: Git Bash keeps atelierd's environment.
+  expect(env.ATELIER_START_PATH).toBeUndefined();
+  expect(env.Path).toBe('C:\\h\\bin;C:\\a');
+  const nonce = env.ATELIER_PROMPT_NONCE!;
+  expect(nonce).toMatch(/^[0-9a-f]{32}$/);
+  tm.applyHook(a.id, { hook_event_name: 'SessionStart', session_id: '0a1b2c3d-1111-2222-3333-444455556666', cwd: 'C:/p', source: 'startup' });
+  fakes[0]!.emit('\x1b]133;P;atelier=' + 'f'.repeat(32) + '\x07');
+  expect(tm.list()[0]!.session).not.toBe(null);
+  fakes[0]!.emit('\x1b]133;P;atelier=' + nonce + '\x07$ ');
+  expect(tm.list()[0]!.session).toBe(null);
+  expect(tm.list()[0]!.foreground).toBe('bash');
   tm.disposeAll();
 });
 
