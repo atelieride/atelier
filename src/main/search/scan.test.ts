@@ -156,6 +156,59 @@ describe('scanFile', () => {
     expect(await scan(p)).toEqual({ kind: 'none' });
   });
 
+  test('a binary file over maxBytes is binary, not too large', async () => {
+    expect(await scan(put(Buffer.concat([Buffer.from('PK\0\0'), Buffer.alloc(5000, 1)])))).toEqual({ kind: 'binary' });
+  });
+
+  test('one 2 MB line is streamed without quadratic work', async () => {
+    const p = put(`${'x'.repeat(1_000_000)} token ${'y'.repeat(1_000_000)}\n`);
+    const t0 = Date.now();
+    const r = lines(await scan(p, 'token', { wholeReadBytes: 64, maxBytes: 20_000_000, keptLineChars: 2000, chunkBytes: 4096 }));
+    expect(r.lines[0]!.ranges).toEqual([[1_000_001, 1_000_006]]);
+    expect(Date.now() - t0).toBeLessThan(3000);
+  });
+
+  test('every chunk boundary is safe: multibyte, CRLF, UTF-16 LE and BE, no final newline', async () => {
+    const text = 'é😀 token\r\nü token 日本\r\nlast token';
+    const files = [
+      put(text),
+      put(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, 'utf16le')])),
+      put(Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from(text, 'utf16le').swap16()])),
+      put(Buffer.from('caf\xe9 token\r\nx token', 'latin1')),
+    ];
+    for (const p of files) {
+      const whole = lines(await scan(p, 'token', roomy));
+      expect(whole.count).toBe(whole.lines.length);
+      expect(whole.lines.length).toBeGreaterThanOrEqual(2);
+      for (const chunkBytes of [1, 2, 3, 5]) {
+        expect(await scan(p, 'token', { wholeReadBytes: 1, maxBytes: 1e6, keptLineChars: 2000, chunkBytes })).toEqual(whole);
+      }
+    }
+    const last = lines(await scan(files[0]!, 'token', roomy));
+    expect(last.lines.map((l) => l.text)).toEqual(['é😀 token', 'ü token 日本', 'last token']);
+  });
+
+  test('UTF-16 with an odd trailing byte drops it, whole and streamed', async () => {
+    const p = put(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('a token\nb token', 'utf16le'), Buffer.from([0x41])]));
+    const whole = lines(await scan(p, 'token', roomy));
+    expect(whole.lines[1]!.text).toBe('b token');
+    expect(await scan(p, 'token', { wholeReadBytes: 1, maxBytes: 1e6, keptLineChars: 2000, chunkBytes: 4 })).toEqual(whole);
+  });
+
+  test('Latin-1 restart after matches were collected keeps nothing from the first attempt', async () => {
+    const p = put(Buffer.concat([Buffer.from('token\n'.repeat(60_000)), Buffer.from('caf\xe9 token\n', 'latin1')]));
+    const whole = lines(await scan(p, 'token', roomy, 1e6));
+    const streamed = lines(await scan(p, 'token', streaming, 1e6));
+    expect(streamed).toEqual(whole);
+    expect(streamed.count).toBe(60_001);
+  });
+
+  test('the budget truncates a streamed file too', async () => {
+    const r = lines(await scan(put('token\n'.repeat(50_000)), 'token', streaming, 3));
+    expect(r.count).toBe(3);
+    expect(r.truncated).toBe(true);
+  });
+
   test('a directory is none', async () => {
     const d = join(dir(), 'adir');
     mkdirSync(d, { recursive: true });

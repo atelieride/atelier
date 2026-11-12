@@ -14,6 +14,8 @@ export interface ScanLimits {
   maxBytes: number;
   /** Characters of a matching line that are kept. */
   keptLineChars: number;
+  /** Bytes per chunk of a streamed read (tests make it tiny to cross boundaries). */
+  chunkBytes?: number;
 }
 
 export type ScanResult =
@@ -89,36 +91,53 @@ function decoderFor(d: Decoding): Piece {
     const s = new StringDecoder('latin1');
     return { decode: (b) => s.write(b), end: () => s.end() };
   }
-  // The byte order mark is a character the editor shows too: keep it so columns agree.
+  // A UTF-8 byte order mark is a character the editor shows too: keep it so columns agree (the caller skips UTF-16's).
   const t = new TextDecoder(d === 'utf8' ? 'utf-8' : d === 'utf16le' ? 'utf-16le' : 'utf-16be', { fatal: d === 'utf8', ignoreBOM: true });
   return { decode: (b) => t.decode(b, { stream: true }), end: () => t.decode() };
 }
 
-/** Reads a file in chunks, line by line; 'decode-error' when strict UTF-8 fails, 'cancelled' when asked to stop. */
-async function streamLines(path: string, decoding: Decoding, skip: number, c: Collector, cancelled: () => boolean): Promise<'ok' | 'decode-error' | 'cancelled'> {
+/**
+ * Reads a file in chunks, line by line; 'decode-error' when strict UTF-8 fails, 'cancelled' when asked to stop.
+ * The unfinished line is kept as pieces and joined once when its newline arrives, and a newline is looked for only
+ * in the newly decoded piece: a minified one-line file costs its own size, not a copy per chunk. When the budget
+ * runs out the read stops there, so a later byte that would have made the whole read Latin-1 is never seen.
+ * Matching one giant line cannot be interrupted by `cancelled()`: the caller's watchdog covers it.
+ */
+async function streamLines(path: string, decoding: Decoding, skip: number, chunkBytes: number, c: Collector, cancelled: () => boolean): Promise<'ok' | 'decode-error' | 'cancelled'> {
   const dec = decoderFor(decoding);
-  const stream = createReadStream(path, { start: skip, highWaterMark: 256 * 1024 });
-  let pending = '';
+  const wide = decoding === 'utf16le' || decoding === 'utf16be';
+  const stream = createReadStream(path, { start: skip, highWaterMark: chunkBytes });
+  let pieces: string[] = [];
+  let carry: Buffer = Buffer.alloc(0);
   try {
-    for await (const chunk of stream) {
+    for await (const raw of stream) {
       if (cancelled()) return 'cancelled';
+      let buf = carry.length ? Buffer.concat([carry, raw as Buffer]) : (raw as Buffer);
+      carry = Buffer.alloc(0);
+      if (wide && buf.length % 2 === 1) {
+        // A UTF-16 unit split across chunks waits for its second byte; one left at the very end is dropped, as the whole read does.
+        carry = Buffer.from(buf.subarray(buf.length - 1));
+        buf = buf.subarray(0, buf.length - 1);
+      }
       let text: string;
       try {
-        text = pending + dec.decode(chunk as Buffer);
+        text = dec.decode(buf);
       } catch {
         return 'decode-error';
       }
       const cut = text.lastIndexOf('\n');
       if (cut < 0) {
-        pending = text;
+        if (text) pieces.push(text);
         continue;
       }
-      pending = text.slice(cut + 1);
-      if (!pushText(c, text.slice(0, cut + 1), cancelled)) return cancelled() ? 'cancelled' : 'ok';
+      pieces.push(text.slice(0, cut + 1));
+      const done = pieces.join('');
+      pieces = cut + 1 < text.length ? [text.slice(cut + 1)] : [];
+      if (!pushText(c, done, cancelled)) return cancelled() ? 'cancelled' : 'ok';
     }
     let tail: string;
     try {
-      tail = pending + dec.end();
+      tail = pieces.join('') + dec.end();
     } catch {
       return 'decode-error';
     }
@@ -164,12 +183,13 @@ export async function scanFile(path: string, ranges: Ranges, limits: ScanLimits,
   } catch (e) {
     return (e as NodeJS.ErrnoException).code === 'ENOENT' ? { kind: 'none' } : { kind: 'skipped', size: 0, reason: 'unreadable' };
   }
-  if (size > limits.maxBytes) return { kind: 'skipped', size, reason: 'too-large' };
-
   try {
+    // Binary first: a large video is a binary file, not a text too large to show.
     if (looksBinary(real)) return { kind: 'binary' };
+    if (size > limits.maxBytes) return { kind: 'skipped', size, reason: 'too-large' };
     if (cancelled()) return { kind: 'none' };
     const c = new Collector(ranges, limits.keptLineChars, budget);
+    const chunk = limits.chunkBytes ?? 256 * 1024;
 
     if (size <= limits.wholeReadBytes) {
       const buf = await readFile(real);
@@ -178,11 +198,11 @@ export async function scanFile(path: string, ranges: Ranges, limits: ScanLimits,
     } else {
       const bom = await head(real);
       const wide = bom[0] === 0xff && bom[1] === 0xfe ? 'utf16le' : bom[0] === 0xfe && bom[1] === 0xff ? 'utf16be' : null;
-      let outcome = await streamLines(real, wide ?? 'utf8', wide ? 2 : 0, c, cancelled);
+      let outcome = await streamLines(real, wide ?? 'utf8', wide ? 2 : 0, chunk, c, cancelled);
       if (outcome === 'decode-error') {
         // Not UTF-8: start over as Latin-1, with nothing kept from the first attempt.
         const again = new Collector(ranges, limits.keptLineChars, budget);
-        outcome = await streamLines(real, 'latin1', 0, again, cancelled);
+        outcome = await streamLines(real, 'latin1', 0, chunk, again, cancelled);
         return outcome === 'cancelled' ? { kind: 'none' } : { kind: 'lines', size, lines: again.lines, count: again.count, truncated: again.truncated };
       }
       if (outcome === 'cancelled') return { kind: 'none' };
