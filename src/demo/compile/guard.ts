@@ -35,7 +35,7 @@ export const BUILD_TIME_ONLY = [
 export const BACKEND_ONLY_SHARED: readonly string[] = [
   'app-icon.ts', 'automation-run.ts', 'background-files.ts', 'background-recent.ts', 'bash-attribution.ts', 'claude-config.ts', 'claude-signals.ts', 'close-sessions.ts', 'command-attribution.ts', 'daemon-build.ts',
   'env.ts', 'git.ts', 'helper-hash.node.ts', 'hook-paths.ts', 'loop-transcript.ts', 'paths.node.ts', 'popout.ts', 'prompt-text.ts', 'protocol.ts', 'readonly-command.ts', 'repo-names.ts', 'schedule-notices.ts', 'services.ts', 'session-name.ts', 'shell.ts',
-  // Find in Files' shared types and matcher: nothing reaches them until the renderer and the demo bridge use them,
+  // Find in Files' shared types, matcher and path filter: nothing reaches them until the renderer and the demo bridge use them,
   // and the entries leave this list with that wiring.
   'search.ts', 'search-filter.ts', 'search-match.ts',
   'store-updates.ts', 'tool-calls.ts', 'transcript.ts', 'update-sign.node.ts', 'version.ts', 'windows-menu.ts',

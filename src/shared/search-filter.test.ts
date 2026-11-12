@@ -74,6 +74,70 @@ describe('compilePathFilter', () => {
   });
 });
 
+describe('compilePathFilter edge cases', () => {
+  it('never throws on a reversed range; the class is literal text', () => {
+    expect(() => compilePathFilter('[z-a]', '')).not.toThrow();
+    expect(() => compilePathFilter('', '[9-0]')).not.toThrow();
+    expect(ok('[z-a]', '', 'x/[z-a]')).toBe(true);
+    expect(ok('[z-a]', '', 'x/a')).toBe(false);
+    expect(ok('[9-0]x', '', '5x')).toBe(false);
+  });
+
+  it('a trailing ** after ** matches any path', () => {
+    expect(ok('**/**', '', 'a/b')).toBe(true);
+    expect(ok('a/**/**', '', 'a/b/c')).toBe(true);
+    expect(ok('**', '', 'a/b')).toBe(true);
+    expect(ok('src/**', '', 'src/a/b.ts')).toBe(true);
+    expect(ok('src/**', '', 'lib/a.ts')).toBe(false);
+  });
+
+  it('a negated class never matches a slash', () => {
+    expect(ok('a[!x]b', '', 'a/b')).toBe(false);
+    expect(ok('a[!x]b', '', 'acb')).toBe(true);
+    expect(ok('a[^x]b', '', 'a/b')).toBe(false);
+  });
+
+  it('decides anchoring per brace alternative and trims them', () => {
+    expect(ok('{src/a,lib}', '', 'src/a/b.ts')).toBe(true);
+    expect(ok('{src/a,lib}', '', 'x/lib/a.ts')).toBe(true);
+    expect(ok('{src/a,lib}', '', 'x/src/a/b.ts')).toBe(false);
+    expect(ok('*.{ts, tsx}', '', 'a.tsx')).toBe(true);
+    expect(ok('*.{ts, tsx}', '', 'a.ts')).toBe(true);
+    expect(ok('{**/a,b}', '', 'x/y/a')).toBe(true);
+  });
+
+  it('does not blow up on many brace groups', () => {
+    const many = '{a,b}'.repeat(40);
+    expect(() => compilePathFilter(many, '')).not.toThrow();
+  });
+
+  it('drops a leading ./ or / and then judges the pattern by its remaining slashes', () => {
+    expect(ok('./src', '', 'lib/src/a.ts')).toBe(true);
+    expect(ok('./src/x', '', 'lib/src/x/a.ts')).toBe(false);
+    expect(ok('/src/x', '', 'src/x/a.ts')).toBe(true);
+  });
+
+  it('an unclosed { does not swallow the commas after it', () => {
+    expect(() => compilePathFilter('src/{, *.md', '')).not.toThrow();
+    expect(ok('src/{, *.md', '', 'docs/a.md')).toBe(true);
+    expect(ok('src/{, *.md', '', 'src/a.ts')).toBe(false);
+    expect(ok('src/{, *.md', '', 'src/{/a.ts')).toBe(true);
+  });
+
+  it('treats $ ^ | as literal text', () => {
+    expect(ok('a$b', '', 'a$b')).toBe(true);
+    expect(ok('a$b', '', 'ab')).toBe(false);
+    expect(ok('a^b', '', 'a^b')).toBe(true);
+    expect(ok('a|b', '', 'a|b')).toBe(true);
+    expect(ok('a|b', '', 'a')).toBe(false);
+  });
+
+  it('a ** inside braces crosses segments', () => {
+    expect(ok('{a/**,b}', '', 'a/x/y')).toBe(true);
+    expect(ok('{a/**,b}', '', 'c/a/x')).toBe(false);
+  });
+});
+
 describe('globToRegExp', () => {
   it('* stays inside a segment, ** crosses them', () => {
     expect(globToRegExp('a/*/c').test('a/b/c')).toBe(true);
