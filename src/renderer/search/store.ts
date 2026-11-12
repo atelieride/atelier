@@ -267,7 +267,8 @@ export const useSearch = create<SearchState>((set, get) => {
           });
           if (!e.stopped && s.files.length > 0) {
             const root = useApp.getState().project?.root;
-            if (root) pushRecent(root, s.spec);
+            // What was searched, not what may have been typed since.
+            if (root) pushRecent(root, s.ranSpec);
           }
           return;
         }

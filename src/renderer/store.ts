@@ -3381,6 +3381,16 @@ function setCsvOptionsMap(all: CsvOptionsMap) {
   saveCsvOptions(all);
 }
 
+/**
+ * A search result once shown (or given up on, its module not loading) leaves its tab: the tab stays at the line, but a
+ * view made again (Diff and back) or a remount neither selects nor marks it again, and the keyboard is the editor's
+ * again as usual. `found` is that very result (the same object), not an equal one.
+ */
+export function forgetFound(found: FoundTarget): void {
+  const files = useApp.getState().openFiles;
+  if (files.some((f) => f.found === found)) useApp.setState({ openFiles: files.map((f) => (f.found === found ? { ...f, found: undefined } : f)) });
+}
+
 /** The files on a search result's visit with `path` on it or off (the same object when nothing changes). */
 function visit(all: Record<string, true>, path: string, on: boolean): Record<string, true> {
   if (!!all[path] === on) return all;

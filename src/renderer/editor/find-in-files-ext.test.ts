@@ -3,8 +3,7 @@ import type { DecorationSet } from '@codemirror/view';
 import { SearchQuery } from '@codemirror/search';
 import { expect, test } from 'vitest';
 import type { SearchSpec } from '@shared/search';
-import { useApp, type OpenFile } from '../store';
-import { findInFilesHighlight, forgetFound, foundRange, hitDecorations, scanMatches, searchHitsSpec, setHitRanges, setSearchHits } from './find-in-files-ext';
+import { findInFilesHighlight, foundRange, hitDecorations, ownTick, scanMatches, searchHitsSpec, setHitRanges, setSearchHits } from './find-in-files-ext';
 import { rulerMatches } from './ruler';
 
 const SPEC: SearchSpec = { query: 'token', matchCase: false, wholeWord: false, regex: false };
@@ -112,6 +111,11 @@ test('the ruler ticks the scanned matches; edits move them along, a match edited
   expect(s.facet(rulerMatches)).toEqual([{ from: 3, to: 8 }, { from: 13, to: 18 }, { from: 19, to: 24 }]);
   s = s.update({ changes: { from: 13, to: 18 } }).state;
   expect(s.facet(rulerMatches)).toEqual([{ from: 3, to: 8 }, { from: 14, to: 19 }]);
+  // The same query again (the next result in this file): the ticks stay as they are, nothing is scanned again.
+  const ranges = s.facet(rulerMatches);
+  s = s.update({ effects: setSearchHits.of({ ...SPEC }), selection: { anchor: 14, head: 19 } }).state;
+  expect(s.facet(rulerMatches)).toBe(ranges);
+  expect(searchHitsSpec(s)).toEqual(SPEC);
   // Another query: scanned again before it ticks; none: nothing.
   s = s.update({ effects: setSearchHits.of({ ...SPEC, query: 'a' }) }).state;
   expect(s.facet(rulerMatches)).toBeNull();
@@ -119,13 +123,26 @@ test('the ruler ticks the scanned matches; edits move them along, a match edited
   expect(s.facet(rulerMatches)).toBeNull();
 });
 
-test('a result shown is forgotten by its tab: a view made again or a remount does not show it again', () => {
-  const target = { line: 3, from: 6, to: 11, spec: SPEC, keepFocus: true };
-  const file = (path: string, found?: OpenFile['found']): OpenFile => ({ path, rel: path.slice(3), line: 3, nonce: 1, mode: 'margin', ...(found ? { found } : {}) });
-  useApp.setState({ openFiles: [file('/p/a.ts', target), file('/p/b.ts', { ...target })] });
-  forgetFound(target);
-  expect(useApp.getState().openFiles.map((f) => f.found)).toEqual([undefined, { ...target }]);
-  // The line stays (the tab is still at it).
-  expect(useApp.getState().openFiles[0]!.line).toBe(3);
-  useApp.setState({ openFiles: [] });
+test('lines too long to read at once (a minified file) are left to the result\'s own tick; the rest is read in bounded parts', () => {
+  const q = new SearchQuery({ search: 'token' });
+  // About 4 MB on one line, matches all along it.
+  const long = `${'x'.repeat(1000)}token`.repeat(4000);
+  const one = EditorState.create({ doc: long });
+  const out: { from: number; to: number }[] = [];
+  const t0 = performance.now();
+  expect(scanMatches(one, q, 0, out, 0)).toBeNull();
+  expect(performance.now() - t0).toBeLessThan(20);
+  expect(out).toEqual([]);
+  // Short lines around it are read as usual.
+  const mixed = EditorState.create({ doc: `a token\n${long}\nb token` });
+  const found: { from: number; to: number }[] = [];
+  let at: number | null = 0;
+  while (at !== null) at = scanMatches(mixed, q, at, found, 0);
+  expect(found).toEqual([{ from: 2, to: 7 }, { from: mixed.doc.length - 5, to: mixed.doc.length }]);
+  // The result's own match on such a line keeps its tick; a selection that is no match, or on a short line, adds none.
+  const own = mixed.doc.line(2).from + 1000;
+  expect(ownTick(mixed.update({ selection: { anchor: own, head: own + 5 } }).state, q)).toEqual({ from: own, to: own + 5 });
+  expect(ownTick(mixed.update({ selection: { anchor: own, head: own + 4 } }).state, q)).toBeNull();
+  expect(ownTick(mixed.update({ selection: { anchor: 2, head: 7 } }).state, q)).toBeNull();
+  expect(ownTick(mixed.update({ selection: { anchor: own } }).state, q)).toBeNull();
 });

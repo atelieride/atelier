@@ -8,7 +8,7 @@ import type { SearchSpec } from '@shared/search';
 import { compileSearch } from '@shared/search-match';
 import { nearestMatch } from '../search/model';
 import { useSearch } from '../search/store';
-import { useApp, type FoundTarget } from '../store';
+import { forgetFound, type FoundTarget } from '../store';
 import { RESULT_SELECT } from './comments-ext';
 import { setTargetLine } from './decorations';
 import { rulerMatches } from './ruler';
@@ -38,8 +38,17 @@ const hitsField = StateField.define<Hits | null>({
   create: () => null,
   update(hits, tr) {
     for (const e of tr.effects) {
-      if (e.is(setSearchHits)) hits = e.value && { spec: e.value, query: new SearchQuery({ search: e.value.query, caseSensitive: e.value.matchCase, wholeWord: e.value.wholeWord, regexp: e.value.regex }), ranges: null };
-      else if (e.is(setHitRanges) && hits) hits = { ...hits, ranges: e.value };
+      if (e.is(setSearchHits)) {
+        const query = e.value && new SearchQuery({ search: e.value.query, caseSensitive: e.value.matchCase, wholeWord: e.value.wholeWord, regexp: e.value.regex });
+        // The same query again (the next result in this file): its ticks stay, nothing is scanned again (a result on a
+        // line too long to scan gets its own tick).
+        if (!e.value || !query) hits = null;
+        else if (!hits?.query.eq(query)) hits = { spec: e.value, query, ranges: null };
+        else if (hits.ranges) {
+          const ranges = withOwn(hits.ranges, ownTick(tr.state, hits.query));
+          if (ranges !== hits.ranges) hits = { ...hits, ranges };
+        }
+      } else if (e.is(setHitRanges) && hits) hits = { ...hits, ranges: e.value };
     }
     // The find card opening brings its own query: the marks give way to it.
     if (hits && searchPanelOpen(tr.state) && !searchPanelOpen(tr.startState)) return null;
@@ -74,26 +83,51 @@ export function hitDecorations(state: EditorState, ranges: readonly Range[]): De
 /** Characters the scan reads at a time, to a line's end (a match never spans lines); the ruler's cap of matches. */
 const CHUNK = 64 * 1024;
 const MAX_MATCHES = 9999;
+/** Lines longer than this (a minified file's) are not scanned for the ruler: one pass over one could hold the page. */
+const LONG_LINE = 64 * 1024;
 
 /**
- * Scans for the ruler from `from` on, part after part, adding what it finds to `out`, until `deadline` (a
- * `performance.now()` time: at least one part is always read) or the end; returns where to go on, or null when done
- * (the end of the text, or `cap` matches).
+ * Scans for the ruler from `from` on, part after part (each at most CHUNK plus one line of LONG_LINE), adding what it
+ * finds to `out`, until `deadline` (a `performance.now()` time: at least one part is always read) or the end; returns
+ * where to go on, or null when done (the end of the text, or `cap` matches). Lines past LONG_LINE are passed over.
  */
 export function scanMatches(state: EditorState, query: SearchQuery, from: number, out: Range[], deadline: number, cap = MAX_MATCHES): number | null {
   const doc = state.doc;
   let at = from;
   do {
-    const to = doc.lineAt(Math.min(doc.length, at + CHUNK)).to;
-    const cursor = query.getCursor(state, at, to);
-    for (let m = cursor.next(); !m.done; m = cursor.next()) {
-      out.push({ from: m.value.from, to: m.value.to });
-      if (out.length >= cap) return null;
+    const first = doc.lineAt(at);
+    let to: number;
+    if (first.length > LONG_LINE) to = first.to;
+    else {
+      to = doc.lineAt(Math.min(doc.length, at + CHUNK)).to;
+      // The part stops before a long line it would reach.
+      const last = doc.lineAt(to);
+      if (last.length > LONG_LINE) to = last.from - 1;
+      const cursor = query.getCursor(state, at, to);
+      for (let m = cursor.next(); !m.done; m = cursor.next()) {
+        out.push({ from: m.value.from, to: m.value.to });
+        if (out.length >= cap) return null;
+      }
     }
     if (to >= doc.length) return null;
     at = to + 1;
   } while (performance.now() < deadline);
   return at;
+}
+
+/** The selection when it is a match of `query` on a line too long to scan: the result shown there keeps its tick. */
+export function ownTick(state: EditorState, query: SearchQuery): Range | null {
+  const sel = state.selection.main;
+  if (sel.empty || state.doc.lineAt(sel.from).length <= LONG_LINE) return null;
+  const m = query.getCursor(state, sel.from, sel.to).next();
+  return !m.done && m.value.from === sel.from && m.value.to === sel.to ? { from: sel.from, to: sel.to } : null;
+}
+
+/** `ranges` with `own` in its place, once (the same list when there is nothing to add). */
+function withOwn(ranges: readonly Range[], own: Range | null): readonly Range[] {
+  if (!own || ranges.some((r) => r.from === own.from && r.to === own.to)) return ranges;
+  const i = ranges.findIndex((r) => r.from > own.from);
+  return i < 0 ? [...ranges, own] : [...ranges.slice(0, i), own, ...ranges.slice(i)];
 }
 
 /** A slice of the scan holds the page this long at most; after edits the scan waits for a pause in typing. */
@@ -128,13 +162,14 @@ const highlighter = ViewPlugin.fromClass(class {
     const { doc } = this.view.state;
     const query = this.view.state.field(hitsField, false)?.query;
     if (!query) return;
+    const own = ownTick(this.view.state, query);
     const out: Range[] = [];
     let at = 0;
     const step = () => {
       const state = this.view.state;
       if (state.doc !== doc || state.field(hitsField, false)?.query !== query) return;
       const next = scanMatches(state, query, at, out, performance.now() + SLICE_MS);
-      if (next === null) { this.view.dispatch({ effects: setHitRanges.of(out) }); return; }
+      if (next === null) { this.view.dispatch({ effects: setHitRanges.of(withOwn(out, own)) }); return; }
       at = next;
       this.timer = setTimeout(step, 0);
     };
@@ -182,15 +217,6 @@ export function foundRange(state: EditorState, line: number, found: FoundTarget)
   if (!m) return null;
   const at = doc.line(m.line).from;
   return { from: at + m.from, to: at + m.to };
-}
-
-/**
- * A result once shown leaves its tab: the tab stays at the line, but a view made again (Diff and back) or a remount
- * neither selects nor marks it again, and the keyboard is the editor's again as usual.
- */
-export function forgetFound(found: FoundTarget): void {
-  const files = useApp.getState().openFiles;
-  if (files.some((f) => f.found === found)) useApp.setState({ openFiles: files.map((f) => (f.found === found ? { ...f, found: undefined } : f)) });
 }
 
 let watching = false;

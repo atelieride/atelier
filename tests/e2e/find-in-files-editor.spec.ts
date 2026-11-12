@@ -3,7 +3,8 @@
 // leaving the keyboard in the list while the results are walked; ⌘⏎ to the side; a double click keeping the tab; a
 // Markdown file saved as Preview shown as source for the visit; a result shown once (not again when its view is made
 // again); a match moved by an edit on disk; Esc, the find card and an emptied query taking the marks away; a file over
-// 5 MB opened straight in the large view, its ruler ticked without a long task.
+// 5 MB opened straight in the large view, its ruler ticked without a long task and kept from one result to the next; a
+// minified file's single 4.5 MB line left to its result's own tick.
 import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -68,6 +69,10 @@ const MOVED = ['// moved', 'export const a = 1;', 'export const b = 2;', "export
 const BIG_LINES = 56_000;
 const WALRUS_LINE = 30_000;
 const NARWHAL_LINE = 45_000;
+/** Two results of one query in the big file. */
+const BELUGA_LINES = [10_000, 50_000];
+/** A minified file: about 4.5 MB on one line (still under 5 MB: the usual editor), a word near each end. */
+const MINIFIED = `var pelican=1;${'a=b+c;'.repeat(750_000)}var heron=2;\n`;
 /** A file changed since its commit (Margin and Diff to switch between), with two matches. */
 const DIFFY = ['export const okapi = 1;', 'export const b = 2;', 'export const c = okapi + 1;', ''].join('\n');
 
@@ -111,6 +116,15 @@ const tokenColor = (name: string) => win.evaluate((n) => {
   return c;
 }, name);
 
+/** From now on, the longest task the page runs that holds it past 50 ms (`longestTask` reads it and stops). */
+const watchLongTasks = () => win.evaluate(() => {
+  const w = window as unknown as { longest: number; watch: PerformanceObserver };
+  w.longest = 0;
+  w.watch = new PerformanceObserver((list) => { for (const e of list.getEntries()) w.longest = Math.max(w.longest, e.duration); });
+  w.watch.observe({ type: 'longtask' });
+});
+const longestTask = () => win.evaluate(() => { const w = window as unknown as { longest: number; watch: PerformanceObserver }; w.watch.disconnect(); return w.longest; });
+
 async function search(q: string): Promise<void> {
   if (!(await view().isVisible())) await activity().click();
   await field().fill(q);
@@ -123,10 +137,12 @@ test.beforeAll(async () => {
   write('src/auth/session.ts', SESSION);
   write('src/auth/tokens.ts', TOKENS);
   write('src/moved.ts', MOVED);
-  const big = (i: number) => (i === WALRUS_LINE ? `${'x'.repeat(40)} walrus ${'x'.repeat(51)}` : i === NARWHAL_LINE ? `${'x'.repeat(40)} narwhal ${'x'.repeat(50)}` : 'x'.repeat(99));
+  const big = (i: number) => (i === WALRUS_LINE ? `${'x'.repeat(40)} walrus ${'x'.repeat(51)}` : i === NARWHAL_LINE ? `${'x'.repeat(40)} narwhal ${'x'.repeat(50)}`
+    : BELUGA_LINES.includes(i) ? `${'x'.repeat(40)} beluga ${'x'.repeat(51)}` : 'x'.repeat(99));
   write('logs/big.log', Array.from({ length: BIG_LINES }, (_, i) => big(i + 1)).join('\n') + '\n');
   write('src/diffy.ts', DIFFY.replace('b = 2', 'b = 1'));
   write('src/kept.ts', 'export const quokka = true;\n');
+  write('lib/app.min.js', MINIFIED);
   git(project, 'add', '.');
   git(project, 'commit', '-q', '-m', 'first');
   write('src/diffy.ts', DIFFY);
@@ -342,21 +358,54 @@ test('in a file past 5 MB the ruler\'s ticks come without holding the page: no l
   await search('walrus');
   await expect(field()).toHaveValue('walrus');
   await expect(matchRow('logs/big.log', WALRUS_LINE)).toBeVisible();
-  // Every task the page runs from here on that holds it past 50 ms.
-  await win.evaluate(() => {
-    const w = window as unknown as { longest: number; watch: PerformanceObserver };
-    w.longest = 0;
-    w.watch = new PerformanceObserver((list) => { for (const e of list.getEntries()) w.longest = Math.max(w.longest, e.duration); });
-    w.watch.observe({ type: 'longtask' });
-  });
+  await watchLongTasks();
   await matchRow('logs/big.log', WALRUS_LINE).click();
   await expect(strong()).toHaveText('walrus');
   // The new tick, higher up than narwhal's (line 30,000 of 56,000), once the whole file has been scanned.
   await expect.poll(async () => { const top = await tickTop(); return top !== null && top !== narwhalTick; }).toBe(true);
   await expect(ticks()).toHaveCount(1);
   await frames(win);
-  const longest = await win.evaluate(() => { const w = window as unknown as { longest: number; watch: PerformanceObserver }; w.watch.disconnect(); return w.longest; });
-  expect(longest).toBeLessThan(100);
+  expect(await longestTask()).toBeLessThan(100);
+});
+
+test('the next result in the same file keeps the ruler\'s ticks: no blink, no new scan of a 5.6 MB file', async () => {
+  await search('beluga');
+  await expect(totals()).toHaveText('2 results in 1 file');
+  await matchRow('logs/big.log', BELUGA_LINES[0]!).click();
+  await expect(strong()).toHaveText('beluga');
+  await expect(ticks()).toHaveCount(2);
+  // Every change of the ruler's ticks from here on: the fewest ever shown.
+  await editor().locator('.cm-ruler').evaluate((ruler) => {
+    const w = window as unknown as { fewestTicks: number; tickWatch: MutationObserver };
+    w.fewestTicks = ruler.querySelectorAll('.cm-ruler-find').length;
+    w.tickWatch = new MutationObserver(() => { w.fewestTicks = Math.min(w.fewestTicks, ruler.querySelectorAll('.cm-ruler-find').length); });
+    w.tickWatch.observe(ruler, { childList: true, subtree: true });
+  });
+  await matchRow('logs/big.log', BELUGA_LINES[1]!).click();
+  await expect(strong()).toHaveText('beluga');
+  expect(await strongLine()).toBe(`${'x'.repeat(40)} beluga ${'x'.repeat(51)}`);
+  await expect(editor().locator('.cm-lineNumbers .cm-gutterElement', { hasText: new RegExp(`^${BELUGA_LINES[1]}$`) })).toBeVisible();
+  await frames(win);
+  await expect(ticks()).toHaveCount(2);
+  await expect(editor().locator('.cm-ruler-find.is-selected')).toHaveCount(1);
+  expect(await win.evaluate(() => { const w = window as unknown as { fewestTicks: number; tickWatch: MutationObserver }; w.tickWatch.disconnect(); return w.fewestTicks; })).toBe(2);
+});
+
+test('a minified file of one 4.5 MB line: its result gets its own tick, the line is not read for the others, nothing holds the page', async () => {
+  await search('pelican');
+  await matchRow('lib/app.min.js', 1).click();
+  await expect(strong()).toHaveText('pelican');
+  await expect(ticks()).toHaveCount(1);
+  await search('heron');
+  // The same file and line as pelican's row: told apart by its mark.
+  const heron = matchRow('lib/app.min.js', 1).filter({ has: win.locator('mark', { hasText: 'heron' }) });
+  await expect(heron).toBeVisible();
+  await watchLongTasks();
+  await heron.click();
+  await expect(strong()).toHaveText('heron');
+  await expect(editor().locator('.cm-ruler-find.is-selected')).toHaveCount(1);
+  await frames(win);
+  expect(await longestTask()).toBeLessThan(100);
 });
 
 test('⌘⏎ opens the result to the side, in a new split, as a kept tab; the keyboard stays in the list', async () => {

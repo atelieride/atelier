@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { useApp } from './store';
+import { forgetFound, useApp, type OpenFile } from './store';
 import { isPending } from './comments';
 import type { TerminalInfo } from '@shared/protocol';
 import type { ConnectorInfo } from '@shared/tasks';
@@ -1307,6 +1307,19 @@ describe('Find in Files: opening a result', () => {
     expect(st().mdViewOf('/p/data.json')).toBe('source');
     expect(st().settings.jsonView).toBe('tree');
     expect(st().mdViews).toEqual({ '/p/README.md': 'preview', '/p/notes.md': 'split' });
+  });
+
+  test('a result shown (or given up on) is forgotten by its tab: a view made again or a remount does not show it again', () => {
+    const target = { line: 3, from: 6, to: 11, spec: SPEC, keepFocus: true };
+    const file = (path: string, found?: OpenFile['found']): OpenFile => ({ path, rel: path.slice(3), line: 3, nonce: 1, mode: 'margin', ...(found ? { found } : {}) });
+    useApp.setState({ openFiles: [file('/p/a.ts', target), file('/p/b.ts', { ...target })] });
+    const before = st().openFiles;
+    forgetFound({ ...target });
+    expect(st().openFiles).toBe(before);
+    forgetFound(target);
+    expect(st().openFiles.map((f) => f.found)).toEqual([undefined, { ...target }]);
+    // The line stays (the tab is still at it).
+    expect(st().openFiles[0]!.line).toBe(3);
   });
 
   test('the visit ends with its tab: replaced as the preview tab, or closed', () => {

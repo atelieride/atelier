@@ -25,7 +25,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { baselineFor } from '../baseline';
 import { FileIcon } from '../components/FileIcon';
 import { t } from '../i18n/en';
-import { useApp, type OpenFile } from '../store';
+import { forgetFound, useApp, type OpenFile } from '../store';
 import { editorMenu, mentionInSession } from '../menus';
 import { selectionLines } from '../mention';
 import { isUntitled } from '../untitled';
@@ -732,10 +732,10 @@ export function FileView({ file, visible, focused = visible, place }: { file: Op
       v.dispatch({ effects: [setTargetLine.of(k), EditorView.scrollIntoView(pos, { y: 'center' })], selection: { anchor: pos } });
     };
     // A search result: its match selected and the query's occurrences marked, by a module loaded with the first one
-    // (the line alone, should it fail to load).
+    // (should it fail, the line alone, and the result is let go).
     const found = file.found;
     const current = () => view.current === v && targeted.current === file.nonce;
-    if (found) void import('./find-in-files-ext').then((m) => { if (current()) m.showFound(v, n, found); }).catch(() => { if (current()) toLine(); });
+    if (found) void import('./find-in-files-ext').then((m) => { if (current()) m.showFound(v, n, found); }).catch(() => { forgetFound(found); if (current()) toLine(); });
     else toLine();
   }, [file.line, file.nonce, content, diff, hasText]);
 

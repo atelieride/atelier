@@ -254,6 +254,12 @@ test('the recent list gets the query on done with results only', () => {
   emit(batch([file('a.ts')]));
   emit(done({ stopped: true }));
   expect(loadRecent('/p').map((s) => s.query)).toEqual(['found']);
+  // Typed on before the search ends: the query searched is the one remembered, not the one in the field.
+  st().setQuery('ran'); st().run();
+  emit(batch([file('a.ts')]));
+  st().setQuery('ran ahead');
+  emit(done());
+  expect(loadRecent('/p').map((s) => s.query)).toEqual(['ran', 'found']);
 });
 
 test('after 1,000 matches new files arrive collapsed', () => {
