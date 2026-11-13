@@ -1,7 +1,7 @@
 {
   "name": "atelier",
   "productName": "Atelier",
-  "version": "0.2.0-beta.30",
+  "version": "0.2.0-beta.31",
   "description": "IDE for working with many Claude Code sessions in parallel",
   "private": true,
   "main": "out/main/index.js",

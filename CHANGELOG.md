@@ -3,6 +3,32 @@
 Release notes for Atelier. Each version has a `## <version>` section: the release workflow requires it and the app
 shows it in Settings › About and in "What's new".
 
+## 0.2.0-beta.31
+
+- **Find in Files**: search the text of every project file from the sidebar (⌘⇧F, Shift+Alt+F on Windows; also View ›
+  Find in Files, ⌘K and "Search in all files" on the find card), with match case, whole word, regular expressions and
+  paths to include or exclude. Results open at the match with every occurrence marked, F4 and ⇧F4 step through them,
+  and you can send them to a Claude session or copy them all. Unsaved tabs are searched as you see them.
+- **Activities inside workspaces**: turn them on in Settings › Appearance to keep named groups of sessions, terminals
+  and tabs inside a workspace, each with tabs of its own. Make one from File › New Activity… or a workspace's + menu,
+  switch with # in ⌘K, and drag rows and tabs between them or use Move to ›.
+- **Your own order in the sidebar**: drag sessions and terminals where you want them, pinned among pinned, or use Move
+  Up and Move Down in a row's menu. It works inside workspaces and activities too.
+- **Repositories found deeper, and live**: Atelier looks for git repositories three folder levels down by default
+  (Settings › Source Control › Repository search depth, 1 to 5), inside other repositories too, and picks up new
+  repositories and new files in Files without reopening the project.
+- **Commits to pull**: a dot on Source Control's icon while a repository has commits to pull (Settings › Source
+  Control › Show commits to pull). Fetch All runs six fetches at once, Sync All, Pull All and Push All four
+  repositories at once, and Pull All and Push All no longer stop at the first repository that needs you.
+- **Windows: Git Bash terminals** track `claude`, and aliases that run it, as Claude sessions, as PowerShell does. It
+  needs File › Restart atelierd…, which closes running sessions; on the Mac the same restart fixes a `claude` alias
+  that sets variables in front of the command.
+- Links in Ask's answers open in your browser. The empty state's Start a Claude session opens New Session, as ⌘N
+  does, so you can pick the account. Dragging a pane or resizing the window while Claude writes no longer leaves a
+  copy of its reply at every width. Sync keeps a hook that failed after its pull, and says so. All Repositories shows
+  a block's whole branch name while its actions are hidden. Close Workspace… shows as unavailable on the last
+  workspace.
+
 ## 0.2.0-beta.30
 
 - **Atelier is open source**, under the MIT license: code, issues and releases live at github.com/atelieride/atelier.
