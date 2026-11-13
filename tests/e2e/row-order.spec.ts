@@ -66,6 +66,8 @@ test('sessions: a row dropped above another stays there after a reload; a caret 
     // While dragging: the dragged row dims, a caret above the row it would land before; no row moves.
     const dt = await win.evaluateHandle(() => new DataTransfer());
     const boxes = async () => Promise.all(['Gamma', 'Alfa', 'Beta'].map(async (n) => (await row(n).boundingBox())!.y));
+    // Measured once the rows' entrance after the reload is over (it slides them in).
+    await win.locator('.sidebar').evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)).then(() => undefined));
     const before = await boxes();
     await row('Beta').dispatchEvent('dragstart', { dataTransfer: dt });
     const alfa = (await row('Alfa').boundingBox())!;
@@ -74,6 +76,20 @@ test('sessions: a row dropped above another stays there after a reload; a caret 
     await expect(row('Beta')).toHaveClass(/\bis-dragging\b/);
     expect(await boxes()).toEqual(before);
     await look(win.locator('.sidebar'), 'test-results/row-order-caret.png');
+    // At the sidebar's narrowest the caret stays inside it, between the rows.
+    const width = await win.locator('.body').evaluate((el) => (el as HTMLElement).style.getPropertyValue('--sidebar-w'));
+    await win.locator('.body').evaluate((el) => (el as HTMLElement).style.setProperty('--sidebar-w', '200px'));
+    await expect.poll(() => win.locator('.sidebar').evaluate((el) => el.getBoundingClientRect().width)).toBe(200);
+    const caretBox = () => row('Alfa').evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const c = getComputedStyle(el, '::before');
+      const s = el.closest('.sidebar')!.getBoundingClientRect();
+      const left = r.left + parseFloat(c.left);
+      return { inside: left >= s.left && left + parseFloat(c.width) <= s.right, top: c.top, height: c.height };
+    });
+    expect(await caretBox()).toEqual({ inside: true, top: '-2px', height: '2px' });
+    await look(win.locator('.sidebar'), 'test-results/row-order-caret-narrow.png');
+    await win.locator('.body').evaluate((el, w) => (el as HTMLElement).style.setProperty('--sidebar-w', w), width);
     // Just above itself: it would stay put, no caret.
     const beta = (await row('Beta').boundingBox())!;
     await row('Beta').dispatchEvent('dragover', { dataTransfer: dt, clientX: beta.x + 40, clientY: beta.y + 4 });
@@ -117,6 +133,149 @@ test('pinned rows move only among the pinned, the others only among the others; 
     const term = (id: string) => win.locator(`.term-row[data-term-row="${id}"]`);
     await dropAbove(term(third!), term(first!));
     await expect.poll(() => termIds(win)).toEqual([third, first, second]);
+  } finally {
+    await stop(app, home);
+  }
+});
+
+/** The grouped list: [section label, row titles] in order (one list, a head before each section's rows). */
+const sections = (win: Page) => win.locator('.list.inbox').evaluateAll((lists) => {
+  const out: [string, string[]][] = [];
+  for (const el of lists[0]?.children ?? []) {
+    if (el.classList.contains('inbox-head')) out.push([el.querySelector('.section-label')?.textContent ?? '', []]);
+    else if (el.classList.contains('session-row')) out.at(-1)![1].push(el.querySelector('.session-title')?.textContent ?? '');
+  }
+  return out;
+});
+
+type Api = { terminals: { list(): Promise<{ id: string; title: string }[]>; input(id: string, data: string): void } };
+/** Types into a session's prompt without selecting it (as if it answered while you look elsewhere). */
+async function typeInto(win: Page, title: string, text: string) {
+  await win.evaluate(async ({ title, text }) => {
+    const api = (window as unknown as { atelier: Api }).atelier;
+    const id = (await api.terminals.list()).find((x) => x.title === title)!.id;
+    api.terminals.input(id, text);
+  }, { title, text });
+}
+
+test('Idle: rows reorder there only; one that leaves Idle comes back to its place; a newcomer arrives on top', async () => {
+  const { app, win, home } = await launch();
+  try {
+    const row = (name: string) => win.locator('.session-row', { hasText: name });
+    const names = ['Alfa', 'Beta', 'Gamma', 'Delta'];
+    for (const name of names) await newSession(win, name);
+    // Each answers and finishes; looked at, it is idle (the order they arrived in is Idle's own). Looked at only once its
+    // turn has ended: a Stop arriving after the look would make it unread again.
+    for (const name of names) await typeInto(win, name, '\r');
+    for (const name of names) await expect(row(name)).toHaveClass(/\bstate-done\b/, { timeout: 10000 });
+    for (const name of names) await row(name).locator('.row-main').click();
+    await expect.poll(async () => (await sections(win)).map(([s, rows]) => [s, rows.length]), { timeout: 10000 }).toEqual([['Idle', 4]]);
+    const [s0, s1, s2, s3] = (await sections(win))[0]![1];
+    await dropAbove(row(s3!), row(s0!));
+    await expect.poll(() => sections(win)).toEqual([['Idle', [s3, s0, s1, s2]]]);
+
+    // One works again (Working orders itself: no band there), finishes and is seen: back at its place in Idle.
+    await typeInto(win, s1!, 'ev:work\r');
+    await expect.poll(() => sections(win)).toEqual([['Working', [s1]], ['Idle', [s3, s0, s2]]]);
+    await expect(row(s1!)).not.toHaveAttribute('data-band');
+    await typeInto(win, s1!, 'ev:stop\r');
+    await expect(row(s1!)).toHaveClass(/\bstate-done\b/, { timeout: 10000 });
+    await row(s1!).locator('.row-main').click();
+    await expect.poll(() => sections(win), { timeout: 10000 }).toEqual([['Idle', [s3, s0, s1, s2]]]);
+
+    // A newcomer, never placed, arrives on top of Idle, as before.
+    await newSession(win, 'Echo');
+    await typeInto(win, 'Echo', '\r');
+    await expect(row('Echo')).toHaveClass(/\bstate-done\b/, { timeout: 10000 });
+    await row('Echo').locator('.row-main').click();
+    await expect.poll(() => sections(win), { timeout: 10000 }).toEqual([['Idle', ['Echo', s3, s0, s1, s2]]]);
+  } finally {
+    await stop(app, home);
+  }
+});
+
+test('a placed session whose Claude exits arrives among the terminals as before, not on top', async () => {
+  const { app, win, home } = await launch();
+  try {
+    const row = (name: string) => win.locator('.session-row', { hasText: name });
+    await win.getByRole('button', { name: 'Group by state' }).click();
+    // A terminal first: by age it comes before the sessions started after it.
+    await newTerminal(win, 1);
+    const [shellId] = await termIds(win);
+    for (const name of ['Alfa', 'Beta']) await newSession(win, name);
+    await dropAbove(row('Beta'), row('Alfa'));
+    await expect.poll(() => titles(win)).toEqual(['Beta', 'Alfa']);
+    const betaId = await row('Beta').getAttribute('data-term-row');
+    await typeInto(win, 'Beta', '\r');
+    await typeInto(win, 'Beta', '/exit\r');
+    await expect(win.locator('.term-row')).toHaveCount(2, { timeout: 15000 });
+    await expect.poll(() => termIds(win)).toEqual([shellId, betaId]);
+  } finally {
+    await stop(app, home);
+  }
+});
+
+/** Clicks an app menu item by its label, as the menu bar would. */
+async function menu(app: ElectronApplication, label: string) {
+  await app.evaluate(({ Menu, BrowserWindow }, l) => {
+    const walk = (items: Electron.MenuItem[]): Electron.MenuItem | undefined => {
+      for (const it of items) { if (it.label === l && it.visible) return it; const sub = it.submenu ? walk(it.submenu.items) : undefined; if (sub) return sub; }
+      return undefined;
+    };
+    walk(Menu.getApplicationMenu()!.items)!.click(undefined, BrowserWindow.getAllWindows()[0]);
+  }, label);
+}
+const menuEnabled = (app: ElectronApplication, label: string) => app.evaluate(({ Menu }, l) => {
+  const walk = (items: Electron.MenuItem[]): Electron.MenuItem | undefined => {
+    for (const it of items) { if (it.label === l) return it; const sub = it.submenu ? walk(it.submenu.items) : undefined; if (sub) return sub; }
+    return undefined;
+  };
+  return walk(Menu.getApplicationMenu()!.items)?.enabled ?? false;
+}, label);
+
+test('inside an activity: its rows reorder there; another activity still takes a row dropped on it, with no caret', async () => {
+  const { app, win, home } = await launch();
+  try {
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 800));
+    // A terminal of the workspace's own (workspaces start from what is open).
+    await win.getByRole('button', { name: 'Open a terminal' }).click();
+    await expect(win.locator('.term-row')).toHaveCount(1, { timeout: 10000 });
+    await menu(app, 'Toggle Workspaces for This Project');
+    await expect(win.locator('.ws-group.is-active')).toContainText('Workspace 1');
+    await expect.poll(() => menuEnabled(app, 'Activities Inside Workspaces')).toBe(true);
+    await menu(app, 'Activities Inside Workspaces');
+    const act = (name: string) => win.locator('.wsa-group', { has: win.locator('.wsa-name', { hasText: new RegExp(`^${name}$`) }) });
+    for (const name of ['Reset', 'SSO']) {
+      const head = win.locator('.ws-group.is-active .ws-head');
+      await head.hover();
+      await win.locator('.ws-group.is-active .ws-plus').click();
+      await win.getByRole('menuitem', { name: 'New Activity…' }).click();
+      const input = win.locator('.wsa-head .rename-input');
+      await expect(input).toBeFocused();
+      await input.fill(name);
+      await input.press('Enter');
+      await expect(act(name)).toHaveClass(/is-current/);
+    }
+    await act('SSO').locator('.wsa-chev').click();
+    await act('Reset').locator('.wsa-chev').click();
+    // Three terminals in SSO, the place in front (after the workspace's own one).
+    for (const n of [2, 3, 4]) await newTerminal(win, n);
+    const ssoIds = () => act('SSO').locator('.term-row').evaluateAll((rows) => rows.map((r) => (r as HTMLElement).dataset.termRow ?? ''));
+    const [first, second, third] = await ssoIds();
+    const term = (id: string) => win.locator(`.term-row[data-term-row="${id}"]`);
+    await dropAbove(term(third!), term(first!));
+    await expect.poll(ssoIds).toEqual([third, first, second]);
+
+    // Over the other activity: its drop state, no caret anywhere; released there, the row moves into it.
+    await term(second!).hover();
+    await win.mouse.down();
+    const box = (await act('Reset').locator('.wsa-head').boundingBox())!;
+    await win.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 });
+    await expect(act('Reset')).toHaveClass(/is-drop/);
+    await expect(win.locator('.is-caret-before, .is-caret-after')).toHaveCount(0);
+    await win.mouse.up();
+    await expect(act('Reset').locator(`.term-row[data-term-row="${second}"]`)).toBeVisible();
+    await expect.poll(ssoIds).toEqual([third, first]);
   } finally {
     await stop(app, home);
   }
