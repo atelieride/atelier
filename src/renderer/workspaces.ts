@@ -180,16 +180,27 @@ export function toggleOpen(s: WorkspacesState, id: string): WorkspacesState {
 }
 
 /**
- * `id` comes to the front (revised 2026-11-08): its chevron's choice goes (it opens), and the
- * one it replaces keeps showing what it showed — open stays open, folded stays folded — so only a chevron ever folds.
- * The same state for the one already in front or an unknown id.
+ * Place `id` comes to the front (revised 2026-11-08). Into another workspace: that workspace's
+ * chevron choice goes (it opens), and the one it replaces keeps showing what it showed — open stays open, folded stays
+ * folded — so only a chevron ever folds. Between places of one workspace nothing folds or opens, and an activity's own
+ * fold is never touched. The workspace records the place it is at (`place`: an activity; unset: its own tabs).
+ * The same state for the place already in front or an unknown id.
  */
 export function toFront(s: WorkspacesState, id: string): WorkspacesState {
   if (id === s.active || !s.list.some((w) => w.id === id)) return s;
-  const leftOpen = isOpen(s, s.active);
+  const toWs = workspaceOf(s, id);
+  const fromWs = workspaceOf(s, s.active);
+  const cross = toWs !== fromWs;
+  const leftOpen = isOpen(s, fromWs);
   const list = s.list.map((w) => {
-    if (w.id === id) { const { open: _, ...rest } = w; return rest; }
-    return w.id === s.active ? { ...w, open: leftOpen } : w;
+    if (w.id === toWs) {
+      let n = w;
+      if (cross) { const { open: _, ...rest } = n; n = rest; }
+      if (id !== toWs) n = { ...n, place: id };
+      else if ('place' in n) { const { place: _p, ...rest } = n; n = rest; }
+      return n;
+    }
+    return cross && w.id === fromWs ? { ...w, open: leftOpen } : w;
   });
   return { ...s, active: id, list };
 }

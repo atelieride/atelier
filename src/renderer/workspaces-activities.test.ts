@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import type { TabKey } from './tabs-model';
 import {
-  MAX_ACTIVITIES, MAX_WORKSPACES, activitiesOf, create, isOpen, isWsActivity, placeOnReturn, placesInOrder, reorder, workspaceOf,
-  workspacesOf, type Workspace, type WorkspacesState
+  MAX_ACTIVITIES, MAX_WORKSPACES, activitiesOf, create, isOpen, isWsActivity, placeOnReturn, placesInOrder, reorder, toFront,
+  toggleOpen, workspaceOf, workspacesOf, type Workspace, type WorkspacesState
 } from './workspaces';
 
 // Activities: entries of the workspaces' list with a parent, each a place with its own tabs.
@@ -64,6 +64,45 @@ describe('lookups', () => {
     // Another workspace's activity is no place of A's.
     const wrong: WorkspacesState = { ...s, list: s.list.map((w) => (w.id === 'A' ? { ...w, place: 'b1' } : w)) };
     expect(placeOnReturn(wrong, 'A')).toBe('A');
+  });
+});
+
+describe('switching places', () => {
+  const entry = (s: WorkspacesState, id: string) => s.list.find((w) => w.id === id)!;
+  test('own tabs → an activity of the same workspace: nothing folds or opens, the workspace records where it is', () => {
+    const s = toFront(mixed(), 'a1');
+    expect(s.active).toBe('a1');
+    expect(entry(s, 'A').place).toBe('a1');
+    expect('open' in entry(s, 'A')).toBe(false);
+    expect('open' in entry(s, 'a1')).toBe(false);
+    expect(isOpen(s, 'A')).toBe(true);
+    expect(isOpen(s, 'a1')).toBe(false);
+  });
+  test('an activity → another workspace\'s activity: the workspace left keeps showing as it was, the other opens', () => {
+    const s = toFront(toFront(mixed(), 'a1'), 'b1');
+    expect(s.active).toBe('b1');
+    expect(entry(s, 'A')).toMatchObject({ open: true, place: 'a1' });
+    expect(entry(s, 'B').place).toBe('b1');
+    expect('open' in entry(s, 'B')).toBe(false);
+    expect(isOpen(s, 'B')).toBe(true);
+    // A folded by its chevron before leaving stays folded.
+    const folded = toFront(toggleOpen(toFront(mixed(), 'a1'), 'A'), 'b1');
+    expect(isOpen(folded, 'A')).toBe(false);
+  });
+  test('an activity → its own workspace\'s tabs: the place is cleared', () => {
+    const s = toFront(toFront(mixed(), 'a2'), 'A');
+    expect(s.active).toBe('A');
+    expect('place' in entry(s, 'A')).toBe(false);
+  });
+  test('a folded activity stays folded coming forward; an open one stays open', () => {
+    expect(isOpen(toFront(mixed(), 'b1'), 'b1')).toBe(false);
+    const open = toggleOpen(mixed(), 'a2');
+    expect(isOpen(toFront(open, 'a2'), 'a2')).toBe(true);
+  });
+  test('workspaces alone switch as before: no place is ever written', () => {
+    const s = toFront(mixed(), 'B');
+    expect('place' in entry(s, 'B')).toBe(false);
+    expect('place' in entry(s, 'A')).toBe(false);
   });
 });
 
