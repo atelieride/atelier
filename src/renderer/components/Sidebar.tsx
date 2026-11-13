@@ -28,7 +28,7 @@ import { sessionRowMenu } from '../menus';
 import { nameTip } from '../names';
 import { pinnedFirst } from '../pins';
 import { groupSessions, trackSections, type Entered, type InboxSection } from '../inbox';
-import { WorkspaceGroup, useRowClick, useRowDrag } from './WorkspaceGroup';
+import { WorkspaceGroup, WsOwnRows, useRowClick, useRowDrag } from './WorkspaceGroup';
 import { WsActivityGroup } from './WsActivityGroup';
 import { cardOf, inWorkspace, resumablesIn, wsActivityCard } from '../workspace-view';
 import { activitiesOf, isOpen, workspaceOf, workspacesOf, type WorkspacesState } from '../workspaces';
@@ -372,7 +372,7 @@ function Workspaces({ ws, entered }: { ws: WorkspacesState; entered: Map<string,
                   </WsActivityGroup>
                 );
               })}
-              {open && (acts.length ? <div className="ws-own" {...(atOwn ? {} : { 'data-ws-drop': w.id })}>{own}</div> : own)}
+              {open && (acts.length ? <WsOwnRows wsId={w.id} atOwn={atOwn}>{own}</WsOwnRows> : own)}
             </WorkspaceGroup>
           );
         })}

@@ -9,11 +9,49 @@ import { headDot, rowClickAction, wsColorVar, type WsCard } from '../workspace-v
 import { memberOf, type Workspace } from '../workspaces';
 import { kbd } from '../kbd';
 import { openBelow, sessionPlusMenu } from '../menus';
+import { ACT_MIME, ROW_MIME, fromType, placeDrop, type PlaceTarget } from '../place-drop';
 
-/** A sidebar row dragged onto a workspace's head carries its terminal id under this type. */
-export const ROW_MIME = 'application/x-atelier-terminal';
-/** …and its workspace under this one (types are all a drag over shows): no drop hint on the row's own workspace. */
-const fromType = (wsId: string) => `application/x-atelier-from-${wsId.toLowerCase()}`;
+/**
+ * Its own rows' zone in an open workspace that has activities: rows (and tabs from the strip) dropped there join its
+ * own tabs, as on its head; while its own tabs are in front it takes nothing from the strip.
+ */
+export function WsOwnRows({ wsId, atOwn, children }: { wsId: string; atOwn: boolean; children: ReactNode }) {
+  const { dropping, handlers } = usePlaceDrop({ id: wsId, kind: 'own' });
+  return (
+    <div className={`ws-own${dropping ? ' is-drop' : ''}`} {...(atOwn ? {} : { 'data-ws-drop': wsId })} {...handlers}>{children}</div>
+  );
+}
+
+/**
+ * A sidebar drop target (a workspace's head, its own rows, an activity): the drop state while a row, an activity's
+ * head or a tab from the strip is over it, and the handlers that move what is dropped there.
+ */
+export function usePlaceDrop(target: PlaceTarget): { dropping: boolean; handlers: { onDragOver: (e: DragEvent) => void; onDragLeave: (e: DragEvent) => void; onDrop: (e: DragEvent) => void } } {
+  const tab = useApp((s) => s.tabDragTarget?.kind === 'workspace' && s.tabDragTarget.id === target.id);
+  const [over, setOver] = useState(false);
+  const onDragOver = (e: DragEvent) => {
+    if (!placeDrop(Array.from(e.dataTransfer.types), target)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (!over) setOver(true);
+  };
+  // Moving from the target onto one of its buttons is no leaving: the hint would flicker as they come and go.
+  const onDragLeave = (e: DragEvent) => {
+    if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
+    setOver(false);
+  };
+  const onDrop = (e: DragEvent) => {
+    setOver(false);
+    const what = placeDrop(Array.from(e.dataTransfer.types), target);
+    if (!what) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const st = useApp.getState();
+    if (what === 'activity') st.moveWsActivity(e.dataTransfer.getData(ACT_MIME), target.id);
+    else { const id = e.dataTransfer.getData(ROW_MIME); if (id) st.moveToWorkspace(`t:${id}`, target.id); }
+  };
+  return { dropping: tab || over, handlers: { onDragOver, onDragLeave, onDrop } };
+}
 
 /** Props that make a sidebar row draggable onto a workspace's head; none while workspaces are off (rows behave as today). */
 export function useRowDrag(id: string): { draggable?: true; onDragStart?: (e: DragEvent) => void } {
@@ -67,30 +105,9 @@ const menuAt = (id: string) => (e: React.MouseEvent) => useApp.getState().openMe
  */
 export function WorkspaceGroup({ w, active, inAct = false, open, card, children }: { w: Workspace; active: boolean; inAct?: boolean; open: boolean; card: WsCard; children: ReactNode }) {
   const atOwn = active && !inAct;
-  const target = useApp((s) => s.tabDragTarget?.kind === 'workspace' && s.tabDragTarget.id === w.id);
-  const [over, setOver] = useState(false);
+  const { dropping, handlers } = usePlaceDrop({ id: w.id, kind: 'workspace' });
   const editing = useApp((s) => s.wsRenaming === w.id);
   const st = useApp.getState;
-  const dropping = target || over;
-  const onDragOver = (e: DragEvent) => {
-    const types = e.dataTransfer.types;
-    if (!types.includes(ROW_MIME) || types.includes(fromType(w.id))) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (!over) setOver(true);
-  };
-  // Moving from the head onto one of its buttons is no leaving: the hint would flicker as they come and go.
-  const onDragLeave = (e: DragEvent) => {
-    if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
-    setOver(false);
-  };
-  const onDrop = (e: DragEvent) => {
-    setOver(false);
-    const id = e.dataTransfer.getData(ROW_MIME);
-    if (!id) return;
-    e.preventDefault();
-    st().moveToWorkspace(`t:${id}`, w.id);
-  };
   const toggle = () => st().toggleWorkspaceOpen(w.id);
   // The Sessions drop-down: either way the session starts in this workspace.
   const here = (run: () => void) => () => { if (w.id !== st().ws?.active) st().switchWorkspace(w.id); run(); };
@@ -114,7 +131,7 @@ export function WorkspaceGroup({ w, active, inAct = false, open, card, children 
       {...(active ? { 'data-ws-active': w.id } : {})} style={{ '--ws-c': wsColorVar(w.color) } as React.CSSProperties}>
       {/* Shift+F10 on its buttons opens this menu too (App's handler sends a contextmenu that bubbles here). */}
       <div className={`ws-head${dropping ? ' is-drop' : ''}`} {...(atOwn ? {} : { 'data-ws-drop': w.id })}
-        onContextMenu={menuAt(w.id)} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+        onContextMenu={menuAt(w.id)} {...handlers}>
         <button type="button" className="ws-chev" aria-expanded={open} aria-label={`${open ? t.ws.hideRows : t.ws.showRows} · ${w.name}`}
           data-tip={open ? t.ws.hideRows : t.ws.showRows} onClick={toggle}>
           <Icon name={open ? 'chevronDown' : 'chevron'} size={13} stroke={2} />

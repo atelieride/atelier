@@ -316,6 +316,8 @@ button.foot-item:disabled { cursor: default; }
 .wsa-group.is-current .wsa-plus, .wsa-head:is(:hover, :has(:focus-visible)) .wsa-plus { opacity: 1; }
 .ws-own { display: flex; flex-direction: column; gap: 2px; min-width: 0; min-height: 2px; border-radius: var(--radius);
   transition: background-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+/* A drop onto an activity or a workspace's own rows: the workspace head's drop state, on the whole target. */
+.wsa-group.is-drop, .ws-own.is-drop { background: color-mix(in srgb, var(--ws-c) 8%, transparent); box-shadow: inset 0 0 0 1.5px var(--ws-c); }
 .palette-ws-dots { margin-left: 4px; }
 
 /* Avatar and context ring */
