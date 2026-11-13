@@ -108,6 +108,33 @@ test('Databases: ⌃⇧B in View right after Redis, opening the view unless Neve
   expect(db.find((i) => i.keys === '⌘⏎')?.label).toBe('On a table in the palette: open it as a kept tab (⏎: a preview)');
 });
 
+test('Find in Files: ⌘⇧F in View after Files, the command, the palette\'s three items, F4 at the window; listed in Keyboard', () => {
+  const view = labels('View');
+  expect(view[view.indexOf('Files') + 1]).toBe('Find in Files');
+  expect(item('Find in Files')).toEqual({ label: 'Find in Files', accelerator: 'CmdOrCtrl+Shift+F', command: 'find-in-files' });
+  expect(accels.filter((a) => keysOf(a) === '⌘⇧F')).toHaveLength(1);
+  const app = readFileSync(join(__dirname, '../../src/renderer/App.tsx'), 'utf8');
+  expect(app).toContain("case 'find-in-files': findInFilesCommand(from === 'popout'); break;");
+  // F4 / ⇧F4: the page's own keys, at the window (a pop-out's come here through its forwarded command).
+  expect(app).toContain('installSearchKeys()');
+  // A pop-out's F4 reaches the project window quietly: handled before Settings would close for a command.
+  const listener = app.slice(app.indexOf('window.atelier.on.command('));
+  const quiet = listener.indexOf("if (cmd === 'next-search-result' || cmd === 'prev-search-result')");
+  expect(quiet).toBeGreaterThan(-1);
+  expect(quiet).toBeLessThan(listener.indexOf('if (st.settingsOpen)'));
+  const palette = readFileSync(join(__dirname, '../../src/renderer/components/Palette.tsx'), 'utf8');
+  for (const id of ['find-in-files', 'next-search-result', 'prev-search-result']) expect(palette).toContain(`c('${id}'`);
+  // Written in the accelerator's own order wherever it is shown (kbd() gives Windows its Shift+Alt+F).
+  for (const f of ['components/Palette.tsx', 'editor/find/FindCard.tsx', 'search/FindInFiles.tsx', 'i18n/en.ts']) {
+    const src = readFileSync(join(__dirname, '../../src/renderer', f), 'utf8');
+    expect(src, f).toContain("kbd('⌘⇧F')");
+    expect(src, f).not.toContain('⇧⌘F');
+  }
+  const editor = SHORTCUTS.find((g) => g.title === 'Files & Editor')!.items;
+  expect(editor.find((i) => i.label === 'Find in files')?.keys).toBe('⌘⇧F');
+  expect(editor.find((i) => i.label === 'Next / previous search result')?.keys).toBe('F4 · ⇧F4');
+});
+
 test('Connectors: reachable from the app menu, right after Settings…, opening its Settings section', () => {
   const appMenu = MENU_SPEC[0]!;
   expect('app' in appMenu && appMenu.app).toBe(true);

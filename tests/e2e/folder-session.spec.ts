@@ -140,7 +140,7 @@ test('new session or terminal in a subfolder: palette, File menu, tree; the side
     await expect(termSheet).toBeHidden();
 
     // File tree: New Terminal Here on a folder; New Session Here asks only for the name.
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
     const treeRow = (n: string) => win.locator('.tree-row', { has: win.locator('.tree-name', { hasText: new RegExp(`^${n}$`) }) });
     await treeRow('web').click({ button: 'right' });
     await win.getByRole('menuitem', { name: 'New Terminal Here' }).click();

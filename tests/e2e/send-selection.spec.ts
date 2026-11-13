@@ -77,6 +77,7 @@ test('right-click in full-screen Claude: its selection runs in a new terminal or
     await expect(win.locator('.palette-send-head')).toContainText('+1 line');
     await expect(win.locator('.palette-item').first()).toContainText('New Terminal');
     await expect(win.locator('.palette-item', { hasText: 'build-folder' })).toBeVisible();
+    await expect(win.locator('.palette-foot')).toContainText('⌘↵ type and run');
     // The pointer left where the menu was (it would highlight the row under it), the entrance over: then the shot.
     await win.mouse.move(640, 760);
     await look(win, join(SHOTS, 'palette.png'), { settle: 400 });

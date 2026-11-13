@@ -139,14 +139,20 @@ export function repoOf(repos: string[], abs: string): string | null {
   return best;
 }
 
-/** Collects keys and delivers them after `ms` of quiet, but at the latest after `maxWait` (a file written continuously must not block everything). */
+/**
+ * Collects keys and delivers them after `ms` of quiet, but at the latest after `maxWait` (a file written continuously
+ * must not block everything), with the time the last of them came: what happened since a given moment can tell those
+ * that came before it apart.
+ */
 export class Debouncer {
   private keys = new Set<string>();
   private timer: NodeJS.Timeout | null = null;
   private first = 0;
-  constructor(private readonly ms: number, private readonly flush: (keys: Set<string>) => void, private readonly maxWait = Infinity) {}
+  private last = 0;
+  constructor(private readonly ms: number, private readonly flush: (keys: Set<string>, last: number) => void, private readonly maxWait = Infinity) {}
   add(key: string): void {
-    if (this.keys.size === 0) this.first = Date.now();
+    this.last = Date.now();
+    if (this.keys.size === 0) this.first = this.last;
     this.keys.add(key);
     if (this.timer) clearTimeout(this.timer);
     const wait = Math.max(0, Math.min(this.ms, this.first + this.maxWait - Date.now()));
@@ -156,7 +162,7 @@ export class Debouncer {
     const k = this.keys;
     this.keys = new Set();
     this.timer = null;
-    this.flush(k);
+    this.flush(k, this.last);
   }
   dispose(): void { if (this.timer) clearTimeout(this.timer); }
 }

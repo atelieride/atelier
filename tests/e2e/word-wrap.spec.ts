@@ -37,7 +37,7 @@ test('View › Word Wrap, ⌥Z in the editor and the palette switch word wrap; w
   const app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env });
   try {
     const win = await app.firstWindow();
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
     await win.locator('.tree-row', { hasText: 'lungo.txt' }).click();
     const view = win.locator('.file-view:visible');
     await expect(view.locator('.cm-content')).toBeVisible();

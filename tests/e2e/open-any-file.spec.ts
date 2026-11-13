@@ -169,7 +169,7 @@ test('after a restart the file tabs come back in order with the tab in front; a 
     let app = await launch();
     let win = await app.firstWindow();
     // a.ts, then a terminal (it enters after the tab in front), then the outside files: a terminal between file tabs.
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
     await win.locator('.tree-row', { hasText: 'src' }).click();
     await win.locator('.tree-row', { hasText: 'a.ts' }).dblclick();
     await expect(tab(win, 'a.ts')).toHaveClass(/is-active/);

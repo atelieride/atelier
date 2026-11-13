@@ -58,6 +58,12 @@ test('windows.ts maps to workspace, env.ts is wiring', () => {
   expect(classify('tests/e2e/env.ts', map).kind).toBe('wiring');
 });
 
+test('the editor modules of Find in Files run its specs too (files), not only the editor\'s', () => {
+  for (const f of ['src/renderer/editor/find-in-files-ext.ts', 'src/renderer/editor/result-select.ts']) {
+    expect(classify(f, map), f).toEqual({ kind: 'areas', areas: ['editor', 'files'] });
+  }
+});
+
 // A committed .only would make every "full" run a partial one (and the full-green stamp a lie).
 test('no spec commits a test.only or describe.only', () => {
   const offenders = specs.filter((s) => /\b(test|describe)(\.describe)?\.only\(/.test(readFileSync(join(e2eDir, s), 'utf8')));

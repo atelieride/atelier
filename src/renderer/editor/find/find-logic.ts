@@ -142,13 +142,20 @@ export function swapEnter(a: FindAction, enterUp: boolean): FindAction {
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/**
+ * Selected text as a query that finds it: one line of at most 100 characters, else null. A plain query still reads \n,
+ * \t and \\ as escapes, so a selected backslash is doubled; with regular expressions on, the text is escaped.
+ */
+export function seedText(text: string, regexp: boolean): string | null {
+  if (!text || text.length > 100 || text.includes('\n')) return null;
+  return regexp ? escapeRegExp(text) : text.replace(/\\/g, '\\\\');
+}
+
 /** A new card's query: a short one-line selection (with the last options), else the last query. */
 export function initialQuery(state: EditorState, last: FindSpec | null): FindSpec {
   const base = last ?? { search: '', caseSensitive: false, wholeWord: false, regexp: false, replace: '' };
   const sel = state.selection.main;
-  if (sel.empty || sel.to - sel.from > 100) return base;
-  const text = state.sliceDoc(sel.from, sel.to);
-  if (text.includes('\n')) return base;
-  // A plain query still reads \n, \t and \\ as escapes: a selected backslash is doubled to find itself.
-  return { ...base, search: base.regexp ? escapeRegExp(text) : text.replace(/\\/g, '\\\\') };
+  // A long selection is never read out: it could not be a query anyway.
+  const search = sel.to - sel.from > 100 ? null : seedText(state.sliceDoc(sel.from, sel.to), base.regexp);
+  return search === null ? base : { ...base, search };
 }

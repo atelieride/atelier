@@ -33,6 +33,10 @@ test('Windows: menu shortcuts as the Windows menu has them', () => {
   expect(kbd('⌃⌘←')).toBe('Ctrl+Alt+Shift+←');
   expect(kbd('⌃⌘→')).toBe('Ctrl+Alt+Shift+→');
   expect(kbd('⌃⌘N')).toBe('');
+  // Find in Files (the activity item's tip, the view's hint, the find card's button, the palette), and its F4 keys,
+  // which no menu has.
+  expect(kbd('⌘⇧F')).toBe('Shift+Alt+F');
+  expect(kbdText('F4 · ⇧F4')).toBe('F4 · Shift+F4');
 });
 
 test('Windows: keys inside panels and editors take Ctrl for ⌘', () => {

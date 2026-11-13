@@ -105,7 +105,7 @@ test('split view: typing never reaches a pane that is not focused; strip clicks 
     await expect(strip(1)).toHaveClass(/is-focused/);
     await win.keyboard.type('echo BR""AVOREADY\n');
     await expect.poll(() => textOf(win, 2), { timeout: 15000 }).toContain('BRAVOREADY');
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
     const slotA = win.locator('.workspace-body > .terminal-slot:visible').filter({ hasText: 'ALPHAREADY' });
     await win.locator('.tree-row', { hasText: 'notes.md' }).dragTo(slotA);
     await expect.poll(() => textOf(win, 1), { timeout: 5000 }).toContain('notes.md');

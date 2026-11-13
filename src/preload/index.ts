@@ -31,6 +31,7 @@ const api: AtelierApi = {
     focus: (key, reveal) => ipcRenderer.invoke(IPC.popoutFocus, { key, ...(reveal ? { reveal } : {}) }),
     recall: (key) => ipcRenderer.invoke(IPC.popoutRecall, key),
     forward: (cmd) => ipcRenderer.invoke(IPC.popoutForward, cmd),
+    front: () => ipcRenderer.invoke(IPC.popoutFront),
     list: () => ipcRenderer.invoke(IPC.popoutList),
     handoff: () => ipcRenderer.invoke(IPC.popoutHandoff),
     dragStart: () => ipcRenderer.invoke(IPC.popoutDragStart),
@@ -376,6 +377,14 @@ const api: AtelierApi = {
     stop: (sessionId) => ipcRenderer.invoke(IPC.companionStop, { sessionId }),
     newThread: (sessionId) => ipcRenderer.invoke(IPC.companionNew, { sessionId }),
     seen: (sessionId) => ipcRenderer.invoke(IPC.companionSeen, { sessionId })
+  },
+  // The request's fields one by one, as for companion: main's schema is strict.
+  search: {
+    start: (r) => ipcRenderer.invoke(IPC.searchStart, {
+      searchId: r.searchId, query: r.query, matchCase: r.matchCase, wholeWord: r.wholeWord, regex: r.regex, include: r.include, exclude: r.exclude, includeIgnored: r.includeIgnored, unsaved: r.unsaved
+    }),
+    stop: (searchId) => ipcRenderer.invoke(IPC.searchStop, searchId),
+    onEvent: (cb) => listen(IPC.evSearch, cb)
   },
   on: {
     backgroundFeed: (cb) => listen(IPC.evBackgroundFeed, cb),

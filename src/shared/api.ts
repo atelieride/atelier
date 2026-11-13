@@ -38,6 +38,7 @@ import type { IfBusy, ScheduledPrompt } from './scheduled-prompts';
 import type { ScheduleNotice } from './schedule-notices';
 import type { Binding, CompanionEvent, CompanionModel, Thread } from './companion/types';
 import type { SignalBookView } from './claude-signals';
+import type { SearchEvent, SearchRequest } from './search';
 
 /** One automation as the windows see it: its settings, its last runs, its state. */
 export interface AutomationView { automation: Automation; runs: Run[]; status: AutomationStatus }
@@ -47,7 +48,7 @@ export interface AutomationsState { automations: AutomationView[] }
 /** What main tells a window as a toast. */
 export type AppNotice = { kind: 'restart-failed' };
 
-export type MenuCommand = 'new-session' | `new-session-account:${string}` | 'new-terminal' | `new-terminal-profile:${ProfileKey}` | 'reload-shell-env' | 'new-session-in-folder' | 'new-terminal-in-folder' | 'resume-session' | 'start-from-task' | 'new-file' | 'open-file' | 'install-shell-command' | 'uninstall-shell-command' | 'save' | 'save-all' | 'save-all-and-close' | 'close-tab' | 'move-tab-window' | 'move-tab-back' | 'show-terminal' | 'redraw-terminal' | 'view-sessions' | 'view-files' | 'view-services' | 'view-scm' | 'view-docker' | 'view-redis' | 'view-databases' | 'view-automations' | 'show-history' | 'show-background' | 'fetch' | 'fetch-all' | 'git-commit' | 'git-commit-all' | 'git-write-message' | 'git-undo-commit' | 'git-push' | 'git-pull' | 'git-sync' | 'git-sync-all' | 'git-new-branch' | 'git-switch-branch' | 'git-stash' |'toggle-changes' | 'toggle-sidebar' | 'swap-side-panels' | 'change-theme' | 'change-terminal-font' | 'open-palette' | 'open-settings' | 'open-about' | 'whats-new' | 'open-connectors' | `open-connector:${ConnectorId}` | 'next-attention' | 'toggle-group-by-state' | 'show-notifications' | 'session-panel' | 'ask-session' | 'restart-session' | 'context-usage' | 'schedule-prompt' | 'scheduled-prompts' | 'md-toggle-preview' | 'md-split' | 'md-outline' | 'toggle-word-wrap' | 'review-all' | 'review-session' | 'comment-selection' | 'next-change' | 'prev-change' | 'reveal-in-finder' | 'send-review' | 'next-tab' | 'prev-tab' | 'split-right' | 'focus-next-pane' | 'focus-prev-pane' | 'move-tab-left' | 'move-tab-right' | 'close-pane' | 'close-other-panes' | `tab-${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}` | 'new-workspace' | 'toggle-workspaces' | 'next-workspace' | 'prev-workspace' | `workspace-${number}`;
+export type MenuCommand = 'new-session' | `new-session-account:${string}` | 'new-terminal' | `new-terminal-profile:${ProfileKey}` | 'reload-shell-env' | 'new-session-in-folder' | 'new-terminal-in-folder' | 'resume-session' | 'start-from-task' | 'new-file' | 'open-file' | 'install-shell-command' | 'uninstall-shell-command' | 'save' | 'save-all' | 'save-all-and-close' | 'close-tab' | 'move-tab-window' | 'move-tab-back' | 'show-terminal' | 'redraw-terminal' | 'view-sessions' | 'view-files' | 'find-in-files' | 'next-search-result' | 'prev-search-result' | 'view-services' | 'view-scm' | 'view-docker' | 'view-redis' | 'view-databases' | 'view-automations' | 'show-history' | 'show-background' | 'fetch' | 'fetch-all' | 'git-commit' | 'git-commit-all' | 'git-write-message' | 'git-undo-commit' | 'git-push' | 'git-pull' | 'git-sync' | 'git-sync-all' | 'git-new-branch' | 'git-switch-branch' | 'git-stash' |'toggle-changes' | 'toggle-sidebar' | 'swap-side-panels' | 'change-theme' | 'change-terminal-font' | 'open-palette' | 'open-settings' | 'open-about' | 'whats-new' | 'open-connectors' | `open-connector:${ConnectorId}` | 'next-attention' | 'toggle-group-by-state' | 'show-notifications' | 'session-panel' | 'ask-session' | 'restart-session' | 'context-usage' | 'schedule-prompt' | 'scheduled-prompts' | 'md-toggle-preview' | 'md-split' | 'md-outline' | 'toggle-word-wrap' | 'review-all' | 'review-session' | 'comment-selection' | 'next-change' | 'prev-change' | 'reveal-in-finder' | 'send-review' | 'next-tab' | 'prev-tab' | 'split-right' | 'focus-next-pane' | 'focus-prev-pane' | 'move-tab-left' | 'move-tab-right' | 'close-pane' | 'close-other-panes' | `tab-${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}` | 'new-workspace' | 'toggle-workspaces' | 'next-workspace' | 'prev-workspace' | `workspace-${number}`;
 
 /**
  * What a window tells main for the application menu (menu-spec's conditions it owns): an Undo on
@@ -424,6 +425,15 @@ export const IPC = {
   backgroundWatch: 'background:watch',
   backgroundUnwatch: 'background:unwatch',
   backgroundLoop: 'background:loop',
+  /**
+   * Find in Files: a trusted app page of a project window (pop-outs included), strict schemas. One search at a time
+   * per window; its events (SearchEvent) go back to that window only, on ev:search, a `stale` among them once files
+   * change after its search.
+   *   search:start   SearchRequest
+   *   search:stop    searchId
+   */
+  searchStart: 'search:start',
+  searchStop: 'search:stop',
   // main → renderer events
   evTerminals: 'ev:terminals',
   evBackgroundFeed: 'ev:background-feed',
@@ -482,6 +492,7 @@ export const IPC = {
   evGitOp: 'ev:git-op',
   evScmMessage: 'ev:scm-message',
   evCompanion: 'ev:companion',
+  evSearch: 'ev:search',
   // Tab pop-out windows.
   popoutOpen: 'popout:open',
   popoutTearStart: 'popout:tear-start',
@@ -490,6 +501,7 @@ export const IPC = {
   popoutFocus: 'popout:focus',
   popoutRecall: 'popout:recall',
   popoutForward: 'popout:forward',
+  popoutFront: 'popout:front',
   popoutList: 'popout:list',
   popoutHandoff: 'popout:handoff',
   popoutDragStart: 'popout:drag-start',
@@ -531,6 +543,8 @@ export interface AtelierApi {
     recall(key: string): Promise<void>;
     /** Run a menu command in the main window (from a pop-out). */
     forward(cmd: MenuCommand): Promise<void>;
+    /** This project window comes forward: what a pop-out's forwarded F4 walked to opened here, not in the pop-out. */
+    front(): Promise<void>;
     /** Keys of the tabs that live in pop-outs now. */
     list(): Promise<string[]>;
     /** The editor state handed over to this pop-out, once. */
@@ -1049,6 +1063,15 @@ export interface AtelierApi {
   };
   /** Ask, the read-only companion of a session. */
   companion: CompanionApi;
+  /**
+   * Find in Files over the window's project. `start` stops the window's search before it; every event carries the id
+   * the page gave its search, so a late event of an older one is told apart.
+   */
+  search: {
+    start(req: SearchRequest): Promise<void>;
+    stop(searchId: number): Promise<void>;
+    onEvent(cb: (e: SearchEvent) => void): () => void;
+  };
   on: {
     backgroundFeed(cb: (feed: BackgroundFeed) => void): () => void;
     terminals(cb: (list: TerminalInfo[]) => void): () => void;
@@ -1057,7 +1080,8 @@ export interface AtelierApi {
     exit(cb: (id: string) => void): () => void;
     daemon(cb: (s: DaemonState) => void): () => void;
     usage(cb: (list: UsageEntry[]) => void): () => void;
-    command(cb: (cmd: MenuCommand) => void): () => void;
+    /** A menu command; `from` 'popout': given in a pop-out (its menu, a key it forwarded) and run in this window. */
+    command(cb: (cmd: MenuCommand, from?: 'popout') => void): () => void;
     /** Windows: this window's menu changed (profiles, accounts, its project's Git state). */
     menuModel(cb: (model: WinMenu[]) => void): () => void;
     git(cb: (repos: RepoStatus[]) => void): () => void;

@@ -17,7 +17,7 @@ test('preview tabs: single click replaces one italic tab, double click / typing 
     const fileTabs = win.locator('.tab[data-key^="f:"]');
     const tab = (name: string) => win.locator('.tab', { hasText: name });
     const row = (name: string) => win.locator('.tree-row', { hasText: name });
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
 
     await row('a.ts').click();
     await expect(tab('a.ts')).toHaveClass(/is-preview/);

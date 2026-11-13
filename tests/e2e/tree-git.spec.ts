@@ -35,7 +35,7 @@ test('file tree: names colored by their git change, letter at the right, folders
     git(project, 'mv', 'docs/old.md', 'docs/moved.md');
     await expect(win.locator('.changes .change-row')).toHaveCount(4, { timeout: 8000 });
 
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
     const row = (name: string) => win.locator('.tree-row', { has: win.locator('.tree-name', { hasText: new RegExp(`^${name.replace('.', '\\.')}$`) }) });
     await row('src').click();
     await row('deep').click();

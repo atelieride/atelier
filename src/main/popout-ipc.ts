@@ -1,5 +1,5 @@
 // Tab pop-out windows: the IPC. Every handler checks the sender is an app page of the right kind of
-// window (open/recall/list/tear: a project window; dock/handoff/forward/drag/open-in-main/show-in-main/rekey: a pop-out; focus: either) and parses its input
+// window (open/recall/list/tear/front: a project window; dock/handoff/forward/drag/open-in-main/show-in-main/rekey: a pop-out; focus: either) and parses its input
 // with a strict schema; the project is always the sender's own, never one the renderer names.
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { IPC, type MenuCommand } from '@shared/api';
@@ -19,8 +19,10 @@ export interface PopoutIpcHost {
   popouts: Pick<PopoutManager, 'open' | 'dock' | 'focus' | 'recall' | 'keys' | 'takeHandoff' | 'dragStart' | 'dragEnd' | 'dragCancel' | 'rekey'>;
   /** Tab tear-off: a tab drag in a project window. */
   tear: Pick<TearOff, 'start' | 'end'>;
-  /** A menu command a pop-out forwards: run in its project's main window, brought forward. */
+  /** A menu command a pop-out forwards: run in its project's main window, brought forward (popout-wiring's forwardCommand). */
   forward(root: string, cmd: MenuCommand): void;
+  /** A project window asks to come forward: what a pop-out's forwarded F4 walked to opened in it. */
+  front(wcId: number): void;
   /**
    * A file a pop-out opens (a link, a path): in its project window, brought forward, at that line. The page names the
    * path, so it never grants: only a project file or an outside file already granted (Opener.openLinked).
@@ -103,6 +105,8 @@ export function installPopoutIpc(h: PopoutIpcHost): void {
     const cmd = popoutForwardSchema.safeParse(arg);
     if (root && cmd.success) h.forward(root, cmd.data as MenuCommand);
   });
+  // No input: only the sender's own window comes forward, and only a project window's.
+  ipcMain.handle(IPC.popoutFront, (e) => { if (rootOf(e, 'project')) h.front(e.sender.id); });
   ipcMain.handle(IPC.popoutOpenInMain, (e, arg) => {
     const r = popoutOpenInMainSchema.safeParse(arg);
     if (rootOf(e, 'popout') && r.success) h.openInMain(e.sender.id, r.data.path, r.data.line);

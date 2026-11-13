@@ -31,6 +31,7 @@ function setup() {
     },
     tear: { start: rec('tearStart'), end: rec('tearEnd') },
     forward: rec('forward'),
+    front: rec('front'),
     openInMain: rec('openInMain'),
     showInMain: rec('showInMain'),
     moveTo: (...a) => { calls.push(['moveTo', ...a]); return Promise.resolve({ ok: true }); },
@@ -132,6 +133,14 @@ describe('pop-out IPC', () => {
     call(IPC.popoutForward, 1, 'open-palette');
     call(IPC.popoutForward, 2, 'rm -rf');
     expect(calls).toEqual([['forward', '/a', 'open-palette']]);
+  });
+
+  test('front: a project window comes forward on its own request (what a pop-out\'s F4 walked to opened there)', () => {
+    const { calls, call } = setup();
+    call(IPC.popoutFront, 1);
+    // A pop-out, the welcome window, an untrusted page: nothing.
+    for (const id of [2, 5, 100]) call(IPC.popoutFront, id);
+    expect(calls).toEqual([['front', 1]]);
   });
 
   test('open in main: a file a pop-out asks for opens in its project window, with the line', () => {

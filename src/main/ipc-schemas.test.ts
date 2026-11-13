@@ -351,6 +351,25 @@ test('backgroundWatchSchema: a terminal id and an item id, nothing else', () => 
     expect(backgroundWatchSchema.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
 });
 
+test('Find in Files: a bounded query and globs, the four options, a whole non-negative id; nothing else', async () => {
+  const { searchIdSchema, searchStartSchema } = await import('./ipc-schemas');
+  const req = { searchId: 7, query: 'TokenStore', matchCase: false, wholeWord: true, regex: false, include: 'src/**', exclude: '*.test.ts', includeIgnored: false, unsaved: ['/p/src/a.ts'] };
+  expect(searchStartSchema.parse(req)).toEqual(req);
+  expect(searchStartSchema.safeParse({ ...req, query: 'q'.repeat(1_000), include: 'i'.repeat(2_000), exclude: 'e'.repeat(2_000) }).success).toBe(true);
+  expect(searchStartSchema.safeParse({ ...req, searchId: 0 }).success).toBe(true);
+  expect(searchStartSchema.safeParse({ ...req, searchId: Number.MAX_SAFE_INTEGER }).success).toBe(true);
+  const bad: Record<string, unknown>[] = [
+    { ...req, extra: 1 }, { ...req, root: '/elsewhere' },
+    { ...req, query: 'q'.repeat(1_001) }, { ...req, include: 'i'.repeat(2_001) }, { ...req, exclude: 'e'.repeat(2_001) },
+    { ...req, searchId: -1 }, { ...req, searchId: 1.5 }, { ...req, searchId: Number.MAX_SAFE_INTEGER + 2 }, { ...req, searchId: Number.NaN }, { ...req, searchId: '1' },
+    { ...req, regex: 'yes' }, { ...req, includeIgnored: 1 }, { ...req, query: undefined },
+    { ...req, unsaved: undefined }, { ...req, unsaved: ['rel/a.ts'] }, { ...req, unsaved: Array(501).fill('/p/a.ts') }, { ...req, unsaved: [`/${'a'.repeat(4096)}`] }
+  ];
+  for (const b of bad) expect(searchStartSchema.safeParse(b).success, JSON.stringify(b)).toBe(false);
+  expect(searchIdSchema.safeParse(3).success).toBe(true);
+  for (const b of [-1, 2.5, Infinity, '3', null]) expect(searchIdSchema.safeParse(b).success, String(b)).toBe(false);
+});
+
 test('backgroundLoopSchema: a terminal id and a cron id, nothing else', () => {
   expect(backgroundLoopSchema.parse({ terminalId: 't1', cronId: '3f193c39' })).toEqual({ terminalId: 't1', cronId: '3f193c39' });
   for (const bad of [{ terminalId: 't1', cronId: '../x' }, { terminalId: 't1', cronId: 'c1', path: '/etc/passwd' }, { terminalId: '', cronId: 'c1' }, { cronId: 'c1' }, { terminalId: 't1' }])
@@ -413,6 +432,14 @@ describe('pop-out schemas', () => {
   test('focus, recall, forward', () => {
     expect(popoutFocusSchema.safeParse({ key: 'f:/p/a.ts', reveal: { line: 12 } }).success).toBe(true);
     expect(popoutFocusSchema.safeParse({ key: 'f:/p/a.ts', reveal: { line: 0 } }).success).toBe(false);
+    // A Find in Files result for a popped-out file: its match and the query along, bounded and strict.
+    const spec = { query: 'token', matchCase: false, wholeWord: true, regex: false };
+    const found = { line: 12, from: 2, to: 7, spec, keepFocus: true };
+    expect(popoutFocusSchema.safeParse({ key: 'f:/p/a.ts', reveal: { line: 12, found } }).success).toBe(true);
+    expect(popoutFocusSchema.safeParse({ key: 'f:/p/a.ts', reveal: { line: 12, found: { ...found, from: -1 } } }).success).toBe(false);
+    expect(popoutFocusSchema.safeParse({ key: 'f:/p/a.ts', reveal: { line: 12, found: { ...found, spec: { ...spec, query: 'x'.repeat(1001) } } } }).success).toBe(false);
+    expect(popoutFocusSchema.safeParse({ key: 'f:/p/a.ts', reveal: { line: 12, found: { ...found, spec: { ...spec, extra: 1 } } } }).success).toBe(false);
+    expect(popoutFocusSchema.safeParse({ key: 'f:/p/a.ts', reveal: { line: 12, found: { ...found, extra: 1 } } }).success).toBe(false);
     expect(popoutKeySchema.safeParse('t:a').success).toBe(true);
     expect(popoutKeySchema.safeParse('x'.repeat(5000)).success).toBe(false);
     expect(popoutForwardSchema.safeParse('open-palette').success).toBe(true);
@@ -463,6 +490,11 @@ describe('pop-out schemas', () => {
     expect(popoutForwardSchema.safeParse('new-session-account:work').success).toBe(true);
     expect(popoutForwardSchema.safeParse('new-session-account:').success).toBe(false);
     expect(popoutForwardSchema.safeParse('new-terminal-profile:fish').success).toBe(true);
+    // F4 / ⇧F4 in a pop-out: its project window holds the results and walks them (no menu item has these).
+    expect(popoutForwardSchema.safeParse('next-search-result').success).toBe(true);
+    expect(popoutForwardSchema.safeParse('prev-search-result').success).toBe(true);
+    expect(popoutForwardSchema.safeParse('next-search-results').success).toBe(false);
+    expect(popoutForwardSchema.safeParse('find-in-files').success).toBe(true);
     // A connector's details page: only a known connector.
     expect(popoutForwardSchema.safeParse('open-connector:clickup').success).toBe(true);
     expect(popoutForwardSchema.safeParse('open-connector:notion').success).toBe(true);

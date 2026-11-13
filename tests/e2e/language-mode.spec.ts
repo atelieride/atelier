@@ -94,7 +94,7 @@ test('Change Language Mode: an untitled tab picks Markdown (highlighted while ty
     await expect(foot).toHaveText('Markdown');
 
     // A .txt file: plain text; JSON picked → highlighted.
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
     await win.locator('.tree-row', { hasText: 'data.txt' }).dblclick();
     await expect(foot).toHaveText('Plain text');
     await expect(win.locator('.file-view:visible .cm-content')).toContainText('atelier');
@@ -113,7 +113,7 @@ test('Change Language Mode: an untitled tab picks Markdown (highlighted while ty
     await expect(foot).toHaveText('JSON');
     await expect.poll(() => colored(win).count(), { timeout: 10000 }).toBeGreaterThan(0);
     await win.reload();
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
     await win.locator('.tree-row', { hasText: 'data.txt' }).dblclick();
     await expect(foot).toHaveText('JSON');
     await expect.poll(() => colored(win).count(), { timeout: 10000 }).toBeGreaterThan(0);

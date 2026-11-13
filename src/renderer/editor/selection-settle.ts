@@ -9,6 +9,8 @@ export interface SelectionSettle {
   /** The selection changed (by mouse, keyboard or code). */
   selectionChanged(): void;
   keyUp(key: string): void;
+  /** The selection was set for the user (a search result's match): nothing waits to settle. */
+  reset(): void;
   dispose(): void;
 }
 
@@ -28,6 +30,7 @@ export function selectionSettle(onSettled: () => void): SelectionSettle {
     unsettled = false;
     onSettled();
   };
+  const reset = () => { cancel(); unsettled = false; };
   return {
     pointerDown() { dragging = true; cancel(); },
     pointerUp() { if (!dragging) return; dragging = false; settle(); },
@@ -37,6 +40,7 @@ export function selectionSettle(onSettled: () => void): SelectionSettle {
       if (!dragging) timer = setTimeout(settle, SETTLE_MS);
     },
     keyUp(key) { if (key === 'Shift' && !dragging) settle(); },
-    dispose() { cancel(); unsettled = false; }
+    reset,
+    dispose: reset
   };
 }

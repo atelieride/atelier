@@ -21,7 +21,7 @@ test('a video plays in its tab: metadata, seeking, paused when hidden; a broken 
   const app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env });
   try {
     const win = await app.firstWindow();
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
     await win.locator('.tree-row', { hasText: 'media' }).click();
 
     // A file Chromium can't play: said so, with Reveal in Finder (not clicked: it would open Finder). A failed load first

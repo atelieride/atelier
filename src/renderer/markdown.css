@@ -142,16 +142,18 @@ p > .md-img:only-child { display: block; margin: 4px auto; border-radius: var(--
 .md-article .is-cursor { background: var(--tint-violet-soft); border-radius: 6px; box-shadow: 0 0 0 6px var(--tint-violet-soft); transition: background-color var(--t-med) var(--ease), box-shadow var(--t-med) var(--ease); }
 .md-article .md-flash { border-radius: 6px; animation: atl-fade-target 1.2s var(--ease); }
 
-/* Find (⌘F): the editor's card floats top right; matches painted by the CSS Highlight API. */
-.md-find-layer { position: absolute; top: 8px; left: 8px; right: 22px; z-index: 5; display: flex; justify-content: flex-end; pointer-events: none; container-type: inline-size; }
+/* Find (⌘F): the editor's card floats top right, "Search in all files" under it; matches painted by the CSS Highlight API. */
+.md-find-layer { position: absolute; top: 8px; left: 8px; right: 22px; z-index: 5; display: flex; flex-direction: column; align-items: flex-end; pointer-events: none; container-type: inline-size; }
 .md-find-layer > * { pointer-events: auto; }
 ::highlight(md-find) { background-color: var(--hit-bg); }
 ::highlight(md-find-current) { background-color: var(--hit-strong); }
 
 /* The outline ("On this page"): a floating card, sticky beside the page; the track fills up to the current heading. */
 .md-outline { width: clamp(236px, 20cqi, 320px); flex-shrink: 0; position: sticky; top: 0; padding: 40px 28px 24px 8px; user-select: none; transition: padding-top var(--t-med) var(--ease); }
-/* The find card floats where the outline starts: the outline steps down while it is open. */
+/* The find card floats where the outline starts: the outline steps down while it is open, further by the gap and
+   height of the card's "Search in all files" under it (layout.css; shown wherever the card can hand over). */
 .md-preview.has-find .md-outline { padding-top: 72px; }
+.md-preview.has-find:has(.fc-all) .md-outline { padding-top: calc(72px + var(--fc-all-gap) + var(--fc-all-h)); }
 @container md-pane (max-width: 899px) { .md-outline { display: none; } }
 .md-toc { padding: 12px 10px 10px; border-radius: var(--r-lg); background: color-mix(in srgb, var(--bg-3) 50%, transparent); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--sheen) 50%, transparent), 0 0 0 1px color-mix(in srgb, var(--edge-violet-soft) 60%, transparent); animation: atl-pop var(--t-med) var(--ease) both; }
 .md-toc-head { display: flex; align-items: center; gap: 7px; padding: 0 4px 0 6px; margin-bottom: 9px; color: var(--violet); }

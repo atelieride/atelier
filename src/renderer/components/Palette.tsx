@@ -23,6 +23,7 @@ import { goToChange } from '../change-targets';
 import { activeFindTarget, findInActiveTab } from '../editor/find/find-ext';
 import { toggleWordWrap } from '../editor/word-wrap';
 import { revealActive } from '../reveal';
+import { hasSearchResults, openFindInFiles, stepSearchResult } from '../search/open';
 import { shelfCommand } from '../menus';
 import { collapseAllFolders } from './FileTree';
 import { recentForPalette } from '../recent';
@@ -495,6 +496,12 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
       // Word wrap in every editor; ⌥Z in an editor.
       c('word-wrap', t.cmd.wordWrap, `${st.settings.wordWrap ? `${t.paletteOn}  ` : ''}${kbd('⌥Z')}`, 'wrap', toggleWordWrap),
       c('v-sessions', t.cmd.viewSessions, kbd('⌘⇧1'), 'sessions', () => st.setActivity('sessions')), c('v-files', t.cmd.viewFiles, kbd('⌘⇧2'), 'files', () => st.setActivity('files')),
+      // Find in Files, once the palette has closed (the field takes the keyboard); its F4 keys while there are results.
+      c('find-in-files', t.cmd.findInFiles, kbd('⌘⇧F'), 'search', () => setTimeout(() => openFindInFiles(), 0)),
+      ...(hasSearchResults() ? [
+        c('next-search-result', t.cmd.nextResult, 'F4', 'chevronDown', () => setTimeout(() => stepSearchResult(1, false), 0)),
+        c('prev-search-result', t.cmd.prevResult, kbd('⇧F4'), 'chevronUp', () => setTimeout(() => stepSearchResult(-1, false), 0))
+      ] : []),
       ...(servicesView(st.settings.showServices) ? [c('v-services', t.cmd.viewServices, kbd('⌘⇧3'), 'services', () => st.setActivity('services'))] : []), c('terminal', t.cmd.showTerminal, kbd('⌘0'), 'terminal', st.showTerminal),
       ...(selected ? [c('redraw-terminal', t.cmd.redrawTerminal, '', 'terminal', () => redrawTerminal(selected.id))] : []),
       c('v-scm', t.cmd.viewScm, kbd('⌃⇧G'), 'git', () => st.setActivity('scm')),
@@ -802,7 +809,7 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
               // clickup: / notion: — the connector's glyph and name.
               ? <span className="palette-mode has-glyph"><Icon name={CONNECTOR_ICONS[q.source]} size={11} stroke={2.2} />{t.tasks.sourceModes[q.source]}</span>
               : q.mode !== 'all' && <span className="palette-mode">{t.paletteModes[q.mode]}</span>}
-          <input ref={input} className="palette-input" placeholder={sending ? t.send.pick : taskStep ? (taskStep.step === 'actions' ? t.tasks.pickAction : taskStep.step === 'account' ? t.tasks.pickAccount : t.tasks.pickSession) : t.search} value={query} onChange={(e) => setQuery(e.target.value)}
+          <input ref={input} className="palette-input" placeholder={sending ? (sending.newSession ? t.tasks.pickSession : t.send.pick) : taskStep ? (taskStep.step === 'actions' ? t.tasks.pickAction : taskStep.step === 'account' ? t.tasks.pickAccount : t.tasks.pickSession) : t.search} value={query} onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
               if (isImeComposing(e.nativeEvent)) return;
               if (e.key === 'Escape') { if (taskStep) { e.preventDefault(); back(); } else close(); }
@@ -870,7 +877,7 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
             // The send step: Enter types the text, ⌘Enter types and runs it.
             <>
               <span className="palette-keys"><b className="mono">↵</b> {t.send.type}</span>
-              <span className="palette-keys"><b className="mono">{kbd('⌘↵')}</b> {t.send.typeAndRun}</span>
+              <span className="palette-keys"><b className="mono">{kbd('⌘↵')}</b> {sending.newSession ? t.send.typeAndSend : t.send.typeAndRun}</span>
             </>
           ) : taskStep?.step === 'account' ? (
             // The account step: Enter starts as asked (⌘ / ⌥ already pressed on the way), ⌘Enter also sends.
@@ -1041,19 +1048,24 @@ function taskStepSections(step: TaskStep, query: string, terminals: TerminalInfo
 /**
  * The send step: a new terminal in the source's folder, the plain terminals, the
  * Claude sessions (those not waiting for input greyed, picking one says why). Enter types, ⌘Enter types and runs.
+ * Text meant for Claude (`newSession`): the Claude sessions only, then a new one.
  */
 function sendSections(send: PaletteSend, query: string, terminals: TerminalInfo[], starting: Starting): Group[] {
+  const own = send.newSession;
+  const go = (run: boolean) => (own ? own(run) : void textInNewTerminal(send.text, send.cwd, run));
   const fresh: Item = {
-    key: 'send-new', kind: 'command', label: t.send.newTerminal, hint: send.cwd ? folderName(send.cwd) : t.send.newTerminalHint, icon: 'plus',
-    run: () => void textInNewTerminal(send.text, send.cwd, false), send: () => void textInNewTerminal(send.text, send.cwd, true)
+    key: 'send-new', kind: 'command', label: own ? t.newSession : t.send.newTerminal, hint: own ? '' : send.cwd ? folderName(send.cwd) : t.send.newTerminalHint, icon: 'plus',
+    run: () => go(false), send: () => go(true)
   };
   const rows = sendRows(terminals, starting, (id) => pasteReason(id)).map((r): Item => ({
     key: `send-${r.id}`, kind: r.kind, label: r.label, hint: r.hint, color: r.color, off: r.off,
     run: () => sendTextTo(r.id, send.text, false), send: () => sendTextTo(r.id, send.text, true)
   }));
+  const sessions = rows.filter((i) => i.kind === 'session');
+  // For Claude: no terminal (an empty group is not shown), the new session last.
   return [
-    { title: t.paletteTerminals, items: fuzzyFilter([fresh, ...rows.filter((i) => i.kind === 'terminal')], query, (i) => i.label, 30) },
-    { title: t.paletteSessions, items: fuzzyFilter(rows.filter((i) => i.kind === 'session'), query, (i) => i.label, 30) }
+    { title: t.paletteTerminals, items: fuzzyFilter(own ? [] : [fresh, ...rows.filter((i) => i.kind === 'terminal')], query, (i) => i.label, 30) },
+    { title: t.paletteSessions, items: fuzzyFilter(own ? [...sessions, fresh] : sessions, query, (i) => i.label, 30) }
   ];
 }
 

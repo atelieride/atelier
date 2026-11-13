@@ -106,6 +106,22 @@ function reachable(entries: string[]): Set<string> {
 
 const runtime = files(DEMO).filter((f) => !posixRel(DEMO, f).startsWith('compile/'));
 
+/** The demo's own sources the entry loads at once: its static imports, followed; import() calls are not. */
+function staticallyLoaded(): Set<string> {
+  const seen = new Set<string>();
+  const stack = [join(DEMO, 'install.ts')];
+  while (stack.length) {
+    const f = stack.pop()!;
+    if (seen.has(f)) continue;
+    seen.add(f);
+    for (const imp of staticImportsOf(readFileSync(f, 'utf8'))) {
+      const r = resolveImport(imp.from, f);
+      if (r && r.startsWith(DEMO) && /\.tsx?$/.test(r)) stack.push(r);
+    }
+  }
+  return seen;
+}
+
 describe('demo runtime isolation', () => {
   test('the runtime sources are found (bridge, engine, the entry)', () => {
     const rel = runtime.map((f) => posixRel(DEMO, f));
@@ -166,20 +182,19 @@ describe('demo runtime isolation', () => {
   // only the saved connection. Nothing reaches them but import().
   test('the Databases engine and its world load on demand: no static import reaches them from the entry', () => {
     const lazy = [join(DEMO, 'engine/databases.ts'), join(DEMO, 'world/databases.ts')];
-    const seen = new Set<string>();
-    const stack = [join(DEMO, 'install.ts')];
-    while (stack.length) {
-      const f = stack.pop()!;
-      if (seen.has(f)) continue;
-      seen.add(f);
-      for (const imp of staticImportsOf(readFileSync(f, 'utf8'))) {
-        const r = resolveImport(imp.from, f);
-        if (r && r.startsWith(DEMO) && /\.tsx?$/.test(r)) stack.push(r);
-      }
-    }
+    const seen = staticallyLoaded();
     expect(lazy.filter((f) => seen.has(f)).map((f) => posixRel(DEMO, f))).toEqual([]);
     expect(seen.has(join(DEMO, 'bridge/databases.ts'))).toBe(true);
     expect(readFileSync(join(DEMO, 'bridge/databases.ts'), 'utf8')).toMatch(/import\(\s*'\.\.\/engine\/databases'\s*\)/);
+  });
+
+  // Find in Files in the demo: its engine (the matcher, the path filter, the scan) is a chunk of its own, loaded on the
+  // first search; the first paint keeps only the bridge's small answer.
+  test('the Find in Files engine loads on demand: no static import reaches it from the entry', () => {
+    const seen = staticallyLoaded();
+    expect(seen.has(join(DEMO, 'bridge/search-run.ts'))).toBe(false);
+    expect(seen.has(join(DEMO, 'bridge/search.ts'))).toBe(true);
+    expect(readFileSync(join(DEMO, 'bridge/search.ts'), 'utf8')).toMatch(/import\(\s*'\.\/search-run'\s*\)/);
   });
 
   // Filters, sorts and pages are plain JS over the world's arrays: no statement is written or parsed in the bundle (the

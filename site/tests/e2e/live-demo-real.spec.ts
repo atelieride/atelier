@@ -971,4 +971,37 @@ test.describe('the real demo', () => {
     await isOpen(page);
     await expect.poll(() => moves(1500), { timeout: 10000 }).toBe(true);
   });
+
+  // Find in Files in the demo: the real view over the fictional project's files, answered by the demo bridge.
+  test('Find in Files: the activity item and ⇧⌘F reach the field; TokenStore is found in session.ts and tokens.ts, and a result opens its file with the match selected', async ({ page }) => {
+    const w = await watch(page);
+    await openFromHero(page);
+    const field = app(page).getByRole('textbox', { name: 'Search files' });
+    await app(page).getByRole('button', { name: /^Find in Files/ }).click();
+    await expect(field).toBeVisible();
+    // Leave the view, then ⇧⌘F brings it back with the keyboard in the field, even from the page around the frame.
+    await app(page).getByRole('button', { name: /^Files/ }).click();
+    await expect(field).toBeHidden();
+    await blurDemo(page);
+    await page.keyboard.press('Meta+Shift+f');
+    await expect(field).toBeFocused();
+    await field.fill('TokenStore');
+    await expect(app(page).locator('.fif-summary .fif-totals')).toHaveText(/^\d+ results in 2 files$/);
+    // In path order: src/auth/session.ts, then src/auth/tokens.ts.
+    const files = app(page).locator('.fif-row.is-file .fif-name');
+    await expect(files).toHaveText([/^session\.ts/, /^tokens\.ts/]);
+    // The first result: session.ts's import, line 1.
+    const first = app(page).locator('.fif-row.is-match').first();
+    await expect(first).toHaveAttribute('data-rel', 'src/auth/session.ts');
+    await expect(first).toHaveAttribute('data-line', '1');
+    await first.click();
+    await expect(app(page).locator('.tab.is-active')).toContainText('session.ts');
+    // The editor's selection holds the match: the strong mark is drawn on the occurrence the selection holds, whether
+    // or not the editor has the keyboard (here it has not: the page around the frame has it).
+    await blurDemo(page);
+    const strong = app(page).locator('.file-view:visible .cm-fif-hit-strong');
+    await expect(strong).toHaveText('TokenStore');
+    await expect.poll(() => strong.evaluate((el) => el.closest('.cm-line')?.textContent ?? '')).toBe("import { TokenStore } from './tokens';");
+    expect(w.console).toEqual([]);
+  });
 });

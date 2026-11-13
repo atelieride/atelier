@@ -80,7 +80,7 @@ async function menu(app: ElectronApplication, accelerator: string) {
 async function open(win: Page, folder: string | null, name: string) {
   const file = win.locator('.tree-row', { hasText: name }).first();
   if (!(await file.isVisible())) {
-    if (!(await win.locator('.tree-row').first().isVisible())) await win.getByRole('button', { name: /Files/ }).click();
+    if (!(await win.locator('.tree-row').first().isVisible())) await win.getByRole('button', { name: /^Files/ }).click();
     if (folder) await win.locator('.tree-row', { hasText: folder }).first().click();
   }
   await file.dblclick();

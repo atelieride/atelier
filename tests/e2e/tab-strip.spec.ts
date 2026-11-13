@@ -17,7 +17,7 @@ async function withTabs(body: (win: Page, open: (n: string[]) => Promise<void>) 
   try {
     const win = await app.firstWindow();
     await win.evaluate(() => (window as unknown as Api).atelier.settings.set({ previewTabs: false }));
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
     await body(win, async (list) => { for (const n of list) await win.locator('.tree-row', { hasText: n }).click(); });
   } finally {
     await app.close();

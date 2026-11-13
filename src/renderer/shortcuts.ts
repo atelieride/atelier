@@ -66,6 +66,8 @@ const ROWS: { title: string; items: Row[] }[] = [
     { keys: '⌥⏎', label: 'Select all matches (in Find)' },
     { keys: '⌘⏎', label: 'Replace all (in Replace)' },
     { keys: '⌥C ⌥W ⌥R', label: 'Match case, whole word, regular expression (in Find)' },
+    { accel: 'CmdOrCtrl+Shift+F', label: 'Find in files' },
+    { keys: 'F4 · ⇧F4', label: 'Next / previous search result' },
     { keys: '⌥Z', label: 'Word wrap on or off (in the editor and diffs; also View › Word Wrap)' },
     { keys: '⌘/', label: 'Toggle comment' },
     { keys: '⌘D', label: 'Select next occurrence' },

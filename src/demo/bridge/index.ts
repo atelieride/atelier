@@ -23,6 +23,7 @@ import { createDatabases } from './databases';
 import type { AskPlayer } from '../engine/ask';
 import { notInDemo } from './not-in-demo';
 import { createRedis } from './redis';
+import { createSearch } from './search';
 import { DEMO_SETTINGS, createSettings } from './settings';
 import { createTabs } from './tabs';
 import { createTerminals } from './terminals';
@@ -90,6 +91,7 @@ export function createDemo(compiled: DemoWorld, opts: DemoBridgeOptions): DemoBr
       focus: () => resolved(undefined),
       recall: () => resolved(undefined),
       forward: () => resolved(undefined),
+      front: () => resolved(undefined),
       list: () => resolved([] as string[]),
       handoff: () => resolved(null),
       dragStart: () => resolved(undefined),
@@ -171,6 +173,7 @@ export function createDemo(compiled: DemoWorld, opts: DemoBridgeOptions): DemoBr
     tasks: createTasks(ctx),
     background: createBackground(ctx),
     companion: createCompanion(ctx, opts.askPlayer ? { load: opts.askPlayer } : {}),
+    search: createSearch(ctx),
     on: events.on
   } satisfies AtelierApi;
 

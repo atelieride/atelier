@@ -109,6 +109,12 @@ export class GitHub {
   onScm: (projectRoot: string, e: ScmEvent, worktree: boolean) => void = () => {};
   /** A project's last window closed. */
   onProjectClosed: (projectRoot: string) => void = () => {};
+  /**
+   * Files of a project changed on disk (its real root), or may have (events were dropped). `ignoredOnly`: every file
+   * that changed is one git ignores (a build's output). `last`: when the watcher heard the last of them (Date.now()),
+   * which is earlier than this call by the watcher's quiet wait. Changes inside .git alone are not file changes.
+   */
+  onFilesChanged: (root: string, ignoredOnly: boolean, last: number) => void = () => {};
 
   /** How many folder levels below a project repositories are looked for, and how many folders one scan reads at most. */
   private readonly depth: () => number;
@@ -171,7 +177,7 @@ export class GitHub {
         key: root, root: real, discovered: [], repos: [], trees: new Map(), merge: new Map(), relisting: null, relistAgain: false, listed: false,
         relistLive: new Set(), relistBulk: new Set(), lists: new Map(), discovering: null, discoverAgain: null, discoveredAt: 0, capped: false,
         rescanTimer: null, renamed: new Set(),
-        status: new Map(), watcher: null, windows: new Set(), debounce: new Debouncer(300, (keys) => this.onChanges(proj, keys), 1500), outside: new Map()
+        status: new Map(), watcher: null, windows: new Set(), debounce: new Debouncer(300, (keys, last) => this.onChanges(proj, keys, last), 1500), outside: new Map()
       };
       try {
         // Ignored paths (node_modules, .git objects) are dropped right away: during an npm install there are thousands.
@@ -476,7 +482,8 @@ export class GitHub {
     }
   }
 
-  private onChanges(p: Project, rels: Set<string>): void {
+  /** `last`: when the watcher heard the last of these changes. */
+  private onChanges(p: Project, rels: Set<string>, last = Date.now()): void {
     let rescan = false;
     let dropped = false;
     const renamed = p.renamed;
@@ -499,6 +506,8 @@ export class GitHub {
     const out: GitDirChanges = { repos: new Set(), relist: new Set() };
     const { repos } = out;
     const files: string[] = [];
+    /** A changed file git does not ignore (or one outside any repository). */
+    let plainFile = false;
     // Discovered repositories still waiting for their listing count as known: their own git at work is no news.
     const known = new Set([...p.repos, ...p.discovered].map((r) => relative(p.root, r).split(sep).join('/')));
     const depth = this.depth();
@@ -524,10 +533,11 @@ export class GitHub {
         // A change git ignores (build output, logs) needs no status; an open editor tab still hears of it below.
         const skip = kind === 'file' && this.ignores.ignored(r, relInRepo);
         if (!skip) repos.add(r);
+        if (kind === 'file' && !skip) plainFile = true;
         // A new ignored folder (a first build) is learnt at the next listing: at most one per minute. Not before the
         // project's first listing: the listings of what git ignores follow it, behind the statuses.
         if (kind === 'file' && p.listed && this.ignores.stale(r)) void this.ignores.refresh(r);
-      }
+      } else if (kind === 'file') plainFile = true;
       if (kind === 'file') files.push(abs);
     }
     for (const r of repos) this.scheduler.request(r);
@@ -537,6 +547,8 @@ export class GitHub {
     if (dropped) this.rediscover(p, 'bulk');
     else if (rescan) this.rescanFor(p);
     if (files.length) for (const wc of p.windows) if (!wc.isDestroyed()) wc.send(IPC.evFsChanged, files);
+    // Dropped events: any file may have changed.
+    if (dropped || files.length) this.onFilesChanged(p.root, !dropped && !plainFile, last);
   }
 
   private broadcast(p: Project, force = false): void {

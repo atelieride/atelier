@@ -242,6 +242,10 @@ button.foot-item:disabled { cursor: default; }
 .list { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
 .sidebar-head .icon-btn { margin: -4px 0; }
 .sidebar-head .icon-btn:last-child { margin-right: -6px; }
+/* Find in Files: its name stays on one line at the narrowest sidebar, its three buttons close together (here, not in
+   its lazy stylesheet: the head shown while that loads is laid out the same). */
+.is-search > .sidebar-head { gap: 2px; }
+.is-search > .sidebar-head .section-label { margin-right: 5px; white-space: nowrap; }
 /* Inbox: the grouped sessions list, one list with a head per section, each with its state color. */
 .inbox-head { --tone: var(--text-4); display: flex; align-items: center; gap: 7px; padding: 10px 8px 5px; animation: atl-fade var(--t-med) var(--ease) both; }
 .inbox-head.is-needs { --tone: var(--waiting-mark); }
@@ -802,6 +806,16 @@ button.foot-item:disabled { cursor: default; }
 .fc-error-dot { width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: var(--error); }
 /* A neutral line under the field (a terminal on its alternate screen). */
 .fc-note { grid-column: 1 / -1; padding: 0 2px 2px 9px; font-size: 11.5px; color: var(--text-3); animation: atl-fade var(--t-fast) var(--ease); }
+/* "Search in all files": a quiet pill under the card, at its right edge; the card's query goes to Find in Files. Its
+   height and gap are the Markdown outline's too, which steps down past it (markdown.css). */
+:root { --fc-all-h: 24px; --fc-all-gap: 6px; }
+.fc-all { display: flex; align-items: center; gap: 6px; width: max-content; height: var(--fc-all-h); margin: var(--fc-all-gap) 0 0 auto; padding: 0 10px 0 8px; border-radius: 999px;
+  background: var(--bg-float); backdrop-filter: blur(18px) saturate(140%); box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text-2); font: 11.5px var(--font);
+  white-space: nowrap; pointer-events: auto; transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); animation: atl-fade var(--t-med) var(--ease) both; }
+.fc-all svg { color: var(--text-3); }
+.fc-all:hover { color: var(--text); background: var(--bg-3); }
+.fc-all:hover svg { color: var(--text-2); }
+.fc-all:focus-visible { border-radius: 999px; box-shadow: inset 0 0 0 1px var(--line-strong), var(--focus-ring); }
 /* Find in a terminal: top right of its slot, left of xterm's 14 px scrollbar; compact in a
    narrow pane through the same container query. */
 .term-find-layer { position: absolute; top: 8px; left: 22px; right: 30px; z-index: 10; display: flex; justify-content: flex-end; pointer-events: none; container-type: inline-size; }

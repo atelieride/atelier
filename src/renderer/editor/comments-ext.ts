@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { RangeSet, RangeSetBuilder, StateEffect, StateField, type EditorState } from '@codemirror/state';
 import { Decoration, EditorView, GutterMarker, ViewPlugin, WidgetType, gutter, showTooltip, type DecorationSet, type Tooltip, type ViewUpdate } from '@codemirror/view';
 import { selectionSettle, type SelectionSettle } from './selection-settle';
+import { RESULT_SELECT } from './result-select';
 import { useApp, type CommentDraft } from '../store';
 import { t } from '../i18n/en';
 import { defaultTarget, docLineOf, isOutdated, newLineRange, snippetOf } from '../comments';
@@ -147,7 +148,10 @@ const settleSelection = ViewPlugin.fromClass(class {
     view.dom.addEventListener('keyup', this.keyUp);
   }
   get win() { return this.view.dom.ownerDocument.defaultView ?? window; }
-  update(u: ViewUpdate) { if (u.docChanged || !u.state.selection.main.eq(u.startState.selection.main)) this.settle.selectionChanged(); }
+  update(u: ViewUpdate) {
+    if (u.transactions.some((tr) => tr.isUserEvent(RESULT_SELECT))) this.settle.reset();
+    else if (u.docChanged || !u.state.selection.main.eq(u.startState.selection.main)) this.settle.selectionChanged();
+  }
   destroy() {
     this.settle.dispose();
     this.view.dom.removeEventListener('mousedown', this.down, true);
@@ -163,6 +167,7 @@ export function commentExtensions(onComment: (v: EditorView) => void) {
     create: (state) => ({ settled: true, tip: tooltipFor(state, onComment) }),
     update: (v, tr) => {
       if (tr.effects.some((e) => e.is(selectionSettled))) return { settled: true, tip: tooltipFor(tr.state, onComment) };
+      if (tr.isUserEvent(RESULT_SELECT)) return { settled: true, tip: null };
       // A transaction that sets the same selection again (the editor reading back the DOM's) changes nothing.
       const moved = tr.docChanged || (!!tr.selection && !tr.state.selection.main.eq(tr.startState.selection.main));
       if (moved) return v.settled || v.tip ? { settled: false, tip: null } : v;

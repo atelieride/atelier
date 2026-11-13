@@ -177,7 +177,7 @@ test('untitled file: ⌘⌥N, type, ⌘S → Save as sheet; refusals shown; save
     await expect(win.locator('.tab', { hasText: 'Untitled-1' })).toHaveCount(0);
     await expect(win.locator('.file-view:visible .file-foot')).toContainText('Markdown');
     // Files opens with the file in front revealed: notes/ is already expanded.
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
     await expect(win.locator('.tree-row', { hasText: 'todo.md' })).toBeVisible();
 
     // Closing a dirty untitled tab asks under its tab; "Save" opens the sheet; Esc there keeps

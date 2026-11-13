@@ -44,20 +44,28 @@ export const relOf = (root: string, p: string) => relative(real(root) ?? root, p
 const utf16Bom = (b: Buffer) => (b[0] === 0xff && b[1] === 0xfe) || (b[0] === 0xfe && b[1] === 0xff);
 
 /** UTF-16 with its byte order mark (Windows PowerShell 5.1's `>`): its text, else null. */
-function utf16Text(buf: Buffer): string | null {
+export function utf16Text(buf: Buffer): string | null {
   if (!utf16Bom(buf)) return null;
   const le = buf[0] === 0xff;
   const body = Buffer.from(buf.subarray(2, 2 + ((buf.length - 2) & ~1)));
   return (le ? body : body.swap16()).toString('utf16le');
 }
 
-function looksBinary(path: string): boolean {
+/** Bytes read from the start of a file to tell whether it is binary. */
+export const BINARY_SNIFF_BYTES = 8192;
+
+/** Whether a file's first bytes (up to BINARY_SNIFF_BYTES) are binary: a NUL, unless UTF-16's BOM says it is text. */
+export function binaryHead(head: Buffer): boolean {
+  // UTF-16 text is full of NULs: its BOM says it is text.
+  return !utf16Bom(head) && head.includes(0);
+}
+
+export function looksBinary(path: string): boolean {
   const fd = openSync(path, 'r');
   try {
-    const buf = Buffer.alloc(8192);
+    const buf = Buffer.alloc(BINARY_SNIFF_BYTES);
     const n = readSync(fd, buf, 0, buf.length, 0);
-    // UTF-16 text is full of NULs: its BOM says it is text.
-    return !utf16Bom(buf.subarray(0, n)) && buf.subarray(0, n).includes(0);
+    return binaryHead(buf.subarray(0, n));
   } finally {
     closeSync(fd);
   }

@@ -68,6 +68,9 @@ export const SPECS: Record<string, Area[]> = {
   'file-editing.spec.ts': ['editor', 'files'],
   'fast-open.spec.ts': ['files'],
   'files-details.spec.ts': ['files'],
+  'find-in-files.spec.ts': ['files'],
+  'find-in-files-editor.spec.ts': ['files', 'editor'],
+  'find-in-files-limits.spec.ts': ['files'],
   'find-replace.spec.ts': ['editor'],
   'terminal-find.spec.ts': ['terminal', 'editor'],
   'diff-ruler.spec.ts': ['editor'],
@@ -406,6 +409,14 @@ export const SOURCES: Record<string, Area[]> = {
   'src/shared/windows-words.ts': ['workspace'],
   'src/shared/close-plan.ts': ['sessions', 'terminal'],
   'src/shared/asks.ts': ['workspace', 'files', 'settings'],
+  // Find in Files: the shared matcher and filter, main's engine, the sidebar view.
+  'src/shared/search': ['files'],
+  'src/main/search/': ['files'],
+  'src/renderer/search/': ['files'],
+  // A result's file in the editor: its occurrences marked, its match selected.
+  'src/renderer/editor/find-in-files-ext.ts': ['editor', 'files'],
+  // The match a result selected: ⌘⇧F keeps the query that found it.
+  'src/renderer/editor/result-select.ts': ['editor', 'files'],
   'src/shared/close-sessions.ts': ['sessions', 'workspace'],
   'src/renderer/components/LanguageSheet.tsx': ['editor'],
   'src/renderer/components/LogLineView.tsx': ['background'],

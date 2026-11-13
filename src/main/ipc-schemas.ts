@@ -25,6 +25,7 @@ import { DB_CONN_ID, dbConnectionFields, hasEndpoint, sshOverTcp, sshTarget } fr
 import { DB_SLOT_MAX } from '@shared/databases';
 import { scheduleAddFields, scheduleUpdateFields } from '@shared/scheduled-prompts';
 import { THEME_IDS, type ThemeId } from '@shared/themes';
+import { SEARCH_LIMITS } from '@shared/search';
 
 export const idSchema = z.string().min(1).max(64);
 /** Terminals stopped together (Close Workspace's Stop). */
@@ -96,6 +97,20 @@ export const filesClaudeTempSchema = abs;
  */
 export const filesOutsideSchema = z.string().min(1).max(4096).refine((p) => abs.safeParse(p).success || p.startsWith('~/'), 'path');
 export const urlSchema = z.string().min(1).max(8192);
+/** The id a page gives each of its Find in Files searches: a whole number it counts up from 0. */
+export const searchIdSchema = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+/** A Find in Files search: what the editor's find card has, the path filters and whether ignored files count. */
+export const searchStartSchema = z.object({
+  searchId: searchIdSchema,
+  query: z.string().max(SEARCH_LIMITS.queryMax),
+  matchCase: z.boolean(),
+  wholeWord: z.boolean(),
+  regex: z.boolean(),
+  include: z.string().max(SEARCH_LIMITS.globMax),
+  exclude: z.string().max(SEARCH_LIMITS.globMax),
+  includeIgnored: z.boolean(),
+  unsaved: z.array(absPathSchema(1, 4096)).max(SEARCH_LIMITS.unsavedMax)
+}).strict();
 /** A page's answer to main's question: which one, and the answer's word. */
 export const askAnswerSchema = z.object({ id: z.string().min(1).max(32), answer: z.string().min(1).max(16) }).strict();
 export const askShownSchema = z.object({ id: z.string().min(1).max(32) }).strict();
@@ -554,7 +569,16 @@ export const moveRequestSchema = z.object({
   to: absPathSchema(1, 4096), key: popoutKeySchema, payload: popoutPayloadSchema.optional(), handoff: editorHandoffSchema.optional(), at: clientPoint.optional()
 }).strict();
 export const adoptAnswerSchema = z.object({ id: z.number().int().positive(), ok: z.boolean(), reason: z.literal('open-there').optional() }).strict();
-export const popoutFocusSchema = z.object({ key: popoutKeySchema, reveal: z.object({ line: z.number().int().positive().optional(), payload: popoutPayloadSchema.optional() }).strict().optional() }).strict();
+const position = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+/** A Find in Files result for a popped-out file: its match and the query, as the search's own limits allow. */
+const searchTargetSchema = z.object({
+  line: position.min(1),
+  from: position,
+  to: position,
+  spec: z.object({ query: z.string().max(SEARCH_LIMITS.queryMax), matchCase: z.boolean(), wholeWord: z.boolean(), regex: z.boolean() }).strict(),
+  keepFocus: z.boolean()
+}).strict();
+export const popoutFocusSchema = z.object({ key: popoutKeySchema, reveal: z.object({ line: z.number().int().positive().optional(), payload: popoutPayloadSchema.optional(), found: searchTargetSchema.optional() }).strict().optional() }).strict();
 /** A tab a pop-out shows in its project window (files go through popoutOpenInMainSchema). */
 export const popoutShowInMainSchema = z.object({ key: popoutKeySchema, payload: popoutPayloadSchema.optional() }).strict();
 /** A file a pop-out opens in its project window: on disk (absolute; an untitled buffer lives in one window only). */
@@ -571,4 +595,5 @@ export const popoutRekeySchema = z.object({
 const FORWARDABLE = new Set<string>(menuItems(MENU_SPEC).flatMap((i) => ('command' in i && i.command ? [i.command as string] : [])));
 // Not in the menu: a connector's details page, asked by a pop-out's toast or palette command.
 const OPEN_CONNECTOR = new Set<string>(CONNECTOR_IDS.map((id) => `open-connector:${id}`));
-export const popoutForwardSchema = z.string().max(200).refine((c) => FORWARDABLE.has(c) || OPEN_CONNECTOR.has(c) || /^(tab-[1-9]|new-session-account:.+|new-terminal-profile:.+)$/.test(c));
+// F4 / ⇧F4 in a pop-out: the results it walks are its project window's.
+export const popoutForwardSchema = z.string().max(200).refine((c) => FORWARDABLE.has(c) || OPEN_CONNECTOR.has(c) || /^(tab-[1-9]|new-session-account:.+|new-terminal-profile:.+|(next|prev)-search-result)$/.test(c));

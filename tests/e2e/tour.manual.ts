@@ -51,7 +51,7 @@ test('UI tour', async () => {
     }
     await win.waitForTimeout(2500);
     await shot('1-sessioni');
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
     await win.waitForTimeout(800);
     await shot('2-files');
     await win.locator('.tree-row', { hasText: 'app-ui' }).first().click();

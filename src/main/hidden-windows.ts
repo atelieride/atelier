@@ -1,3 +1,4 @@
+import { appendFileSync } from 'node:fs';
 import type { CommandLine } from 'electron';
 import { devEnv } from './dev-env';
 
@@ -35,7 +36,7 @@ export function hideTestDockIcon(dock: { hide(): void } | undefined): void {
   if (hiddenWindows()) dock?.hide();
 }
 
-interface Showable { show(): void; focus(): void }
+interface Showable { show(): void; focus(): void; webContents?: { id: number } }
 
 /**
  * A window just created (ready-to-show): it appears, unless in e2e; maximized (zoomed on macOS) when it was left so.
@@ -58,10 +59,17 @@ export function revealedAt(win: object): number {
   return revealed.get(win) ?? 0;
 }
 
-/** An existing window brought to the front (notification click, New Window, second instance), unless in e2e. */
+/**
+ * An existing window brought to the front (notification click, New Window, second instance), unless in e2e: there a test
+ * may ask which windows would have come forward (ATELIER_TEST_REVEAL_LOG: their pages' ids, a line each).
+ */
 export function revealWindow(win: Showable): void {
   revealed.set(win, Date.now());
-  if (hiddenWindows()) return;
+  if (hiddenWindows()) {
+    const log = devEnv('ATELIER_TEST_REVEAL_LOG');
+    if (log && win.webContents) appendFileSync(log, `${win.webContents.id}\n`);
+    return;
+  }
   win.show();
   win.focus();
 }

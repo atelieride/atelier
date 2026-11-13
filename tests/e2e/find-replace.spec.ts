@@ -36,7 +36,7 @@ async function stop(app: ElectronApplication, home: string) {
 
 async function openFile(win: Page, name: string) {
   const row = win.locator('.tree-row', { hasText: name });
-  if (!(await row.isVisible())) await win.getByRole('button', { name: /Files/ }).click();
+  if (!(await row.isVisible())) await win.getByRole('button', { name: /^Files/ }).click();
   await row.dblclick();
   await expect(win.locator('.file-view:visible .cm-content')).toBeVisible();
 }
@@ -283,7 +283,7 @@ test('Diff view: find only, matches counted in the diff', async () => {
     await expect(card.locator('.fc-count .fc-wide')).toHaveText('9 results');
     await win.keyboard.press('F1');
     await win.locator('.palette-input').fill('>Find');
-    await expect(win.locator('.palette-item', { hasText: 'Find in File' })).toBeVisible();
+    await expect(win.locator('.palette-item', { hasText: /Find in File(?!s)/ })).toBeVisible();
     await expect(win.locator('.palette-item', { hasText: 'Find and Replace' })).toHaveCount(0);
   } finally {
     await stop(app, home);

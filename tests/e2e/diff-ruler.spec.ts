@@ -42,7 +42,7 @@ test('the overview ruler: changes, thumb, a click on a change goes there; the Di
   try {
     const win = await app.firstWindow();
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 800));
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
     await win.locator('.tree-row', { hasText: 'a.ts' }).dblclick();
     await expect(fv(win).locator('.cm-content')).toBeVisible();
 

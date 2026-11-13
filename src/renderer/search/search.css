@@ -1,0 +1,148 @@
+/* Find in Files: the sidebar view. Loaded with the view's chunk; Aurora tokens only. The list scrolls on its own, the
+   head, the field and the summary stay; notices that can arrive once rows are on screen (the cap, stopped, files
+   changed, an error) sit right below the list, so the rows above never move. */
+.sidebar.is-search { overflow: hidden; }
+
+/* The field: the query in mono, three toggles inside it, the filters' funnel beside it. */
+.fif-query { position: relative; flex: none; display: flex; flex-direction: column; gap: 6px; padding: 0 10px 0 12px; }
+.fif-qrow { display: flex; align-items: center; gap: 4px; }
+.fif-field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; height: 30px; padding: 0 3px 0 8px; border-radius: var(--r-sm); background: var(--bg-field);
+  box-shadow: inset 0 0 0 1px var(--line); color: var(--text-4); transition: box-shadow var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.fif-field:hover { box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.fif-field:focus-within { box-shadow: inset 0 0 0 1px var(--violet), 0 0 0 3px var(--tint-violet); color: var(--link); }
+.fif-field.is-error, .fif-field.is-error:focus-within { box-shadow: inset 0 0 0 1px var(--edge-error), 0 0 0 3px var(--tint-error); color: var(--text-error); }
+.fif-lead { display: flex; flex: none; }
+.fif-field input { flex: 1; min-width: 0; height: 100%; padding: 0; background: none; border: 0; outline: none; color: var(--text); font: 12.5px var(--mono);
+  font-variant-ligatures: none; caret-color: var(--link); user-select: text; text-overflow: ellipsis; }
+.fif-field input:focus-visible { box-shadow: none; }
+.fif-field input::placeholder { font-family: var(--font); color: var(--text-4); }
+.fif-opt { width: 21px; }
+.fif-funnel { flex: none; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+/* Lit while a filter is on, open or closed. */
+.fif-funnel.is-lit { color: var(--violet-light); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.fif-funnel.is-open { color: var(--text); background: var(--bg-3); }
+.fif-funnel.is-lit.is-open { color: var(--text-meet); background: var(--tint-violet-hover); }
+/* Lit or open, it still answers the pointer. */
+.fif-funnel.is-lit:hover { color: var(--text-meet); background: var(--tint-violet-hover); }
+.fif-funnel.is-open:hover { color: var(--text); background: var(--bg-3); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.fif-funnel.is-lit.is-open:hover { background: color-mix(in srgb, var(--violet) 28%, transparent); }
+
+.fif-filters { display: flex; flex-direction: column; gap: 6px; padding-bottom: 2px; animation: atl-fade var(--t-med) var(--ease) both; }
+.fif-flab { display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; color: var(--text-4); }
+.fif-glob { height: 28px; min-width: 0; padding: 0 8px; border: 0; border-radius: var(--r-sm); background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--text); font: 12px var(--mono); font-variant-ligatures: none; outline: none; transition: box-shadow var(--t-fast) var(--ease); }
+.fif-glob:hover { box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.fif-glob:focus-visible, .fif-glob:focus { box-shadow: inset 0 0 0 1px var(--violet), 0 0 0 3px var(--tint-violet); }
+.fif-glob::placeholder { color: var(--text-4); }
+.fif-ignored { margin: 0 -2px; }
+
+/* A thin brand bar while a search runs: drawn over the gap under the field, so nothing below it moves. */
+.fif-progress { position: absolute; left: 12px; right: 10px; bottom: -6px; height: 2px; border-radius: 2px; background: var(--line); overflow: hidden; pointer-events: none; }
+.fif-progress i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--brand); transition: width var(--t-slow) var(--ease); }
+
+/* The summary: "19 results in 5 files", the files not searched, the files counter while it runs, then ✦ Send to session. */
+.fif-summary { position: relative; flex: none; display: flex; align-items: center; gap: 5px; min-width: 0; padding: 10px 12px 6px 14px; font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+/* The totals stay whole; the note beside them gives way first. Shrinking shares the shortfall by weight, and a totals
+   box even a fraction of a pixel short draws its ellipsis: the note's weight is so much larger that the totals' share
+   rounds to nothing until the note is gone. */
+.fif-totals { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.fif-n { color: var(--text-2); font-size: 11px; }
+.fif-sep { flex: none; color: var(--text-4); }
+.fif-skipped-link { font-size: 11.5px; color: var(--text-4); }
+.fif-summary .fif-skipped-link { flex: 0 1000000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fif-skipped-link:hover, .fif-skipped-link[aria-expanded="true"] { color: var(--link); }
+.fif-counter { flex: none; font-size: 10.5px; color: var(--text-4); font-variant-numeric: tabular-nums; }
+/* ✦ Send to session, at the right: it has the room the totals and the note leave, at least its sparkle's; short of the
+   whole name, the sparkle alone (the name in its tip). */
+.fif-send-slot { flex: 1 1 0; min-width: 22px; display: flex; justify-content: flex-end; container-type: inline-size; }
+.fif-send { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 5px; border-radius: 5px; font-size: 11.5px; color: var(--link);
+  white-space: nowrap; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.fif-send svg { flex: none; color: var(--pink); }
+.fif-send:hover { color: var(--text); background: var(--bg-hover); }
+.fif-send:active { background: var(--tint-violet); }
+.fif-send:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+@container (max-width: 118px) { .fif-send-label { display: none; } }
+
+/* Notices and quiet lines. */
+.fif-notice { margin: 4px 10px 6px 12px; padding: 8px 10px; display: flex; gap: 8px; border-radius: var(--r-sm); font-size: 11.5px; line-height: 1.45; }
+.fif-notice.is-amber { background: var(--tint-waiting); box-shadow: inset 0 0 0 1px var(--edge-waiting); color: var(--text-2); }
+.fif-notice.is-amber svg { flex: none; margin-top: 1px; color: var(--waiting); }
+.fif-notice.is-error { flex-direction: column; gap: 3px; background: var(--tint-error); box-shadow: inset 0 0 0 1px var(--edge-error-soft); color: var(--text-2); }
+.fif-why { color: var(--text-error); font-weight: 500; overflow-wrap: anywhere; }
+.fif-notice code, .fif-state code { padding: 0 4px; border-radius: 4px; background: var(--bg-3); color: var(--text); font-size: 11px; }
+.fif-notice .fif-refresh { align-self: flex-start; }
+.fif-quiet { margin: 0; padding: 2px 14px 4px; font-size: 11.5px; color: var(--text-4); line-height: 1.5; }
+.fif-refresh, .fif-whole { font-size: inherit; color: var(--link); }
+.fif-foot { flex: none; padding: 4px 0 8px; }
+.fif-list + .fif-foot { border-top: 1px solid var(--line-soft); }
+/* Below the results: the rest of the sidebar, their empty area (its menu). */
+.fif-rest { flex: 1 1 0; min-height: 0; }
+
+/* States: first open, no results, a line break in the query, no project. The first open scrolls on its own: ten recent
+   searches and the filters open fit the shortest window. */
+.fif-empty { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 6px 0 8px; overscroll-behavior: contain; }
+.fif-empty > .btn-ghost { margin: 2px 14px 0; }
+.fif-state { position: relative; margin: 0; padding: 10px 14px 4px; font-size: 12px; line-height: 1.5; color: var(--text-3); }
+.fif-recent { display: flex; flex-direction: column; padding: 4px 6px 2px; }
+.fif-recent-label { padding: 6px 8px 4px; }
+.fif-recent-item { display: flex; align-items: center; gap: 8px; min-width: 0; height: 26px; padding: 0 8px; border-radius: var(--r-sm); color: var(--text-2); font-size: 12px; text-align: left;
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.fif-recent-item svg { flex: none; color: var(--text-4); }
+.fif-recent-item:hover { background: var(--bg-hover); color: var(--text); }
+.fif-recent-item:active { background: var(--tint-violet); }
+.fif-recent-q { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.fif-recent-opts { flex: none; margin-left: auto; font-size: 10.5px; color: var(--text-4); }
+.fif-about { margin: 0; padding: 8px 16px 0; font-size: 12px; line-height: 1.5; color: var(--text-3); }
+.fif-about.is-keys { padding-top: 4px; color: var(--text-4); }
+.fif-about .kbd { font-size: 10.5px; }
+
+/* The result list: rows of 26 px (a file) and 22 px (a match), placed by the list, only those on screen drawn. */
+/* As tall as its rows, up to the room there is: what comes after it (a notice) sits right under the last row. */
+.fif-list { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 0 6px 12px; overscroll-behavior: contain; }
+.fif-canvas { position: relative; }
+.fif-row { position: absolute; left: 0; right: 0; display: flex; align-items: center; gap: 6px; border-radius: var(--r-sm); color: var(--text-3); cursor: default;
+  transition: background var(--t-fast) var(--ease); }
+.fif-row.is-file { height: 26px; padding: 0 6px 0 4px; }
+.fif-row.is-match { height: 22px; padding: 0 8px 0 42px; }
+.fif-row:hover { background: var(--bg-hover); }
+.fif-row.is-selected { background: var(--bg-sel); box-shadow: inset 0 0 0 1px var(--edge-sel); }
+.fif-row:focus-visible { outline: none; border-radius: var(--r-sm); box-shadow: inset 0 0 0 1px var(--violet); }
+.fif-row.is-selected:focus-visible { box-shadow: inset 0 0 0 1px var(--violet), 0 0 0 2px var(--tint-violet); }
+.fif-row:active { background: var(--tint-violet); }
+.fif-chev { width: 14px; height: 14px; flex: none; display: grid; place-items: center; color: var(--text-4); transition: transform var(--t-med) var(--ease); }
+.fif-chev.is-open { transform: rotate(90deg); }
+.fif-row .file-icon { flex: none; }
+.fif-name { flex: 0 1 auto; min-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 12.5px; }
+.fif-dir { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-4); font-size: 11px; }
+.fif-row .tree-dots { flex: none; }
+.fif-count { flex: none; min-width: 18px; padding: 0 6px; border-radius: 999px; background: var(--bg-3); color: var(--text-3); font-size: 10px; font-weight: 600; line-height: 16px; text-align: center; }
+.fif-row.is-selected .fif-count { color: var(--text-2); }
+.fif-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; tab-size: 2; font-size: 11.5px; color: var(--text-3); }
+.fif-row.is-selected .fif-text { color: var(--text-2); }
+.fif-text mark { padding: 0 1px; border-radius: 3px; background: var(--hit-bg); color: var(--hit-text); }
+/* Each row's own match, among the others on its line; the selected row's in the strong hit color. */
+.fif-text mark.is-own { box-shadow: inset 0 0 0 1px var(--hit-edge); }
+.fif-row.is-selected .fif-text mark.is-own { background: var(--hit-strong); color: var(--text); }
+.fif-ln { flex: none; font-size: 10.5px; color: var(--text-4); font-variant-numeric: tabular-nums; }
+/* On hover, × (Dismiss) takes the place of the line number, or of a file's count. */
+.fif-x { display: none; flex: none; width: 18px; height: 18px; place-items: center; border-radius: 5px; color: var(--text-3); }
+.fif-x:hover { color: var(--text); background: var(--bg-3); }
+.fif-x:active { background: var(--tint-violet); }
+.fif-row:hover .fif-x { display: grid; }
+.fif-row.is-match:hover .fif-ln, .fif-row.is-file:hover .fif-count { display: none; }
+
+/* The files not searched, under the summary. */
+.fif-skipped { position: absolute; left: 8px; right: 8px; top: calc(100% + 2px); z-index: 30; max-height: 280px; display: flex; flex-direction: column; padding: 8px 6px 6px;
+  border-radius: var(--radius); background: var(--bg-float-strong); backdrop-filter: blur(22px) saturate(150%); border: 1px solid var(--line-strong); box-shadow: var(--shadow-float);
+  white-space: normal; animation: atl-pop var(--t-fast) var(--ease) both; transform-origin: top left; }
+.fif-skipped:focus, .fif-skipped:focus-visible { outline: none; box-shadow: var(--shadow-float); }
+.fif-skipped-head { display: flex; align-items: center; gap: 6px; padding: 0 0 6px 6px; }
+.fif-skipped-list { margin: 0; padding: 0; list-style: none; overflow: auto; }
+.fif-skipped-row { display: flex; align-items: center; gap: 8px; padding: 5px 4px 5px 6px; border-radius: var(--r-sm); }
+.fif-skipped-row:hover { background: var(--bg-hover); }
+.fif-skipped-row .file-icon { flex: none; }
+.fif-skipped-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.fif-skipped-rel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--text-2); }
+/* A reason too long for the line wraps in balanced halves; the size never parts from its dot. */
+.fif-skipped-why { font-size: 11px; color: var(--text-4); text-wrap: balance; }
+.fif-skipped-size { white-space: nowrap; }

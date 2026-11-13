@@ -14,7 +14,7 @@ test('a file dragged from the tree onto the terminal pastes its path (with space
     const win = await app.firstWindow();
     await win.getByRole('button', { name: 'Open a terminal' }).click();
     await expect(win.locator('.xterm-rows:visible')).toBeVisible({ timeout: 10000 });
-    await win.getByRole('button', { name: /Files/ }).click();
+    await win.getByRole('button', { name: /^Files/ }).click();
     await win.locator('.tree-row', { hasText: 'my shots' }).click();
     await win.locator('.tree-row', { hasText: 'a b.png' }).dragTo(win.locator('.terminal-slot:visible'));
     await expect(win.locator('.xterm-rows:visible')).toContainText('my\\ shots/a\\ b.png', { timeout: 5000 });
