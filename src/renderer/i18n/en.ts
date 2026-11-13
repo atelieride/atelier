@@ -1579,7 +1579,6 @@ const strings = {
     lastTip: 'The last workspace stays: turn workspaces off in Settings instead',
     moveTo: 'Move to Workspace',
     sheetTitle: 'New Workspace',
-    moved: (name: string) => `Moved to ${name}`,
     go: 'Go',
     stopFailed: "Couldn't stop them: they keep running, in this workspace now",
     stopForGood: 'Stop them',

@@ -172,6 +172,161 @@ describe('new things land in the place in front', () => {
   });
 });
 
+describe('making an activity', () => {
+  test('New Activity…: last among its workspace\'s, brought forward empty, its name in edit', () => {
+    start();
+    const id = st().newWsActivity('A')!;
+    expect(st().ws!.list.find((w) => w.id === id)).toMatchObject({ parent: 'A', name: 'New activity' });
+    expect(st().ws!.active).toBe(id);
+    expect(st().tabOrder).toEqual([]);
+    expect(st().wsRenaming).toBe(id);
+    expect(isOpen(st().ws!, id)).toBe(false);
+    invariant();
+  });
+  test('from a tab (Move to › New Activity…): the tab goes into it quietly, then it comes forward with it', () => {
+    start();
+    useApp.setState({ toast: null });
+    const id = st().newWsActivity('A', 't:auth')!;
+    expect(st().ws!.members.auth).toBe(id);
+    expect(st().ws!.active).toBe(id);
+    expect(st().tabOrder).toEqual(k('t:auth'));
+    expect(st().toast).toBeNull();
+    invariant();
+  });
+  test('refused past twenty, or inside an activity', () => {
+    start();
+    for (let i = 0; i < 19; i++) expect(st().newWsActivity('A')).not.toBeNull();
+    expect(st().newWsActivity('A')).toBeNull();
+    expect(st().newWsActivity('a1')).toBeNull();
+  });
+});
+
+describe('moving rows and tabs between places', () => {
+  test('a tab of the strip into a folded activity of another workspace: it leaves, the toast names it, Go goes there', () => {
+    start();
+    useApp.setState({ toast: null });
+    st().moveToWorkspace('t:auth', 'b1');
+    expect(st().ws!.members.auth).toBe('b1');
+    expect(st().tabOrder).toEqual([]);
+    expect(st().toast?.text).toBe('Moved auth to Webhooks');
+    st().toast!.action!.run();
+    expect(st().ws!.active).toBe('b1');
+    expect(st().tabOrder).toEqual(k('t:hook', 't:auth'));
+    invariant();
+  });
+  test('from the activity in front into its workspace\'s own tabs', () => {
+    start();
+    st().switchWorkspace('a1');
+    useApp.setState({ toast: null });
+    st().moveToWorkspace('t:mock', 'A');
+    expect(st().tabOrder).toEqual(k('t:okta'));
+    expect(st().ws!.members.mock).toBe('A');
+    expect(st().toast?.text).toBe('Moved mock to Auth');
+    invariant();
+  });
+  test('a row of a sibling activity into the place in front gets its tab here, without a toast', () => {
+    start();
+    useApp.setState({ toast: null });
+    st().moveToWorkspace('t:okta', 'A');
+    expect(st().ws!.members.okta).toBe('A');
+    expect(st().tabOrder).toEqual(k('t:auth', 't:okta'));
+    expect(st().toast).toBeNull();
+    invariant();
+  });
+  test('a file tab: the toast names the file', () => {
+    start();
+    useApp.setState({ openFiles: [{ path: '/p/x.ts', rel: 'src/x.ts' } as never], tabOrder: k('t:auth', 'f:/p/x.ts'), toast: null });
+    st().moveToWorkspace('f:/p/x.ts', 'a1');
+    expect(st().toast?.text).toBe('Moved x.ts to SSO');
+    expect(st().ws!.list.find((w) => w.id === 'a1')!.order).toContain('f:/p/x.ts');
+  });
+});
+
+describe('moving an activity to another workspace', () => {
+  test('the activity in front: the window goes to its workspace\'s own tabs; the toast\'s Go follows it', () => {
+    start();
+    st().switchWorkspace('a1');
+    useApp.setState({ toast: null });
+    st().moveWsActivity('a1', 'B');
+    expect(st().ws!.active).toBe('A');
+    expect(st().tabOrder).toEqual(k('t:auth'));
+    expect(workspaceOf(st().ws!, 'a1')).toBe('B');
+    expect(st().toast?.text).toBe('Moved SSO to Billing');
+    st().toast!.action!.run();
+    expect(st().ws!.active).toBe('a1');
+    expect(st().tabOrder).toEqual(k('t:okta', 't:mock'));
+    expect(isOpen(st().ws!, 'B')).toBe(true);
+    invariant();
+  });
+  test('refused for a full workspace: nothing moves, nothing said', () => {
+    start();
+    for (let i = 0; i < 19; i++) st().newWsActivity('B');
+    st().switchWorkspace('A');
+    useApp.setState({ toast: null });
+    st().moveWsActivity('a1', 'B');
+    expect(workspaceOf(st().ws!, 'a1')).toBe('A');
+    expect(st().toast).toBeNull();
+  });
+});
+
+describe('closing an activity', () => {
+  test('move, in front: its workspace\'s own tabs come forward with its tabs after them, in its order', async () => {
+    start();
+    st().switchWorkspace('a1');
+    useApp.setState({ openFiles: [{ path: '/p/okta.ts', rel: 'okta.ts' } as never], tabOrder: k('t:okta', 't:mock', 'f:/p/okta.ts') });
+    await st().closeWsActivity('a1', 'move');
+    expect(st().ws!.list.some((w) => w.id === 'a1')).toBe(false);
+    expect(st().ws!.active).toBe('A');
+    expect(st().tabOrder).toEqual(k('t:auth', 't:okta', 't:mock', 'f:/p/okta.ts'));
+    expect(st().openFiles).toHaveLength(1);
+    expect(stopped).toEqual([]);
+    invariant();
+  });
+  test('stop: its terminals stop resumable; its file tabs close unless another place shows them', async () => {
+    start();
+    useApp.setState({ openFiles: [{ path: '/p/okta.ts', rel: 'okta.ts' } as never] });
+    useApp.setState({ ws: { ...st().ws!, list: st().ws!.list.map((w) => (w.id === 'a1' ? { ...w, order: k(...w.order, 'f:/p/okta.ts') } : w)) } });
+    await st().closeWsActivity('a1', 'stop');
+    expect(stopped).toEqual([['okta', 'mock']]);
+    expect(st().ws!.list.some((w) => w.id === 'a1')).toBe(false);
+    expect(st().openFiles).toEqual([]);
+    expect(st().tabOrder).toEqual(k('t:auth'));
+  });
+  test('stop with an unsaved file: Cancel leaves everything as it was', async () => {
+    start();
+    st().switchWorkspace('a1');
+    useApp.setState({ openFiles: [{ path: '/p/okta.ts', rel: 'okta.ts' } as never], tabOrder: k('t:okta', 't:mock', 'f:/p/okta.ts'), dirty: { '/p/okta.ts': true } });
+    const ask = st().askUnsaved;
+    useApp.setState({ askUnsaved: async () => 'cancel' as const });
+    try {
+      await st().closeWsActivity('a1', 'stop');
+    } finally { useApp.setState({ askUnsaved: ask }); }
+    expect(stopped).toEqual([]);
+    expect(st().ws!.active).toBe('a1');
+    expect(st().ws!.list.some((w) => w.id === 'a1')).toBe(true);
+  });
+});
+
+describe('closing a workspace that has activities', () => {
+  test('move: its activities go to the other workspace as activities; its own terminals join its own tabs', async () => {
+    start();
+    st().switchWorkspace('a1');
+    await st().closeWorkspace('A', 'move');
+    expect(st().ws!.active).toBe('B');
+    expect(st().ws!.list.find((w) => w.id === 'a1')).toMatchObject({ parent: 'B', open: false });
+    expect(st().ws!.members).toMatchObject({ auth: 'B', okta: 'a1', mock: 'a1' });
+    expect(st().tabOrder).toEqual(k('t:bill', 't:auth'));
+    expect(stopped).toEqual([]);
+    invariant();
+  });
+  test('stop: every terminal in it stops, its activities\' too', async () => {
+    start();
+    await st().closeWorkspace('A', 'stop');
+    expect(stopped).toEqual([['auth', 'okta', 'mock']]);
+    expect(st().ws!.list.map((w) => w.id)).toEqual(['B', 'b1']);
+  });
+});
+
 describe('the Go menu', () => {
   test('lists workspaces only; its check marks the workspace in front whichever of its places is', () => {
     expect(workspacesMenu({ ...wsActs(), active: 'b1' })).toEqual({ names: ['Auth', 'Billing'], active: 1 });

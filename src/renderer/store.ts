@@ -78,8 +78,10 @@ import { tabMove } from './popout-move';
 import {
   absorb as wsAbsorb, assign as wsAssign, create as wsCreate, forget as wsForget, initial as wsInitial, isProjectKey, workspaceKey, memberOf, moveKey as wsMove, newWorkspaceId,
   projectLast, prune as wsPrune, recolor as wsRecolor, relink as wsRelink, remove as wsRemove, rename as wsRename, renameKeys as wsRenameKeys, reorder as wsReorder,
-  toFront as wsToFront, toggleOpen as wsToggleOpen, union as wsUnion, viewOf, withView, placeOnReturn, type WorkspacesState
+  toFront as wsToFront, toggleOpen as wsToggleOpen, union as wsUnion, viewOf, withView, placeOnReturn, workspacesOf, activitiesOf, workspaceOf,
+  createWsActivity as wsCreateAct, moveWsActivity as wsMoveAct, removeWsActivity as wsRemoveAct, type WorkspacesState
 } from './workspaces';
+import { revTitle } from './scm/titles';
 import { loadWorkspaces, saveWorkspaces } from './workspaces-save';
 import { isBelow } from '@shared/paths';
 import { isShell } from '@shared/shells';
@@ -686,8 +688,27 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
    * there. A terminal of another workspace (its row open in the sidebar) moves too.
    */
   moveToWorkspace(key: TabKey, id: string, opts?: { quiet?: boolean }): void;
-  /** Closes a workspace: its terminals join the one above (below for the first) or stop resumable. */
+  /**
+   * Closes a workspace: its terminals join the one above (below for the first) and its activities go there as
+   * activities, or everything in it stops resumable.
+   */
   closeWorkspace(id: string, how: 'move' | 'stop'): Promise<void>;
+  /**
+   * New Activity…: a new activity in workspace `wsId`, brought to the front with its name in edit; null when refused
+   * (activities off, the limit, `wsId` no workspace). `move`: a tab or row that moves into it first (Move to › New
+   * Activity…).
+   */
+  newWsActivity(wsId: string, move?: TabKey): string | null;
+  /** An activity goes to another workspace with everything in it; in front, the window goes to its workspace's own tabs first. */
+  moveWsActivity(id: string, wsId: string): void;
+  /**
+   * Closes an activity: its terminals and tabs join its workspace's own tabs (move), or its terminals stop resumable
+   * and its file tabs close (stop; unsaved files asked about first).
+   */
+  closeWsActivity(id: string, how: 'move' | 'stop'): Promise<void>;
+  /** Close Activity… asked: the activity the confirm is about, or null. */
+  wsActCloseAsk: string | null;
+  setWsActCloseAsk(id: string | null): void;
   setProject(p: ProjectInfo | null): void;
   setTerminals(list: TerminalInfo[]): void;
   /** setTerminals without the one-time layout restore (internal: setTerminals = this + restoreLayoutOnce). */
@@ -1815,6 +1836,8 @@ export const useApp = create<AppState>((set, get) => ({
   wsSheet: null,
   setWsSheet: (wsSheet) => set({ wsSheet }),
   wsCloseAsk: null,
+  wsActCloseAsk: null,
+  setWsActCloseAsk: (wsActCloseAsk) => set({ wsActCloseAsk }),
   changesScope: 'all',
   setChangesScope: (changesScope) => set({ changesScope }),
   setWsCloseAsk: (wsCloseAsk) => set({ wsCloseAsk }),
@@ -2063,7 +2086,8 @@ export const useApp = create<AppState>((set, get) => ({
     if (!wsOn(s) || !s.ws.list.some((w) => w.id === id) || !workspaceKey(key)) return;
     const tid = key.startsWith('t:') ? key.slice(2) : null;
     const name = s.ws.list.find((w) => w.id === id)!.name;
-    const say = () => { if (!opts?.quiet) get().showToast(t.ws.moved(name), { label: t.ws.go, run: () => useApp.getState().switchWorkspace(id) }, 'info'); };
+    const item = tabTitle(s, key);
+    const say = () => { if (!opts?.quiet) get().showToast(t.wsAct.moved(item, name), { label: t.ws.go, run: () => useApp.getState().switchWorkspace(id) }, 'info'); };
     // A row of a workspace not in front, open in the sidebar: its tab is in no live strip, so
     // only the membership and the saved orders change; into the active workspace it gets its tab here.
     if (tid && s.terminals.some((x) => x.id === tid) && memberOf(s.ws, tid) !== s.ws.active) {
@@ -2085,58 +2109,88 @@ export const useApp = create<AppState>((set, get) => ({
   },
   closeWorkspace: async (id, how) => {
     const s = get();
-    if (!wsOn(s) || s.ws.list.length <= 1) return;
-    const i = s.ws.list.findIndex((w) => w.id === id);
-    if (i === -1) return;
-    const target = s.ws.list[i === 0 ? 1 : i - 1]!.id;
-    // Its files close unless another workspace shows them; unsaved ones are asked about first, as for any close, and
-    // Cancel (or a failed save) leaves everything as it was.
+    if (!wsOn(s)) return;
+    const wss = workspacesOf(s.ws);
+    const i = wss.findIndex((w) => w.id === id);
+    if (wss.length <= 1 || i === -1) return;
+    const target = wss[i === 0 ? 1 : i - 1]!.id;
+    // Its files close unless another place shows them (its activities moving keep theirs); unsaved ones are asked about
+    // first, as for any close, and Cancel (or a failed save) leaves everything as it was.
     const live0 = wsLive(s)!;
-    const files = (live0.list.find((w) => w.id === id)?.order ?? []).filter((k) => k.startsWith('f:') || k.startsWith('rev:') || k.startsWith('db:'));
-    const closing = files.filter((k) => !live0.list.some((w) => w.id !== id && w.order.includes(k)));
-    const unsaved = closing.filter((k) => k.startsWith('f:') && isDirtyNow(k.slice(2), !!s.dirty[k.slice(2)])).map((k) => k.slice(2));
-    if (unsaved.length) {
-      const answer = await get().askUnsaved(unsaved, 'close', null);
-      if (answer === 'cancel') return;
-      const keep = answer === 'discard' ? [] : answer.save.filter((p) => unsaved.includes(p));
-      if (keep.length && !(await saveMany(keep))) return;
-      const d = { ...get().dirty };
-      for (const p of unsaved) if (!keep.includes(p)) delete d[p];
-      set({ dirty: d });
-    }
-    if (get().ws?.active === id) get().switchWorkspace(target);
+    const after0 = wsRemove(live0, id, how === 'move' ? target : null);
+    if (!after0) return;
+    const closing = closingKeys(live0, after0, [id, ...activitiesOf(live0, id).map((w) => w.id)]);
+    const settled = settleUnsaved(closing);
+    if (settled !== true && !(await settled)) return;
+    const w0 = get().ws;
+    if (w0 && workspaceOf(w0, w0.active) === id) get().switchWorkspace(target);
     const cur = get();
     if (!wsOn(cur)) return;
     const live = wsLive(cur)!;
-    const mine = cur.terminals.map((x) => x.id).filter((t) => memberOf(live, t) === id);
+    const mine = cur.terminals.map((x) => x.id).filter((tid) => workspaceOf(live, memberOf(live, tid)) === id);
     const ws = wsRemove(live, id, how === 'move' ? target : null);
     if (!ws) return;
-    // Stop: until atelierd drops them they belong to no workspace any more, so they would join the active one; they
-    // show there as closing, with no tab.
-    if (how === 'stop' && mine.length) {
-      setHidden(hideIds(get().hidden, mine));
-      set({ closing: { ...get().closing, ...Object.fromEntries(mine.map((t) => [t, true as const])) } });
-    }
+    if (how === 'stop') markStopping(mine);
     set({ ws });
-    const gone = new Set(closing.filter((k) => !get().tabOrder.includes(k)));
-    if (gone.size) {
-      const dbPreview = get().dbPreview;
-      set({
-        openFiles: get().openFiles.filter((f) => !gone.has(`f:${f.path}`)), revFiles: get().revFiles.filter((f) => !gone.has(f.key)), dbTabs: get().dbTabs.filter((r) => !gone.has(r.key)),
-        ...(get().preview && gone.has(`f:${get().preview}`) ? { preview: null } : {}), ...(dbPreview && gone.has(dbPreview) ? { dbPreview: null } : {})
-      });
-    }
+    closeGone(closing);
     if (how === 'move') { get().applyTerminals(get().terminals); return; }
-    if (!mine.length || typeof window === 'undefined') return;
-    try {
-      await window.atelier.terminals.stop(mine);
-    } catch {
-      // Not stopped: they keep running in the active workspace (their rows say so again), and a notice says why.
-      const closing = { ...get().closing };
-      for (const t of mine) delete closing[t];
-      set({ closing });
-      get().showToast(t.ws.stopFailed);
+    await stopTerminals(mine);
+  },
+  newWsActivity: (wsId, move) => {
+    const s = get();
+    if (!wsOn(s) || !s.settings.wsActivities) return null;
+    const id = newWorkspaceId();
+    const ws = wsCreateAct(s.ws, wsId, t.wsAct.defaultName, id);
+    if (!ws) return null;
+    set({ ws });
+    if (move) get().moveToWorkspace(move, id, { quiet: true });
+    get().switchWorkspace(id);
+    get().setWsRenaming(id);
+    return id;
+  },
+  moveWsActivity: (id, wsId) => {
+    const s = get();
+    if (!wsOn(s)) return;
+    const a = s.ws.list.find((w) => w.id === id);
+    if (!a?.parent || wsMoveAct(s.ws, id, wsId) === s.ws) return;
+    // In front: its workspace's own tabs come forward first, so nothing in front changes workspace under the window.
+    if (s.ws.active === id) get().switchWorkspace(a.parent);
+    const cur = get();
+    if (!wsOn(cur)) return;
+    set({ ws: wsMoveAct(wsLive(cur)!, id, wsId) });
+    const to = cur.ws.list.find((w) => w.id === wsId)!.name;
+    get().showToast(t.wsAct.moved(a.name, to), { label: t.ws.go, run: () => useApp.getState().switchWorkspace(id) }, 'info');
+  },
+  closeWsActivity: async (id, how) => {
+    const s = get();
+    if (!wsOn(s)) return;
+    const a = s.ws.list.find((w) => w.id === id);
+    if (!a?.parent) return;
+    const wsId = a.parent;
+    // Stop: its file tabs close unless another place shows them, unsaved ones asked about first. Move: they join its
+    // workspace, nothing closes.
+    const live0 = wsLive(s)!;
+    const closing = how === 'stop' ? closingKeys(live0, wsRemoveAct(live0, id, how), [id]) : [];
+    const settled = settleUnsaved(closing);
+    if (settled !== true && !(await settled)) return;
+    if (get().ws?.active === id) get().switchWorkspace(wsId);
+    const cur = get();
+    if (!wsOn(cur)) return;
+    const live = wsLive(cur)!;
+    const entry = live.list.find((w) => w.id === id);
+    if (!entry) return;
+    const mine = cur.terminals.map((x) => x.id).filter((tid) => memberOf(live, tid) === id);
+    const ws = wsRemoveAct(live, id, how);
+    if (how === 'stop') markStopping(mine);
+    set({ ws });
+    if (how === 'move') {
+      // Its workspace's own tabs in front: its tabs join the strip now, after the own ones, in its order.
+      if (ws.active === wsId) appendToStrip(entry.order.filter((k) => liveKey(cur, k) && !cur.tabOrder.includes(k)));
+      get().applyTerminals(get().terminals);
+      return;
     }
+    closeGone(closing);
+    await stopTerminals(mine);
   },
   setProject: (project) => {
     if (project?.popout && !get().popout) get().enterPopout(project.popout);
@@ -2810,6 +2864,89 @@ function wsLive(s: AppState): WorkspacesState | null {
   // Before the saved tabs are back (tabs.json), its files that aren't open yet are still its own: kept at the end.
   const saved = s.tabsRestored ? [] : (s.ws.list.find((w) => w.id === s.ws.active)?.order ?? []).filter((k) => (k.startsWith('f:') || k.startsWith('rev:') || k.startsWith('db:')) && !s.tabOrder.includes(k));
   return withView(s.ws, [...s.tabOrder, ...saved], s.activeKey(), serializeLayout(s.split));
+}
+
+/** What a row or tab shows as its title: a terminal's title, a file's name, a file at a commit's "name @ commit". */
+function tabTitle(s: AppState, key: TabKey): string {
+  if (key.startsWith('t:')) return s.terminals.find((x) => x.id === key.slice(2))?.title ?? key.slice(2);
+  if (key.startsWith('f:')) {
+    const path = key.slice(2);
+    return (s.openFiles.find((f) => f.path === path)?.rel ?? path).split(/[\\/]/).at(-1) ?? path;
+  }
+  const rev = key.startsWith('rev:') ? s.revFiles.find((f) => f.key === key) : undefined;
+  return rev ? revTitle(rev) : key;
+}
+
+/** Of the places `ids` (as `before` holds them), the file and other tabs no place of `after` holds any more: they close. */
+function closingKeys(before: WorkspacesState, after: WorkspacesState, ids: string[]): TabKey[] {
+  const held = new Set(after.list.flatMap((w) => w.order));
+  const keys = before.list.filter((w) => ids.includes(w.id)).flatMap((w) => w.order).filter((k) => k.startsWith('f:') || k.startsWith('rev:') || k.startsWith('db:'));
+  return [...new Set(keys)].filter((k) => !held.has(k));
+}
+
+/**
+ * Unsaved files among `closing` are asked about first, as for any close: false when the answer is Cancel or a save
+ * failed (nothing may close then). Nothing unsaved: true at once, so the close goes on in the same tick.
+ */
+function settleUnsaved(closing: TabKey[]): true | Promise<boolean> {
+  const st = useApp.getState();
+  const unsaved = closing.filter((k) => k.startsWith('f:') && isDirtyNow(k.slice(2), !!st.dirty[k.slice(2)])).map((k) => k.slice(2));
+  if (!unsaved.length) return true;
+  return (async () => {
+    const answer = await st.askUnsaved(unsaved, 'close', null);
+    if (answer === 'cancel') return false;
+    const keep = answer === 'discard' ? [] : answer.save.filter((p) => unsaved.includes(p));
+    if (keep.length && !(await saveMany(keep))) return false;
+    const d = { ...useApp.getState().dirty };
+    for (const p of unsaved) if (!keep.includes(p)) delete d[p];
+    useApp.setState({ dirty: d });
+    return true;
+  })();
+}
+
+/**
+ * Terminals about to stop: until atelierd drops them they belong to no place any more, so they would join the one in
+ * front; they show there as closing, with no tab.
+ */
+function markStopping(ids: string[]): void {
+  if (!ids.length) return;
+  const st = useApp.getState();
+  setHidden(hideIds(st.hidden, ids));
+  useApp.setState({ closing: { ...useApp.getState().closing, ...Object.fromEntries(ids.map((x) => [x, true as const])) } });
+}
+
+/** Stops terminals resumable; refused, they keep running in the place in front (their rows say so again) and a notice says why. */
+async function stopTerminals(ids: string[]): Promise<void> {
+  if (!ids.length || typeof window === 'undefined') return;
+  try {
+    await window.atelier.terminals.stop(ids);
+  } catch {
+    const closing = { ...useApp.getState().closing };
+    for (const x of ids) delete closing[x];
+    useApp.setState({ closing });
+    useApp.getState().showToast(t.ws.stopFailed);
+  }
+}
+
+/** Closing tabs not in the strip any more leave the window: their files, files at a commit and tables. */
+function closeGone(closing: TabKey[]): void {
+  const st = useApp.getState();
+  const gone = new Set(closing.filter((k) => !st.tabOrder.includes(k)));
+  if (!gone.size) return;
+  useApp.setState({
+    openFiles: st.openFiles.filter((f) => !gone.has(`f:${f.path}`)), revFiles: st.revFiles.filter((f) => !gone.has(f.key)), dbTabs: st.dbTabs.filter((r) => !gone.has(r.key)),
+    ...(st.preview && gone.has(`f:${st.preview}`) ? { preview: null } : {}), ...(st.dbPreview && gone.has(st.dbPreview) ? { dbPreview: null } : {})
+  });
+}
+
+/** Tabs join the strip after its own tabs (before the project views); in a split, the focused pane's. */
+function appendToStrip(keys: TabKey[]): void {
+  if (!keys.length) return;
+  const s = useApp.getState();
+  if (isSplit(s.split)) {
+    const to = s.split.focus;
+    applySplit({ ...s.split, panes: s.split.panes.map((p, i) => (i === to ? { ...p, tabs: projectLast([...p.tabs, ...keys]) } : p)) });
+  } else useApp.setState({ tabOrder: projectLast([...s.tabOrder, ...keys]) });
 }
 
 /**
