@@ -184,7 +184,10 @@ test('untitled file: ⌘⌥N, type, ⌘S → Save as sheet; refusals shown; save
     // the tab.
     await menu(app, 'CmdOrCtrl+Alt+N');
     await expect(win.locator('.tab', { hasText: 'Untitled-1' })).toHaveClass(/is-active/);
+    // As for the first one: its editor has the keyboard, and the text, before ⌘W asks about it.
+    await expect(editor).toBeFocused();
     await win.keyboard.type('second');
+    await expect(editor).toHaveText('second');
     await menu(app, 'CmdOrCtrl+W');
     const asking = win.locator('.confirm-pop');
     await expect(asking).toContainText('Save changes to Untitled-1?');

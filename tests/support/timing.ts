@@ -13,3 +13,15 @@ export function bestTime(fn: () => void, runs = 5): number {
   }
   return best;
 }
+
+/** bestTime for work that answers later (a git read): each run is awaited before the next. */
+export async function bestTimeAsync(fn: () => Promise<unknown>, runs = 5): Promise<number> {
+  await fn();
+  let best = Infinity;
+  for (let i = 0; i < runs; i++) {
+    const t0 = performance.now();
+    await fn();
+    best = Math.min(best, performance.now() - t0);
+  }
+  return best;
+}

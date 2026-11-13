@@ -61,7 +61,10 @@ interface Project {
   renamed: Set<string>;
   /** The last scan stopped at its folder cap. */
   capped: boolean;
-  /** Its working trees were listed once: until then a status neither prunes nor counts as the last HEAD seen. */
+  /**
+   * Its working trees were listed once: until then a status never prunes, and counts as the last HEAD seen only for a
+   * repo with none seen yet.
+   */
   listed: boolean;
   status: Map<string, RepoStatus>; watcher: FSWatcher | null; debounce: Debouncer; windows: Set<WebContents>;
   /**
@@ -123,10 +126,13 @@ export class GitHub {
       // Files that became clean lose their attribution, but only once HEAD moved (commit, checkout): a brief clean
       // state with the same HEAD (stash, stash pop, reset) must not wipe them. An incomplete status (error,
       // truncated list) neither prunes nor counts as the last HEAD seen.
-      // A project still listing its worktrees can't exclude them yet: its repo's prune waits for the next status.
+      // A project still listing its worktrees can't exclude them yet: its repo's prune waits for the next status, which
+      // compares with the HEAD seen before. A repo with no HEAD seen yet takes this one as it (there is nothing to hold
+      // back): otherwise a commit made before the listing ends would never count as a move.
       const waiting = [...this.projects.values()].some((p) => !p.listed && p.repos.includes(st.root));
-      const prune = !waiting && shouldPrune(this.heads.get(st.root), st);
-      if (!waiting && !st.error && st.truncated === 0) this.heads.set(st.root, st.oid);
+      const seen = this.heads.get(st.root);
+      const prune = !waiting && shouldPrune(seen, st);
+      if ((!waiting || seen === undefined) && !st.error && st.truncated === 0) this.heads.set(st.root, st.oid);
       const nested = new Set<string>();
       const keep = this.kept.paths(st.root);
       // A read asked for after an Atelier write (started at or after the ask): sent even if nothing changed.
