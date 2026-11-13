@@ -1652,7 +1652,6 @@ const strings = {
     activity: 'Activity',
     newActivity: 'New Activity…',
     defaultName: 'New activity',
-    nameLabel: 'Activity name',
     rename: 'Rename Activity…',
     close: 'Close Activity…',
     moveToWs: 'Move to Workspace',

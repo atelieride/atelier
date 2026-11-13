@@ -866,7 +866,8 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
    * one's Claude has started; the tab in front stays in front. Does nothing while one runs.
    */
   bulkResume: BulkResume | null;
-  resumeAll(which: 'all' | 'pinned'): Promise<void>;
+  /** `place`: an activity's own Resume head (its sessions); otherwise the place in front's (the whole project with workspaces off). */
+  resumeAll(which: 'all' | 'pinned', place?: string): Promise<void>;
   /** Stop: the one starting finishes, the rest stay under Resume. */
   stopResumeAll(): void;
   /** Dismiss All… (the Resume rows' menu) asked in the Resume head; they stay in ⌘K › Resume a session…. */
@@ -1470,11 +1471,12 @@ export const useApp = create<AppState>((set, get) => ({
   resumables: [],
   resumablesKnown: false,
   bulkResume: null,
-  resumeAll: async (which) => {
+  resumeAll: async (which, place) => {
     const st = get();
     if (st.bulkResume || !st.project) return;
-    // Workspaces on: the active workspace's (its Resume section is the one asking).
-    const list = pinnedFirst(resumablesFor(st.resumables, st.project.root).filter((r) => inActiveWs(st, r.id)), st.pins);
+    // Workspaces on: the place in front's, or the activity whose Resume head asks.
+    const mine = (id: string) => (place && wsOn(st) ? memberOf(st.ws, id) === place : inActiveWs(st, id));
+    const list = pinnedFirst(resumablesFor(st.resumables, st.project.root).filter((r) => mine(r.id)), st.pins);
     const ids = (which === 'pinned' ? list.filter((r) => st.pins.includes(r.id)) : list).map((r) => r.id);
     if (ids.length === 0) return;
     set({ bulkResume: { total: ids.length, done: 0, queue: ids, stopped: false } });

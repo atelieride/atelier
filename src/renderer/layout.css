@@ -293,6 +293,29 @@ button.foot-item:disabled { cursor: default; }
 .ws-dot.is-resume i { background: none; box-shadow: inset 0 0 0 1.5px currentColor; }
 .ws-drop-hint { flex: none; padding: 0 6px; font-size: 11px; color: var(--ws-c); white-space: nowrap; pointer-events: none; }
 .ws-dots { flex: none; display: inline-flex; align-items: center; gap: 10px; }
+/* Activities: places inside a workspace, at the same indent as its own rows; an open one sits on a neutral band, the
+   folded one in front is the selected box. (Never a class starting with "act": the activity bar's.) */
+.ws-group.is-active.in-act .ws-name { color: var(--text-2); }
+.ws-group.in-act .ws-head:hover .ws-name, .ws-group.in-act .ws-name-btn:focus-visible .ws-name { color: var(--text); }
+.wsa-group { position: relative; display: flex; flex-direction: column; gap: 2px; min-width: 0; border-radius: var(--radius);
+  transition: background-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+.wsa-group.is-open { background: var(--ws-band); padding-bottom: 3px; }
+.wsa-head { position: relative; height: 30px; flex: none; display: flex; align-items: center; padding-right: 3px; border-radius: var(--r-sm);
+  transition: background-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+.wsa-head:hover { background: var(--bg-hover); }
+.wsa-head.is-selected { background: var(--bg-sel); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--violet-soft) 28%, transparent); }
+.wsa-name-btn { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 4px 0 2px; border-radius: var(--r-sm); }
+.wsa-name-btn .rename-input { flex: 1; }
+.wsa-name { min-width: 0; font-size: 12.5px; font-weight: 500; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color var(--t-fast) var(--ease); }
+.wsa-head:hover .wsa-name, .wsa-name-btn:focus-visible .wsa-name, .wsa-group.is-current .wsa-name { color: var(--text); }
+.wsa-group.is-current .wsa-name { font-weight: 600; }
+.wsa-glyph { flex: none; display: flex; color: var(--ws-c); opacity: .6; transition: opacity var(--t-fast) var(--ease); }
+.wsa-head:hover .wsa-glyph, .wsa-group.is-current .wsa-glyph { opacity: 1; }
+.wsa-head .ws-dot { flex: none; padding: 0 4px; font-size: 10.5px; }
+.wsa-plus { opacity: 0; transition: opacity var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.wsa-group.is-current .wsa-plus, .wsa-head:is(:hover, :has(:focus-visible)) .wsa-plus { opacity: 1; }
+.ws-own { display: flex; flex-direction: column; gap: 2px; min-width: 0; min-height: 2px; border-radius: var(--radius);
+  transition: background-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
 .palette-ws-dots { margin-left: 4px; }
 
 /* Avatar and context ring */

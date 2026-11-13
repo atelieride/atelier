@@ -411,6 +411,19 @@ describe('the setting off and on again', () => {
   });
 });
 
+describe('Resume inside an activity', () => {
+  test('its Resume head\'s Resume all acts on that activity\'s sessions, whatever place is in front', async () => {
+    const resumed: string[] = [];
+    const api = (g.window as { atelier: { terminals: Record<string, unknown> } }).atelier.terminals;
+    api.resume = async (id: string) => { resumed.push(id); return { ...term(`${id}2`, 60), session: { state: 'idle' } as unknown as TerminalInfo['session'] }; };
+    const res = (id: string) => ({ id, projectRoot: '/p', cwd: '/p', title: id, color: '#fff', sessionId: id, endedAt: 1 });
+    useApp.setState({ ws: { ...wsActs(), members: { ...wsActs().members, oldA: 'A', old1: 'a1', old2: 'a1' } }, resumables: [res('oldA'), res('old1'), res('old2')], resumablesKnown: true });
+    st().setTerminals(ALL);
+    await st().resumeAll('all', 'a1');
+    expect(resumed.sort()).toEqual(['old1', 'old2']);
+  });
+});
+
 describe('the Go menu', () => {
   test('lists workspaces only; its check marks the workspace in front whichever of its places is', () => {
     expect(workspacesMenu({ ...wsActs(), active: 'b1' })).toEqual({ names: ['Auth', 'Billing'], active: 1 });
