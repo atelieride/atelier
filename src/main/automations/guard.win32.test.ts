@@ -143,16 +143,20 @@ winOnly('the git guard on Windows', () => {
 
   test('never a push, never the stash (list and show stay); the user\'s stash is untouched', () => {
     const p = project();
+    // What a refusal that says nothing ran into: the shell and line, the exit code (in hex, where Windows' own codes
+    // read as such), the signal, what went to stdout and a spawn error.
+    const said = (name: string, line: string, r: ReturnType<typeof ps>) =>
+      `${name} ${line}: status ${r.status === null ? 'null' : `${r.status} (0x${(r.status >>> 0).toString(16)})`}, signal ${r.signal}, stdout ${JSON.stringify(r.stdout)}${r.error ? `, error ${r.error.message}` : ''}`;
     for (const run of [ps, cmd, bash]) {
       for (const line of ['git push --no-verify origin auto/run1', 'git -c x.y=z push origin auto/run1']) {
         const r = run(p.wt, line, p.session);
         expect(r.status, `${run.name} ${line}`).not.toBe(0);
-        expect(r.stderr).toContain('Atelier: automated sessions never push');
+        expect(r.stderr, said(run.name, line, r)).toContain('Atelier: automated sessions never push');
       }
       for (const line of ['git stash', 'git stash pop', 'git stash drop']) {
         const r = run(p.wt, line, p.session);
         expect(r.status, `${run.name} ${line}`).not.toBe(0);
-        expect(r.stderr).toContain('Atelier: an automated session doesn\'t use git stash');
+        expect(r.stderr, said(run.name, line, r)).toContain('Atelier: an automated session doesn\'t use git stash');
       }
       expect(run(p.wt, 'git stash list', p.session).status).toBe(0);
     }
