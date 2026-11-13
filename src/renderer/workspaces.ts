@@ -10,6 +10,8 @@ import { spaceOf } from './spaces';
 import { inboxSection } from './inbox';
 
 export const MAX_WORKSPACES = 20;
+/** Activities one workspace may hold. */
+export const MAX_ACTIVITIES = 20;
 export const MAX_NAME = 60;
 /** Workspace colors are tokens `--ws-1…--ws-8` (theme.css). */
 export const WS_COLORS = 8;
@@ -34,15 +36,29 @@ export interface Workspace {
    * active one. Coming to the front clears it; leaving the front writes what it showed.
    */
   open?: boolean;
+  /**
+   * Set on an activity: the workspace it sits in. An activity is a place with its own tabs inside that workspace; it
+   * wears the workspace's color and starts things in its folder. Activities never hold activities.
+   */
+  parent?: string;
+  /** On a workspace: the activity that was in front when it was left (unset: its own tabs). */
+  place?: string;
 }
 
 export interface WorkspacesState {
   /** Off: one strip as before; everything here is kept for when it is turned on again. */
   on: boolean;
+  /** The place in front: a workspace (its own tabs) or one of its activities. */
   active: string;
+  /** Workspaces and activities, in the order they were made or moved (activities have a `parent`). */
   list: Workspace[];
-  /** Terminal id → workspace id. */
+  /** Terminal id → place id (a workspace or an activity). */
   members: Record<string, string>;
+  /**
+   * Activities kept aside while activities are turned off: the entries and their terminals' places. Their tabs live in
+   * their workspaces meanwhile; turning activities on again brings them back.
+   */
+  parked?: { list: Workspace[]; members: Record<string, string> };
   /**
    * On only because Settings turns workspaces on in every project (2026-11-02): the project's own switch is off, and
    * they go back off when that setting does. Only with `on`.
@@ -74,6 +90,35 @@ export function newWorkspaceId(): string {
   return `w${Date.now().toString(36)}${(seq++).toString(36)}`;
 }
 
+/** An activity: a place inside a workspace (an entry with a parent). */
+export const isWsActivity = (w: Workspace): boolean => w.parent !== undefined;
+
+/** The workspaces themselves, in list order (the sidebar's groups, Go, ⌥⌘1…9, the limits): no activity. */
+export function workspacesOf(s: Pick<WorkspacesState, 'list'>): Workspace[] {
+  return s.list.filter((w) => !isWsActivity(w));
+}
+
+/** Workspace `wsId`'s activities, in list order (the order they were made in). */
+export function activitiesOf(s: Pick<WorkspacesState, 'list'>, wsId: string): Workspace[] {
+  return s.list.filter((w) => w.parent === wsId);
+}
+
+/** The workspace a place belongs to: an activity's parent, a workspace (or an unknown id) itself. */
+export function workspaceOf(s: Pick<WorkspacesState, 'list'>, placeId: string): string {
+  return s.list.find((w) => w.id === placeId)?.parent ?? placeId;
+}
+
+/** Every place in the sidebar's order: each workspace, then its activities. */
+export function placesInOrder(s: Pick<WorkspacesState, 'list'>): Workspace[] {
+  return workspacesOf(s).flatMap((w) => [w, ...activitiesOf(s, w.id)]);
+}
+
+/** Where a way back to workspace `wsId` lands: the activity it was left at while that still exists, else its own tabs. */
+export function placeOnReturn(s: Pick<WorkspacesState, 'list'>, wsId: string): string {
+  const p = s.list.find((w) => w.id === wsId)?.place;
+  return p && s.list.some((w) => w.id === p && w.parent === wsId) ? p : wsId;
+}
+
 const tidy = (name: string) => name.trim().slice(0, MAX_NAME);
 const inRange = (c: number) => (Number.isInteger(c) && c >= 1 && c <= WS_COLORS ? c : 1);
 const termId = (k: TabKey) => (k.startsWith('t:') ? k.slice(2) : null);
@@ -98,8 +143,9 @@ export function nextColor(list: Workspace[]): number {
 /** A new workspace at the end (null: empty name, or the limit reached). The active one doesn't change. */
 export function create(s: WorkspacesState, opts: { name: string; color?: number; folder?: string | null }, id = newWorkspaceId()): WorkspacesState | null {
   const name = tidy(opts.name);
-  if (!name || s.list.length >= MAX_WORKSPACES || s.list.some((w) => w.id === id)) return null;
-  const w: Workspace = { id, name, color: opts.color ? inRange(opts.color) : nextColor(s.list), folder: opts.folder ?? null, order: [], active: null, layout: null };
+  const wss = workspacesOf(s);
+  if (!name || wss.length >= MAX_WORKSPACES || s.list.some((w) => w.id === id)) return null;
+  const w: Workspace = { id, name, color: opts.color ? inRange(opts.color) : nextColor(wss), folder: opts.folder ?? null, order: [], active: null, layout: null };
   return { ...s, list: [...s.list, w] };
 }
 
@@ -116,9 +162,14 @@ export function recolor(s: WorkspacesState, id: string, color: number): Workspac
   return patch(s, id, (w) => ({ ...w, color: inRange(color) }));
 }
 
-/** Whether workspace `id` shows its rows in the sidebar: its chevron's choice, else whether it is the active one. */
+/**
+ * Whether entry `id` shows its rows in the sidebar: its chevron's choice, else — a workspace — whether it (one of its
+ * places) is in front. An activity is folded until its chevron opens it: being in front never opens it.
+ */
 export function isOpen(s: WorkspacesState, id: string): boolean {
-  return s.list.find((w) => w.id === id)?.open ?? s.active === id;
+  const w = s.list.find((x) => x.id === id);
+  if (w && isWsActivity(w)) return w.open ?? false;
+  return w?.open ?? workspaceOf(s, s.active) === id;
 }
 
 /** The chevron: folds an open workspace or opens a folded one, an explicit choice kept until it comes to the front. */
@@ -143,10 +194,14 @@ export function toFront(s: WorkspacesState, id: string): WorkspacesState {
   return { ...s, active: id, list };
 }
 
-/** Swaps a workspace with its neighbour (-1 up, +1 down); at an end, the same state. */
+/**
+ * Swaps a workspace with its neighbouring workspace (-1 up, +1 down); the activities between them keep their places.
+ * At an end, or for an activity, the same state.
+ */
 export function reorder(s: WorkspacesState, id: string, dir: -1 | 1): WorkspacesState {
-  const i = s.list.findIndex((w) => w.id === id);
-  const j = i + dir;
+  const i = s.list.findIndex((w) => w.id === id && !isWsActivity(w));
+  let j = i + dir;
+  while (i !== -1 && j >= 0 && j < s.list.length && isWsActivity(s.list[j]!)) j += dir;
   if (i === -1 || j < 0 || j >= s.list.length) return s;
   const list = [...s.list];
   [list[i], list[j]] = [list[j]!, list[i]!];
