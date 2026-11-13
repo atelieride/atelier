@@ -1,6 +1,7 @@
 // Inbox: the sessions list grouped by what they need from you.
 import type { TerminalInfo } from '@shared/protocol';
 import { pinnedFirst } from './pins';
+import { arrangeUnpinned } from './row-order';
 import { isLimitPaused, needsYou } from '@shared/session-view';
 import { effectiveState } from '@shared/background';
 
@@ -46,9 +47,11 @@ export function trackSections(prev: Map<string, Entered>, sessions: TerminalInfo
 
 /**
  * Non-empty sections in order; inside each, pinned rows first (pin order), then the row that entered the section last
- * (`entered`, from trackSections; without it, the most recently updated).
+ * (`entered`, from trackSections; without it, the most recently updated). Idle — the stopped sessions, the only section
+ * that doesn't empty by itself — also follows `order`, the order rows were put in by hand: the rows never placed arrive
+ * on top, as before, and the placed ones follow in their order.
  */
-export function groupSessions(sessions: TerminalInfo[], pins: string[], entered?: Map<string, Entered>): { key: InboxSection; items: TerminalInfo[] }[] {
+export function groupSessions(sessions: TerminalInfo[], pins: string[], entered?: Map<string, Entered>, order: string[] = []): { key: InboxSection; items: TerminalInfo[] }[] {
   const by = new Map<InboxSection, TerminalInfo[]>(INBOX_ORDER.map((k) => [k, []]));
   for (const x of sessions) by.get(inboxSection(x))!.push(x);
   const since = (x: TerminalInfo) => entered?.get(x.id)?.at ?? x.session?.updatedAt ?? 0;
@@ -56,7 +59,7 @@ export function groupSessions(sessions: TerminalInfo[], pins: string[], entered?
     .map((key) => {
       // Ties keep creation order, so rows don't swap places on every list.
       const sorted = [...by.get(key)!].sort((a, b) => since(b) - since(a) || a.createdAt - b.createdAt);
-      return { key, items: pinnedFirst(sorted, pins) };
+      return { key, items: pinnedFirst(key === 'idle' ? arrangeUnpinned(sorted, order, 'first') : sorted, pins) };
     })
     .filter((g) => g.items.length > 0);
 }

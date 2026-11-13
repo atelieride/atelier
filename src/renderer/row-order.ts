@@ -123,6 +123,18 @@ export function bandWith(bands: Band[], id: string | null): Band | null {
   return id === null ? null : bands.find((b) => b.ids.includes(id)) ?? null;
 }
 
+/** Two bands with the same rows in the same order (a memoised row re-renders only when its band really changed). */
+export function sameBand(a: Band | undefined, b: Band | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.kind === b.kind && a.pinned === b.pinned && same(a.ids, b.ids);
+}
+
+/** A row's band as an attribute: the drop target finds the band's rows by it, tests read it. */
+export function bandAttr(band: Band | undefined): { 'data-band'?: string } {
+  return band ? { 'data-band': `${band.kind}:${band.pinned ? 'pinned' : 'unpinned'}` } : {};
+}
+
 /**
  * Where a row dropped at `y` lands among a band's rows (their boxes, in shown order): before the first row whose middle
  * is below the pointer, or at the end; null outside the band.

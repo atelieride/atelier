@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { MAX_PINNED_PROJECTS } from './pins';
 import {
-  EMPTY_ORDER, arrangeUnpinned, bandWith, bandsOf, landingAt, moveInBand, parseOrder, placeBand, pruneOrder, relinkOrder,
+  EMPTY_ORDER, arrangeUnpinned, bandAttr, bandWith, bandsOf, sameBand, landingAt, moveInBand, parseOrder, placeBand, pruneOrder, relinkOrder,
   stepBefore, unplace, withProjectOrder, type ManualOrder
 } from './row-order';
 
@@ -85,6 +85,18 @@ test('bands: pinned and unpinned of a list, only with two rows or more', () => {
   expect(bandWith(bandsOf('sessions', rows, ['p1']), 'b')?.ids).toEqual(['p2', 'a', 'b', 'c']);
   expect(bandWith([], 'b')).toBeNull();
   expect(bandWith(bandsOf('sessions', rows, []), null)).toBeNull();
+});
+
+test('a row re-renders when its band changes, and names it for the drop target', () => {
+  const band = { kind: 'sessions' as const, pinned: false, ids: ['a', 'b'] };
+  expect(sameBand(band, { ...band, ids: ['a', 'b'] })).toBe(true);
+  expect(sameBand(band, { ...band, ids: ['b', 'a'] })).toBe(false);
+  expect(sameBand(band, { ...band, pinned: true })).toBe(false);
+  expect(sameBand(undefined, undefined)).toBe(true);
+  expect(sameBand(band, undefined)).toBe(false);
+  expect(bandAttr(band)).toEqual({ 'data-band': 'sessions:unpinned' });
+  expect(bandAttr({ kind: 'terminals', pinned: true, ids: [] })).toEqual({ 'data-band': 'terminals:pinned' });
+  expect(bandAttr(undefined)).toEqual({});
 });
 
 test('landing: before the first row whose middle is below the pointer, the end past the last, none outside', () => {

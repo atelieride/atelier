@@ -27,6 +27,7 @@ import { useApp } from '../store';
 import { sessionRowMenu } from '../menus';
 import { nameTip } from '../names';
 import { pinnedFirst } from '../pins';
+import { arrangeUnpinned, bandAttr, bandWith, bandsOf, type Band } from '../row-order';
 import { groupSessions, trackSections, type Entered, type InboxSection } from '../inbox';
 import { WorkspaceGroup, WsOwnRows, useRowClick, useRowDrag } from './WorkspaceGroup';
 import { WsActivityGroup } from './WsActivityGroup';
@@ -155,7 +156,7 @@ const TERM_FIT: RowFitParts = {
   busy: ':hover, :has(:focus-visible), :has(.row-pin:focus, .row-close:focus), :has(.rename-input), .is-confirming'
 };
 
-function TermRow({ term, selected, pinned, popped, onSelect }: { term: TerminalInfo; selected: boolean; pinned: boolean; popped: boolean; onSelect: (id: string) => void }) {
+function TermRow({ term, selected, pinned, popped, onSelect, band }: { term: TerminalInfo; selected: boolean; pinned: boolean; popped: boolean; onSelect: (id: string) => void; band?: Band }) {
   const [enter] = useState(() => enterClass(term.id));
   // Rename from the row's menu happens here, in the row; double-click too, as on a session row.
   const [editingHere, setEditing] = useState(false);
@@ -196,7 +197,7 @@ function TermRow({ term, selected, pinned, popped, onSelect }: { term: TerminalI
   );
   return (
     <div ref={rowEl} role="listitem" data-term-row={term.id} className={`term-row ${enter} ${selected ? 'is-selected' : ''} ${popped ? 'is-popped' : ''} ${shutting ? 'is-closing' : ''}`} data-tip={nameTip(term.title)}
-            onContextMenu={(e) => useApp.getState().openMenu(e, sessionRowMenu(term))} {...(editing ? {} : drag)}>
+            {...bandAttr(band)} onContextMenu={(e) => useApp.getState().openMenu(e, sessionRowMenu(term))} {...(editing ? {} : drag)}>
             {editing
               // While renaming, the field is not inside a button.
               ? <div className="row-main">{inner}</div>
@@ -273,13 +274,19 @@ function Sections({ terminals, toResume, entered, scope, inGroup = false, empty 
   const split = splitTerminals(terminals, starting);
   const tracked = trackSections(entered.get(scope) ?? new Map<string, Entered>(), split.sessions, Date.now());
   useEffect(() => { entered.set(scope, tracked); });
-  const groups = grouped ? groupSessions(split.sessions, pins, tracked) : [];
+  // The order rows were put in by hand: unpinned ones follow it, the ones never placed keep today's place.
+  const order = useApp((s) => s.rowOrder);
+  const groups = grouped ? groupSessions(split.sessions, pins, tracked, order.sessions) : [];
 
-  // Pinned rows first, in pin order; the rest by age as before.
-  const sessions = pinnedFirst(split.sessions, pins);
-  const shells = pinnedFirst(split.shells, pins);
+  // Pinned rows first, in pin order; the rest in their manual order, then by age as before.
+  const sessions = pinnedFirst(arrangeUnpinned(split.sessions, order.sessions, 'last'), pins);
+  const shells = pinnedFirst(arrangeUnpinned(split.shells, order.terminals, 'last'), pins);
+  // What a row can be dragged among: grouped by state, only Idle's rows (the other sections order themselves).
+  const sessionBands = bandsOf('sessions', grouped ? groups.find((g) => g.key === 'idle')?.items ?? [] : sessions, pins);
+  const shellBands = bandsOf('terminals', shells, pins);
   const queued = new Set(queue ?? []);
-  const row = (x: TerminalInfo, section?: InboxSection) => <SessionRow key={x.id} term={x} selected={isFront(x.id)} pinned={pins.includes(x.id)} popped={isPopped(x.id)} onSelect={onSelect} section={section} />;
+  const row = (x: TerminalInfo, section?: InboxSection) => <SessionRow key={x.id} term={x} selected={isFront(x.id)} pinned={pins.includes(x.id)} popped={isPopped(x.id)} onSelect={onSelect} section={section}
+    band={bandWith(sessionBands, x.id) ?? undefined} />;
   const nothing = sessions.length === 0 && shells.length === 0 && toResume.length === 0 && queue === undefined;
   if (inGroup && nothing) return empty === null ? null : <p className="ws-none">{empty}</p>;
   return (
@@ -322,7 +329,8 @@ function Sections({ terminals, toResume, entered, scope, inGroup = false, empty 
         </Head>
       )}
       <div className="list" role="list" aria-label={t.terminals}>
-        {shells.map((term) => <TermRow key={term.id} term={term} selected={isFront(term.id)} pinned={pins.includes(term.id)} popped={isPopped(term.id)} onSelect={onSelect} />)}
+        {shells.map((term) => <TermRow key={term.id} term={term} selected={isFront(term.id)} pinned={pins.includes(term.id)} popped={isPopped(term.id)} onSelect={onSelect}
+          band={bandWith(shellBands, term.id) ?? undefined} />)}
       </div>
     </>
   );

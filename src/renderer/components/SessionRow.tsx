@@ -30,6 +30,7 @@ import { RowRestartConfirm } from './RowRestartConfirm';
 import { askMarked } from '../companion/attention';
 import { openAskFor, shownTerminals } from '../companion/actions';
 import { useRowClick, useRowDrag } from './WorkspaceGroup';
+import { bandAttr, sameBand, type Band } from '../row-order';
 import { useRowFit, type RowFitParts } from '../row-fit';
 
 /**
@@ -48,7 +49,7 @@ const SESSION_FIT: RowFitParts = {
   busy: ':hover, :has(:focus-visible), :has(.rename-input), .is-confirming'
 };
 
-function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, section }: { term: TerminalInfo; selected: boolean; pinned: boolean; popped?: boolean; onSelect: (id: string) => void; section?: InboxSection }) {
+function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, section, band }: { term: TerminalInfo; selected: boolean; pinned: boolean; popped?: boolean; onSelect: (id: string) => void; section?: InboxSection; band?: Band }) {
   const s = term.session;
   // Double-click, or Rename from the row's menu (the field where it was asked).
   const [editingHere, setEditing] = useState(false);
@@ -191,7 +192,7 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
   // renaming, the field is not inside a button.
   return (
     <div ref={rowEl} role="listitem" data-term-row={term.id} className={`session-row ${enter} ${s ? `state-${state}` : 'is-starting'} ${selected ? 'is-selected' : ''} ${s?.unread ? 'is-unread' : ''} ${popped ? 'is-popped' : ''} ${shutting ? 'is-closing' : ''} ${askMark ? 'has-ask' : ''}${avatars ? '' : ' no-avatar'}`}
-      data-tip={nameTip(term.title)} onContextMenu={(e) => useApp.getState().openMenu(e, sessionRowMenu(term))} {...(editing ? {} : drag)}>
+      data-tip={nameTip(term.title)} {...bandAttr(band)} onContextMenu={(e) => useApp.getState().openMenu(e, sessionRowMenu(term))} {...(editing ? {} : drag)}>
       {editing
         ? <div className="row-main">{inner}</div>
         // ⌥-click: Open to the Side (split view).
@@ -224,4 +225,4 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
 }
 
 /** Rows re-render only when their terminal changes (not on every tick of the others). */
-export const SessionRow = memo(SessionRowImpl, (a, b) => a.selected === b.selected && a.pinned === b.pinned && !!a.popped === !!b.popped && a.onSelect === b.onSelect && a.section === b.section && JSON.stringify(a.term) === JSON.stringify(b.term));
+export const SessionRow = memo(SessionRowImpl, (a, b) => a.selected === b.selected && a.pinned === b.pinned && !!a.popped === !!b.popped && a.onSelect === b.onSelect && a.section === b.section && sameBand(a.band, b.band) && JSON.stringify(a.term) === JSON.stringify(b.term));

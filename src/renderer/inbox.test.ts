@@ -50,6 +50,17 @@ test('inside a section: pinned first in pin order, then most recently updated fi
   expect(groupSessions(list, ['p2', 'p1'])[0]!.items.map((x) => x.id)).toEqual(['p2', 'p1', 'new', 'mid', 'old']);
 });
 
+test('Idle follows the manual order after the unplaced; other sections ignore it', () => {
+  const list = [
+    s('a', 'idle', { updatedAt: 1 }), s('b', 'idle', { updatedAt: 2 }), s('c', 'idle', { updatedAt: 3 }), s('d', 'idle', { updatedAt: 4 }),
+    s('r1', 'running', { updatedAt: 1 }), s('r2', 'running', { updatedAt: 2 }), s('p', 'idle', { updatedAt: 0 })
+  ];
+  const shown = (order?: string[]) => groupSessions(list, ['p'], undefined, order).map((g) => [g.key, g.items.map((x) => x.id)]);
+  // Unplaced first (the latest to arrive on top, as without an order), then the placed ones in their order; pins first.
+  expect(shown(['d', 'b', 'r1'])).toEqual([['working', ['r2', 'r1']], ['idle', ['p', 'c', 'a', 'd', 'b']]]);
+  expect(shown([])).toEqual(shown());
+});
+
 test('ties on updatedAt keep creation order (stable rows)', () => {
   const list = [s('a', 'idle', { createdAt: 1 }), s('b', 'idle', { createdAt: 2 })];
   expect(groupSessions(list, [])[0]!.items.map((x) => x.id)).toEqual(['a', 'b']);
