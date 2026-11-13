@@ -17,7 +17,8 @@ import { SENSITIVE, SHOTS_ONLY, findBanned } from '../support/banned-strings';
 // and the send step limited to Claude sessions for its results.
 // +5 KB for activities inside workspaces: the places model the store swaps views with (kept aside while off, read from a
 // save), its strings, and the sidebar's activity group, menus and close confirm — off in the demo, but in its entry.
-const BUDGET = 908 * 1024;
+// +2 KB for the sidebar's own row order: the order model, the rows' reorder drag and caret, Move Up / Move Down.
+const BUDGET = 910 * 1024;
 const SHARED = resolve('src/shared');
 const INSTALL = resolve('src/demo/install.ts');
 
