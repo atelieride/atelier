@@ -295,7 +295,8 @@ button.foot-item:disabled { cursor: default; }
 .ws-dots { flex: none; display: inline-flex; align-items: center; gap: 10px; }
 /* Activities: places inside a workspace, at the same indent as its own rows; an open one sits on a neutral band, the
    folded one in front is the selected box. (Never a class starting with "act": the activity bar's.) */
-.ws-group.is-active.in-act .ws-name { color: var(--text-2); }
+/* Its activity's head in sight (open), the workspace's name steps down; folded, the name is where you are again. */
+.ws-group.is-active.is-open.in-act .ws-name { color: var(--text-2); }
 .ws-group.in-act .ws-head:hover .ws-name, .ws-group.in-act .ws-name-btn:focus-visible .ws-name { color: var(--text); }
 .wsa-group { position: relative; display: flex; flex-direction: column; gap: 2px; min-width: 0; border-radius: var(--radius);
   transition: background-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }

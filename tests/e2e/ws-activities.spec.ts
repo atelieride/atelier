@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { e2eEnv } from './env';
+import { collisions, shownWidth, sidebarByKeys } from './narrow-fixture';
 import { look } from './shots';
 
 // Activities inside workspaces: turned on, made from the "+", their own tabs, the workspace's own
@@ -144,6 +145,19 @@ test('activities: on; New Activity… from the "+"; its tabs alone, folded; the 
     await expect(group(win, 'Workspace 1')).toHaveClass(/in-act/);
     await away(win);
     await look(win.locator('.sidebar'), `${SHOTS}/ws-activities-folded-current.png`);
+    // The brightest label is where you are: the activity's name; the workspace's steps down — unless the workspace is
+    // folded, its activities out of sight: then its name is lit again.
+    const color = (l: Locator) => l.evaluate((el) => getComputedStyle(el).color);
+    const textColor = await win.evaluate(() => { const p = document.createElement('span'); p.style.color = 'var(--text)'; document.body.append(p); const c = getComputedStyle(p).color; p.remove(); return c; });
+    const wsName = group(win, 'Workspace 1').locator('.ws-name');
+    expect(await color(sso.locator('.wsa-name'))).toBe(textColor);
+    expect(await color(wsName)).not.toBe(textColor);
+    const wsChev = group(win, 'Workspace 1').locator('.ws-head .ws-chev');
+    await wsChev.click();
+    await away(win);
+    expect(await color(wsName)).toBe(textColor);
+    await wsChev.click();
+    await expect(sso).toBeVisible();
 
     // Its chevron: the band, no box; its rows at the same left edge as the workspace's own rows.
     await sso.locator('.wsa-chev').click();
@@ -214,6 +228,20 @@ test('activities: on; New Activity… from the "+"; its tabs alone, folded; the 
     await expect(sso).toHaveClass(/is-current/);
     await expect(sso.locator('.wsa-chev')).toHaveAttribute('aria-expanded', 'false');
     await expect(win.locator('.tab.is-active')).toContainText('okta-callback');
+
+    // The narrowest sidebar and the default: nothing in an activity's head collides, its name still reads.
+    for (const w of [200, 264]) {
+      await sidebarByKeys(win, w);
+      await away(win);
+      for (const head of await win.locator('.sidebar .wsa-head').all()) {
+        const label = `${w} px · ${await head.innerText()}`;
+        expect(await collisions(head, '.wsa-chev, .wsa-name-btn, .ws-dot, .wsa-plus'), label).toEqual([]);
+        const name = head.locator('.wsa-name');
+        const [seen, full] = [await shownWidth(name), await name.evaluate((el) => el.scrollWidth)];
+        expect(seen, `${label}: name cut to ${seen} px`).toBeGreaterThanOrEqual(Math.min(full, 56) - 0.5);
+      }
+      await look(win.locator('.sidebar'), `${SHOTS}/ws-activities-${w}.png`);
+    }
     // Everything kept running all along.
     expect(await api(win)).toHaveLength(3);
   } finally {
