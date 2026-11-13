@@ -1,6 +1,9 @@
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
+// Paths as main has them (the project's root and repositories come canonical: on Windows C:/…, forward slashes), so
+// what the listing returns compares to them as it is.
+import { join, toOut } from '../cpath';
 import { describe, expect, test } from 'vitest';
 import { useMachinePlatform } from '../../../tests/support/platform';
 import { git } from '../../../tests/support/git-fixture';
@@ -18,7 +21,7 @@ function put(root: string, rel: string, body = 'x\n'): void {
 }
 
 function tmp(): string {
-  return realpathSync(mkdtempSync(join(tmpdir(), 'atl-list-')));
+  return toOut(realpathSync(mkdtempSync(join(tmpdir(), 'atl-list-'))));
 }
 
 /** root: a repo with tracked, untracked and ignored files; a nested repo; a plain folder; a deep file. */

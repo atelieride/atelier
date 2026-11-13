@@ -146,7 +146,9 @@ describe('scanFile', () => {
     // The root as main resolved it (realOutAsync: the drive the project was opened with), the files on that drive; the
     // OS's realpath sends them to the folder behind the drive.
     const p = put('a token\n');
-    drive.behind = { under: dir(), to: 'C:\\behind' };
+    // The folder behind is on another drive than the project's (a temp folder on C: on a Windows runner).
+    const other = /^z:/i.test(dir()) ? 'Y' : 'Z';
+    drive.behind = { under: dir(), to: `${other}:\\behind` };
     setTestDefaultPlatform('win32');
     try {
       const r = lines(await scan(p));
