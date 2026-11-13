@@ -40,6 +40,11 @@ export interface SearchState {
   collapsed: Set<string>;
   dismissed: Set<string>;
   selected: string | null;
+  /**
+   * Which list the rows are: a new number when another search's rows take the list's place (the list starts again at
+   * its top), the same for a Refresh's (it stays where it was scrolled).
+   */
+  listKey: number;
   focusNonce: number;
   setQuery(q: string): void;
   setSpec(p: Partial<SearchSpec>): void;
@@ -189,7 +194,8 @@ export const useSearch = create<SearchState>((set, get) => {
 
   /**
    * The running search's rows take the list's place, once: the previous search's rows, its notices and dismissed rows
-   * go. A Refresh (the same query and filters) keeps the selection and the collapsed files.
+   * go. A Refresh (the same query and filters) keeps the selection, the collapsed files and the list's scroll; another
+   * search's rows are a new list, from its top.
    */
   function swapIn(): void {
     const next = incoming;
@@ -199,7 +205,8 @@ export const useSearch = create<SearchState>((set, get) => {
     const again = sameSpec(s.ranSpec, next.spec) && s.ranFilters.include === next.filters.include && s.ranFilters.exclude === next.filters.exclude;
     set({
       files: [], skipped: [], limitHit: false, fileCap: null, error: null, dismissed: new Set(),
-      collapsed: again ? s.collapsed : new Set(), selected: again ? s.selected : null, ranSpec: next.spec, ranFilters: next.filters
+      collapsed: again ? s.collapsed : new Set(), selected: again ? s.selected : null, ranSpec: next.spec, ranFilters: next.filters,
+      ...(again ? {} : { listKey: s.listKey + 1 })
     });
   }
 
@@ -214,6 +221,7 @@ export const useSearch = create<SearchState>((set, get) => {
     searchId: 0,
     phase: 'idle',
     ...noResults,
+    listKey: 0,
     focusNonce: 0,
 
     setQuery(q) {

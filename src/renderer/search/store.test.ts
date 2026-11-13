@@ -260,6 +260,22 @@ test('Refresh (the same query and filters) keeps the selection and the collapsed
   expect(st().collapsed.size).toBe(0);
 });
 
+test('another search\'s rows are a new list (it starts at the top); a Refresh\'s are the same list (its scroll stays)', () => {
+  st().setQuery('token'); st().run();
+  emit(batch([file('a.ts')]));
+  emit(done());
+  const first = st().listKey;
+  st().run();
+  emit(batch([file('a.ts')]));
+  expect(st().listKey).toBe(first);
+  emit(done());
+  st().setQuery('tokens'); st().run();
+  // Until its rows come, the list on screen is the old one.
+  expect(st().listKey).toBe(first);
+  emit(batch([file('a.ts')]));
+  expect(st().listKey).not.toBe(first);
+});
+
 test('stop keeps what was found and tells main', () => {
   st().setQuery('a'); st().run();
   const id = cur();

@@ -91,6 +91,7 @@ function SearchView({ root }: { root: string }) {
   const includeIgnored = useSearch((s) => s.includeIgnored);
   const filtersOpen = useSearch((s) => s.filtersOpen);
   const focusNonce = useSearch((s) => s.focusNonce);
+  const listKey = useSearch((s) => s.listKey);
   // The search whose files-not-searched list is open: another search closes it.
   const [skippedFor, setSkippedFor] = useState(0);
   const input = useRef<HTMLInputElement>(null);
@@ -257,7 +258,8 @@ function SearchView({ root }: { root: string }) {
           {skippedNote}
         </div>
       )}
-      {rows.length > 0 && <ResultList ref={list} rows={rows} onEscape={toField} />}
+      {/* Another search's rows are a new list (from its top); a Refresh's keep its place. */}
+      {rows.length > 0 && <ResultList key={listKey} ref={list} rows={rows} onEscape={toField} />}
       {/* What arrives with the end of a search, or after it: right below the list, so the rows on screen stay put. */}
       {(cap || capped || failed || stopped || changed) && (
         <div className="fif-foot">

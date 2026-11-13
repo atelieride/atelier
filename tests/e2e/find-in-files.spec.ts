@@ -354,6 +354,31 @@ test('a minified one-line file with 3,000 matches: every row reachable, only wha
   await list().evaluate((el) => { el.scrollTop = 0; });
 });
 
+test('scrolled down the results: Refresh keeps the place, another query starts at the top', async () => {
+  await fresh();
+  await search('zq');
+  await expect(totals()).toHaveText('3,000 results in 1 file');
+  // A row dismissed first: the count back at 3,000 will say the refreshed rows have replaced the old ones.
+  const m = view().locator('.fif-row[data-i="1"]');
+  await m.hover();
+  await m.getByRole('button', { name: 'Dismiss' }).click();
+  await expect(totals()).toHaveText('2,999 results in 1 file');
+  await list().evaluate((el) => { el.scrollTop = 20_000; });
+  await frames(win);
+  const scrolled = () => list().evaluate((el) => el.scrollTop);
+  const at = await scrolled();
+  expect(at).toBeGreaterThan(10_000);
+  await view().getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(totals()).toHaveText('3,000 results in 1 file');
+  await frames(win);
+  expect(await scrolled()).toBe(at);
+  // Refined: other rows, from their first.
+  await search('zq;zq');
+  await expect(totals()).toHaveText('1,500 results in 1 file');
+  await expect.poll(scrolled).toBe(0);
+  await expect(view().locator('.fif-row[data-i="0"]')).toBeInViewport();
+});
+
 test('a file collapses and expands with a click, ← and →, and Collapse All / Expand All', async () => {
   await fresh();
   await search('token');
