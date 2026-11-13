@@ -1,6 +1,6 @@
 // What the sidebar, a workspace's card and its empty state show. Pure.
 import type { Resumable, TerminalInfo } from '@shared/protocol';
-import { dots, memberOf, workspaceOf, type Dot, type WorkspacesState } from './workspaces';
+import { dots, memberOf, workspaceOf, workspacesOf, type Dot, type WorkspacesState } from './workspaces';
 import { t } from './i18n/en';
 import { resumablesFor } from './selectors';
 import { buildRows } from './changes';
@@ -9,6 +9,13 @@ import type { Attribution } from '@shared/attribution';
 
 /** A workspace's color as a theme token (theme.css `--ws-1…8`): components never hold the hex. */
 export const wsColorVar = (color: number): string => `var(--ws-${color})`;
+
+/** The Go menu's workspace list (activities aside) and the one its check marks: the workspace in front, whichever of its places is. */
+export function workspacesMenu(ws: WorkspacesState): { names: string[]; active: number } {
+  const wss = workspacesOf(ws);
+  const here = workspaceOf(ws, ws.active);
+  return { names: wss.map((w) => w.name), active: Math.max(0, wss.findIndex((w) => w.id === here)) };
+}
 
 /** A place's terminals, exactly that place's (one without a place belongs to the place in front). */
 export function inWorkspace(ws: WorkspacesState, id: string, terminals: TerminalInfo[]): TerminalInfo[] {

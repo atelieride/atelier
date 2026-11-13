@@ -6,7 +6,7 @@ import { useApp } from './store';
 import { t } from './i18n/en';
 import { kbd } from './kbd';
 import { newTerminalIn } from './launch';
-import { memberOf, workspaceKey, WS_COLORS } from './workspaces';
+import { memberOf, workspaceKey, workspaceOf, workspacesOf, WS_COLORS } from './workspaces';
 import { cardOf } from './workspace-view';
 
 const st = () => useApp.getState();
@@ -38,13 +38,26 @@ export function workspaceMenu(id: string): MenuItem[] {
   ];
 }
 
-/** Next / Previous Workspace (the Go menu, the palette): the neighbour in the sidebar's order, wrapping around. */
+/**
+ * Next / Previous Workspace (the Go menu, the palette): the neighbouring workspace in the sidebar's order, wrapping
+ * around, where it was left.
+ */
 export function stepWorkspace(dir: -1 | 1): void {
   const s = st();
-  if (!s.ws?.on || s.popout || s.ws.list.length < 2) return;
-  const i = s.ws.list.findIndex((w) => w.id === s.ws!.active);
-  const n = s.ws.list.length;
-  s.switchWorkspace(s.ws.list[(i + dir + n) % n]!.id);
+  if (!s.ws?.on || s.popout) return;
+  const wss = workspacesOf(s.ws);
+  if (wss.length < 2) return;
+  const here = workspaceOf(s.ws, s.ws.active);
+  const i = wss.findIndex((w) => w.id === here);
+  const n = wss.length;
+  s.goToWorkspace(wss[(i + dir + n) % n]!.id);
+}
+
+/** ⌥⌘1…9 and the Go menu's list: workspace `n` (0-based, activities aside), where it was left. */
+export function goToWorkspaceAt(n: number): void {
+  const s = st();
+  const w = s.ws?.on && !s.popout ? workspacesOf(s.ws)[n] : undefined;
+  if (w) s.goToWorkspace(w.id);
 }
 
 /** Close Workspace…: an empty workspace closes at once; one with something in it asks first. */

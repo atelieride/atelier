@@ -78,7 +78,7 @@ import { tabMove } from './popout-move';
 import {
   absorb as wsAbsorb, assign as wsAssign, create as wsCreate, forget as wsForget, initial as wsInitial, isProjectKey, workspaceKey, memberOf, moveKey as wsMove, newWorkspaceId,
   projectLast, prune as wsPrune, recolor as wsRecolor, relink as wsRelink, remove as wsRemove, rename as wsRename, renameKeys as wsRenameKeys, reorder as wsReorder,
-  toFront as wsToFront, toggleOpen as wsToggleOpen, union as wsUnion, viewOf, withView, type WorkspacesState
+  toFront as wsToFront, toggleOpen as wsToggleOpen, union as wsUnion, viewOf, withView, placeOnReturn, type WorkspacesState
 } from './workspaces';
 import { loadWorkspaces, saveWorkspaces } from './workspaces-save';
 import { isBelow } from '@shared/paths';
@@ -632,8 +632,16 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
   applyWorkspacesEverywhere(): void;
   /** The workspaces with the one in front's live tabs written in (its saved entry lags while it is in front). */
   workspacesNow(): WorkspacesState | null;
-  /** Brings workspace `id` to the front: its tabs, its split, its tab in front. */
+  /**
+   * Brings place `id` to the front — a workspace's own tabs, or one of its activities: its tabs, its split, its tab in
+   * front.
+   */
   switchWorkspace(id: string): void;
+  /**
+   * A way back to workspace `id` (⌥⌘1…9, the Go menu, Next/Previous, the palette): it comes forward where it was
+   * left — the activity in front then, or its own tabs.
+   */
+  goToWorkspace(id: string): void;
   /**
    * The space in front: Sessions, Docker, Redis, Databases or Automations. tabOrder, split,
    * activeTab are its view; the others wait in spaceViews. selectedId stays Sessions' (Send to, dictation, ⌘J).
@@ -2030,6 +2038,10 @@ export const useApp = create<AppState>((set, get) => ({
     hush(() => set({
       ws: next, tabOrder: order, split, pendingAnchor: null, ...frontOf(front, order, split), ...(get().preview && !order.includes(`f:${get().preview}`) ? { preview: null } : {})
     }));
+  },
+  goToWorkspace: (id) => {
+    const ws = get().ws;
+    if (ws) get().switchWorkspace(placeOnReturn(ws, id));
   },
   newWorkspace: (opts, move) => {
     const s = get();

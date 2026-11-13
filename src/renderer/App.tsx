@@ -53,7 +53,7 @@ import { dirtyPaths, saveMany, saveOne } from './editor/savers';
 import { Logo } from './components/Logo';
 import { WorkspaceEmpty } from './components/WorkspaceEmpty';
 import { SpaceEmpty } from './components/SpaceEmpty';
-import { stepWorkspace } from './workspace-menus';
+import { goToWorkspaceAt, stepWorkspace } from './workspace-menus';
 import { NewWorkspaceSheet } from './components/NewWorkspaceSheet';
 import { Icon } from './components/Icon';
 import { disposeLiveTerminal, redrawTerminal, resetTerminal, writeToTerminal } from './terminal/registry';
@@ -598,7 +598,7 @@ export function App() {
           case 'next-workspace': case 'prev-workspace': stepWorkspace(cmd === 'next-workspace' ? 1 : -1); break;
           default:
             if (cmd.startsWith('tab-')) { const k = nth(st.focusedStrip(), Number(cmd.slice(4))); if (k) st.activate(k); }
-            else if (cmd.startsWith('workspace-')) { const w = st.ws?.on ? st.ws.list[Number(cmd.slice('workspace-'.length))] : undefined; if (w) st.switchWorkspace(w.id); }
+            else if (cmd.startsWith('workspace-')) goToWorkspaceAt(Number(cmd.slice('workspace-'.length)));
             else if (cmd.startsWith('new-terminal-profile:')) void newTerminalIn(undefined, cmd.slice('new-terminal-profile:'.length));
             else if (cmd.startsWith('new-session-account:')) st.setNewSessionOpen(true, cmd.slice('new-session-account:'.length));
             break;

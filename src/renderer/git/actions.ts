@@ -16,6 +16,7 @@ import { divergedRefusal as isDivergedRefusal } from './slice';
 import { isBelow } from '@shared/paths';
 import { BULK_GIT_PARALLEL, inLanes } from '@shared/lanes';
 import { loadRefs } from '../scm/data';
+import { workspacesMenu } from '../workspace-view';
 
 /** A dropped stash's and a deleted branch's Undo stay this long. */
 export const LONG_UNDO_MS = 30_000;
@@ -587,7 +588,7 @@ export function installGit(): () => void {
       messages: s.settings.commitMessages !== 'off',
       // Workspaces on: the Go menu lists them, File shows New Workspace….
       ...(s.project && !s.popout ? { project: true } : {}),
-      ...(s.ws?.on && !s.popout ? { workspaces: { names: s.ws.list.map((w) => w.name), active: Math.max(0, s.ws.list.findIndex((w) => w.id === s.ws!.active)) } } : {})
+      ...(s.ws?.on && !s.popout ? { workspaces: workspacesMenu(s.ws) } : {})
     };
     const key = JSON.stringify(now);
     if (key === sent) return;
