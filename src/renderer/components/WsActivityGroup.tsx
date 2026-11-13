@@ -14,9 +14,9 @@ import { newTerminalIn } from '../launch';
 
 /**
  * An activity in its workspace's body, at the same indent as the workspace's own rows: a head — chevron, glyph and
- * name, the folded state's dot, "+" — and, open, its rows on a neutral band. The chevron folds or opens without
- * switching; the name brings the activity forward and leaves it as it is in the sidebar. Folded and in front, its head
- * is the selected box: it stands for the tab in front.
+ * name, the folded state's dot, "+" — and, open, its rows on a neutral band, indented under its head. The chevron
+ * folds or opens without switching; the name brings the activity forward and leaves it as it is in the sidebar. Folded
+ * and in front, its head is the selected box: it stands for the tab in front.
  */
 export function WsActivityGroup({ a, color, current, open, card, children }: { a: Workspace; color: number; current: boolean; open: boolean; card: WsActivityCard; children?: ReactNode }) {
   const editing = useApp((s) => s.wsRenaming === a.id);
@@ -74,7 +74,7 @@ export function WsActivityGroup({ a, color, current, open, card, children }: { a
         )}
         {dropping && <span className="ws-drop-hint" aria-hidden="true">{t.ws.dropHere(a.name)}</span>}
       </div>
-      {open && children}
+      {open && <div className="wsa-body">{children}</div>}
     </section>
   );
 }
