@@ -308,6 +308,8 @@ export const SOURCES: Record<string, Area[]> = {
   'src/renderer/pane-focus.ts': ['workspace'],
   'src/renderer/panels.ts': ['workspace'],
   'src/renderer/pins.ts': ['sessions'],
+  // The sidebar's own order: manual orders, bands, moves.
+  'src/renderer/row-order.ts': ['sessions', 'workspace'],
   'src/renderer/row-fit.ts': ['sessions'],
   'src/renderer/panel-drawn.ts': ['workspace', 'changes'],
   'src/renderer/sidebar-hidden.ts': ['workspace'],
