@@ -38,7 +38,8 @@ the session that made it, and an editor, terminals and Git right beside them.
 - **Catch up without interrupting.** Ask a session where it is and why, in a read-only side chat that leaves its
   context untouched.
 - **Everything side by side.** Sessions, terminals and files are tabs: split up to three panes, open anything from the
-  command palette, keep separate lines of work in workspaces.
+  command palette, keep separate lines of work in workspaces, and in activities inside them, each with tabs of their
+  own.
 - **Prompts and tasks that start themselves.** Schedule a prompt for later, for instance when your usage limit resets,
   or let ClickUp, Notion and Jira tasks start sessions in worktrees of their own.
 - **Your stack next to Claude.** Read your Docker logs, browse Redis keys and queues and Postgres tables, and send what
