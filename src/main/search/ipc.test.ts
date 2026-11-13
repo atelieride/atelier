@@ -367,16 +367,23 @@ describe('Find in Files IPC', () => {
     projects.set(1, { root, discovered: [] });
     start(win(1, root), req(1));
     const { list } = services[0]!.deps;
-    vi.useFakeTimers({ toFake: ['Date'] });
+    // Both clocks fake: the window is counted on the monotonic one, so a jump of the wall clock alone changes nothing.
+    vi.useFakeTimers({ toFake: ['Date', 'performance'] });
     try {
       const first = list(req(1));
-      await first;
-      vi.setSystemTime(Date.now() + 9_000);
+      // Still running after a long while (a slow network drive): shared all the same, never listed twice at once.
+      vi.advanceTimersByTime(12_000);
       expect(list(req(2))).toBe(first);
+      await first;
+      // Counted from when it was done: 9 s later it still serves.
+      vi.advanceTimersByTime(9_000);
+      expect(list(req(3))).toBe(first);
+      vi.setSystemTime(Date.now() + 3_600_000);
+      expect(list(req(4))).toBe(first);
       // A file the watcher never reported (a network folder may have no watcher): found once the listing has aged.
       writeFileSync(join(root, 'b.ts'), 'token\n');
-      vi.setSystemTime(Date.now() + 2_000);
-      const later = list(req(3));
+      vi.advanceTimersByTime(2_000);
+      const later = list(req(5));
       expect(later).not.toBe(first);
       expect((await later).files.map((f) => f.rel)).toEqual(['a.ts', 'b.ts']);
     } finally {

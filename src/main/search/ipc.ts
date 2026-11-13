@@ -39,7 +39,7 @@ export type WindowServiceDeps = Omit<SearchServiceDeps, 'spawn'>;
  */
 interface LastSearch { searchId: number; includeIgnored: boolean; since: number; told: boolean }
 
-/** How long a project's last listing serves the searches that follow, when no change is heard meanwhile. */
+/** How long a project's last listing serves the searches that follow once it is done, when no change is heard meanwhile. */
 const LISTING_KEEP_MS = 10_000;
 
 interface Entry { wc: WebContents; project: SearchProject; service: SearchServiceLike; last: LastSearch | null }
@@ -74,14 +74,17 @@ export function installSearchIpc(deps: SearchIpcDeps): { filesChanged(root: stri
 
   // Each project's last listing, by root, running or done: the searches that follow with the same filters (each pause
   // in typing, Refresh) take it rather than list the project again, which costs a 100,000-file project ~170 ms of
-  // this thread. It goes when a file of the project changes, after LISTING_KEEP_MS (a folder no watcher sees), when a
-  // search asks for other filters, and with the project's last window. A search that takes it hears of every change
-  // since it was made (`since`).
-  const lists = new Map<string, { key: string; at: number; listing: Promise<SearchListing> }>();
+  // this thread. It goes when a file of the project changes, LISTING_KEEP_MS after it was done (a folder no watcher
+  // sees), when a search asks for other filters, and with the project's last window. A search that takes it hears of
+  // every change since it was made (`since`).
+  // `at`: when it started (Date.now(), the watcher's clock, for `since`); `done`: when it ended (performance.now(), so
+  // a jump of the wall clock neither keeps nor drops it), null while it runs: a running listing is always shared, so
+  // a slow drive never has two at once.
+  const lists = new Map<string, { key: string; at: number; done: number | null; listing: Promise<SearchListing> }>();
   const listing = (p: SearchProject, req: SearchRequest): { at: number; listing: Promise<SearchListing> } => {
     const key = JSON.stringify([p.discovered, req.include, req.exclude, req.includeIgnored]);
     const held = lists.get(p.root);
-    if (held && held.key === key && Date.now() - held.at < LISTING_KEEP_MS) return held;
+    if (held && held.key === key && (held.done === null || performance.now() - held.done < LISTING_KEEP_MS)) return held;
     const filter = compilePathFilter(req.include, req.exclude);
     const listed = (async (): Promise<SearchListing> => {
       const realRoot = await realOutAsync(p.root);
@@ -90,10 +93,10 @@ export function installSearchIpc(deps: SearchIpcDeps): { filesChanged(root: stri
       const { files, capped } = await listSearchFiles(p.root, p.discovered, { includeIgnored: req.includeIgnored, cap, filter });
       return { files, capped, realRoot };
     })();
-    const entry = { key, at: Date.now(), listing: listed };
+    const entry: { key: string; at: number; done: number | null; listing: Promise<SearchListing> } = { key, at: Date.now(), done: null, listing: listed };
     lists.set(p.root, entry);
     // One that failed is not kept: the next search tries again.
-    listed.catch(() => { if (lists.get(p.root) === entry) lists.delete(p.root); });
+    listed.then(() => { entry.done = performance.now(); }, () => { if (lists.get(p.root) === entry) lists.delete(p.root); });
     return entry;
   };
 
