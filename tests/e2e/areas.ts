@@ -151,6 +151,7 @@ export const SPECS: Record<string, Area[]> = {
   'split-layout.spec.ts': ['workspace'],
   'split.spec.ts': ['workspace'],
   'workspaces.spec.ts': ['workspace', 'sessions'],
+  'ws-activities.spec.ts': ['workspace', 'sessions'],
   'starting.spec.ts': ['sessions'],
   'states.spec.ts': ['sessions'],
   'tab-strip.spec.ts': ['workspace'],
@@ -350,6 +351,10 @@ export const SOURCES: Record<string, Area[]> = {
   // Spaces: which space a tab and an activity belong to, the saved views.
   'src/renderer/spaces': ['workspace', 'sessions', 'services', 'databases', 'connectors'],
   'src/renderer/components/Workspace': ['workspace', 'sessions'],
+  // Activities inside workspaces: their sidebar group, the drop rules, their close confirm.
+  'src/renderer/components/WsActivity': ['workspace', 'sessions'],
+  'src/renderer/place-drop.ts': ['workspace', 'sessions'],
+  'src/renderer/confirms/WsActivity': ['workspace', 'sessions'],
   'src/renderer/components/SpaceEmpty.tsx': ['workspace', 'databases', 'services', 'connectors'],
   'src/renderer/components/NewWorkspaceSheet.tsx': ['workspace', 'sessions'],
   'src/renderer/task-': ['connectors'],
