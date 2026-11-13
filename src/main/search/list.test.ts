@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect, test } from 'vitest';
@@ -176,6 +176,19 @@ describe('listing', () => {
     put(root, 'top.txt');
     const r = await listSearchFiles(root, [repo], { includeIgnored: false, cap: 100, filter: all });
     expect(rels(r)).toEqual(['tools/p.txt', 'tools/repo/.gitignore', 'tools/repo/r.txt', 'top.txt']);
+  });
+
+  test.skipIf(process.platform === 'win32')('a symlinked file and the project root are resolved by one rule: a root reached by another spelling still holds the file', async () => {
+    const base = tmp();
+    const root = join(base, 'Proj');
+    put(root, 'a.txt');
+    symlinkSync(join(root, 'a.txt'), join(root, 'b.txt'));
+    // The project reached by another spelling of its folder, as a file system that ignores case (macOS's) allows; on
+    // one that tells case apart there is no such spelling to try.
+    const spelled = join(base, 'PROJ');
+    if (!existsSync(spelled)) return;
+    const r = await listSearchFiles(spelled, [], { includeIgnored: false, cap: 100, filter: all });
+    expect(rels(r)).toEqual(['a.txt', 'b.txt']);
   });
 
   test.skipIf(process.platform === 'win32')('a link to a folder inside the project is not followed: the folder is listed under its own name', async () => {

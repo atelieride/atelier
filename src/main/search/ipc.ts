@@ -27,11 +27,14 @@ export interface SearchIpcDeps {
   /** The search worker's script (out/main/search-worker.js). */
   workerPath: string;
   /** A window's service (tests give a fake); by default a SearchService on a worker from `workerPath`. */
-  createService?: (deps: SearchServiceDeps) => SearchServiceLike;
+  createService?: (deps: WindowServiceDeps) => SearchServiceLike;
 }
 
-/** What a window's last search needs for its stale notice. */
-interface LastSearch { searchId: number; includeIgnored: boolean; told: boolean }
+/** What the IPC gives a window's service: its listing and limits; the worker is the service's own business. */
+export type WindowServiceDeps = Omit<SearchServiceDeps, 'spawn'>;
+
+/** What a window's last search needs for its stale notice: `startedAt`, when it started (Date.now()). */
+interface LastSearch { searchId: number; includeIgnored: boolean; startedAt: number; told: boolean }
 
 interface Entry { wc: WebContents; project: SearchProject; service: SearchServiceLike; last: LastSearch | null }
 
@@ -47,8 +50,8 @@ function testLimits(): SearchServiceDeps['limits'] {
   return maxBytes > 0 ? { maxBytes } : undefined;
 }
 
-export function installSearchIpc(deps: SearchIpcDeps): { filesChanged(root: string, ignoredOnly?: boolean): void } {
-  const create = deps.createService ?? ((d: SearchServiceDeps) => new SearchService({ ...d, spawn: () => new Worker(deps.workerPath) }));
+export function installSearchIpc(deps: SearchIpcDeps): { filesChanged(root: string, ignoredOnly?: boolean, last?: number): void } {
+  const create = deps.createService ?? ((d: WindowServiceDeps) => new SearchService({ ...d, spawn: () => new Worker(deps.workerPath) }));
   const entries = new Map<number, Entry>();
   /** Windows whose `destroyed` and navigations are listened to already (once each, whatever their services). */
   const watched = new Set<number>();
@@ -118,7 +121,7 @@ export function installSearchIpc(deps: SearchIpcDeps): { filesChanged(root: stri
     // Closing: its `destroyed` may not have come yet, and would never come again for a new service.
     if (wc.isDestroyed()) { drop(wc.id); return; }
     const en = entryOf(wc, project);
-    en.last = { searchId: req.searchId, includeIgnored: req.includeIgnored, told: false };
+    en.last = { searchId: req.searchId, includeIgnored: req.includeIgnored, startedAt: Date.now(), told: false };
     en.service.start(req, (ev: SearchEvent) => {
       if (entries.get(wc.id) === en && !wc.isDestroyed()) wc.send(IPC.evSearch, ev);
     });
@@ -138,18 +141,20 @@ export function installSearchIpc(deps: SearchIpcDeps): { filesChanged(root: stri
     /**
      * Files of `root` changed on disk: each window's last search there (running or finished) is told once that its
      * results may be out of date. `ignoredOnly`: every file that changed is one git ignores, which only a search
-     * that includes ignored files covers.
+     * that includes ignored files covers. `last`: when the last of these changes was heard (Date.now()); changes that
+     * all came before a search started are in what it read, however late the watcher passes them on.
      */
-    filesChanged(root, ignoredOnly = false) {
+    filesChanged(root, ignoredOnly = false, last = Date.now()) {
       // A listing running now may have read the folder before the change: the next search lists again.
       for (const [key, r] of running) if (r.root === root) running.delete(key);
       for (const en of entries.values()) {
-        const last = en.last;
-        if (en.project.root !== root || !last || last.told) continue;
-        if (ignoredOnly && !last.includeIgnored) continue;
+        const search = en.last;
+        if (en.project.root !== root || !search || search.told) continue;
+        if (ignoredOnly && !search.includeIgnored) continue;
+        if (last < search.startedAt) continue;
         if (en.wc.isDestroyed()) continue;
-        last.told = true;
-        en.wc.send(IPC.evSearch, { kind: 'stale', searchId: last.searchId } satisfies SearchEvent);
+        search.told = true;
+        en.wc.send(IPC.evSearch, { kind: 'stale', searchId: search.searchId } satisfies SearchEvent);
       }
     }
   };

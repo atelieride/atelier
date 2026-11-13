@@ -1,10 +1,27 @@
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
+
+// The OS's own realpath, as Windows answers it for a subst or mapped network drive when `drive.behind` is set: the
+// folder behind the drive (another drive), while node's own realpath keeps the drive the project was opened with.
+const drive = vi.hoisted(() => ({ behind: null as null | { under: string; to: string } }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...real,
+    realpath: async (p: Parameters<typeof real.realpath>[0], ...rest: unknown[]) => {
+      const b = drive.behind;
+      if (b && String(p).startsWith(b.under)) return b.to + String(p).slice(b.under.length).replaceAll('/', '\\');
+      return (real.realpath as (...a: unknown[]) => Promise<string>)(p, ...rest);
+    },
+  };
+});
+
+import { setTestDefaultPlatform } from '@shared/platform';
 import { useMachinePlatform } from '../../../tests/support/platform';
 import { SEARCH_LIMITS } from '@shared/search';
-import { compileSearch } from '@shared/search-match';
+import { compileSearch, type LineRanges } from '@shared/search-match';
 import { scanFile, type ScanLimits } from './scan';
 
 useMachinePlatform();
@@ -15,7 +32,7 @@ const roomy: ScanLimits = { wholeReadBytes: 10_000_000, maxBytes: 20_000_000, ke
 const streaming: ScanLimits = { wholeReadBytes: 64, maxBytes: 20_000_000, keptLineChars: 2000 };
 const never = () => false;
 
-function ranges(query: string): (line: string) => [number, number][] {
+function ranges(query: string): LineRanges {
   const c = compileSearch({ query, matchCase: true, wholeWord: false, regex: false });
   if (c.kind !== 'ok') throw new Error('bad query');
   return c.ranges;
@@ -107,6 +124,37 @@ describe('scanFile', () => {
     expect(r.count).toBe(2);
     expect(r.lines[0]!.ranges.length).toBe(2);
     expect(r.truncated).toBe(true);
+  });
+
+  test('a minified line with a million matches: no more of them are built than the budget left, plus one to know it is cut', async () => {
+    const all = ranges('a');
+    const built: number[] = [];
+    const counting = (line: string, max?: number) => { const r = all(line, max); built.push(r.length); return r; };
+    const p = put(`${'a'.repeat(1_000_000)}\nb a a\n`);
+    const r = lines(await scanFile(p, counting, roomy, 5, never, dir()));
+    expect(r).toMatchObject({ count: 5, truncated: true });
+    expect(r.lines[0]!.ranges).toEqual([[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]]);
+    expect(Math.max(...built)).toBe(6);
+    // Streamed, the same.
+    built.length = 0;
+    const s = lines(await scanFile(p, counting, streaming, 5, never, dir()));
+    expect(s).toMatchObject({ count: 5, truncated: true });
+    expect(Math.max(...built)).toBe(6);
+  });
+
+  test('Windows, a project on a subst or mapped drive: each file is resolved by the rule its root was, so it is found', async () => {
+    // The root as main resolved it (realOutAsync: the drive the project was opened with), the files on that drive; the
+    // OS's realpath sends them to the folder behind the drive.
+    const p = put('a token\n');
+    drive.behind = { under: dir(), to: 'C:\\behind' };
+    setTestDefaultPlatform('win32');
+    try {
+      const r = lines(await scan(p));
+      expect(r.lines.map((l) => l.ranges)).toEqual([[[2, 7]]]);
+    } finally {
+      drive.behind = null;
+      setTestDefaultPlatform(null);
+    }
   });
 
   test('a deleted path is none', async () => {

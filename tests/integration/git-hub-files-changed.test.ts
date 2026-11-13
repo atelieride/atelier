@@ -78,6 +78,18 @@ posixTest('a file changed: the project root, told whether only ignored files cha
   expect(calls).toEqual([]);
 });
 
+posixTest('the call says when the watcher heard the last change: after it was made, before the call (the watcher waits for quiet)', async () => {
+  const { root, h } = await opened();
+  const heard: { last: number; at: number }[] = [];
+  h.onFilesChanged = (_r, _ignoredOnly, last) => { heard.push({ last, at: Date.now() }); };
+  const made = Date.now();
+  writeFileSync(join(root, 'a.ts'), '3\n');
+  await until(() => heard.length > 0);
+  expect(heard[0]!.last).toBeGreaterThanOrEqual(made);
+  // The watcher's quiet wait (300 ms) lies between the change and the call.
+  expect(heard[0]!.at - heard[0]!.last).toBeGreaterThanOrEqual(250);
+});
+
 posixTest('events the OS dropped (a change with no name): any file may have changed, ignored or not', async () => {
   const { root, calls } = await opened();
   calls.length = 0;

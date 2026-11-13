@@ -111,9 +111,10 @@ export class GitHub {
   onProjectClosed: (projectRoot: string) => void = () => {};
   /**
    * Files of a project changed on disk (its real root), or may have (events were dropped). `ignoredOnly`: every file
-   * that changed is one git ignores (a build's output). Changes inside .git alone are not file changes.
+   * that changed is one git ignores (a build's output). `last`: when the watcher heard the last of them (Date.now()),
+   * which is earlier than this call by the watcher's quiet wait. Changes inside .git alone are not file changes.
    */
-  onFilesChanged: (root: string, ignoredOnly: boolean) => void = () => {};
+  onFilesChanged: (root: string, ignoredOnly: boolean, last: number) => void = () => {};
 
   /** How many folder levels below a project repositories are looked for, and how many folders one scan reads at most. */
   private readonly depth: () => number;
@@ -176,7 +177,7 @@ export class GitHub {
         key: root, root: real, discovered: [], repos: [], trees: new Map(), merge: new Map(), relisting: null, relistAgain: false, listed: false,
         relistLive: new Set(), relistBulk: new Set(), lists: new Map(), discovering: null, discoverAgain: null, discoveredAt: 0, capped: false,
         rescanTimer: null, renamed: new Set(),
-        status: new Map(), watcher: null, windows: new Set(), debounce: new Debouncer(300, (keys) => this.onChanges(proj, keys), 1500), outside: new Map()
+        status: new Map(), watcher: null, windows: new Set(), debounce: new Debouncer(300, (keys, last) => this.onChanges(proj, keys, last), 1500), outside: new Map()
       };
       try {
         // Ignored paths (node_modules, .git objects) are dropped right away: during an npm install there are thousands.
@@ -481,7 +482,8 @@ export class GitHub {
     }
   }
 
-  private onChanges(p: Project, rels: Set<string>): void {
+  /** `last`: when the watcher heard the last of these changes. */
+  private onChanges(p: Project, rels: Set<string>, last = Date.now()): void {
     let rescan = false;
     let dropped = false;
     const renamed = p.renamed;
@@ -546,7 +548,7 @@ export class GitHub {
     else if (rescan) this.rescanFor(p);
     if (files.length) for (const wc of p.windows) if (!wc.isDestroyed()) wc.send(IPC.evFsChanged, files);
     // Dropped events: any file may have changed.
-    if (dropped || files.length) this.onFilesChanged(p.root, !dropped && !plainFile);
+    if (dropped || files.length) this.onFilesChanged(p.root, !dropped && !plainFile, last);
   }
 
   private broadcast(p: Project, force = false): void {

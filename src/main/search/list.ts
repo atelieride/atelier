@@ -1,6 +1,5 @@
-import { realpathSync } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
-import { join, toOut } from '../cpath';
+import { join, realOut } from '../cpath';
 import { isBelow, isInside, samePath } from '@shared/paths';
 import { pathStyle } from '@shared/platform';
 import { DEFAULT_HIDDEN } from '../fs/files';
@@ -22,8 +21,9 @@ const byRel = (a: ListedFile, b: ListedFile): number => (a.rel < b.rel ? -1 : a.
 /** The key two spellings of one path share: Windows paths compare without case. */
 const keyOf = (p: string): string => (pathStyle() === 'win32' ? p.toLowerCase() : p);
 
+/** A path's real path by the rule the project's root is resolved with everywhere (realOut), or null when it is gone. */
 function real(p: string): string | null {
-  try { return toOut(realpathSync(p)); } catch { return null; }
+  try { return realOut(p); } catch { return null; }
 }
 
 type Listing = { ok: true; paths: string[] } | { ok: false; tooLarge: boolean };

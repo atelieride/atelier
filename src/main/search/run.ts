@@ -2,7 +2,7 @@
 // stays on this one thread; results go out in the list's order, in batches at most every BATCH_MS, and a heartbeat
 // tells main's watchdog the worker is alive.
 import type { SearchEvent, SearchFile, SearchLine, SearchSpec, SkippedFile } from '@shared/search';
-import { compileSearch } from '@shared/search-match';
+import { compileSearch, type LineRanges } from '@shared/search-match';
 import { pathStyle } from '@shared/platform';
 import type { ListedFile } from './list';
 import { scanFile, type ScanLimits, type ScanResult } from './scan';
@@ -126,7 +126,7 @@ export async function runSearch(input: RunInput, post: (m: WorkerMsg) => void, c
   let matching = 0;
   let lines = 0;
   let chars = 0;
-  const matcherFor = (index: number): ((line: string) => [number, number][]) => (line) => {
+  const matcherFor = (index: number): LineRanges => (line, max) => {
     // A read that ends after `done` (it was not waited for) may still bring its text: the query never runs on it, so
     // nothing of this search competes with the next one, or gets stuck in its name.
     if (halted) return [];
@@ -141,7 +141,7 @@ export async function runSearch(input: RunInput, post: (m: WorkerMsg) => void, c
       chars = 0;
       if (now() - lastPost >= BEAT_MS) beat();
     }
-    return ranges(line);
+    return ranges(line, max);
   };
 
   let halted = false;

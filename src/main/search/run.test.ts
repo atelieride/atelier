@@ -29,7 +29,7 @@ vi.mock('@shared/search-match', async (importOriginal) => {
     compileSearch: (spec: Parameters<typeof real.compileSearch>[0]) => {
       const c = real.compileSearch(spec);
       if (c.kind !== 'ok') return c;
-      return { kind: 'ok' as const, ranges: (line: string) => { hooks.onMatch?.(spec.query); return c.ranges(line); } };
+      return { kind: 'ok' as const, ranges: (line: string, max?: number) => { hooks.onMatch?.(spec.query); return c.ranges(line, max); } };
     },
   };
 });
@@ -41,7 +41,7 @@ vi.mock('./scan', async (importOriginal) => {
       const [path, ranges, ...rest] = args;
       const gate = hooks.gates.get(path);
       if (gate) await gate;
-      const r = await real.scanFile(path, (line) => { hooks.onLine?.(line); return ranges(line); }, ...rest);
+      const r = await real.scanFile(path, (line, max) => { hooks.onLine?.(line); return ranges(line, max); }, ...rest);
       hooks.finished.push(path);
       hooks.onFinish?.();
       return r;
@@ -301,17 +301,27 @@ describe('runSearch', () => {
   test('a slow read never silences the worker: beats keep coming while a file is opened', async () => {
     const { root, listed } = project({ 'a.txt': 'token\n', 'slow.txt': 'token\n', 'c.txt': 'token\n' });
     hooks.slow = { path: listed[1]!.path, ms: 1_000 };
-    const t0 = performance.now();
+    // A fake clock for the timers and the search's own time: a busy machine cannot stretch the gaps measured. The real
+    // reads still run, between two steps of the clock.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    const t0 = Date.now();
     const at: number[] = [];
     try {
-      await runSearch(input(root, listed), () => at.push(performance.now()), never);
+      let over = false;
+      const run = runSearch(input(root, listed), () => at.push(Date.now()), never, () => Date.now()).finally(() => { over = true; });
+      while (!over) {
+        await vi.advanceTimersByTimeAsync(10);
+        await new Promise((r) => setImmediate(r));
+      }
+      await run;
     } finally {
+      vi.useRealTimers();
       hooks.slow = null;
     }
-    expect(performance.now() - t0).toBeGreaterThanOrEqual(1_000);
+    expect(at.at(-1)! - t0).toBeGreaterThanOrEqual(1_000);
     const gaps = at.map((t, k) => t - (k === 0 ? t0 : at[k - 1]!));
     // Beats every 200 ms or so; a read that blocked the thread would leave a gap of a whole second.
-    expect(Math.max(...gaps)).toBeLessThan(600);
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(250);
   });
 
   test('a search with no matches still reports its progress', async () => {

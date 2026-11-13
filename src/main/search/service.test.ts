@@ -449,6 +449,91 @@ describe('SearchService', () => {
     svc.dispose();
   });
 
+  test('a stop the worker leaves unanswered for a second ends the search stopped, with what it had searched; never an error later', async () => {
+    vi.useFakeTimers();
+    const workers: Silent[] = [];
+    const svc = new SearchService({ spawn: () => { const w = new Silent(); workers.push(w); return w; }, list: async () => project(10), watchdogMs: 5000 });
+    const r = recorder();
+    svc.start(req(1, '(a+)+$', { regex: true }), r.emit);
+    await settle();
+    const w = workers[0]!;
+    w.reply({ kind: 'batch', searchId: w.lastRunId(), files: [], searched: 3, total: 10 });
+    await vi.advanceTimersByTimeAsync(500);
+    // Spoke half a second ago: asked to stop, given a second to say so.
+    svc.stop(1);
+    expect(w.sent.at(-1)).toEqual({ type: 'stop', searchId: w.lastRunId() });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(w.terminated).toBe(false);
+    expect(r.events.filter((e) => e.kind !== 'batch')).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(w.terminated).toBe(true);
+    expect(r.events.at(-1)).toEqual({ kind: 'done', searchId: 1, searched: 3, total: 10, skipped: [], limitHit: false, fileCap: null, stopped: true });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(r.events.filter((e) => e.kind !== 'batch')).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+    svc.dispose();
+  });
+
+  test('a stop the worker answers in time waits for its answer: no worker is lost', async () => {
+    vi.useFakeTimers();
+    const workers: Silent[] = [];
+    const svc = new SearchService({ spawn: () => { const w = new Silent(); workers.push(w); return w; }, list: async () => project(10), watchdogMs: 5000 });
+    const r = recorder();
+    svc.start(req(1), r.emit);
+    await settle();
+    const w = workers[0]!;
+    w.beat();
+    svc.stop(1);
+    await vi.advanceTimersByTimeAsync(300);
+    w.reply(doneWith(w.lastRunId(), { stopped: true, searched: 4, total: 10 }));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(w.terminated).toBe(false);
+    expect(r.events).toEqual([expect.objectContaining({ kind: 'done', searchId: 1, searched: 4, stopped: true })]);
+    expect(vi.getTimerCount()).toBe(0);
+    svc.dispose();
+  });
+
+  test('a new search behind a worker that does not answer the stop of the one before starts on a fresh worker after a second, not the watchdog\'s five', async () => {
+    vi.useFakeTimers();
+    const workers: Silent[] = [];
+    const svc = new SearchService({ spawn: () => { const w = new Silent(); workers.push(w); return w; }, list: async () => project(3), watchdogMs: 5000 });
+    svc.start(req(1, '(a+)+$', { regex: true }), recorder().emit);
+    await settle();
+    workers[0]!.beat();
+    await vi.advanceTimersByTimeAsync(300);
+    const r = recorder();
+    svc.start(req(2, 'fixed'), r.emit);
+    await settle();
+    expect(workers[0]!.sent.map((m) => m.type)).toEqual(['start', 'stop', 'start']);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(workers[0]!.terminated).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(workers[0]!.terminated).toBe(true);
+    expect(workers).toHaveLength(2);
+    const again = workers[1]!.sent as Extract<WorkerIn, { type: 'start' }>[];
+    expect(again.map((m) => [m.type, m.input.spec.query])).toEqual([['start', 'fixed']]);
+    expect(r.events).toEqual([]);
+    workers[1]!.reply(doneWith(again[0]!.input.searchId));
+    expect(r.events).toEqual([expect.objectContaining({ kind: 'done', searchId: 2 })]);
+    svc.dispose();
+  });
+
+  test('a new search after a second of silence already does not wait at all: the stuck worker goes at once', async () => {
+    vi.useFakeTimers();
+    const workers: Silent[] = [];
+    const svc = new SearchService({ spawn: () => { const w = new Silent(); workers.push(w); return w; }, list: async () => project(3), watchdogMs: 5000 });
+    svc.start(req(1, '(a+)+$', { regex: true }), recorder().emit);
+    await settle();
+    workers[0]!.beat();
+    await vi.advanceTimersByTimeAsync(1200);
+    svc.start(req(2, 'fixed'), recorder().emit);
+    expect(workers[0]!.terminated).toBe(true);
+    await settle();
+    expect(workers).toHaveLength(2);
+    expect((workers[1]!.sent as Extract<WorkerIn, { type: 'start' }>[]).map((m) => m.input.spec.query)).toEqual(['fixed']);
+    svc.dispose();
+  });
+
   test('a real worker thread stuck in a regular expression is terminated, and the error names its file', async () => {
     // A worker speaking the same messages: it notes its file in the shared slot, beats, then backtracks for ever.
     const code = `

@@ -10,8 +10,8 @@ import { IPC } from '@shared/api';
 import type { SearchEvent, SearchRequest } from '@shared/search';
 import { git } from '../../../tests/support/git-fixture';
 import { posixTest, useMachinePlatform } from '../../../tests/support/platform';
-import { installSearchIpc, type SearchProject } from './ipc';
-import type { SearchListing, SearchServiceDeps } from './service';
+import { installSearchIpc, type SearchProject, type WindowServiceDeps } from './ipc';
+import type { SearchListing } from './service';
 
 useMachinePlatform();
 
@@ -55,7 +55,7 @@ class FakeService {
   readonly starts: { req: SearchRequest; emit: (e: SearchEvent) => void }[] = [];
   readonly stops: number[] = [];
   disposed = false;
-  constructor(readonly deps: SearchServiceDeps) {}
+  constructor(readonly deps: WindowServiceDeps) {}
   start(req: SearchRequest, emit: (e: SearchEvent) => void): void {
     this.starts.push({ req, emit });
   }
@@ -201,6 +201,17 @@ describe('Find in Files IPC', () => {
     ipc.filesChanged('/p/a');
     expect(a.events).toEqual([done(3), { kind: 'stale', searchId: 3 }, { kind: 'stale', searchId: 4 }]);
     expect(b.events).toEqual([{ kind: 'stale', searchId: 5 }]);
+  });
+
+  test('changes noticed before a search started are not news to it, even when the watcher passes them on after; one since is', () => {
+    const { ipc, start, win } = setup();
+    const a = win(1, '/p/a');
+    start(a, req(1));
+    // The watcher waits for a quiet moment before it passes changes on: these came a second before the search.
+    ipc.filesChanged('/p/a', false, Date.now() - 1_000);
+    expect(a.events).toEqual([]);
+    ipc.filesChanged('/p/a', false, Date.now());
+    expect(a.events).toEqual([{ kind: 'stale', searchId: 1 }]);
   });
 
   test('a change only to files the search leaves out (ignored ones) tells only searches that include them', () => {

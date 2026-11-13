@@ -127,6 +127,28 @@ describe('compileSearch', () => {
     expect(c.ranges('aa')).toEqual([[0, 1], [1, 2]]);
     expect(c.ranges('ba')).toEqual([[1, 2]]);
   });
+
+  it('stops at the number of matches asked for: a minified line\'s millions of matches are never all built', () => {
+    // Plain over ASCII, plain over other text (the per-character path), whole word, regex: the first `max`, as without one.
+    const cases: [SearchSpec, string][] = [
+      [spec('a'), 'a'.repeat(1_000_000)],
+      [spec('é'), 'é'.repeat(200_000)],
+      [spec('ab', { wholeWord: true }), 'ab '.repeat(300_000)],
+      [spec('a', { regex: true }), 'a'.repeat(1_000_000)],
+      [spec('a', { regex: true, wholeWord: true }), 'a '.repeat(500_000)],
+    ];
+    for (const [s, line] of cases) {
+      const c = compileSearch(s);
+      if (c.kind !== 'ok') throw new Error('not ok');
+      const all = c.ranges(line.slice(0, 600));
+      expect(c.ranges(line, 7)).toEqual(all.slice(0, 7));
+      expect(c.ranges(line, 1)).toEqual(all.slice(0, 1));
+      expect(c.ranges(line.slice(0, 600), 10_000)).toEqual(all);
+    }
+    // Nothing asked: nothing built.
+    const c = compileSearch(spec('a'));
+    if (c.kind === 'ok') expect(c.ranges('aaa', 0)).toEqual([]);
+  });
 });
 
 describe('lineResult', () => {

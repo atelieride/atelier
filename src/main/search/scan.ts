@@ -1,10 +1,11 @@
 import { isUtf8 } from 'node:buffer';
 import { createReadStream } from 'node:fs';
-import { open, readFile, realpath, stat } from 'node:fs/promises';
+import { open, readFile, stat } from 'node:fs/promises';
 import { StringDecoder } from 'node:string_decoder';
 import { isGitDirName, isInside, splitPath } from '@shared/paths';
 import type { SearchLine } from '@shared/search';
-import { lineResult } from '@shared/search-match';
+import { lineResult, type LineRanges } from '@shared/search-match';
+import { realOutAsync } from '../cpath';
 import { BINARY_SNIFF_BYTES, binaryHead, utf16Text } from '../fs/files';
 
 export interface ScanLimits {
@@ -24,7 +25,7 @@ export type ScanResult =
   | { kind: 'binary' }
   | { kind: 'skipped'; size: number; reason: 'too-large' | 'unreadable' };
 
-type Ranges = (line: string) => [number, number][];
+type Ranges = LineRanges;
 
 /** Matches found so far in one file, within the search's remaining budget. */
 class Collector {
@@ -48,9 +49,10 @@ class Collector {
     this.lineNo++;
     if (this.truncated) return false;
     const text = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
-    let found = this.ranges(text);
-    if (found.length === 0) return true;
     const room = this.budget - this.count;
+    // One match past the room left is enough to know the budget cuts this line.
+    let found = this.ranges(text, Math.max(0, room) + 1);
+    if (found.length === 0) return true;
     if (room <= 0) {
       this.truncated = true;
       return false;
@@ -170,12 +172,13 @@ async function head(path: string): Promise<Buffer> {
 /**
  * Searches one file the way the editor would show it (UTF-8, UTF-16 with a byte order mark, else Latin-1).
  * The file's real path must stay inside `realRoot` and outside `.git`; anything else, a deleted file or a
- * non-regular file is `none`. A cancelled scan is `none` too.
+ * non-regular file is `none`. A cancelled scan is `none` too. The real path follows the rule `realRoot` was resolved
+ * with (realOutAsync): on Windows a project on a subst or mapped drive keeps that drive, for its root and its files.
  */
 export async function scanFile(path: string, ranges: Ranges, limits: ScanLimits, budget: number, cancelled: () => boolean, realRoot: string): Promise<ScanResult> {
   let real: string;
   try {
-    real = await realpath(path);
+    real = await realOutAsync(path);
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
     return code === 'ENOENT' || code === 'ENOTDIR' ? { kind: 'none' } : { kind: 'skipped', size: 0, reason: 'unreadable' };

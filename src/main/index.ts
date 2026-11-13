@@ -1364,7 +1364,7 @@ if (!app.requestSingleInstanceLock()) {
       isTrusted: (e) => isAppUrl(e.senderFrame?.url ?? ''),
       workerPath: join(__dirname, 'search-worker.js')
     });
-    gitHub.onFilesChanged = (root, ignoredOnly) => findInFiles.filesChanged(root, ignoredOnly);
+    gitHub.onFilesChanged = (root, ignoredOnly, last) => findInFiles.filesChanged(root, ignoredOnly, last);
     scmHub.installIpc((id) => windowProjects.get(id) ?? null, (e) => isAppUrl(e.senderFrame?.url ?? ''));
     // Git writes: project windows' app pages only (a tab pop-out has no commit drawer, no sheets).
     gitOps.installIpc((id) => (isPopoutWindow(windowsView, id) ? null : windowProjects.get(id) ?? null), (e) => isAppUrl(e.senderFrame?.url ?? ''),

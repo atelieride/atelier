@@ -144,6 +144,19 @@ test('Debouncer: a burst becomes a single delivery with all the keys', () => {
   vi.useRealTimers();
 });
 
+test('Debouncer: a delivery says when its last key came (later than its first, earlier than the delivery)', () => {
+  vi.useFakeTimers();
+  const got: [Set<string>, number][] = [];
+  const d = new Debouncer(300, (k, last) => got.push([k, last]));
+  const t0 = Date.now();
+  d.add('a');
+  vi.advanceTimersByTime(120);
+  d.add('b');
+  vi.advanceTimersByTime(300);
+  expect(got).toEqual([[new Set(['a', 'b']), t0 + 120]]);
+  vi.useRealTimers();
+});
+
 test('Debouncer with max wait: continuous writes do not block delivery', () => {
   vi.useFakeTimers();
   const got: Set<string>[] = [];

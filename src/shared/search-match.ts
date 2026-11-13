@@ -3,8 +3,14 @@
 import { CharCategory, EditorState, findClusterBreak } from '@codemirror/state';
 import type { SearchLine, SearchSpec } from './search';
 
+/**
+ * A line's matches, in order, the first `max` of them at most (all when left out): a caller with a budget never has
+ * the millions of matches of a minified line built only to throw them away.
+ */
+export type LineRanges = (line: string, max?: number) => [number, number][];
+
 export type Compiled =
-  | { kind: 'ok'; ranges(line: string): [number, number][] }
+  | { kind: 'ok'; ranges: LineRanges }
   | { kind: 'empty' | 'invalid' | 'multiline' };
 
 // The editor's regex flags: multiline and unicode, plus case-insensitive when match case is off.
@@ -63,12 +69,14 @@ function validRegExp(source: string): boolean {
   }
 }
 
-function regexRanges(re: RegExp, wholeWord: boolean): (line: string) => [number, number][] {
+function regexRanges(re: RegExp, wholeWord: boolean): LineRanges {
   const cat = wordCategory();
-  return (line) => {
+  return (line, max = Infinity) => {
     const out: [number, number][] = [];
     re.lastIndex = 0;
-    for (let m = re.exec(line); m; m = re.exec(line)) {
+    while (out.length < max) {
+      const m = re.exec(line);
+      if (!m) break;
       const from = m.index;
       const to = from + m[0].length;
       if (to === from) {
@@ -95,18 +103,19 @@ function norm(caseOff: boolean, text: string): string {
  * lower-cased when match case is off) one code point at a time, so a character that expands to several still maps
  * back to its own place in the line; matches don't overlap.
  */
-function stringRanges(unquoted: string, matchCase: boolean, wholeWord: boolean): (line: string) => [number, number][] {
+function stringRanges(unquoted: string, matchCase: boolean, wholeWord: boolean): LineRanges {
   const query = norm(!matchCase, unquoted);
   const cat = wordCategory();
   // NFKD and lower-casing leave ASCII alone, one unit for one unit: when the query and the line are both ASCII the
   // normalisation changes nothing and a plain `indexOf` finds exactly the same matches.
   const asciiQuery = ASCII_ONLY.test(query);
   const needle = matchCase ? query : query.toLowerCase();
-  return (line) => {
+  return (line, max = Infinity) => {
     const out: [number, number][] = [];
+    if (max <= 0) return out;
     if (asciiQuery && ASCII_ONLY.test(line)) {
       const hay = matchCase ? line : line.toLowerCase();
-      for (let at = hay.indexOf(needle); at >= 0;) {
+      for (let at = hay.indexOf(needle); at >= 0 && out.length < max;) {
         const to = at + needle.length;
         if (!wholeWord || atWordEdges(cat, line, at, to)) {
           out.push([at, to]);
@@ -153,6 +162,7 @@ function stringRanges(unquoted: string, matchCase: boolean, wholeWord: boolean):
       }
       if (found) {
         out.push(found);
+        if (out.length >= max) break;
         partials = [];
       }
     }
