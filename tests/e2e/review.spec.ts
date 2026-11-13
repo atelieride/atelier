@@ -66,11 +66,14 @@ test('Review Session lists only its files; Review All shows dots and the two-ses
     await expect(view.locator('.cm-diff-del')).toHaveCount(1);
     await expect(view.locator('.cm-diff-add')).toHaveCount(2);
     await expect(view.locator('.rv-file .cm-content')).not.toContainText('const a15 = 15;');
-    // Line numbers stay level with their lines below the hunk headers.
-    const top = (l: ReturnType<Page['locator']>) => l.evaluate((el) => el.getBoundingClientRect().top);
-    const numberTop = await top(view.locator('.cm-diff-numbers .cm-gutterElement', { hasText: /^29$/ }));
-    const lineTop = await top(view.locator('.cm-line', { hasText: 'const a29 = 29;' }));
-    expect(Math.abs(numberTop - lineTop)).toBeLessThan(2);
+    // Line numbers stay level with their lines below the hunk headers. Until CodeMirror's first measure (a frame
+    // later, longer under load) the gutter stands on estimated heights, so the two are read together until level.
+    const drift = () => view.locator('.rv-file').evaluate((file) => {
+      const number = [...file.querySelectorAll('.cm-diff-numbers .cm-gutterElement')].find((el) => el.textContent === '29');
+      const line = [...file.querySelectorAll('.cm-line')].find((el) => el.textContent === 'const a29 = 29;');
+      return number && line ? Math.abs(number.getBoundingClientRect().top - line.getBoundingClientRect().top) : Infinity;
+    });
+    await expect.poll(drift, { timeout: 5000 }).toBeLessThan(2);
     await look(win, `${SHOTS}/review-session.png`);
 
     // A second session touches the same file: Review All (Changes header) shows both dots and the warning.
