@@ -557,6 +557,12 @@ test('a notice that arrives once rows are on screen sits right under the last of
   expect(at.y - (last.y + last.height)).toBeLessThan(40);
   await expect(line).toHaveText('Files changed since this search · Refresh');
   await look(view(), 'test-results/find-in-files-stale.png', { settle: 200 });
+  // A match dismissed first: the rows on screen stay until the refreshed search's own replace them, and with them it
+  // comes back, so the count says when they have (its files listed by then).
+  const m = matchRows('src/auth/tokens.ts').first();
+  await m.hover();
+  await m.getByRole('button', { name: 'Dismiss' }).click();
+  await expect(totals()).toHaveText('13 results in 3 files');
   await line.getByRole('button', { name: 'Refresh' }).click();
   await expect(line).toHaveCount(0);
   await expect(totals()).toHaveText('14 results in 3 files');
@@ -996,6 +1002,13 @@ test('F4 in a pop-out: its project window walks the results; one in the pop-out\
   await expect(win.locator('.palette-input')).toBeFocused();
   await win.keyboard.press('Escape');
   await expect(win.locator('.palette-input')).toHaveCount(0);
+  // F4 from the pop-out once more, nothing opened in the project window this time: shown there, its editor takes the
+  // keyboard.
+  await pop.locator('.cm-content').focus();
+  await pop.keyboard.press('F4');
+  await expect(selectedRow()).toHaveAttribute('data-rel', 'src/auth/tokens.ts');
+  await expect.poll(strongLine).toBe('export class TokenStore {');
+  await expect(content()).toBeFocused();
   // View › Find in Files given in the pop-out runs in the project window: a selection the user left in an editor there
   // is not the query (the user is in the pop-out).
   await content().focus();

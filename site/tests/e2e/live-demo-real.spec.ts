@@ -987,13 +987,21 @@ test.describe('the real demo', () => {
     await expect(field).toBeFocused();
     await field.fill('TokenStore');
     await expect(app(page).locator('.fif-summary .fif-totals')).toHaveText(/^\d+ results in 2 files$/);
+    // In path order: src/auth/session.ts, then src/auth/tokens.ts.
     const files = app(page).locator('.fif-row.is-file .fif-name');
-    await expect(files).toHaveCount(2);
-    await expect(files.filter({ hasText: 'session.ts' })).toHaveCount(1);
-    await expect(files.filter({ hasText: 'tokens.ts' })).toHaveCount(1);
-    await app(page).locator('.fif-row.is-match').first().click();
-    await expect(app(page).locator('.tab.is-active')).toContainText(/session\.ts|tokens\.ts/);
-    await expect.poll(() => demoFrame(page).evaluate(() => window.getSelection()?.toString() ?? '')).toBe('TokenStore');
+    await expect(files).toHaveText([/^session\.ts/, /^tokens\.ts/]);
+    // The first result: session.ts's import, line 1.
+    const first = app(page).locator('.fif-row.is-match').first();
+    await expect(first).toHaveAttribute('data-rel', 'src/auth/session.ts');
+    await expect(first).toHaveAttribute('data-line', '1');
+    await first.click();
+    await expect(app(page).locator('.tab.is-active')).toContainText('session.ts');
+    // The editor's selection holds the match: the strong mark is drawn on the occurrence the selection holds, whether
+    // or not the editor has the keyboard (here it has not: the page around the frame has it).
+    await blurDemo(page);
+    const strong = app(page).locator('.file-view:visible .cm-fif-hit-strong');
+    await expect(strong).toHaveText('TokenStore');
+    await expect.poll(() => strong.evaluate((el) => el.closest('.cm-line')?.textContent ?? '')).toBe("import { TokenStore } from './tokens';");
     expect(w.console).toEqual([]);
   });
 });
