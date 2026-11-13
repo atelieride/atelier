@@ -66,9 +66,14 @@ export function installUpdates(home: string, trusted: (e: IpcMainInvokeEvent) =>
   const updatesDir = join(home, 'updates');
   const watcher = appPath ? new UpdateWatcher({
     appPath, stagedPath: join(updatesDir, 'Atelier.app'), protocol: PROTOCOL_VERSION, exec: run,
-    spawnHelper: (args) => spawn('/bin/sh', ['-c', SWAP_SCRIPT, 'sh', ...args], { detached: true, stdio: 'ignore' }).unref(),
+    spawnHelper: (args, onExit) => {
+      const helper = spawn('/bin/sh', ['-c', SWAP_SCRIPT, 'sh', ...args], { detached: true, stdio: 'ignore' });
+      helper.once('exit', onExit).once('error', onExit);
+      helper.unref();
+    },
     quit: () => quitForUpdate(o),
-    canWrite
+    canWrite,
+    log: o.log
   }) : null;
 
   const broadcast = (channel: string, value: unknown) => { for (const b of BrowserWindow.getAllWindows()) b.webContents.send(channel, value); };

@@ -159,13 +159,54 @@ test('if /Applications is not writable the app is not closed for nothing', async
   expect(calls.some((c) => c[0] === 'spawn' || c[0] === 'quit')).toBe(false);
 });
 
-test('double click on Restart: a single helper', async () => {
+test('double click on Restart: a single helper, and the second click shares the first one\'s answer (no failure)', async () => {
   const { app, staged } = fakeApps();
   const calls: string[][] = [];
   const w = new UpdateWatcher(deps(app, staged, calls));
   const [a, b] = await Promise.all([w.apply(), w.apply()]);
-  expect([a, b].filter(Boolean)).toHaveLength(1);
+  expect([a, b]).toEqual([true, true]);
   expect(calls.filter((c) => c[0] === 'spawn')).toHaveLength(1);
+  expect(calls.filter((c) => c[0] === 'quit')).toHaveLength(1);
+});
+
+test('a quit called off (or stuck) leaves Restart working: the next click quits again, with the helper still waiting', async () => {
+  const { app, staged } = fakeApps();
+  const calls: string[][] = [];
+  const w = new UpdateWatcher(deps(app, staged, calls));
+  expect(await w.apply()).toBe(true);
+  // The app is still running (a sheet cancelled the quit, a page hung): Restart again.
+  expect(await w.apply()).toBe(true);
+  // One helper only: two would race on the same bundle when the app finally quits.
+  expect(calls.filter((c) => c[0] === 'spawn')).toHaveLength(1);
+  expect(calls.filter((c) => c[0] === 'quit')).toHaveLength(2);
+});
+
+test('once the helper gave up waiting (the app did not quit in time), the next Restart starts a new one', async () => {
+  const { app, staged } = fakeApps();
+  const calls: string[][] = [];
+  const exits: (() => void)[] = [];
+  const w = new UpdateWatcher(deps(app, staged, calls, { spawnHelper: (_args, onExit) => { calls.push(['spawn']); exits.push(onExit); } }));
+  expect(await w.apply()).toBe(true);
+  exits[0]!();
+  expect(await w.apply()).toBe(true);
+  expect(calls.filter((c) => c[0] === 'spawn')).toHaveLength(2);
+});
+
+test('a Restart that cannot apply the update says why in the log', async () => {
+  const { app, staged } = fakeApps();
+  const logged: string[] = [];
+  const log = (m: string) => { logged.push(m); };
+  expect(await new UpdateWatcher(deps(app, staged, [], { canWrite: () => false, log })).apply()).toBe(false);
+  expect(logged.pop()).toMatch(/^update not applied: .*not writable/);
+  const failing = deps(app, staged, [], {
+    log,
+    exec: async (_cmd, args) => { if (args.includes('--verify')) throw new Error('code object is not signed at all'); return 'designated => identifier "x" and certificate root = H"1"\n'; }
+  });
+  expect(await new UpdateWatcher(failing).apply()).toBe(false);
+  expect(logged.pop()).toMatch(/^update not applied: .*signature.*code object is not signed at all/);
+  setHelper(staged, 'helper-v2');
+  expect(await new UpdateWatcher(deps(app, staged, [], { log })).apply()).toBe(false);
+  expect(logged.pop()).toMatch(/^update not applied: /);
 });
 
 test('if the swap fails the helper puts the old app back and reopens it anyway', () => {

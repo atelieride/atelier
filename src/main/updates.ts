@@ -109,14 +109,20 @@ export interface UpdateDeps {
   protocol: number;
   /** Runs a command and returns stdout and stderr together; rejects if it exits with an error. */
   exec(cmd: string, args: string[]): Promise<string>;
-  spawnHelper(args: string[]): void;
+  /** Starts SWAP_SCRIPT detached; `onExit` once it has ended (swapped, or given up because the app did not quit). */
+  spawnHelper(args: string[], onExit: () => void): void;
   quit(): void;
   /** Can we write here (app folder and app)? Otherwise the swap would fail after the app has quit. */
   canWrite(path: string): boolean;
+  /** One line in the app's log: why a Restart could not apply the update. */
+  log?(message: string): void;
 }
 
 export class UpdateWatcher {
-  private applying = false;
+  /** The Restart being checked: a second click meanwhile gets the same answer, never a failure of its own. */
+  private applying: Promise<boolean> | null = null;
+  /** A helper is waiting for this app to quit: a Restart after a quit called off quits again, without a second one. */
+  private helperWaiting = false;
   /** Signing requirement of the installed app: undefined until read, null with an ad-hoc signature (never updatable). */
   private req: string | null | undefined;
 
@@ -136,23 +142,30 @@ export class UpdateWatcher {
   }
 
   /** Checks signature and protocol, launches the helper and quits the app; false if the update cannot be applied. */
-  async apply(): Promise<boolean> {
-    // Only one helper even with multiple clicks (signature verification takes a few seconds).
-    if (this.applying) return false;
-    this.applying = true;
+  apply(): Promise<boolean> {
+    // Signature verification takes a few seconds: clicks meanwhile wait for the same answer.
+    this.applying ??= this.check().finally(() => { this.applying = null; });
+    return this.applying;
+  }
+
+  private async check(): Promise<boolean> {
+    const refuse = (why: string) => { this.o.log?.(`update not applied: ${why}`); return false; };
+    if (this.req === undefined) await this.init();
+    const req = this.req;
+    if (!req) return refuse('the running app has no usable signing requirement');
+    if (!this.ready()) return refuse('the staged build is not newer, speaks another protocol or has another spawn-helper');
+    if (!this.o.canWrite(dirname(this.o.appPath)) || !this.o.canWrite(this.o.appPath)) return refuse(`${this.o.appPath} or its folder is not writable`);
     try {
-      if (this.req === undefined) await this.init();
-      const req = this.req;
-      if (!req || !this.ready() || !this.o.canWrite(dirname(this.o.appPath)) || !this.o.canWrite(this.o.appPath)) {
-        this.applying = false;
-        return false;
-      }
       await this.o.exec('/usr/bin/codesign', ['--verify', '--deep', '--strict', '--test-requirement', `=${req}`, this.o.stagedPath]);
-    } catch {
-      this.applying = false;
-      return false;
+    } catch (err) {
+      return refuse(`the staged build's signature does not match the running app: ${(err as Error).message}`);
     }
-    this.o.spawnHelper([String(process.pid), this.o.stagedPath, this.o.appPath, LSREGISTER, '/usr/bin/open', '120']);
+    // A quit called off (a sheet cancelled, a page that hung) leaves the helper waiting for this app: quit again, and
+    // let that one swap. A second helper would race the first on the same bundle once the app quits.
+    if (!this.helperWaiting) {
+      this.helperWaiting = true;
+      this.o.spawnHelper([String(process.pid), this.o.stagedPath, this.o.appPath, LSREGISTER, '/usr/bin/open', '120'], () => { this.helperWaiting = false; });
+    }
     this.o.quit();
     return true;
   }
