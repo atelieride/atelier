@@ -74,6 +74,9 @@ test('sessions: a row dropped above another stays there after a reload; a caret 
     await row('Alfa').dispatchEvent('dragover', { dataTransfer: dt, clientX: alfa.x + 40, clientY: alfa.y + 4 });
     await expect(row('Alfa')).toHaveClass(/\bis-caret-before\b/);
     await expect(row('Beta')).toHaveClass(/\bis-dragging\b/);
+    // Dimmed for real, rows that entered with their entrance motion included (it holds the row's own opacity at 1).
+    await expect(row('Beta').locator('.row-main')).toHaveCSS('opacity', '0.55');
+    await expect(row('Alfa').locator('.row-main')).toHaveCSS('opacity', '1');
     expect(await boxes()).toEqual(before);
     await look(win.locator('.sidebar'), 'test-results/row-order-caret.png');
     // At the sidebar's narrowest the caret stays inside it, between the rows.
