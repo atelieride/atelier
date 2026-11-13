@@ -253,7 +253,11 @@ test('activities: Close with Move and with Stop; the setting off and on; a reloa
     await expect(confirm).toContainText('Okta mock is running.');
     await expect(confirm).toContainText('Moving them puts their tabs back in Workspace 1.');
     await look(confirm, `${SHOTS}/ws-activities-close.png`);
-    await win.keyboard.press('Enter');
+    // Move is the default: it has the keyboard, so Enter stops nothing (an Enter right as it appears is swallowed on
+    // purpose: the click answers here).
+    const moveThem = confirm.getByRole('button', { name: /Move them to Workspace 1/ });
+    await expect(moveThem).toBeFocused();
+    await moveThem.click();
     await expect(act(win, 'SSO')).toHaveCount(0);
     await expect(group(win, 'Workspace 1').locator('.ws-own .term-row', { hasText: 'Okta mock' })).toBeVisible();
     expect(await api(win)).toHaveLength(3);
