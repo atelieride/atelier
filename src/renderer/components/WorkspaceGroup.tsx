@@ -11,6 +11,8 @@ import { newTerminalIn } from '../launch';
 import { kbd } from '../kbd';
 import { openBelow, sessionPlusMenu } from '../menus';
 import { ACT_MIME, ROW_MIME, fromType, placeDrop, type PlaceTarget } from '../place-drop';
+import { REORDER_MIME, useReorder } from '../reorder-drag';
+import type { Band } from '../row-order';
 
 /**
  * Its own rows' zone in an open workspace that has activities: rows (and tabs from the strip) dropped there join its
@@ -54,18 +56,28 @@ export function usePlaceDrop(target: PlaceTarget): { dropping: boolean; handlers
   return { dropping: tab || over, handlers: { onDragOver, onDragLeave, onDrop } };
 }
 
-/** Props that make a sidebar row draggable onto a workspace's head; none while workspaces are off (rows behave as today). */
-export function useRowDrag(id: string): { draggable?: true; onDragStart?: (e: DragEvent) => void } {
+/**
+ * Props that make a sidebar row draggable: onto another place (a workspace's head, an activity) while workspaces are on,
+ * and inside its band (`band`: the rows it can be put among) for a reorder. Neither: not draggable.
+ */
+export function useRowDrag(id: string, band?: Band): { draggable?: true; onDragStart?: (e: DragEvent) => void; onDragEnd?: () => void } {
   const on = useApp((s) => !!s.ws?.on && !s.popout);
-  if (!on) return {};
+  if (!on && !band) return {};
   return {
     draggable: true,
     onDragStart: (e) => {
-      e.dataTransfer.setData(ROW_MIME, id);
-      const ws = useApp.getState().ws;
-      if (ws) e.dataTransfer.setData(fromType(memberOf(ws, id)), '');
+      if (on) {
+        e.dataTransfer.setData(ROW_MIME, id);
+        const ws = useApp.getState().ws;
+        if (ws) e.dataTransfer.setData(fromType(memberOf(ws, id)), '');
+      }
+      if (band) {
+        e.dataTransfer.setData(REORDER_MIME, id);
+        useReorder.getState().start(id);
+      }
       e.dataTransfer.effectAllowed = 'move';
-    }
+    },
+    onDragEnd: () => useReorder.getState().end()
   };
 }
 

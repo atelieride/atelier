@@ -28,6 +28,7 @@ import { sessionRowMenu } from '../menus';
 import { nameTip } from '../names';
 import { pinnedFirst } from '../pins';
 import { arrangeUnpinned, bandAttr, bandWith, bandsOf, type Band } from '../row-order';
+import { useReorder, useReorderDrop } from '../reorder-drag';
 import { groupSessions, trackSections, type Entered, type InboxSection } from '../inbox';
 import { WorkspaceGroup, WsOwnRows, useRowClick, useRowDrag } from './WorkspaceGroup';
 import { WsActivityGroup } from './WsActivityGroup';
@@ -170,8 +171,10 @@ function TermRow({ term, selected, pinned, popped, onSelect, band }: { term: Ter
   const rowEl = useRef<HTMLDivElement>(null);
   // Its chips give way to its name; hovered or keyboard-focused, pin and close borrow room.
   useRowFit(rowEl, TERM_FIT);
-  // Workspaces on: the row can be dragged onto another workspace's head.
-  const drag = useRowDrag(term.id);
+  // Dragged inside its band (not while closing), and onto another place while workspaces are on.
+  const drag = useRowDrag(term.id, shutting ? undefined : band);
+  const dragged = useReorder((s) => s.dragging === term.id);
+  const caret = useReorder((s) => (s.caret?.id === term.id ? s.caret.edge : null));
   // ⌥-click: Open to the Side; a row of another workspace waits for a possible double-click.
   const rowClick = useRowClick(term.id, onSelect, () => setEditing(true));
   if (closing) {
@@ -196,8 +199,8 @@ function TermRow({ term, selected, pinned, popped, onSelect, band }: { term: Ter
     </>
   );
   return (
-    <div ref={rowEl} role="listitem" data-term-row={term.id} className={`term-row ${enter} ${selected ? 'is-selected' : ''} ${popped ? 'is-popped' : ''} ${shutting ? 'is-closing' : ''}`} data-tip={nameTip(term.title)}
-            {...bandAttr(band)} onContextMenu={(e) => useApp.getState().openMenu(e, sessionRowMenu(term))} {...(editing ? {} : drag)}>
+    <div ref={rowEl} role="listitem" data-term-row={term.id} className={`term-row ${enter} ${selected ? 'is-selected' : ''} ${popped ? 'is-popped' : ''} ${shutting ? 'is-closing' : ''}${dragged ? ' is-dragging' : ''}${caret ? ` is-caret-${caret}` : ''}`} data-tip={nameTip(term.title)}
+            {...bandAttr(band)} onContextMenu={(e) => useApp.getState().openMenu(e, sessionRowMenu(term, shutting ? undefined : band))} {...(editing ? {} : drag)}>
             {editing
               // While renaming, the field is not inside a button.
               ? <div className="row-main">{inner}</div>
@@ -284,6 +287,8 @@ function Sections({ terminals, toResume, entered, scope, inGroup = false, empty 
   // What a row can be dragged among: grouped by state, only Idle's rows (the other sections order themselves).
   const sessionBands = bandsOf('sessions', grouped ? groups.find((g) => g.key === 'idle')?.items ?? [] : sessions, pins);
   const shellBands = bandsOf('terminals', shells, pins);
+  const sessionDrop = useReorderDrop(sessionBands);
+  const shellDrop = useReorderDrop(shellBands);
   const queued = new Set(queue ?? []);
   const row = (x: TerminalInfo, section?: InboxSection) => <SessionRow key={x.id} term={x} selected={isFront(x.id)} pinned={pins.includes(x.id)} popped={isPopped(x.id)} onSelect={onSelect} section={section}
     band={bandWith(sessionBands, x.id) ?? undefined} />;
@@ -302,7 +307,7 @@ function Sections({ terminals, toResume, entered, scope, inGroup = false, empty 
       {grouped && sessions.length > 0 ? (
         // One list with the section heads among the rows: a row changing section is moved, not mounted again, so it
         // keeps the keyboard focus and an unfinished rename.
-        <div className="list inbox" role="list" aria-label={t.sessions}>
+        <div ref={sessionDrop.ref} className="list inbox" role="list" aria-label={t.sessions} {...sessionDrop.handlers}>
           {groups.flatMap((g) => [
             <div key={`head:${g.key}`} className={`inbox-head is-${g.key}`} role="none">
               {/* The state alone: numbers only on the macro areas' heads (2026-11-02). */}
@@ -312,7 +317,7 @@ function Sections({ terminals, toResume, entered, scope, inGroup = false, empty 
           ])}
         </div>
       ) : (
-        <div className="list" role="list" aria-label={t.sessions}>
+        <div ref={sessionDrop.ref} className="list" role="list" aria-label={t.sessions} {...sessionDrop.handlers}>
           {sessions.map((x) => row(x))}
           {sessions.length === 0 && !inGroup && <p className="empty">{t.emptySessionsBody}</p>}
         </div>
@@ -328,7 +333,7 @@ function Sections({ terminals, toResume, entered, scope, inGroup = false, empty 
           <PlusButton label={t.newTerminal} keys="⌘T" onClick={newTerminalNow} />
         </Head>
       )}
-      <div className="list" role="list" aria-label={t.terminals}>
+      <div ref={shellDrop.ref} className="list" role="list" aria-label={t.terminals} {...shellDrop.handlers}>
         {shells.map((term) => <TermRow key={term.id} term={term} selected={isFront(term.id)} pinned={pins.includes(term.id)} popped={isPopped(term.id)} onSelect={onSelect}
           band={bandWith(shellBands, term.id) ?? undefined} />)}
       </div>

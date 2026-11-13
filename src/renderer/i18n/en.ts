@@ -205,7 +205,7 @@ const strings = {
   },
   menu: {
     rename: 'Rename…', closeTab: 'Close Tab', closeSession: 'Close Session…', closeTerminal: 'Close Terminal…', closeOthers: 'Close Others', closeRight: 'Close to the Right', closeAll: 'Close All', closeFiles: 'Close Files',
-    pin: 'Pin', unpin: 'Unpin', continueOnPhone: 'Continue on Phone', reviewSession: 'Review Session', reviewAll: 'Review All Changes', commentLines: 'Comment on Lines', sendReview: (n: number) => `Send Review (${n})`, copySessionId: 'Copy Session ID', showChanges: 'Show Changes by Session', openTerminalHere: 'Open Terminal Here', reviewWorktree: 'Review Worktree', newSessionHere: 'New Session Here', newTerminalHere: 'New Terminal Here',
+    pin: 'Pin', unpin: 'Unpin', moveUp: 'Move Up', moveDown: 'Move Down', continueOnPhone: 'Continue on Phone', reviewSession: 'Review Session', reviewAll: 'Review All Changes', commentLines: 'Comment on Lines', sendReview: (n: number) => `Send Review (${n})`, copySessionId: 'Copy Session ID', showChanges: 'Show Changes by Session', openTerminalHere: 'Open Terminal Here', reviewWorktree: 'Review Worktree', newSessionHere: 'New Session Here', newTerminalHere: 'New Terminal Here',
     copyPath: 'Copy Path', copyRelPath: 'Copy Relative Path', revealInFiles: 'Reveal in Files', revealInFinder: 'Reveal in Finder', openInFinder: 'Open in Finder', openNamedInFinder: (name: string) => `Open “${name}” in Finder`,
     open: 'Open', openDiff: 'Open Diff', keepOpen: 'Keep Open', toggleFolder: 'Expand / Collapse', mention: 'Mention in Session', mentionLines: 'Mention Lines in Session',
     openToSide: 'Open to the Side', closePane: 'Unsplit', closeOtherPanes: 'Unsplit All', equalizePanes: 'Equal Widths',

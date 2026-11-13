@@ -9,6 +9,7 @@ import { t } from './i18n/en';
 import { showHistory } from './scm/actions';
 import { mentionPath, mentionTarget, type LineRange } from './mention';
 import { useApp } from './store';
+import type { Band } from './row-order';
 import { newTerminalIn } from './launch';
 import { profileSubmenu } from './profiles';
 import { isUntitled } from './untitled';
@@ -344,7 +345,21 @@ function shelfClear(): MenuItem {
   return { id: 'shelf-clear', label: t.shelf.menuClear, run: () => st().clearShelf() };
 }
 
-export function sessionRowMenu(term: TerminalInfo): MenuItem[] {
+/**
+ * Move Up / Move Down for a sidebar row inside its band (the rows it can be put among): the keyboard's way to the order
+ * a drag gives. None without a band.
+ */
+function orderItems(id: string, band: Band | undefined): MenuItem[] {
+  if (!band) return [];
+  const i = band.ids.indexOf(id);
+  return [
+    { id: 'row-up', label: m.moveUp, icon: 'arrowUp', disabled: i <= 0, run: () => st().moveRowStep(band, id, -1) },
+    { id: 'row-down', label: m.moveDown, icon: 'arrowDown', disabled: i < 0 || i >= band.ids.length - 1, run: () => st().moveRowStep(band, id, 1) }
+  ];
+}
+
+/** A sidebar row's menu; `band`: the rows it can be moved among, for Move Up / Move Down. */
+export function sessionRowMenu(term: TerminalInfo, band?: Band): MenuItem[] {
   // The chips' popover is mouse-only; this is the keyboard way in (Shift+F10 on the row).
   const background: MenuItem[] = term.session ? [{ id: 'show-background', label: t.bg.showBackground, run: () => st().openBackground({ terminalId: term.id }) }] : [];
   const key: TabKey = `t:${term.id}`;
@@ -356,7 +371,7 @@ export function sessionRowMenu(term: TerminalInfo): MenuItem[] {
       'sep', ...background, ...(background.length ? ['sep' as const] : []), ...terminalItems(term, true)
     ];
   }
-  return [sideItem(() => st().openToSide(key)), moveItem(key), ...moveToWindowItems(key), ...moveToWorkspaceItems(key), ...background, 'sep', ...terminalItems(term, true)];
+  return [sideItem(() => st().openToSide(key)), moveItem(key), ...moveToWindowItems(key), ...moveToWorkspaceItems(key), ...orderItems(term.id, band), ...background, 'sep', ...terminalItems(term, true)];
 }
 
 /** Split view: shows the tab, row or file in the pane right of the focused one (⌥-click does the same). */

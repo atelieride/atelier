@@ -111,6 +111,8 @@ export const SPECS: Record<string, Area[]> = {
   'open-any-file.spec.ts': ['files'],
   'palette-wrap.spec.ts': ['workspace'],
   'pins.spec.ts': ['sessions'],
+  // Sidebar rows dragged into your own order (Move Up/Down too), inside workspaces and activities.
+  'row-order.spec.ts': ['sessions', 'workspace'],
   'shelf.spec.ts': ['sessions', 'files', 'workspace'],
   'popout.spec.ts': ['workspace'],
   'ports.spec.ts': ['background'],
@@ -310,6 +312,8 @@ export const SOURCES: Record<string, Area[]> = {
   'src/renderer/pins.ts': ['sessions'],
   // The sidebar's own order: manual orders, bands, moves.
   'src/renderer/row-order.ts': ['sessions', 'workspace'],
+  // A row's reorder drag: the dragged id, the caret, a list's drop.
+  'src/renderer/reorder-drag.ts': ['sessions', 'workspace'],
   'src/renderer/row-fit.ts': ['sessions'],
   'src/renderer/panel-drawn.ts': ['workspace', 'changes'],
   'src/renderer/sidebar-hidden.ts': ['workspace'],

@@ -31,6 +31,7 @@ import { askMarked } from '../companion/attention';
 import { openAskFor, shownTerminals } from '../companion/actions';
 import { useRowClick, useRowDrag } from './WorkspaceGroup';
 import { bandAttr, sameBand, type Band } from '../row-order';
+import { useReorder } from '../reorder-drag';
 import { useRowFit, type RowFitParts } from '../row-fit';
 
 /**
@@ -163,8 +164,10 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
   }, [hasPorts, pending > 0, askMark, !!closing, restartAsked, avatars, automated, pinned]);
   // The title line's chips give way to the name.
   useRowFit(rowEl, SESSION_FIT);
-  // Workspaces on: the row can be dragged onto another workspace's card.
-  const drag = useRowDrag(term.id);
+  // Dragged inside its band (not while closing), and onto another place while workspaces are on.
+  const drag = useRowDrag(term.id, shutting ? undefined : band);
+  const dragged = useReorder((st) => st.dragging === term.id);
+  const caret = useReorder((st) => (st.caret?.id === term.id ? st.caret.edge : null));
   // ⌥-click: Open to the Side (split view); a row of another workspace waits for a possible double-click.
   const rowClick = useRowClick(term.id, onSelect, () => setEditing(true));
   const kept = pinned && !avatars;
@@ -191,8 +194,8 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
   // List item with side-by-side buttons (select, pin, close): never a button inside another. While
   // renaming, the field is not inside a button.
   return (
-    <div ref={rowEl} role="listitem" data-term-row={term.id} className={`session-row ${enter} ${s ? `state-${state}` : 'is-starting'} ${selected ? 'is-selected' : ''} ${s?.unread ? 'is-unread' : ''} ${popped ? 'is-popped' : ''} ${shutting ? 'is-closing' : ''} ${askMark ? 'has-ask' : ''}${avatars ? '' : ' no-avatar'}`}
-      data-tip={nameTip(term.title)} {...bandAttr(band)} onContextMenu={(e) => useApp.getState().openMenu(e, sessionRowMenu(term))} {...(editing ? {} : drag)}>
+    <div ref={rowEl} role="listitem" data-term-row={term.id} className={`session-row ${enter} ${s ? `state-${state}` : 'is-starting'} ${selected ? 'is-selected' : ''} ${s?.unread ? 'is-unread' : ''} ${popped ? 'is-popped' : ''} ${shutting ? 'is-closing' : ''} ${askMark ? 'has-ask' : ''}${avatars ? '' : ' no-avatar'}${dragged ? ' is-dragging' : ''}${caret ? ` is-caret-${caret}` : ''}`}
+      data-tip={nameTip(term.title)} {...bandAttr(band)} onContextMenu={(e) => useApp.getState().openMenu(e, sessionRowMenu(term, shutting ? undefined : band))} {...(editing ? {} : drag)}>
       {editing
         ? <div className="row-main">{inner}</div>
         // ⌥-click: Open to the Side (split view).
