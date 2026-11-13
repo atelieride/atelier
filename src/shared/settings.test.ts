@@ -408,6 +408,14 @@ test('workspaces in every project (2026-11-02): off by default (each project dec
   expect(settingsPatchSchema.safeParse({ workspacesEverywhere: true }).success).toBe(true);
 });
 
+test('activities inside workspaces: off by default, one boolean for every project', () => {
+  expect(DEFAULT_SETTINGS.wsActivities).toBe(false);
+  expect(normalizeSettings({ wsActivities: true }).wsActivities).toBe(true);
+  expect(normalizeSettings({ wsActivities: 'yes' }).wsActivities).toBe(false);
+  expect(settingsPatchSchema.safeParse({ wsActivities: true }).success).toBe(true);
+  expect(settingsPatchSchema.safeParse({ wsActivities: 1 }).success).toBe(false);
+});
+
 test('shell environment auto-reload: on by default, a boolean', () => {
   expect(DEFAULT_SETTINGS.shellEnvAutoReload).toBe(true);
   expect(normalizeSettings({ shellEnvAutoReload: false }).shellEnvAutoReload).toBe(false);

@@ -4,6 +4,7 @@ import { useApp } from '../store';
 import { t } from '../i18n/en';
 import { ConfirmPopover } from './ConfirmPopover';
 import { cardOf } from '../workspace-view';
+import { activitiesOf, workspacesOf } from '../workspaces';
 
 export function WorkspaceCloseHost() {
   const id = useApp((s) => s.wsCloseAsk);
@@ -16,10 +17,13 @@ export function WorkspaceCloseHost() {
   const revFiles = useApp((s) => s.revFiles);
   // Without atelierd's kill-resumable, stopped sessions don't come back under Resume: the button says so.
   const resumable = useApp((s) => s.daemon.closeStopAvailable !== false);
-  const i = ws && id ? ws.list.findIndex((w) => w.id === id) : -1;
-  if (!ws || !id || i === -1 || ws.list.length <= 1) return null;
-  const w = ws.list[i]!;
-  const target = ws.list[i === 0 ? 1 : i - 1]!;
+  // Its sessions and terminals move into a workspace (the one above, below for the first), never into an activity.
+  const wss = ws ? workspacesOf(ws) : [];
+  const i = id ? wss.findIndex((w) => w.id === id) : -1;
+  if (!ws || !id || i === -1 || wss.length <= 1) return null;
+  const w = wss[i]!;
+  const target = wss[i === 0 ? 1 : i - 1]!;
+  const acts = activitiesOf(ws, id).length;
   // The one in front: its live tabs, not its saved entry (which lags while it is in front).
   const card = cardOf(useApp.getState().workspacesNow() ?? ws, id, terminals, resumables, root, openFiles.map((f) => f.path), revFiles.map((f) => f.key));
   const cancel = () => useApp.getState().setWsCloseAsk(null);
@@ -31,6 +35,7 @@ export function WorkspaceCloseHost() {
       <div className="confirm-pop-text">
         <b>{title}</b>
         <span className="ws-close-body">{t.ws.closeBody(card.sessions, card.terminals, card.files, card.tabs)}</span>
+        {acts > 0 && <span className="ws-close-body">{t.wsAct.closeWsActs(acts, target.name)}</span>}
         {!resumable && card.sessions > 0 && <span className="ws-close-body">{t.ws.stopNoResume}</span>}
       </div>
       <div className="ws-close-actions">

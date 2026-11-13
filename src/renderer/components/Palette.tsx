@@ -91,15 +91,15 @@ import { servicesView, shellCommand, shellEnv } from '../features';
 import { moveToWindow, moveToWindowCommands } from '../move-window';
 import { newSessionIn } from '../launch';
 import { WorkspaceGlyph } from './WorkspaceGlyph';
-import { cardOf } from '../workspace-view';
-import { askCloseWorkspace, stepWorkspace } from '../workspace-menus';
-import type { Dot } from '../workspaces';
+import { cardOf, wsActivityCard, wsColorVar } from '../workspace-view';
+import { closeWorkspaceInFront, renameWorkspaceInFront, stepWorkspace, wsActivityCommands } from '../workspace-menus';
+import { activitiesOf, workspacesOf, type Dot } from '../workspaces';
 import { canMoveStep } from '../split';
 
 interface Item {
   key: string; kind: 'session' | 'terminal' | 'file' | 'command' | 'resume' | 'history' | 'line' | 'task' | 'workspace'; label: string; hint: string; color?: string; icon?: IconName; run: () => void;
-  /** A workspace's row: its color and state dots. */
-  ws?: { color: number; dots: Dot[] };
+  /** A workspace's row (or one of its activities', with the activity glyph): its color and state dots. */
+  ws?: { color: number; dots: Dot[]; activity?: true };
   /** ⌥Enter / ⌥-click: Open to the Side (sessions, terminals and files). */
   side?: () => void;
   /** Leads to another step of the palette (a task's actions): the palette stays open. */
@@ -611,11 +611,13 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
       ...(st.project && !st.popout && !st.settings.workspacesEverywhere ? [c('ws-toggle', t.ws.toggleCmd, st.ws?.on ? t.paletteOn : '', 'workspace', () => useApp.getState().setWorkspacesOn(!useApp.getState().ws?.on))] : []),
       ...(st.ws?.on && !st.popout ? [
         c('ws-new', t.ws.newWorkspace, kbd('⌘⌥T'), 'plus', () => setTimeout(() => useApp.getState().setWsSheet({}), 0)),
-        c('ws-rename', t.ws.rename, '', 'edit', () => { const s = useApp.getState(); s.setActivity('sessions'); if (s.ws) s.setWsRenaming(s.ws.active); }),
-        c('ws-close', t.ws.close, '', 'x', () => { const s = useApp.getState(); if (s.ws) { s.setActivity('sessions'); askCloseWorkspace(s.ws.active); } }),
+        c('ws-rename', t.ws.rename, '', 'edit', renameWorkspaceInFront),
+        c('ws-close', t.ws.close, '', 'x', closeWorkspaceInFront),
         c('ws-next', t.ws.nextCmd, '', 'chevronDown', () => stepWorkspace(1)),
         c('ws-prev', t.ws.prevCmd, '', 'chevronUp', () => stepWorkspace(-1))
       ] : []),
+      // Activities: New Activity… while they are on, their switch while workspaces are on.
+      ...wsActivityCommands().map((x) => c(x.key, x.label, x.hint, x.icon, x.run)),
       c('restart', t.cmd.restartDaemon, '', 'resume', () => void window.atelier.restartDaemon()),
       // Same as Atelier › Check for Updates…: the check runs in main, Settings › About shows its progress. On Windows
       // only where the Microsoft Store can be asked.
@@ -852,7 +854,9 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
                       ? <span className="palette-cmd is-account"><i className="palette-account-dot" style={{ '--acct': `var(--person-${it.dot})` } as CSSProperties} /></span>
                       : <span className="palette-cmd"><Icon name={it.icon ?? 'chevron'} size={11} stroke={2} /></span>)}
                     {it.kind === 'terminal' && <span className="palette-cmd"><Icon name="terminal" size={11} stroke={2} /></span>}
-                    {it.kind === 'workspace' && (it.ws ? <WorkspaceGlyph color={it.ws.color} size={18} /> : <span className="palette-cmd"><Icon name="plus" size={11} stroke={2} /></span>)}
+                    {it.kind === 'workspace' && (it.ws?.activity
+                      ? <span className="palette-wsa-glyph" style={{ color: wsColorVar(it.ws.color) }}><Icon name="wsActivity" size={18} stroke={1.5} /></span>
+                      : it.ws ? <WorkspaceGlyph color={it.ws.color} size={18} /> : <span className="palette-cmd"><Icon name="plus" size={11} stroke={2} /></span>)}
                     {it.kind === 'history' && <span className="palette-cmd is-conv"><Icon name="sessions" size={11} stroke={2} /></span>}
                     <span className={`palette-label ${it.conv ? 'is-conv' : ''}`} data-tip={it.conv && it.conv.prompt !== it.label ? it.conv.prompt : undefined}>{it.label}</span>
                     {it.configDir && <AccountChip configDir={it.configDir} />}
@@ -949,10 +953,11 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
  * project (another project's opens that project), ⌘↵ sends it now, ⌘⌫ deletes it (Undo in the toast).
  */
 /**
- * "#": the workspaces in order; Enter goes there, ⌥Enter moves the tab in front there, ⌘Enter
- * starts a session in it. A name no workspace has offers New Workspace "name" (it starts with a Claude session).
+ * "#": the workspaces in order and, under each, its activities ("Workspace › Activity", while activities are on);
+ * Enter goes there (a workspace: where it was left), ⌥Enter moves the tab in front there, ⌘Enter starts a session in
+ * it. A name no workspace has offers New Workspace "name" (it starts with a Claude session).
  */
-function workspaceSections(text: string): Group[] {
+export function workspaceSections(text: string): Group[] {
   const s = useApp.getState();
   if (!s.ws?.on || s.popout || !s.project) return [{ title: t.ws.palette, items: [], empty: t.ws.paletteOff }];
   const ws = s.workspacesNow() ?? s.ws;
@@ -960,20 +965,31 @@ function workspaceSections(text: string): Group[] {
   const files = s.openFiles.map((f) => f.path);
   // Files at a commit count as what a workspace holds too, as the sidebar's cards count them.
   const tabs = s.revFiles.map((f) => f.key);
-  const rows: Item[] = ws.list.map((w, i) => {
+  const wss = workspacesOf(ws);
+  const place = (id: string, go: () => void): Pick<Item, 'run' | 'side' | 'send'> => ({
+    run: go,
+    side: () => { const st = useApp.getState(); const k = st.activeKey(); if (k) st.moveToWorkspace(k, id); },
+    send: () => { useApp.getState().switchWorkspace(id); void newSessionIn(''); }
+  });
+  const rows: Item[] = wss.flatMap((w, i): Item[] => {
     const card = cardOf(ws, w.id, s.terminals, s.resumables, root, files, tabs);
     const hint = [card.folder ?? '', i < 9 ? kbd(`⌘⌥${i + 1}`) : ''].filter(Boolean).join(' · ');
-    return {
-      key: `ws-${w.id}`, kind: 'workspace', label: w.name, hint, ws: { color: w.color, dots: card.dots },
-      run: () => useApp.getState().switchWorkspace(w.id),
-      side: () => { const st = useApp.getState(); const k = st.activeKey(); if (k) st.moveToWorkspace(k, w.id); },
-      send: () => { useApp.getState().switchWorkspace(w.id); void newSessionIn(''); }
-    };
+    const acts = s.settings.wsActivities ? activitiesOf(ws, w.id) : [];
+    return [
+      { key: `ws-${w.id}`, kind: 'workspace', label: w.name, hint, ws: { color: w.color, dots: card.dots }, ...place(w.id, () => useApp.getState().goToWorkspace(w.id)) },
+      ...acts.map((a): Item => {
+        const ac = wsActivityCard(ws, a.id, s.terminals, s.resumables, root, files, tabs);
+        return {
+          key: `ws-${a.id}`, kind: 'workspace', label: t.wsAct.path(w.name, a.name), hint: '', ws: { color: w.color, dots: ac.dots, activity: true },
+          ...place(a.id, () => useApp.getState().switchWorkspace(a.id))
+        };
+      })
+    ];
   });
   const shown = fuzzyFilter(rows, text, (r) => r.label, 30);
   const name = text.trim();
-  const exact = ws.list.some((w) => w.name.toLowerCase() === name.toLowerCase());
-  const create: Item[] = name && !exact && ws.list.length < 20 ? [{
+  const exact = wss.some((w) => w.name.toLowerCase() === name.toLowerCase());
+  const create: Item[] = name && !exact && wss.length < 20 ? [{
     key: 'ws-new', kind: 'workspace', label: t.ws.newNamed(name), hint: t.ws.newNamedHint,
     run: () => { if (useApp.getState().newWorkspace({ name })) void newSessionIn(''); }
   }] : [];

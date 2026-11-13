@@ -28,9 +28,10 @@ import { sessionRowMenu } from '../menus';
 import { nameTip } from '../names';
 import { pinnedFirst } from '../pins';
 import { groupSessions, trackSections, type Entered, type InboxSection } from '../inbox';
-import { WorkspaceGroup, useRowClick, useRowDrag } from './WorkspaceGroup';
-import { cardOf, inWorkspace, resumablesIn } from '../workspace-view';
-import { isOpen, type WorkspacesState } from '../workspaces';
+import { WorkspaceGroup, WsOwnRows, useRowClick, useRowDrag } from './WorkspaceGroup';
+import { WsActivityGroup } from './WsActivityGroup';
+import { cardOf, inWorkspace, resumablesIn, wsActivityCard } from '../workspace-view';
+import { activitiesOf, isOpen, workspaceOf, workspacesOf, type WorkspacesState } from '../workspaces';
 import { kbd } from '../kbd';
 import { newTerminalIn } from '../launch';
 import { openBelow, openNewMenu, sessionPlusMenu } from '../menus';
@@ -105,10 +106,11 @@ function ResumeRun() {
   );
 }
 
-/** The Resume section's head: Pinned (when a pinned session waits) and All. */
-function ResumeHead({ count, pinned }: { count: number; pinned: number }) {
+/** The Resume section's head: Pinned (when a pinned session waits) and All; inside an activity (`place`), its sessions. */
+function ResumeHead({ count, pinned, place }: { count: number; pinned: number; place?: string }) {
   const bulk = useApp((s) => s.bulkResume);
-  const dismissAsk = useApp((s) => s.dismissAllAsk);
+  // Dismiss All… asks in the Resume head of the place it was asked for.
+  const dismissAsk = useApp((s) => s.dismissAllAsk && s.dismissAllPlace === (place ?? null));
   const st = useApp.getState;
   if (dismissAsk && !bulk) {
     return (
@@ -135,11 +137,11 @@ function ResumeHead({ count, pinned }: { count: number; pinned: number }) {
       {count > 0 && <span className="count mono">{count}</span>}
       <span className="grow" />
       {pinned > 0 && (
-        <button type="button" className="resume-pill" data-tip={t.resumePinnedTip} aria-label={t.resumePinnedTip} onClick={() => void st().resumeAll('pinned')}>
+        <button type="button" className="resume-pill" data-tip={t.resumePinnedTip} aria-label={t.resumePinnedTip} onClick={() => void st().resumeAll('pinned', place)}>
           <Icon name="pin" size={11} stroke={1.8} />{t.resumePinned}<span className="mono">{pinned}</span>
         </button>
       )}
-      <button type="button" className="resume-pill is-all" data-tip={t.resumeAllTip} aria-label={t.resumeAllTip} onClick={() => void st().resumeAll('all')}>
+      <button type="button" className="resume-pill is-all" data-tip={t.resumeAllTip} aria-label={t.resumeAllTip} onClick={() => void st().resumeAll('all', place)}>
         <Icon name="resume" size={11} stroke={1.8} />{t.resumeAll}
       </button>
     </div>
@@ -244,7 +246,13 @@ const newMenuAt = (e: React.MouseEvent<HTMLButtonElement>) => {
  * with workspaces off. In a workspace's group the same rows without the Sessions and Terminals
  * labels, the Resume head only from two rows to resume, and a line when there is nothing at all.
  */
-function Sections({ terminals, toResume, entered, scope, inGroup = false }: { terminals: TerminalInfo[]; toResume: Resumable[]; entered: Map<string, Map<string, Entered>>; scope: string; inGroup?: boolean }) {
+/**
+ * A list's sections. In a group: `empty` is what an empty one says (null: nothing), `place` the activity whose Resume
+ * head acts on its own sessions.
+ */
+function Sections({ terminals, toResume, entered, scope, inGroup = false, empty = t.ws.groupEmpty, place }: {
+  terminals: TerminalInfo[]; toResume: Resumable[]; entered: Map<string, Map<string, Entered>>; scope: string; inGroup?: boolean; empty?: string | null; place?: string;
+}) {
   // Launched as sessions and still starting: listed (and drawn) as sessions, never under Terminals.
   const starting = useApp((s) => s.starting);
   // The selected row is the tab in front, as in the tab bar: a file or another view in front leaves every row plain
@@ -273,7 +281,7 @@ function Sections({ terminals, toResume, entered, scope, inGroup = false }: { te
   const queued = new Set(queue ?? []);
   const row = (x: TerminalInfo, section?: InboxSection) => <SessionRow key={x.id} term={x} selected={isFront(x.id)} pinned={pins.includes(x.id)} popped={isPopped(x.id)} onSelect={onSelect} section={section} />;
   const nothing = sessions.length === 0 && shells.length === 0 && toResume.length === 0 && queue === undefined;
-  if (inGroup && nothing) return <p className="ws-none">{t.ws.groupEmpty}</p>;
+  if (inGroup && nothing) return empty === null ? null : <p className="ws-none">{empty}</p>;
   return (
     <>
       {!inGroup && (
@@ -304,7 +312,7 @@ function Sections({ terminals, toResume, entered, scope, inGroup = false }: { te
       )}
       {toResume.length > 0 && (
         <>
-          {(!inGroup || toResume.length > 1) && <ResumeHead count={toResume.length} pinned={toResume.filter((r) => pins.includes(r.id)).length} />}
+          {(!inGroup || toResume.length > 1) && <ResumeHead count={toResume.length} pinned={toResume.filter((r) => pins.includes(r.id)).length} place={place} />}
           <div className="list">{toResume.map((r) => <ResumeRow key={r.id} r={r} pinned={pins.includes(r.id)} queued={queued.has(r.id)} />)}</div>
         </>
       )}
@@ -335,20 +343,38 @@ function Workspaces({ ws, entered }: { ws: WorkspacesState; entered: Map<string,
   // Files at a commit count too: a workspace holding only those isn't empty (tables are Databases').
   const revFiles = useApp((s) => s.revFiles);
   const tabs = revFiles.map((f) => f.key);
+  const withActivities = useApp((s) => s.settings.wsActivities);
+  const wss = workspacesOf(ws);
+  const here = workspaceOf(ws, ws.active);
   return (
     <>
-      <Head label={t.ws.workspaces} count={ws.list.length}>
+      <Head label={t.ws.workspaces} count={wss.length}>
         <GroupToggle />
         <button type="button" className="icon-btn head-plus" aria-label={t.ws.newWorkspace} data-tip={t.ws.newWorkspace} data-kbd={kbd('⌘⌥T')}
           onClick={() => useApp.getState().setWsSheet({})}><Icon name="plus" size={14} /></button>
       </Head>
       <ResumeRun />
       <div className="ws-list">
-        {ws.list.map((w) => {
+        {wss.map((w) => {
           const open = isOpen(ws, w.id);
+          const acts = withActivities ? activitiesOf(ws, w.id) : [];
+          const atOwn = ws.active === w.id;
+          // With activities on, its own rows' Resume head acts on its own sessions, whatever place is in front.
+          const own = <Sections terminals={inWorkspace(ws, w.id, terminals)} toResume={pinnedFirst(resumablesIn(ws, w.id, resumables, root), pins)} entered={entered} scope={`ws:${w.id}`} inGroup
+            empty={acts.length ? null : t.ws.groupEmpty} {...(withActivities ? { place: w.id } : {})} />;
           return (
-            <WorkspaceGroup key={w.id} w={w} active={w.id === ws.active} open={open} card={cardOf(ws, w.id, terminals, resumables, root, paths, tabs)}>
-              {open && <Sections terminals={inWorkspace(ws, w.id, terminals)} toResume={pinnedFirst(resumablesIn(ws, w.id, resumables, root), pins)} entered={entered} scope={`ws:${w.id}`} inGroup />}
+            <WorkspaceGroup key={w.id} w={w} active={here === w.id} inAct={here === w.id && !atOwn} open={open} card={cardOf(ws, w.id, terminals, resumables, root, paths, tabs)}>
+              {/* Its activities first, at the same indent as its own rows; then its own rows, a drop zone of its own tabs. */}
+              {open && acts.map((a) => {
+                const aOpen = isOpen(ws, a.id);
+                return (
+                  <WsActivityGroup key={a.id} a={a} color={w.color} current={ws.active === a.id} open={aOpen} card={wsActivityCard(ws, a.id, terminals, resumables, root, paths, tabs)}>
+                    {aOpen && <Sections terminals={inWorkspace(ws, a.id, terminals)} toResume={pinnedFirst(resumablesIn(ws, a.id, resumables, root), pins)} entered={entered} scope={`act:${a.id}`} inGroup
+                      empty={t.wsAct.emptyRows} place={a.id} />}
+                  </WsActivityGroup>
+                );
+              })}
+              {open && (acts.length ? <WsOwnRows wsId={w.id} atOwn={atOwn}>{own}</WsOwnRows> : own)}
             </WorkspaceGroup>
           );
         })}

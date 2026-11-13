@@ -4,7 +4,8 @@ import { CloseHost } from './CloseHost';
 import { UnsavedHost } from './UnsavedHost';
 import { MainAskHost } from './MainAskHost';
 import { WorkspaceCloseHost } from './WorkspaceCloseHost';
+import { WsActivityCloseHost } from './WsActivityCloseHost';
 
 export function Confirms() {
-  return <><CloseHost /><UnsavedHost /><MainAskHost /><WorkspaceCloseHost /></>;
+  return <><CloseHost /><UnsavedHost /><MainAskHost /><WorkspaceCloseHost /><WsActivityCloseHost /></>;
 }

@@ -1579,7 +1579,6 @@ const strings = {
     lastTip: 'The last workspace stays: turn workspaces off in Settings instead',
     moveTo: 'Move to Workspace',
     sheetTitle: 'New Workspace',
-    moved: (name: string) => `Moved to ${name}`,
     go: 'Go',
     stopFailed: "Couldn't stop them: they keep running, in this workspace now",
     stopForGood: 'Stop them',
@@ -1647,6 +1646,53 @@ const strings = {
     resumeName: (title: string) => `Resume ${title}`,
     projectTip: 'Project views: the same in every workspace',
     folderGone: "The workspace's folder isn't there any more: started at the project root"
+  },
+  /** Activities: named groups inside a workspace, each with its own tabs. */
+  wsAct: {
+    activity: 'Activity',
+    newActivity: 'New Activity…',
+    newTerminal: 'New Terminal',
+    defaultName: 'New activity',
+    rename: 'Rename Activity…',
+    close: 'Close Activity…',
+    moveToWs: 'Move to Workspace',
+    moveTo: 'Move to',
+    showTabs: (name: string) => `Show the tabs of ${name}`,
+    ownTabs: (ws: string) => `Show the tabs of ${ws} outside its activities`,
+    newIn: (name: string) => `New in ${name}…`,
+    showRows: (name: string) => `Show ${name} in the sidebar`,
+    hideRows: (name: string) => `Hide ${name} in the sidebar`,
+    emptyRows: 'Empty. Drag sessions here, or + starts one.',
+    emptyBody: 'Nothing open in this activity.',
+    emptyTip: 'Drag sessions, terminals or tabs onto it in the sidebar, or right-click one › Move to.',
+    full: (ws: string) => `${ws} has 20 activities: close one first.`,
+    setLabel: 'Activities inside workspaces',
+    setHint: 'Group a workspace’s sessions, terminals and files into activities, each with its own tabs: click an activity for its tabs, the workspace for the rest. Off: every activity’s tabs go back to its workspace; nothing stops, and the activities come back when you turn it on again.',
+    setOffHint: 'Turn on workspaces, in this project or in every project, to use activities.',
+    toggleCmd: 'Activities Inside Workspaces',
+    moved: (item: string, place: string) => `Moved ${item} to ${place}`,
+    /** A place in the palette and in Move to ›: "Auth & sessions › SSO with Okta". */
+    path: (ws: string, act: string) => `${ws} › ${act}`,
+    closeTitle: (name: string) => `Close “${name}”?`,
+    /** What one row inside says, in the confirm's sentence. */
+    closeItem: (name: string, how: 'waiting' | 'working' | 'done' | 'idle' | 'running' | 'resume') =>
+      `${name} ${{ waiting: 'is waiting for you', working: 'is working', done: 'is done', idle: 'is idle', running: 'is running', resume: 'waits to be resumed' }[how]}`,
+    closeFiles: (n: number) => (n === 1 ? 'It has a file tab.' : `It has ${n} file tabs.`),
+    closeWsActs: (n: number, to: string) => `Moving them takes its ${n === 1 ? 'activity' : `${n} activities`} to ${to} as ${n === 1 ? 'it is' : 'they are'}.`,
+    closeExplain: (ws: string) => `Moving them puts their tabs back in ${ws}. Stopping them closes its terminals and file tabs; its sessions wait under Resume in ${ws}.`,
+    /** A head's tooltip after its name: what is inside, or "empty". */
+    summary: (n: { waiting: number; working: number; done: number; idle: number; terminals: number; files: number; resume: number }) => {
+      const parts = [
+        n.waiting ? `${n.waiting} ${n.waiting === 1 ? 'needs you' : 'need you'}` : '',
+        n.working ? `${n.working} working` : '',
+        n.done ? `${n.done} done` : '',
+        n.idle ? `${n.idle} idle` : '',
+        n.terminals ? `${n.terminals} terminal${n.terminals === 1 ? '' : 's'}` : '',
+        n.files ? `${n.files} file tab${n.files === 1 ? '' : 's'}` : '',
+        n.resume ? `${n.resume} to resume` : ''
+      ].filter(Boolean);
+      return parts.length ? parts.join(' · ') : 'empty';
+    }
   },
   // Change Language Mode: the sheet listing what the editor can highlight.
   /** Change Theme…: the palette-like sheet that previews as you move. */

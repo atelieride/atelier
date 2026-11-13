@@ -282,7 +282,7 @@ describe('moving a tab to another workspace', () => {
     useApp.setState({ ws: wsAB(), toast: null });
     st().setTerminals(ALL);
     st().moveToWorkspace('t:tok', 'B');
-    expect(st().toast?.text).toBe('Moved to Billing');
+    expect(st().toast?.text).toBe('Moved tok to Billing');
     st().toast!.action!.run();
     expect(st().ws!.active).toBe('B');
   });
@@ -303,7 +303,7 @@ describe('moving a tab to another workspace', () => {
     expect(st().ws!.list.find((w) => w.id === 'B')!.order).toEqual([]);
     expect(st().ws!.list.find((w) => w.id === 'C')!.order).toEqual(k('t:bill'));
     expect(st().tabOrder).toEqual(k('t:auth', 't:tok'));
-    expect(st().toast?.text).toBe('Moved to Hotfix');
+    expect(st().toast?.text).toBe('Moved bill to Hotfix');
     st().moveToWorkspace('t:bill', 'A');
     expect(st().ws!.members.bill).toBe('A');
     expect(st().tabOrder).toEqual(k('t:auth', 't:tok', 't:bill'));

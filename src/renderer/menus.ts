@@ -37,6 +37,7 @@ import { rememberScheduleOpener } from './components/SchedulePopover';
 import { openAskFor } from './companion/actions';
 import { moveToWorkspaceItems } from './workspace-menus';
 import { moveToWindowItems } from './move-window';
+import { memberOf } from './workspaces';
 
 // Right-click menu entries, by context. None writes to the project (those arrive with file editing).
 const m = t.menu;
@@ -394,7 +395,9 @@ export function paneMenu(index: number): MenuItem[] {
 
 export function resumeMenu(id: string, resume: () => void): MenuItem[] {
   const s = st();
-  const waiting = s.project ? s.resumables.filter((r) => r.projectRoot === s.project!.root) : [];
+  // With activities on, the all-items act on the row's own place (its activity, or its workspace's own rows).
+  const place = s.settings.wsActivities && s.ws?.on && !s.popout ? memberOf(s.ws, id) : undefined;
+  const waiting = (s.project ? s.resumables.filter((r) => r.projectRoot === s.project!.root) : []).filter((r) => !place || memberOf(s.ws!, r.id) === place);
   const busy = s.bulkResume !== null;
   return [
     { id: 'resume', label: t.resume, icon: 'resume', disabled: busy, run: resume },
@@ -402,9 +405,9 @@ export function resumeMenu(id: string, resume: () => void): MenuItem[] {
     { id: 'pin', label: s.pins.includes(id) ? m.unpin : m.pin, icon: 'pin', run: () => st().togglePinned(id) },
     { id: 'dismiss', label: t.dismiss, icon: 'x', danger: true, disabled: busy, run: () => void window.atelier.terminals.dismiss(id) },
     'sep',
-    { id: 'resume-all', label: t.resumeAllItem, icon: 'resume', disabled: busy, run: () => void st().resumeAll('all') },
-    ...(waiting.some((r) => s.pins.includes(r.id)) ? [{ id: 'resume-pinned', label: t.resumePinnedItem, icon: 'pin' as const, disabled: busy, run: () => void st().resumeAll('pinned') }] : []),
-    { id: 'dismiss-all', label: t.dismissAllItem, icon: 'x', danger: true, disabled: busy, run: () => st().askDismissAll() }
+    { id: 'resume-all', label: t.resumeAllItem, icon: 'resume', disabled: busy, run: () => void st().resumeAll('all', place) },
+    ...(waiting.some((r) => s.pins.includes(r.id)) ? [{ id: 'resume-pinned', label: t.resumePinnedItem, icon: 'pin' as const, disabled: busy, run: () => void st().resumeAll('pinned', place) }] : []),
+    { id: 'dismiss-all', label: t.dismissAllItem, icon: 'x', danger: true, disabled: busy, run: () => st().askDismissAll(place) }
   ];
 }
 
@@ -663,10 +666,16 @@ export function newMenu(actions: { session: () => void; terminal: () => void }):
 }
 
 /** Sessions' "+": the two ways to start a session, below the button. */
-export function sessionPlusMenu(o: { session: () => void; folder: () => void }): MenuItem[] {
+export function sessionPlusMenu(o: { session: () => void; folder: () => void; terminal?: () => void; activity?: { run: () => void; disabled?: string } }): MenuItem[] {
+  // With activities: New Terminal (a workspace's and an activity's "+"), and New Activity… (a workspace's).
   return [
     { id: 'new-session', label: m.newClaudeSession, icon: 'sparkle', hint: kbd('⌘N'), run: o.session },
-    { id: 'session-in-folder', label: m.sessionInFolder, icon: 'files', hint: kbd('⌘⌥⇧N'), run: o.folder }
+    { id: 'session-in-folder', label: m.sessionInFolder, icon: 'files', hint: kbd('⌘⌥⇧N'), run: o.folder },
+    ...(o.terminal ? [{ id: 'new-terminal', label: t.wsAct.newTerminal, icon: 'terminal' as const, hint: kbd('⌘T'), run: o.terminal }] : []),
+    ...(o.activity ? ['sep' as const, {
+      id: 'new-ws-activity', label: t.wsAct.newActivity, icon: 'wsActivity' as const, run: o.activity.run,
+      ...(o.activity.disabled ? { disabled: true, tip: o.activity.disabled } : {})
+    }] : [])
   ];
 }
 

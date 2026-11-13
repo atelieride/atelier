@@ -10,7 +10,7 @@ function Item({ it, i, active, prefix, onEnter, onClick }: { it: Entry; i: numbe
     // A disabled item with a reason stays hoverable (aria-disabled) so its tooltip can say why.
     <button id={`${prefix}-${i}`} type="button" {...itemRole(it)} disabled={it.disabled && !it.tip} aria-disabled={it.disabled || undefined} tabIndex={-1}
       aria-haspopup={it.submenu ? 'menu' : undefined} data-tip={it.tip}
-      className={`ctx-item ${active ? 'is-active' : ''} ${it.danger ? 'is-danger' : ''} ${it.accent ? 'is-accent' : ''} ${it.detail !== undefined ? 'has-detail' : ''}`}
+      className={`ctx-item ${active ? 'is-active' : ''} ${it.danger ? 'is-danger' : ''} ${it.accent ? 'is-accent' : ''} ${it.detail !== undefined ? 'has-detail' : ''} ${it.indent ? 'is-indent' : ''}`}
       onMouseEnter={onEnter} onClick={onClick}>
       <span className="ctx-icon">{it.icon && <Icon name={it.icon} size={14} stroke={1.7} />}</span>
       {it.detail !== undefined

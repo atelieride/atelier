@@ -5,6 +5,8 @@ const paths = {
   file: <><path d="M6 2.5h5.5L15 6v11.5H6z" /><path d="M11.5 2.5V6H15" /></>,
   // A workspace: two stacked panes, the brand mark's shape.
   workspace: <><rect x="6" y="2.5" width="11" height="9.5" rx="2.4" /><rect x="3" y="7" width="11" height="9.5" rx="2.4" /></>,
+  // An activity inside a workspace: the same two panes in outline, the back one behind the front one.
+  wsActivity: <path d="M6.5 6.6V5.4a1.9 1.9 0 0 1 1.9-1.9h6.7a1.9 1.9 0 0 1 1.9 1.9v6.2a1.9 1.9 0 0 1-1.9 1.9h-.5M4.9 6.8h7.8a1.9 1.9 0 0 1 1.9 1.9v6.4a1.9 1.9 0 0 1-1.9 1.9H4.9A1.9 1.9 0 0 1 3 15.1V8.7a1.9 1.9 0 0 1 1.9-1.9z" />,
   services: <><rect x="3" y="4" width="14" height="5" rx="1.2" /><rect x="3" y="11" width="14" height="5" rx="1.2" /><path d="M6 6.5h.01M6 13.5h.01" /></>,
   // Classic 8-tooth gear (it used to be a sun, which looked like the light theme).
   settings: <><path d="M8.53 3.87L8.7 1.8h2.6l.17 2.07 1.82.76 1.59-1.34 1.83 1.83-1.34 1.59.76 1.82 2.07.17v2.6l-2.07.17-.76 1.82 1.34 1.59-1.83 1.83-1.59-1.34-1.82.76-.17 2.07H8.7l-.17-2.07-1.82-.76-1.59 1.34-1.83-1.83 1.34-1.59-.76-1.82-2.07-.17V8.7l2.07-.17.76-1.82-1.34-1.59 1.83-1.83 1.59 1.34z" /><circle cx="10" cy="10" r="2.6" /></>,

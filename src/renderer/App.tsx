@@ -53,7 +53,7 @@ import { dirtyPaths, saveMany, saveOne } from './editor/savers';
 import { Logo } from './components/Logo';
 import { WorkspaceEmpty } from './components/WorkspaceEmpty';
 import { SpaceEmpty } from './components/SpaceEmpty';
-import { stepWorkspace } from './workspace-menus';
+import { goToWorkspaceAt, newWsActivityHere, stepWorkspace, toggleWsActivities } from './workspace-menus';
 import { NewWorkspaceSheet } from './components/NewWorkspaceSheet';
 import { Icon } from './components/Icon';
 import { disposeLiveTerminal, redrawTerminal, resetTerminal, writeToTerminal } from './terminal/registry';
@@ -194,6 +194,9 @@ export function App() {
   const wsEverywhere = useApp((s) => s.settings.workspacesEverywhere);
   const wsReady = useApp((s) => s.settingsLoaded && s.tabsRestored && s.daemon.listed && !!s.project && !s.popout);
   useEffect(() => { if (wsReady) useApp.getState().applyWorkspacesEverywhere(); }, [wsReady, wsEverywhere, project?.root]);
+  // Activities inside workspaces (one setting for every project): kept aside or brought back in this window.
+  const wsActivities = useApp((s) => s.settings.wsActivities);
+  useEffect(() => { if (wsReady) useApp.getState().applyWsActivities(); }, [wsReady, wsActivities, project?.root]);
   const selectedId = useApp((s) => s.selectedId);
   const openFiles = useApp((s) => s.openFiles);
   const activeTab = useApp((s) => s.activeTab);
@@ -510,6 +513,8 @@ export function App() {
           if (cmd === 'open-connectors') { st.setSettingsOpen('connectors'); return; }
           // Word wrap is a setting: the sheet stays and shows Editor, where its toggle and preview change in front of you.
           if (cmd === 'toggle-word-wrap') { st.setSettingsOpen('editor'); toggleWordWrap(); return; }
+          // So is Activities Inside Workspaces: Appearance shows its switch change.
+          if (cmd === 'toggle-ws-activities') { st.setSettingsOpen('appearance'); toggleWsActivities(); return; }
           st.setSettingsOpen(null);
         }
         switch (cmd) {
@@ -595,10 +600,12 @@ export function App() {
           // Workspaces: nothing while the project has them off (the keys reach the page anyway).
           case 'new-workspace': if (st.ws?.on) st.setWsSheet({}); break;
           case 'toggle-workspaces': st.setWorkspacesOn(!st.ws?.on); break;
+          case 'new-ws-activity': newWsActivityHere(); break;
+          case 'toggle-ws-activities': toggleWsActivities(); break;
           case 'next-workspace': case 'prev-workspace': stepWorkspace(cmd === 'next-workspace' ? 1 : -1); break;
           default:
             if (cmd.startsWith('tab-')) { const k = nth(st.focusedStrip(), Number(cmd.slice(4))); if (k) st.activate(k); }
-            else if (cmd.startsWith('workspace-')) { const w = st.ws?.on ? st.ws.list[Number(cmd.slice('workspace-'.length))] : undefined; if (w) st.switchWorkspace(w.id); }
+            else if (cmd.startsWith('workspace-')) goToWorkspaceAt(Number(cmd.slice('workspace-'.length)));
             else if (cmd.startsWith('new-terminal-profile:')) void newTerminalIn(undefined, cmd.slice('new-terminal-profile:'.length));
             else if (cmd.startsWith('new-session-account:')) st.setNewSessionOpen(true, cmd.slice('new-session-account:'.length));
             break;

@@ -2,6 +2,7 @@ import type { TerminalInfo } from '@shared/protocol';
 import type { ProfileKey } from '@shared/profiles';
 import { t } from './i18n/en';
 import { useApp } from './store';
+import { workspaceOf } from './workspaces';
 
 // Starting sessions and terminals, at the project root or in one of its folders (the main process refuses any other).
 
@@ -36,11 +37,11 @@ async function start(create: () => Promise<TerminalInfo>, inFolder: boolean, sho
   }
 }
 
-/** The active workspace's folder, when workspaces are on and it has one. */
+/** The folder of the workspace in front (an activity starts things in its workspace's), when workspaces are on and it has one. */
 function workspaceFolder(): string | undefined {
   const s = useApp.getState();
   if (!s.ws?.on || s.popout) return undefined;
-  const active = s.ws.active;
+  const active = workspaceOf(s.ws, s.ws.active);
   return s.ws.list.find((w) => w.id === active)?.folder ?? undefined;
 }
 

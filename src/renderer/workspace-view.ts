@@ -1,6 +1,8 @@
 // What the sidebar, a workspace's card and its empty state show. Pure.
 import type { Resumable, TerminalInfo } from '@shared/protocol';
-import { dots, memberOf, type Dot, type WorkspacesState } from './workspaces';
+import { dots, memberOf, workspaceOf, workspacesOf, type Dot, type WorkspacesState } from './workspaces';
+import { t } from './i18n/en';
+import { inboxSection } from './inbox';
 import { resumablesFor } from './selectors';
 import { buildRows } from './changes';
 import type { RepoStatus } from '@shared/git';
@@ -9,14 +11,31 @@ import type { Attribution } from '@shared/attribution';
 /** A workspace's color as a theme token (theme.css `--ws-1…8`): components never hold the hex. */
 export const wsColorVar = (color: number): string => `var(--ws-${color})`;
 
-/** A workspace's terminals (one without a workspace belongs to the active one). */
+/** The Go menu's workspace list (activities aside) and the one its check marks: the workspace in front, whichever of its places is. */
+export function workspacesMenu(ws: WorkspacesState): { names: string[]; active: number } {
+  const wss = workspacesOf(ws);
+  const here = workspaceOf(ws, ws.active);
+  return { names: wss.map((w) => w.name), active: Math.max(0, wss.findIndex((w) => w.id === here)) };
+}
+
+/** A place's terminals, exactly that place's (one without a place belongs to the place in front). */
 export function inWorkspace(ws: WorkspacesState, id: string, terminals: TerminalInfo[]): TerminalInfo[] {
   return terminals.filter((x) => memberOf(ws, x.id) === id);
 }
 
-/** This project's sessions to resume that belong to workspace `id` (a gone or unknown workspace: the active one). */
+/** Workspace `id`'s terminals in every place of it: its own and its activities'. */
+export function inWorkspaceTree(ws: WorkspacesState, id: string, terminals: TerminalInfo[]): TerminalInfo[] {
+  return terminals.filter((x) => workspaceOf(ws, memberOf(ws, x.id)) === id);
+}
+
+/** This project's sessions to resume that belong to place `id` (a gone or unknown place: the one in front). */
 export function resumablesIn(ws: WorkspacesState, id: string, resumables: Resumable[], root: string): Resumable[] {
   return resumablesFor(resumables, root).filter((r) => memberOf(ws, r.id) === id);
+}
+
+/** Workspace `id`'s sessions to resume, in every place of it. */
+function resumablesInTree(ws: WorkspacesState, id: string, resumables: Resumable[], root: string): Resumable[] {
+  return resumablesFor(resumables, root).filter((r) => workspaceOf(ws, memberOf(ws, r.id)) === id);
 }
 
 export interface WsCard {
@@ -62,12 +81,11 @@ const DOT_WORDS: Record<Dot['kind'], string> = { waiting: 'waiting', working: 'w
  */
 export function cardOf(ws: WorkspacesState, id: string, terminals: TerminalInfo[], resumables: Resumable[], root: string, openFiles: string[], openTabs: readonly string[]): WsCard {
   const w = ws.list.find((x) => x.id === id);
-  const mine = inWorkspace(ws, id, terminals);
-  const toResume = resumablesIn(ws, id, resumables, root).length;
-  const open = new Set(openFiles);
-  const files = (w?.order ?? []).filter((k) => k.startsWith('f:') && open.has(k.slice(2))).length;
-  const others = new Set(openTabs);
-  const tabs = (w?.order ?? []).filter((k) => k.startsWith('rev:') && others.has(k)).length;
+  // Every place of it: its own tabs and its activities'.
+  const mine = inWorkspaceTree(ws, id, terminals);
+  const toResume = resumablesInTree(ws, id, resumables, root).length;
+  const keys = [...new Set(ws.list.filter((x) => x.id === id || x.parent === id).flatMap((x) => x.order))];
+  const { files, tabs } = openCounts(keys, openFiles, openTabs);
   const d = dots(mine, toResume);
   const sessions = mine.filter((x) => !!x.session).length;
   const empty = mine.length === 0 && files === 0 && tabs === 0 && toResume === 0;
@@ -77,6 +95,59 @@ export function cardOf(ws: WorkspacesState, id: string, terminals: TerminalInfo[
     folder: w?.folder ? w.folder.split(/[\\/]/).filter(Boolean).at(-1) ?? null : null,
     empty, label: `${w?.name ?? ''} · ${empty ? 'empty' : said || 'idle'}`
   };
+}
+
+/** How many of `keys` are files open in the window, and files at a commit open. */
+function openCounts(keys: readonly string[], openFiles: string[], openTabs: readonly string[]): { files: number; tabs: number } {
+  const open = new Set(openFiles);
+  const others = new Set(openTabs);
+  return {
+    files: keys.filter((k) => k.startsWith('f:') && open.has(k.slice(2))).length,
+    tabs: keys.filter((k) => k.startsWith('rev:') && others.has(k)).length
+  };
+}
+
+export interface WsActivityCard {
+  dots: Dot[];
+  empty: boolean;
+  /** Its accessible name and tooltip: the name, then what is inside ("SSO · 1 needs you · 1 terminal"), or "empty". */
+  label: string;
+}
+
+/** An activity's head: its state dots (folded, one shows) and what is inside, for its tooltip. */
+export function wsActivityCard(ws: WorkspacesState, id: string, terminals: TerminalInfo[], resumables: Resumable[], root: string, openFiles: string[], openTabs: readonly string[]): WsActivityCard {
+  const a = ws.list.find((x) => x.id === id);
+  const mine = inWorkspace(ws, id, terminals);
+  const toResume = resumablesIn(ws, id, resumables, root).length;
+  const { files, tabs } = openCounts(a?.order ?? [], openFiles, openTabs);
+  const d = dots(mine, toResume);
+  const n = (kind: Dot['kind']) => d.find((x) => x.kind === kind)?.n ?? 0;
+  const sessions = mine.filter((x) => !!x.session).length;
+  const summary = t.wsAct.summary({
+    waiting: n('waiting'), working: n('working'), done: n('done'), idle: sessions - n('waiting') - n('working') - n('done'),
+    terminals: mine.length - sessions, files: files + tabs, resume: toResume
+  });
+  return { dots: d, empty: mine.length === 0 && files === 0 && tabs === 0 && toResume === 0, label: `${a?.name ?? ''} · ${summary}` };
+}
+
+/**
+ * Close Activity…'s sentence: who is inside and what each does ("okta-callback is waiting for you, okta mock is
+ * running and old waits to be resumed."), then its file tabs.
+ */
+export function wsActivityCloseText(ws: WorkspacesState, id: string, terminals: TerminalInfo[], resumables: Resumable[], root: string, openFiles: string[], openTabs: readonly string[]): string {
+  const how = (x: TerminalInfo) => {
+    if (!x.session) return 'running' as const;
+    const sec = inboxSection(x);
+    return sec === 'needs' ? 'waiting' as const : sec === 'working' ? 'working' as const : sec === 'review' ? 'done' as const : 'idle' as const;
+  };
+  const parts = [
+    ...inWorkspace(ws, id, terminals).map((x) => t.wsAct.closeItem(x.title, how(x))),
+    ...resumablesIn(ws, id, resumables, root).map((r) => t.wsAct.closeItem(r.title, 'resume'))
+  ];
+  const said = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}.` : parts.length ? `${parts[0]}.` : '';
+  const a = ws.list.find((x) => x.id === id);
+  const { files, tabs } = openCounts(a?.order ?? [], openFiles, openTabs);
+  return [said, files + tabs ? t.wsAct.closeFiles(files + tabs) : ''].filter(Boolean).join(' ');
 }
 
 /**
@@ -89,7 +160,9 @@ export function cardOf(ws: WorkspacesState, id: string, terminals: TerminalInfo[
  */
 export function changesInWorkspace<R extends { by: { terminalId: string; ids?: string[] }[] }>(ws: WorkspacesState, rows: R[]): R[] {
   const known = new Set(ws.list.map((w) => w.id));
-  const elsewhere = (id: string) => id in ws.members && known.has(ws.members[id]!) && ws.members[id] !== ws.active;
+  // Places of one workspace are one scope: an activity's sessions count for its workspace.
+  const here = workspaceOf(ws, ws.active);
+  const elsewhere = (id: string) => id in ws.members && known.has(ws.members[id]!) && workspaceOf(ws, ws.members[id]!) !== here;
   const othersOnly = (r: R) => r.by.length > 0 && r.by.every((b) => (b.ids ?? [b.terminalId]).every(elsewhere));
   return rows.filter((r) => !othersOnly(r));
 }

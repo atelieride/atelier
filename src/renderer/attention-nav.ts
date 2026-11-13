@@ -4,7 +4,7 @@ import { useApp } from './store';
 import { t } from './i18n/en';
 import { isLimitPaused, waitKind } from '@shared/session-view';
 import { effectiveState } from '@shared/background';
-import { memberOf, union } from './workspaces';
+import { memberOf, union, workspaceOf, type WorkspacesState } from './workspaces';
 
 // A permission request blocks the work outright: it comes before a question (or an unspecified wait, older atelierd).
 const permission = (x: TerminalInfo) => waitKind(x.session) === 'permission';
@@ -34,13 +34,23 @@ export function nextAttention(list: TerminalInfo[], order: TabKey[], currentId: 
   return currentId && byId.has(currentId) && (waiting(byId.get(currentId)!) || unreadDone(byId.get(currentId)!)) ? currentId : null;
 }
 
+/**
+ * The sessions ⌘J may go to: with workspaces on (`ws`) and "follows" off, only those of the workspace in front — its
+ * own and its activities'; otherwise every one.
+ */
+export function attentionReach(ws: WorkspacesState | null, list: TerminalInfo[], follows: boolean): TerminalInfo[] {
+  if (!ws || follows) return list;
+  const here = workspaceOf(ws, ws.active);
+  return list.filter((x) => workspaceOf(ws, memberOf(ws, x.id)) === here);
+}
+
 /** ⌘J, the footer and the palette: go to the next session that needs attention, or say so if there is none. */
 export function goToAttention(): void {
   const st = useApp.getState();
-  // Workspaces on: every workspace's tabs in their order, the active one's as shown; with
-  // "follows" off, only the active workspace's sessions. Selecting one elsewhere brings its workspace forward.
+  // Workspaces on: every place's tabs in the sidebar's order, the one in front's as shown; with
+  // "follows" off, only the workspace in front's sessions. Selecting one elsewhere brings its place forward.
   const ws = st.ws?.on && !st.popout ? st.ws : null;
-  const list = ws && !st.settings.wsJumpFollows ? st.terminals.filter((x) => memberOf(ws, x.id) === ws.active) : st.terminals;
+  const list = attentionReach(ws, st.terminals, st.settings.wsJumpFollows);
   const order = ws ? union(ws, st.tabOrder) : st.tabOrder;
   const id = nextAttention(list, order, st.activeTab === 'term' ? st.selectedId : null);
   if (!id) { st.showToast(t.nothingNeedsYou, undefined, 'info'); return; }

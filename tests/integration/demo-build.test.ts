@@ -15,7 +15,9 @@ import { SENSITIVE, SHOTS_ONLY, findBanned } from '../support/banned-strings';
 
 // +3 KB for Find in Files: a result's file opened at its match (the store's action, the editor's hand-off to its module),
 // and the send step limited to Claude sessions for its results.
-const BUDGET = 903 * 1024;
+// +5 KB for activities inside workspaces: the places model the store swaps views with (kept aside while off, read from a
+// save), its strings, and the sidebar's activity group, menus and close confirm — off in the demo, but in its entry.
+const BUDGET = 908 * 1024;
 const SHARED = resolve('src/shared');
 const INSTALL = resolve('src/demo/install.ts');
 

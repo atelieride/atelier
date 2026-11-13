@@ -150,6 +150,7 @@ function WorkspacesRows({ s }: { s: S }) {
   const project = useApp((x) => (x.popout ? null : x.project));
   const on = useApp((x) => !!x.ws?.on);
   const everywhere = s.workspacesEverywhere;
+  const blocked = !!project && !on && !everywhere;
   return (
     <>
       {project && (
@@ -166,6 +167,10 @@ function WorkspacesRows({ s }: { s: S }) {
       </Row>
       <Row label={t.ws.setFollows} hint={t.ws.setFollowsHint}>
         <Toggle label={t.ws.setFollows} value={s.wsJumpFollows} onChange={(v) => set({ wsJumpFollows: v })} />
+      </Row>
+      {/* One switch for every project; a project window whose workspaces are off can't use it (the welcome window can). */}
+      <Row label={t.wsAct.setLabel} hint={blocked ? t.wsAct.setOffHint : t.wsAct.setHint} disabled={blocked}>
+        <Toggle label={t.wsAct.setLabel} value={s.wsActivities && !blocked} disabled={blocked} onChange={(v) => set({ wsActivities: v })} />
       </Row>
     </>
   );
