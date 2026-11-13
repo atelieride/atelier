@@ -971,4 +971,29 @@ test.describe('the real demo', () => {
     await isOpen(page);
     await expect.poll(() => moves(1500), { timeout: 10000 }).toBe(true);
   });
+
+  // Find in Files in the demo: the real view over the fictional project's files, answered by the demo bridge.
+  test('Find in Files: the activity item and ⇧⌘F reach the field; TokenStore is found in session.ts and tokens.ts, and a result opens its file with the match selected', async ({ page }) => {
+    const w = await watch(page);
+    await openFromHero(page);
+    const field = app(page).getByRole('textbox', { name: 'Search files' });
+    await app(page).getByRole('button', { name: /^Find in Files/ }).click();
+    await expect(field).toBeVisible();
+    // Leave the view, then ⇧⌘F brings it back with the keyboard in the field, even from the page around the frame.
+    await app(page).getByRole('button', { name: /^Files/ }).click();
+    await expect(field).toBeHidden();
+    await blurDemo(page);
+    await page.keyboard.press('Meta+Shift+f');
+    await expect(field).toBeFocused();
+    await field.fill('TokenStore');
+    await expect(app(page).locator('.fif-summary .fif-totals')).toHaveText(/^\d+ results in 2 files$/);
+    const files = app(page).locator('.fif-row.is-file .fif-name');
+    await expect(files).toHaveCount(2);
+    await expect(files.filter({ hasText: 'session.ts' })).toHaveCount(1);
+    await expect(files.filter({ hasText: 'tokens.ts' })).toHaveCount(1);
+    await app(page).locator('.fif-row.is-match').first().click();
+    await expect(app(page).locator('.tab.is-active')).toContainText(/session\.ts|tokens\.ts/);
+    await expect.poll(() => demoFrame(page).evaluate(() => window.getSelection()?.toString() ?? '')).toBe('TokenStore');
+    expect(w.console).toEqual([]);
+  });
 });
