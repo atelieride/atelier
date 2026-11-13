@@ -1,6 +1,6 @@
 import { _electron as electron, expect, test } from '@playwright/test';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { extractFile, listPackage } from '@electron/asar';
@@ -112,6 +112,28 @@ test('Atelier.app: the output triggers worker is in the asar, referenced by the 
     await expect(win.locator('.trg-hit')).not.toHaveCount(0, { timeout: 10000 });
     // No toast at all is the normal case: count the pause notice instead of asserting on a toast that may not exist.
     await expect(win.locator('.toast', { hasText: 'Triggers are paused' })).toHaveCount(0);
+  } finally {
+    await app.close();
+    try { process.kill((JSON.parse(readFileSync(join(home, 'atelierd.json'), 'utf8')) as { pid: number }).pid, 'SIGTERM'); } catch { /* already stopped */ }
+  }
+});
+
+// Find in Files runs its search in a worker thread started from out/main/search-worker.js: a search that finds a known
+// word proves that file loads from the asar and the worker's messages reach the window in the real main process.
+test('Atelier.app: Find in Files searches a project (its worker thread loads from the asar)', async () => {
+  const project = realpathSync(mkdtempSync(join(tmpdir(), 'atl-prj-')));
+  mkdirSync(join(project, 'src'));
+  writeFileSync(join(project, 'src', 'pond.ts'), "export const kingfisher = 'blue';\n");
+  const { env, home } = e2eEnv({ PATH: '/usr/bin:/bin:/usr/sbin:/sbin' });
+  noProbes(home);
+  const app = await electron.launch({ executablePath: join(appPath, 'Contents/MacOS/Atelier'), args: [`--project=${project}`], env });
+  try {
+    const win = await app.firstWindow();
+    const view = win.locator('.sidebar.is-search');
+    await win.locator('.activity-bar .act[aria-label^="Find in Files"]').click();
+    await view.getByRole('textbox', { name: 'Search files' }).fill('kingfisher');
+    await expect(view.locator('.fif-summary .fif-totals')).toHaveText('1 result in 1 file', { timeout: 10000 });
+    await expect(view.locator('.fif-row.is-file')).toHaveAttribute('data-rel', 'src/pond.ts');
   } finally {
     await app.close();
     try { process.kill((JSON.parse(readFileSync(join(home, 'atelierd.json'), 'utf8')) as { pid: number }).pid, 'SIGTERM'); } catch { /* already stopped */ }
