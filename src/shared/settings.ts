@@ -113,6 +113,11 @@ export interface Settings {
    * aside meanwhile); off, each project decides again.
    */
   workspacesEverywhere: boolean;
+  /**
+   * Activities inside workspaces: named groups of a workspace's sessions, terminals and file tabs, each with its own
+   * tabs. One switch for every project, used only where workspaces are on; off, they are kept aside.
+   */
+  wsActivities: boolean;
   /** Ask companion: the model that answers, haiku/sonnet/opus. */
   askModel: CompanionModel;
   /** Whose account pays for Ask: 'session' (the session's own) or a Claude account id. */
@@ -262,6 +267,7 @@ export const DEFAULT_SETTINGS: Settings = {
   keepClosedSessions: false,
   wsJumpFollows: true,
   workspacesEverywhere: false,
+  wsActivities: false,
   askModel: 'sonnet',
   askAccount: 'session',
   askCatchUpOnOpen: false,
@@ -411,6 +417,7 @@ export const SETTINGS_FIELDS: { [K in keyof Settings]: Field } = {
   keepClosedSessions: { kind: 'bool' },
   wsJumpFollows: { kind: 'bool' },
   workspacesEverywhere: { kind: 'bool' },
+  wsActivities: { kind: 'bool' },
   askModel: { kind: 'enum', values: ['haiku', 'sonnet', 'opus'] },
   askAccount: { kind: 'accountChoice' },
   askCatchUpOnOpen: { kind: 'bool' },
