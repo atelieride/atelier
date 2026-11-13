@@ -79,7 +79,7 @@ import {
   absorb as wsAbsorb, assign as wsAssign, create as wsCreate, forget as wsForget, initial as wsInitial, isProjectKey, workspaceKey, memberOf, moveKey as wsMove, newWorkspaceId,
   projectLast, prune as wsPrune, recolor as wsRecolor, relink as wsRelink, remove as wsRemove, rename as wsRename, renameKeys as wsRenameKeys, reorder as wsReorder,
   toFront as wsToFront, toggleOpen as wsToggleOpen, union as wsUnion, viewOf, withView, placeOnReturn, workspacesOf, activitiesOf, workspaceOf,
-  createWsActivity as wsCreateAct, moveWsActivity as wsMoveAct, removeWsActivity as wsRemoveAct, isWsActivity, parkWsActivities as wsPark,
+  createWsActivity as wsCreateAct, moveWsActivity as wsMoveAct, removeWsActivity as wsRemoveAct, isWsActivity, isOpen, parkWsActivities as wsPark,
   unparkWsActivities as wsUnpark, type WorkspacesState
 } from './workspaces';
 import { revTitle } from './scm/titles';
@@ -2160,6 +2160,9 @@ export const useApp = create<AppState>((set, get) => ({
     set({ ws });
     if (move) get().moveToWorkspace(move, id, { quiet: true });
     get().switchWorkspace(id);
+    // Its name is typed in its head: a workspace its chevron folded opens to show it.
+    const w = get().ws;
+    if (w && !isOpen(w, wsId)) set({ ws: wsToggleOpen(w, wsId) });
     get().setWsRenaming(id);
     return id;
   },

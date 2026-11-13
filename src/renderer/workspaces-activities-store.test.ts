@@ -193,6 +193,13 @@ describe('making an activity', () => {
     expect(st().toast).toBeNull();
     invariant();
   });
+  test('in a workspace its chevron folded: the workspace opens, so the new name can be typed in its head', () => {
+    start();
+    st().toggleWorkspaceOpen('A');
+    expect(isOpen(st().ws!, 'A')).toBe(false);
+    st().newWsActivity('A');
+    expect(isOpen(st().ws!, 'A')).toBe(true);
+  });
   test('refused past twenty, or inside an activity', () => {
     start();
     for (let i = 0; i < 19; i++) expect(st().newWsActivity('A')).not.toBeNull();
