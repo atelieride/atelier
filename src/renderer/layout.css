@@ -1666,6 +1666,8 @@ html.is-tab-dragging, html.is-tab-dragging * { cursor: grabbing !important; user
 .ctx-submenu { min-width: 200px; animation-duration: 120ms; }
 /* Two-line items (JSON's Copy Path As): the name small above, the value in mono below. */
 .ctx-item.has-detail { height: 40px; }
+/* An item under the one above it (an activity under its workspace in Move to ›): one icon's width in. */
+.ctx-item.is-indent { padding-left: 26px; }
 .ctx-item.has-detail .ctx-label { display: flex; flex-direction: column; justify-content: center; gap: 1px; }
 .ctx-detail-name { font-size: 11px; color: var(--text-3); transition: color var(--t-fast) var(--ease); }
 .ctx-item.has-detail.is-active .ctx-detail-name { color: var(--fold); }

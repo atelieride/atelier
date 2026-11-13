@@ -6,7 +6,8 @@ import { WorkspaceGlyph } from './WorkspaceGlyph';
 import { RenameInput } from './RenameInput';
 import { workspaceMenu } from '../workspace-menus';
 import { headDot, rowClickAction, wsColorVar, type WsCard } from '../workspace-view';
-import { memberOf, type Workspace } from '../workspaces';
+import { MAX_ACTIVITIES, activitiesOf, memberOf, type Workspace } from '../workspaces';
+import { newTerminalIn } from '../launch';
 import { kbd } from '../kbd';
 import { openBelow, sessionPlusMenu } from '../menus';
 import { ACT_MIME, ROW_MIME, fromType, placeDrop, type PlaceTarget } from '../place-drop';
@@ -111,10 +112,19 @@ export function WorkspaceGroup({ w, active, inAct = false, open, card, children 
   const toggle = () => st().toggleWorkspaceOpen(w.id);
   // The Sessions drop-down: either way the session starts in this workspace.
   const here = (run: () => void) => () => { if (w.id !== st().ws?.active) st().switchWorkspace(w.id); run(); };
-  const plus = (e: MouseEvent<HTMLButtonElement>) => openBelow(e.currentTarget, sessionPlusMenu({
-    session: here(() => st().setNewSessionOpen(true)),
-    folder: here(() => st().setFolderSheet({ kind: 'session' }))
-  }));
+  // With activities on it also starts a terminal here and makes an activity in it.
+  const plus = (e: MouseEvent<HTMLButtonElement>) => {
+    const s = st();
+    const full = !!s.ws && activitiesOf(s.ws, w.id).length >= MAX_ACTIVITIES;
+    openBelow(e.currentTarget, sessionPlusMenu({
+      session: here(() => st().setNewSessionOpen(true)),
+      folder: here(() => st().setFolderSheet({ kind: 'session' })),
+      ...(s.settings.wsActivities ? {
+        terminal: here(() => void newTerminalIn()),
+        activity: { run: () => void st().newWsActivity(w.id), ...(full ? { disabled: t.wsAct.full(w.name) } : {}) }
+      } : {})
+    }));
+  };
   const dot = open ? null : headDot(card.dots);
   const stopRename = () => st().setWsRenaming(null);
   const name = (

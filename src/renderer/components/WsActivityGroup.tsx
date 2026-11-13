@@ -9,6 +9,8 @@ import { headDot, wsColorVar, type WsActivityCard } from '../workspace-view';
 import type { Workspace } from '../workspaces';
 import { kbd } from '../kbd';
 import { openBelow, sessionPlusMenu } from '../menus';
+import { wsActivityMenu } from '../workspace-menus';
+import { newTerminalIn } from '../launch';
 
 /**
  * An activity in its workspace's body, at the same indent as the workspace's own rows: a head — chevron, glyph and
@@ -35,15 +37,18 @@ export function WsActivityGroup({ a, color, current, open, card, children }: { a
   const here = (run: () => void) => () => { if (st().ws?.active !== a.id) st().switchWorkspace(a.id); run(); };
   const plus = (e: MouseEvent<HTMLButtonElement>) => openBelow(e.currentTarget, sessionPlusMenu({
     session: here(() => st().setNewSessionOpen(true)),
-    folder: here(() => st().setFolderSheet({ kind: 'session' }))
+    folder: here(() => st().setFolderSheet({ kind: 'session' })),
+    terminal: here(() => void newTerminalIn())
   }));
+  const menu = (e: MouseEvent) => st().openMenu(e, wsActivityMenu(a.id));
   const dot = open ? null : headDot(card.dots);
   const stopRename = () => st().setWsRenaming(null);
   const glyph = <span className="wsa-glyph"><Icon name="wsActivity" size={15} stroke={1.5} /></span>;
   return (
     <section className={`wsa-group${open ? ' is-open' : ''}${current ? ' is-current' : ''}${dropping ? ' is-drop' : ''}`} aria-label={a.name} data-wsa-group={a.id}
       {...(current ? {} : { 'data-ws-drop': a.id })} style={{ '--ws-c': wsColorVar(color) } as React.CSSProperties} {...handlers}>
-      <div className={`wsa-head${current && !open ? ' is-selected' : ''}`} data-tip={card.label} {...drag}>
+      {/* Shift+F10 on its buttons opens this menu too (App's handler sends a contextmenu that bubbles here). */}
+      <div className={`wsa-head${current && !open ? ' is-selected' : ''}`} data-tip={card.label} onContextMenu={menu} {...drag}>
         <button type="button" className="ws-chev wsa-chev" aria-expanded={open} aria-label={open ? t.wsAct.hideRows(a.name) : t.wsAct.showRows(a.name)}
           data-tip={open ? t.wsAct.hideRows(a.name) : t.wsAct.showRows(a.name)} onClick={toggle}>
           <Icon name={open ? 'chevronDown' : 'chevron'} size={12} stroke={2} />

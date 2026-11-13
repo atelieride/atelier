@@ -4,7 +4,8 @@ import type { IconName } from './components/Icon';
 /** tip: a tooltip on the item (e.g. why it is disabled). */
 // detail: a second line in mono under the label (Copy Path As's formats); accent: a violet item (Mention in Session…).
 // checked: a checkable item, on or off (the Windows menu's Word Wrap); radio: one choice among others (a workspace).
-export type MenuItem = { id: string; label: string; detail?: string; icon?: IconName; hint?: string; tip?: string; danger?: boolean; accent?: boolean; disabled?: boolean; checked?: boolean; radio?: true; submenu?: MenuItem[]; run: () => void } | 'sep';
+// indent: an item under the one above it (an activity under its workspace in Move to ›).
+export type MenuItem = { id: string; label: string; detail?: string; icon?: IconName; hint?: string; tip?: string; danger?: boolean; accent?: boolean; disabled?: boolean; checked?: boolean; radio?: true; indent?: true; submenu?: MenuItem[]; run: () => void } | 'sep';
 
 /** How an item is announced: a plain item, or a checkbox or radio with its state. */
 export function itemRole(it: Exclude<MenuItem, 'sep'>): { role: 'menuitem' } | { role: 'menuitemcheckbox' | 'menuitemradio'; 'aria-checked': boolean } {
