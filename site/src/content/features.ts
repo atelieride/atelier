@@ -56,7 +56,7 @@ export const rows: FeatureRowData[] = [
   },
   {
     id: 'workspace', eyebrow: 'Workspace', title: 'Everything side by side.',
-    text: 'Sessions, terminals and files are tabs. Put up to three side by side and keep your hands on the keyboard.',
+    text: 'Sessions, terminals and files are tabs. Put up to three side by side, and keep separate lines of work in workspaces and the activities inside them.',
     bullets: ['Split view with up to three panes (⌘\\)', 'Command palette (⌘K) for files, sessions and commands', 'Drag a tab out into its own window (⇧⌘O)'],
     shot: 'workspace', corner: false, alt: 'A Claude Code session next to a file in split view',
     shortcut: '⌘\\  split',

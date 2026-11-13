@@ -54,6 +54,13 @@ test('the Claude accounts row: its shot, Try it opens New Session on Work (an ac
   expect(ACCOUNTS.map((a) => a.id)).toContain(row.demo!.view.slice('new-session-account:'.length));
 });
 
+test('the Workspace row says lines of work go in workspaces and the activities inside them', () => {
+  const row = rows.find((r) => r.id === 'workspace')!;
+  expect(row.text).toMatch(/workspaces/);
+  expect(row.text).toMatch(/activities inside them/);
+  expect(row.bullets).toHaveLength(3);
+});
+
 test('the Ask row: right after Sessions, its shot, Try it opens Ask on a session at work; its copy claims only what Ask does', () => {
   const ids = rows.map((r) => r.id);
   expect(ids.indexOf('ask')).toBe(ids.indexOf('sessions') + 1);
