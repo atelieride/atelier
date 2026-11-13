@@ -14,7 +14,6 @@ import { sendResults } from './actions';
 import { ts } from './copy';
 import { searchAreaMenu } from './menus';
 import { anyExpanded, buildRows, rowTotals, runsSearch, takesFocusOnMount } from './model';
-import { loadRecent } from './recent';
 import { ResultList, type ResultListHandle } from './ResultList';
 import { SkippedPopover } from './SkippedPopover';
 import { useSearch } from './store';
@@ -41,9 +40,6 @@ let answeredNonce = 0;
 // What the field's description points at: a window has one Find in Files view.
 const whyId = 'fif-why';
 const lineId = 'fif-line';
-
-/** The small marks of a recent query's options. */
-const optionMarks = (s: SearchSpec): string => [s.matchCase && 'Aa', s.wholeWord && 'ab', s.regex && '.*'].filter(Boolean).join(' ');
 
 export function FindInFiles() {
   const root = useApp((s) => s.project?.root ?? null);
@@ -116,7 +112,6 @@ function SearchView({ root }: { root: string }) {
     const built = buildRows(files, collapsed, dismissed);
     return { rows: built, count: rowTotals(built) };
   }, [files, collapsed, dismissed]);
-  const recent = useMemo(() => (spec.query === '' ? loadRecent(root) : []), [root, spec.query === '', searchId]);
   const running = searchId !== 0 && phase === 'running';
   const live = searchId !== 0 && kind === 'ok';
   // Paths narrow the search ("Search the whole project" clears them); Include ignored files widens it: the funnel is
@@ -246,7 +241,7 @@ function SearchView({ root }: { root: string }) {
           <span>{ts.regexOff[0]} <code className="mono">.*</code> {ts.regexOff[1]}</span>
         </div>
       )}
-      {spec.query === '' && <FirstOpen recent={recent} onPick={(r) => { st().setSpec(r); toField(); }} />}
+      {spec.query === '' && <FirstOpen />}
       {kind === 'multiline' && <p className="fif-state" id={lineId}>{ts.multiline}</p>}
       {empty && (
         <div className="fif-state">
@@ -294,22 +289,10 @@ function Totals({ results, files, more }: { results: number; files: number; more
   return <><span className="fif-n mono">{a}</span>{mid}<span className="fif-n mono">{b}</span>{tail}</>;
 }
 
-/** An empty field: the project's recent searches (a click runs one), and what a search covers. */
-function FirstOpen({ recent, onPick }: { recent: SearchSpec[]; onPick: (s: SearchSpec) => void }) {
+/** An empty field: what a search covers. No past searches are kept or shown. */
+function FirstOpen() {
   return (
     <div className="fif-empty">
-      {recent.length > 0 && (
-        <div className="fif-recent">
-          <span className="section-label fif-recent-label">{ts.recent}</span>
-          {recent.map((r) => (
-            <button key={`${r.query}\n${optionMarks(r)}`} type="button" className="fif-recent-item" onClick={() => onPick(r)}>
-              <Icon name="clock" size={12} stroke={1.7} />
-              <span className="fif-recent-q mono">{r.query}</span>
-              {optionMarks(r) && <span className="fif-recent-opts mono">{optionMarks(r)}</span>}
-            </button>
-          ))}
-        </div>
-      )}
       <p className="fif-about">{ts.about}</p>
       <p className="fif-about is-keys">{ts.selectAndPress} <span className="kbd mono">{kbd('⌘⇧F')}</span>.</p>
     </div>

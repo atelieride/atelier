@@ -23,7 +23,6 @@ const strings = {
   includeIgnored: 'Include ignored files',
   includeHint: 'src/, *.ts',
   excludeHint: '**/*.test.ts',
-  recent: 'Recent',
   about: 'Searches every text file of the project, as the Files tree lists it: ignored files and build folders stay out unless you ask.',
   /** Followed by the key, then a period. */
   selectAndPress: 'Select text anywhere and press',

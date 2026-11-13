@@ -9,7 +9,15 @@ import { dirtyPaths, handoffOf } from '../editor/savers';
 import { useApp } from '../store';
 import { anyResult, buildRows, fileKey, stepResult } from './model';
 import { searchLoaded } from './open';
-import { pushRecent } from './recent';
+
+/** Where an earlier build kept the last searches of each project. Searches are no longer remembered anywhere. */
+const OLD_HISTORY_KEY = 'atelier.search.recent';
+
+/** Drops the list of past searches an earlier build may have stored; storage that can't be reached is left alone. */
+export function forgetSearchHistory(): void {
+  try { localStorage.removeItem(OLD_HISTORY_KEY); } catch { /* storage unavailable: nothing was kept there either */ }
+}
+forgetSearchHistory();
 
 export type SearchPhase = 'idle' | 'running' | 'done' | 'stopped' | 'error';
 
@@ -369,16 +377,10 @@ export const useSearch = create<SearchState>((set, get) => {
         }
         case 'done': {
           swapIn();
-          const now = get();
           set({
             phase: e.stopped ? 'stopped' : 'done', progress: { searched: e.searched, total: e.total },
             skipped: e.skipped, limitHit: e.limitHit || capReached, fileCap: e.fileCap
           });
-          if (!e.stopped && now.files.length > 0) {
-            const root = useApp.getState().project?.root;
-            // What was searched, not what may have been typed since.
-            if (root) pushRecent(root, now.ranSpec);
-          }
           return;
         }
         case 'error':

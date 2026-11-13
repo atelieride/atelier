@@ -78,20 +78,11 @@
 /* Below the results: the rest of the sidebar, their empty area (its menu). */
 .fif-rest { flex: 1 1 0; min-height: 0; }
 
-/* States: first open, no results, a line break in the query, no project. The first open scrolls on its own: ten recent
-   searches and the filters open fit the shortest window. */
+/* States: first open, no results, a line break in the query, no project. The first open scrolls on its own: with the
+   filters open it fits the shortest window. */
 .fif-empty { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 6px 0 8px; overscroll-behavior: contain; }
 .fif-empty > .btn-ghost { margin: 2px 14px 0; }
 .fif-state { position: relative; margin: 0; padding: 10px 14px 4px; font-size: 12px; line-height: 1.5; color: var(--text-3); }
-.fif-recent { display: flex; flex-direction: column; padding: 4px 6px 2px; }
-.fif-recent-label { padding: 6px 8px 4px; }
-.fif-recent-item { display: flex; align-items: center; gap: 8px; min-width: 0; height: 26px; padding: 0 8px; border-radius: var(--r-sm); color: var(--text-2); font-size: 12px; text-align: left;
-  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
-.fif-recent-item svg { flex: none; color: var(--text-4); }
-.fif-recent-item:hover { background: var(--bg-hover); color: var(--text); }
-.fif-recent-item:active { background: var(--tint-violet); }
-.fif-recent-q { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
-.fif-recent-opts { flex: none; margin-left: auto; font-size: 10.5px; color: var(--text-4); }
 .fif-about { margin: 0; padding: 8px 16px 0; font-size: 12px; line-height: 1.5; color: var(--text-3); }
 .fif-about.is-keys { padding-top: 4px; color: var(--text-4); }
 .fif-about .kbd { font-size: 10.5px; }

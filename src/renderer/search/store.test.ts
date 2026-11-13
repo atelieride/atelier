@@ -9,10 +9,9 @@ vi.mock('../editor/savers', () => ({
   handoffOf: (p: string) => (dirty.docs.has(p) ? { state: { doc: dirty.docs.get(p) } } : undefined)
 }));
 
-import { useSearch } from './store';
+import { forgetSearchHistory, useSearch } from './store';
 import { fileKey, matchKey } from './model';
 import { hasSearchResults, selectionSeed, stepSearchResult } from './open';
-import { loadRecent } from './recent';
 
 const g = globalThis as { window?: unknown; localStorage?: unknown };
 let had: unknown;
@@ -333,26 +332,27 @@ test('the filters of the listed results are the ones their search ran with, not 
   expect(st().ranFilters).toEqual({ include: '', exclude: '' });
 });
 
-test('the recent list gets the query on done with results only', () => {
-  const saved = new Map<string, string>();
-  g.localStorage = { getItem: (k: string) => saved.get(k) ?? null, setItem: (k: string, v: string) => void saved.set(k, v), removeItem: () => {} };
-  st().setQuery('none'); st().run();
-  emit(done());
-  expect(loadRecent('/p')).toEqual([]);
+test('a search leaves no history: nothing about it is written to storage', () => {
+  const setItem = vi.fn();
+  g.localStorage = { getItem: () => null, setItem, removeItem: () => {} };
   st().setQuery('found'); st().run();
   emit(batch([file('a.ts')]));
   emit(done());
-  expect(loadRecent('/p').map((s) => s.query)).toEqual(['found']);
   st().setQuery('stopped'); st().run();
   emit(batch([file('a.ts')]));
   emit(done({ stopped: true }));
-  expect(loadRecent('/p').map((s) => s.query)).toEqual(['found']);
-  // Typed on before the search ends: the query searched is the one remembered, not the one in the field.
-  st().setQuery('ran'); st().run();
-  emit(batch([file('a.ts')]));
-  st().setQuery('ran ahead');
-  emit(done());
-  expect(loadRecent('/p').map((s) => s.query)).toEqual(['ran', 'found']);
+  st().setQuery('');
+  expect(setItem).not.toHaveBeenCalled();
+});
+
+test('the list of past searches an earlier build kept is dropped, and nothing else', () => {
+  const saved = new Map<string, string>([['atelier.search.recent', '{"/p":[{"query":"old"}]}'], ['atelier.panels', '{}']]);
+  g.localStorage = { getItem: (k: string) => saved.get(k) ?? null, setItem: (k: string, v: string) => void saved.set(k, v), removeItem: (k: string) => void saved.delete(k) };
+  forgetSearchHistory();
+  expect([...saved.keys()]).toEqual(['atelier.panels']);
+  // Storage unavailable (a private window, the demo in a locked-down browser): nothing throws.
+  g.localStorage = { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('denied'); }, removeItem: () => { throw new Error('denied'); } };
+  expect(() => forgetSearchHistory()).not.toThrow();
 });
 
 test('after 1,000 matches new files arrive collapsed', () => {

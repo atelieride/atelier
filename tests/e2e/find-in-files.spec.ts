@@ -197,7 +197,7 @@ test('the activity item right under Files opens FIND IN FILES: the field focused
   await look(view(), 'test-results/find-in-files-first-open.png', { settle: 200 });
 });
 
-test('typing streams results grouped by file in path order; ignored and binary files stay out; Recent keeps the query', async () => {
+test('typing streams results grouped by file in path order; ignored and binary files stay out; no search is remembered', async () => {
   await fresh();
   await search('token');
   await expect(totals()).toHaveText('14 results in 3 files');
@@ -240,14 +240,13 @@ test('typing streams results grouped by file in path order; ignored and binary f
   await win.getByRole('menuitem', { name: 'Copy Line' }).click();
   await expect.poll(() => copies().at(-1)).toBe('export function readSession(token: string, now = Date.now()): Session | null {');
 
-  // An empty field: the first-open state again, with the search just done first under Recent; a click runs it.
+  // An empty field: the first-open state again, with no list of past searches, and nothing about the search stored.
   await search('');
   await expect(rows()).toHaveCount(0);
-  await expect(view().locator('.fif-recent-item').first()).toHaveText('token');
-  await look(view(), 'test-results/find-in-files-recent.png', { settle: 200 });
-  await view().locator('.fif-recent-item', { hasText: 'token' }).click();
-  await expect(field()).toHaveValue('token');
-  await expect(field()).toBeFocused();
+  await expect(view().locator('.fif-about').first()).toBeVisible();
+  await expect(view().getByText('Recent', { exact: true })).toHaveCount(0);
+  expect(await win.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('atelier.search')))).toEqual([]);
+  await search('token');
   await expect(totals()).toHaveText('14 results in 3 files');
 
   // Clear Results empties the field and the list.
@@ -603,17 +602,10 @@ test('a notice that arrives once rows are on screen sits right under the last of
   await expect(line).toBeVisible({ timeout: 15000 });
 });
 
-test('at the 600 px window height, ten recent searches with the filters open still reach the bottom', async () => {
+test('at the 600 px window height, the first-open state with the filters open still reaches the bottom', async () => {
   await fresh();
-  const recent = Array.from({ length: 10 }, (_, i) => ({ query: `recent query ${i + 1}`, matchCase: i % 2 === 0, wholeWord: false, regex: i % 3 === 0 }));
-  await win.evaluate(({ root, list }) => {
-    const all = JSON.parse(localStorage.getItem('atelier.search.recent') ?? '{}') as Record<string, unknown>;
-    localStorage.setItem('atelier.search.recent', JSON.stringify({ ...all, [root]: list }));
-  }, { root: project, list: recent });
-  // Read again when the field empties.
   await search('x');
   await search('');
-  await expect(view().locator('.fif-recent-item')).toHaveCount(10);
   await sizeTo(1280, 600);
   await view().getByRole('button', { name: 'Filters' }).click();
   const end = view().locator('.fif-about.is-keys');
