@@ -40,16 +40,28 @@
 .fif-progress { position: absolute; left: 12px; right: 10px; bottom: -6px; height: 2px; border-radius: 2px; background: var(--line); overflow: hidden; pointer-events: none; }
 .fif-progress i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--brand); transition: width var(--t-slow) var(--ease); }
 
-/* The summary: "19 results in 5 files", the files not searched, the files counter while it runs. */
+/* The summary: "19 results in 5 files", the files not searched, the files counter while it runs, then ✦ Send to session. */
 .fif-summary { position: relative; flex: none; display: flex; align-items: center; gap: 5px; min-width: 0; padding: 10px 12px 6px 14px; font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
-/* The totals stay whole; the note beside them gives way first. */
+/* The totals stay whole; the note beside them gives way first. Shrinking shares the shortfall by weight, and a totals
+   box even a fraction of a pixel short draws its ellipsis: the note's weight is so much larger that the totals' share
+   rounds to nothing until the note is gone. */
 .fif-totals { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .fif-n { color: var(--text-2); font-size: 11px; }
 .fif-sep { flex: none; color: var(--text-4); }
 .fif-skipped-link { font-size: 11.5px; color: var(--text-4); }
-.fif-summary .fif-skipped-link { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fif-summary .fif-skipped-link { flex: 0 1000000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fif-skipped-link:hover, .fif-skipped-link[aria-expanded="true"] { color: var(--link); }
 .fif-counter { flex: none; font-size: 10.5px; color: var(--text-4); font-variant-numeric: tabular-nums; }
+/* ✦ Send to session, at the right: it has the room the totals and the note leave, at least its sparkle's; short of the
+   whole name, the sparkle alone (the name in its tip). */
+.fif-send-slot { flex: 1 1 0; min-width: 22px; display: flex; justify-content: flex-end; container-type: inline-size; }
+.fif-send { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 5px; border-radius: 5px; font-size: 11.5px; color: var(--link);
+  white-space: nowrap; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.fif-send svg { flex: none; color: var(--pink); }
+.fif-send:hover { color: var(--text); background: var(--bg-hover); }
+.fif-send:active { background: var(--tint-violet); }
+.fif-send:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--violet); }
+@container (max-width: 118px) { .fif-send-label { display: none; } }
 
 /* Notices and quiet lines. */
 .fif-notice { margin: 4px 10px 6px 12px; padding: 8px 10px; display: flex; gap: 8px; border-radius: var(--r-sm); font-size: 11.5px; line-height: 1.45; }
@@ -131,4 +143,6 @@
 .fif-skipped-row .file-icon { flex: none; }
 .fif-skipped-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .fif-skipped-rel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--text-2); }
-.fif-skipped-why { font-size: 11px; color: var(--text-4); }
+/* A reason too long for the line wraps in balanced halves; the size never parts from its dot. */
+.fif-skipped-why { font-size: 11px; color: var(--text-4); text-wrap: balance; }
+.fif-skipped-size { white-space: nowrap; }

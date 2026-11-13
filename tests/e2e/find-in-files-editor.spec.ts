@@ -4,7 +4,7 @@
 // Markdown file saved as Preview shown as source for the visit; a result shown once (not again when its view is made
 // again); a match moved by an edit on disk; Esc, the find card and an emptied query taking the marks away; a file over
 // 5 MB opened straight in the large view, its ruler ticked without a long task and kept from one result to the next; a
-// minified file's single 4.5 MB line left to its result's own tick.
+// minified file's single 4.5 MB line left to its result's own tick; a tab with unsaved changes searched as it shows.
 import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -73,6 +73,8 @@ const NARWHAL_LINE = 45_000;
 const BELUGA_LINES = [10_000, 50_000];
 /** A minified file: about 4.5 MB on one line (still under 5 MB: the usual editor), a word near each end. */
 const MINIFIED = `var pelican=1;${'a=b+c;'.repeat(750_000)}var heron=2;\n`;
+/** A file edited in its tab and left unsaved: searched as the tab shows it. */
+const DRAFT = ['// a draft', 'export const ocelot = 1;', ''].join('\n');
 /** A file changed since its commit (Margin and Diff to switch between), with two matches. */
 const DIFFY = ['export const okapi = 1;', 'export const b = 2;', 'export const c = okapi + 1;', ''].join('\n');
 
@@ -142,6 +144,7 @@ test.beforeAll(async () => {
   write('logs/big.log', Array.from({ length: BIG_LINES }, (_, i) => big(i + 1)).join('\n') + '\n');
   write('src/diffy.ts', DIFFY.replace('b = 2', 'b = 1'));
   write('src/kept.ts', 'export const quokka = true;\n');
+  write('src/draft.ts', DRAFT);
   write('lib/app.min.js', MINIFIED);
   git(project, 'add', '.');
   git(project, 'commit', '-q', '-m', 'first');
@@ -451,4 +454,31 @@ test('a double click on a result keeps its tab: the next result opens beside it'
   await matchRow('src/diffy.ts', 1).click();
   await expect(tab('diffy.ts')).toHaveClass(/is-preview/);
   await expect(tab('kept.ts')).toBeVisible();
+});
+
+test('a tab with unsaved changes is searched as it shows: its new text found, the text still on disk not', async () => {
+  await search('ocelot');
+  await expect(totals()).toHaveText('1 result in 1 file');
+  await matchRow('src/draft.ts', 2).click();
+  const draft = win.locator('section.file-view[aria-label="src/draft.ts"]');
+  await expect(draft.locator('.cm-content')).toBeFocused();
+  await expect.poll(pageSelection).toBe('ocelot');
+  // Typed over the selected match, not saved.
+  await win.keyboard.type('margay');
+  await expect(tab('draft.ts').locator('.tab-dirty')).toBeVisible();
+  expect(readFileSync(join(project, 'src/draft.ts'), 'utf8')).toBe(DRAFT);
+  await search('margay');
+  await expect(matchRow('src/draft.ts', 2).locator('.fif-text')).toHaveText('export const margay = 1;');
+  await expect(totals()).toHaveText('1 result in 1 file');
+  await search('ocelot');
+  await expect(view().locator('.fif-state')).toHaveText('No results.');
+  await look(win, 'test-results/find-in-files-editor-unsaved.png', { settle: 200 });
+  // The edit undone: the tab shows the disk's text again, and so does the search.
+  await draft.locator('.cm-content').focus();
+  await win.keyboard.press('Meta+z');
+  await expect(draft.locator('.cm-line', { hasText: 'export const' })).toHaveText('export const ocelot = 1;');
+  await search('margay');
+  await expect(view().locator('.fif-state')).toHaveText('No results.');
+  await search('ocelot');
+  await expect(totals()).toHaveText('1 result in 1 file');
 });

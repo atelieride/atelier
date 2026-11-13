@@ -137,6 +137,27 @@ describe('Find in Files IPC', () => {
     await expect(listed[0]).rejects.toThrow();
   });
 
+  test('ATELIER_TEST_SEARCH_MAX_BYTES (tests only) lowers the size past which a file is listed as not searched', () => {
+    const had = process.env.ATELIER_TEST_SEARCH_MAX_BYTES;
+    try {
+      delete process.env.ATELIER_TEST_SEARCH_MAX_BYTES;
+      const plain = setup();
+      plain.start(plain.win(1, '/p/a'), req(1));
+      expect(plain.services[0]!.deps.limits).toBeUndefined();
+      process.env.ATELIER_TEST_SEARCH_MAX_BYTES = '1024';
+      const lowered = setup();
+      lowered.start(lowered.win(1, '/p/a'), req(1));
+      expect(lowered.services[0]!.deps.limits).toEqual({ maxBytes: 1024 });
+      // Anything but a positive number: the app's own limit.
+      process.env.ATELIER_TEST_SEARCH_MAX_BYTES = 'big';
+      const junk = setup();
+      junk.start(junk.win(1, '/p/a'), req(1));
+      expect(junk.services[0]!.deps.limits).toBeUndefined();
+    } finally {
+      if (had === undefined) delete process.env.ATELIER_TEST_SEARCH_MAX_BYTES; else process.env.ATELIER_TEST_SEARCH_MAX_BYTES = had;
+    }
+  });
+
   test('one service per window, its events to that window only; stop reaches the same service', () => {
     const { services, start, stop, win } = setup();
     const a = win(1, '/p/a');

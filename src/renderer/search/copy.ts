@@ -53,6 +53,11 @@ const strings = {
   dismiss: 'Dismiss',
   copyLine: 'Copy Line',
   copyAll: 'Copy All Results',
+  /** The summary's ✦ link, and the menus' item that does the same. */
+  send: 'Send to session',
+  sendMenu: 'Send to Session…',
+  /** The results typed into a new session's prompt. */
+  typedInNew: 'The search results are in the prompt. Review them and press Enter to send.',
   /** The skipped files' popover. */
   skippedTitle: (n: number) => `${files(n)} not searched`,
   tooLarge: (limit: string) => `Too large to search (over ${limit})`,

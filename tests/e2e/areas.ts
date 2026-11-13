@@ -70,6 +70,7 @@ export const SPECS: Record<string, Area[]> = {
   'files-details.spec.ts': ['files'],
   'find-in-files.spec.ts': ['files'],
   'find-in-files-editor.spec.ts': ['files', 'editor'],
+  'find-in-files-limits.spec.ts': ['files'],
   'find-replace.spec.ts': ['editor'],
   'terminal-find.spec.ts': ['terminal', 'editor'],
   'diff-ruler.spec.ts': ['editor'],

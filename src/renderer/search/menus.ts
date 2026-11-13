@@ -6,9 +6,9 @@ import { t } from '../i18n/en';
 import { kbd } from '../kbd';
 import type { MenuItem } from '../menu-model';
 import { useApp } from '../store';
-import { openFileResult, openResult } from './actions';
+import { copyAllResults, openFileResult, openResult, sendResults } from './actions';
 import { ts } from './copy';
-import { anyExpanded, buildRows, lineCopy, resultsText, type Row } from './model';
+import { anyExpanded, buildRows, lineCopy, type Row } from './model';
 import { useSearch } from './store';
 
 type FileRow = Extract<Row, { kind: 'file' }>;
@@ -49,7 +49,8 @@ export function searchAreaMenu(): MenuItem[] {
   const shown = rows.length > 0;
   const anyOpen = anyExpanded(rows);
   return [
-    { id: 'copy-all', label: ts.copyAll, icon: 'copy', disabled: !shown, run: () => copy(resultsText(s.ranSpec, s.files, s.dismissed)) },
+    { id: 'copy-all', label: ts.copyAll, icon: 'copy', disabled: !shown, run: copyAllResults },
+    { id: 'send', label: ts.sendMenu, icon: 'sparkle', disabled: !shown, run: sendResults },
     'sep',
     anyOpen
       ? { id: 'collapse-all', label: ts.collapseAll, icon: 'collapseAll', disabled: !shown, run: () => useSearch.getState().setAllCollapsed(true) }

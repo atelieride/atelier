@@ -409,3 +409,17 @@ test('setSpec toggles re-run at once, filters wait for the debounce', () => {
   st().toggleFilters();
   expect(st().filtersOpen).toBe(true);
 });
+
+test('filters and toggles stay for the window\'s session: Clear Results keeps them, the next search sends them', () => {
+  st().setQuery('token');
+  st().setSpec({ matchCase: true });
+  st().setFilters({ include: 'src/', exclude: '**/*.test.ts', includeIgnored: true });
+  // Clear Results empties the field and the list, nothing else.
+  st().setQuery('');
+  expect(st()).toMatchObject({ include: 'src/', exclude: '**/*.test.ts', includeIgnored: true, spec: { query: '', matchCase: true } });
+  started = [];
+  st().setQuery('store');
+  vi.advanceTimersByTime(250);
+  expect(started).toHaveLength(1);
+  expect(started[0]).toMatchObject({ query: 'store', matchCase: true, include: 'src/', exclude: '**/*.test.ts', includeIgnored: true });
+});

@@ -1,6 +1,6 @@
 // Find in Files, the sidebar view: the head (Refresh or Stop, Clear Results, Collapse or Expand All), the field with its
-// three toggles and the filters' funnel, the summary, the notices of each state and the result list. Loaded on first use
-// with its list, popover, strings and stylesheet.
+// three toggles and the filters' funnel, the summary (with ✦ Send to session), the notices of each state and the result
+// list. Loaded on first use with its list, popover, strings and stylesheet.
 import './search.css';
 import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { SEARCH_LIMITS, type SearchSpec, type SkippedFile } from '@shared/search';
@@ -10,6 +10,7 @@ import { regexError } from '../editor/find/find-logic';
 import { t } from '../i18n/en';
 import { kbd } from '../kbd';
 import { useApp } from '../store';
+import { sendResults } from './actions';
 import { ts } from './copy';
 import { searchAreaMenu } from './menus';
 import { anyExpanded, buildRows, rowTotals, takesFocusOnMount } from './model';
@@ -219,8 +220,14 @@ function SearchView({ root }: { root: string }) {
             {count.results === 0 && running ? ts.searching : <Totals results={count.results} files={count.files} more={limitHit} />}
           </span>
           {skippedNote}
-          <span className="grow" />
-          {running && <span className="fif-counter mono">{ts.progress(progress.searched, progress.total)}</span>}
+          {running
+            ? <><span className="grow" /><span className="fif-counter mono">{ts.progress(progress.searched, progress.total)}</span></>
+            // Its room is what the summary leaves: short of it, the sparkle alone, the name in its tip.
+            : <span className="fif-send-slot">
+                <button type="button" className="fif-send" aria-label={ts.send} data-tip={ts.send} onClick={sendResults}>
+                  <Icon name="sparkle" size={12} stroke={1.8} /><span className="fif-send-label">{ts.send}</span>
+                </button>
+              </span>}
         </div>
       )}
 

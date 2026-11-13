@@ -10,6 +10,7 @@ import { IPC } from '@shared/api';
 import { SEARCH_LIMITS, type SearchEvent, type SearchRequest } from '@shared/search';
 import { compilePathFilter } from '@shared/search-filter';
 import { realOutAsync } from '../cpath';
+import { devEnv } from '../dev-env';
 import { searchIdSchema, searchStartSchema } from '../ipc-schemas';
 import { pageReloading } from '../popout-wiring';
 import { listSearchFiles } from './list';
@@ -36,6 +37,15 @@ interface Entry { wc: WebContents; project: SearchProject; service: SearchServic
 
 /** An entry's service until its own is made. */
 const NO_SERVICE: SearchServiceLike = { start: () => {}, stop: () => {}, dispose: () => {} };
+
+/**
+ * Tests only (none in the packaged app): a lower size past which a file is listed as not searched, so a test needs a
+ * 2 KB file rather than one over 50 MB.
+ */
+function testLimits(): SearchServiceDeps['limits'] {
+  const maxBytes = Number(devEnv('ATELIER_TEST_SEARCH_MAX_BYTES'));
+  return maxBytes > 0 ? { maxBytes } : undefined;
+}
 
 export function installSearchIpc(deps: SearchIpcDeps): { filesChanged(root: string, ignoredOnly?: boolean): void } {
   const create = deps.createService ?? ((d: SearchServiceDeps) => new SearchService({ ...d, spawn: () => new Worker(deps.workerPath) }));
@@ -88,7 +98,8 @@ export function installSearchIpc(deps: SearchIpcDeps): { filesChanged(root: stri
     if (had) drop(wc.id);
     const en: Entry = { wc, project, service: NO_SERVICE, last: null };
     // The project as it is when a search lists it (a later start may have brought new repositories).
-    en.service = create({ list: (req) => listing(en.project, req) });
+    const limits = testLimits();
+    en.service = create({ list: (req) => listing(en.project, req), ...(limits ? { limits } : {}) });
     entries.set(wc.id, en);
     if (!watched.has(wc.id)) {
       watched.add(wc.id);

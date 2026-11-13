@@ -1,12 +1,13 @@
 // Find in Files, the sidebar view: its activity item under Files, the first-open state, results streaming in grouped by
 // file in path order (ignored and binary files left out), the invalid regex, no results, the multiline line, a minified
 // file's thousands of matches in a list that keeps only what is on screen, collapse and expand, dismiss, the rows'
-// menus from the keyboard, and the layout at the sidebar's narrowest width on either side of the window.
+// menus from the keyboard, the filters, files changed since a search, the layout at the sidebar's narrowest width on
+// either side of the window, and the results sent to a Claude session's prompt (fake-claude-prompt.pl) or copied.
 import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { AtelierApi } from '../../src/shared/api';
 import { e2eEnv } from './env';
 import { layoutProblems, NO_PROBLEMS } from './layout';
@@ -63,6 +64,16 @@ const TOKENS = [
   '    this.entries.delete(token);',
   '  }',
   '}',
+  ''
+].join('\n');
+
+/** A test file with "expiresAt" once: what excluding the test files leaves out. */
+const EXPIRY_TEST = [
+  "import { expect, it } from 'vitest';",
+  '',
+  "it('ends an entry once expiresAt is past', () => {",
+  '  expect(Date.now()).toBeGreaterThan(0);',
+  '});',
   ''
 ].join('\n');
 
@@ -144,6 +155,7 @@ test.beforeAll(async () => {
   write('docs/auth.md', `# Auth\n\nEvery request carries a session token in a cookie; \`readSession\` checks it.\n\n${IDLE_LINE}\n`);
   write('src/auth/session.ts', SESSION);
   write('src/auth/tokens.ts', TOKENS);
+  write('src/auth/expiry.test.ts', EXPIRY_TEST);
   write('lib/app.min.js', `var a=1;${'zq;'.repeat(3000)}\n`);
   write(LONG_FILE, LONG_BODY);
   git(project, 'add', '.');
@@ -153,7 +165,8 @@ test.beforeAll(async () => {
   // A file nobody may read: every search lists it under "files not searched".
   write('secret.txt', 'a token nobody can read\n');
   chmodSync(join(project, 'secret.txt'), 0o000);
-  const e = e2eEnv();
+  // Claude's prompt as a fake that echoes what is pasted into it and says when something is submitted.
+  const e = e2eEnv({ ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude-prompt.pl') });
   home = e.home;
   // Which windows came forward (hidden in e2e, so never really): the pop-out's F4 must not raise the project window.
   e.env.ATELIER_TEST_REVEAL_LOG = join(home, 'test-reveals.log');
@@ -485,6 +498,53 @@ test('filters: "Search the whole project" clears the paths and leaves Include ig
   await expect(funnel).not.toHaveClass(/is-lit/);
 });
 
+test('filters: src/ narrows, **/*.test.ts leaves the tests out, the funnel stays lit closed; "No results in src/" leads to the whole project; Include ignored files finds the ignored file', async () => {
+  await fresh();
+  const funnel = view().getByRole('button', { name: 'Filters' });
+  const include = view().getByRole('textbox', { name: 'Files to include' });
+  const exclude = view().getByRole('textbox', { name: 'Files to exclude' });
+  const ignored = view().getByRole('switch', { name: 'Include ignored files' });
+  const rels = () => fileRows().evaluateAll((els) => els.map((e) => e.getAttribute('data-rel')));
+  await search('token');
+  await expect(totals()).toHaveText('14 results in 3 files');
+  await funnel.click();
+  await include.fill('src/');
+  await expect(totals()).toHaveText('13 results in 2 files');
+  expect(await rels()).toEqual(['src/auth/session.ts', 'src/auth/tokens.ts']);
+  // The test file holds the query once: excluding the test files leaves it out.
+  await search('expiresAt');
+  await expect(totals()).toHaveText('7 results in 3 files');
+  await exclude.fill('**/*.test.ts');
+  await expect(totals()).toHaveText('6 results in 2 files');
+  expect(await rels()).toEqual(['src/auth/session.ts', 'src/auth/tokens.ts']);
+  await win.mouse.move(640, 790);
+  await look(view(), 'test-results/find-in-files-filters.png', { settle: 200 });
+  // Closed, the funnel still says a filter is on.
+  await funnel.click();
+  await expect(view().locator('.fif-filters')).toHaveCount(0);
+  await expect(funnel).toHaveClass(/is-lit/);
+  // A match only outside src/: no results there, and the way to the whole project, which clears both paths.
+  await search('zebrafish');
+  await expect(view().locator('.fif-state')).toHaveText('No results in src/. Search the whole project');
+  await view().getByRole('button', { name: 'Search the whole project' }).click();
+  await expect(totals()).toHaveText('1 result in 1 file');
+  await expect(funnel).not.toHaveClass(/is-lit/);
+  await funnel.click();
+  await expect(include).toHaveValue('');
+  await expect(exclude).toHaveValue('');
+  // An ignored file is searched only on request.
+  await search('ignored file');
+  await expect(view().locator('.fif-state')).toHaveText('No results. · 1 file not searched');
+  await ignored.click();
+  await expect(totals()).toHaveText('1 result in 1 file');
+  expect(await rels()).toEqual(['notes.txt']);
+  await expect(matchRows('notes.txt').first().locator('mark.is-own')).toHaveText('ignored file');
+  await ignored.click();
+  await expect(view().locator('.fif-state')).toHaveText('No results. · 1 file not searched');
+  await funnel.click();
+  await expect(funnel).not.toHaveClass(/is-lit/);
+});
+
 test('a notice that arrives once rows are on screen sits right under the last of them', async () => {
   await fresh();
   await search('token');
@@ -495,10 +555,18 @@ test('a notice that arrives once rows are on screen sits right under the last of
   const last = (await rows().last().boundingBox())!;
   const at = (await line.boundingBox())!;
   expect(at.y - (last.y + last.height)).toBeLessThan(40);
+  await expect(line).toHaveText('Files changed since this search · Refresh');
   await look(view(), 'test-results/find-in-files-stale.png', { settle: 200 });
   await line.getByRole('button', { name: 'Refresh' }).click();
   await expect(line).toHaveCount(0);
   await expect(totals()).toHaveText('14 results in 3 files');
+  // A new file is a change too; nothing runs again by itself, Refresh does.
+  write('src/auth/pangolin.ts', 'export const pangolinToken = 1;\n');
+  await expect(line).toBeVisible({ timeout: 15000 });
+  await expect(totals()).toHaveText('14 results in 3 files');
+  await line.getByRole('button', { name: 'Refresh' }).click();
+  await expect(line).toHaveCount(0);
+  await expect(totals()).toHaveText('15 results in 4 files');
 });
 
 test('at the 600 px window height, ten recent searches with the filters open still reach the bottom', async () => {
@@ -538,8 +606,17 @@ test('at the sidebar\'s narrowest (200 px), on the left and swapped to the right
     expect(await layoutProblems(head, HEAD_PARTS), `${where}: head`).toEqual(NO_PROBLEMS);
     expect(await oneLine(head.locator('.section-label')), `${where}: the head's name on one line, whole`).toBe(true);
     expect(await layoutProblems(view().locator('.fif-query'), FIELD_PARTS), `${where}: field`).toEqual(NO_PROBLEMS);
-    expect(await layoutProblems(view().locator('.fif-summary'), ['.fif-totals', '.fif-skipped-link']), `${where}: summary`).toEqual(NO_PROBLEMS);
+    expect(await layoutProblems(view().locator('.fif-summary'), ['.fif-totals', '.fif-skipped-link', '.fif-send']), `${where}: summary`).toEqual(NO_PROBLEMS);
     expect(await oneLine(view().locator('.fif-totals')), `${where}: the totals whole`).toBe(true);
+    // Not even a fraction of a pixel short of its text: that much already draws the ellipsis.
+    expect(await view().locator('.fif-totals').evaluate((el) => {
+      const r = document.createRange();
+      r.selectNodeContents(el);
+      return r.getBoundingClientRect().width - el.getBoundingClientRect().width;
+    }), `${where}: the totals' text fits their box`).toBeLessThanOrEqual(0);
+    // Send to session stays within reach: its sparkle at least, the name in its tip.
+    await expect(view().locator('.fif-send svg')).toBeInViewport({ ratio: 1 });
+    await expect(view().locator('.fif-send')).toHaveAttribute('data-tip', 'Send to session');
     const f = fileRow(LONG_FILE);
     expect(await layoutProblems(f, FILE_PARTS), `${where}: file row`).toEqual(NO_PROBLEMS);
     for (const m of await matchRows(LONG_FILE).all()) {
@@ -932,4 +1009,81 @@ test('F4 in a pop-out: its project window walks the results; one in the pop-out\
   await expect(field()).toBeFocused();
   await expect.poll(fieldSelection).toEqual({ value: 'TokenStore', whole: true });
   await Promise.all([pop.waitForEvent('close'), pop.locator('.popout-bar').getByRole('button', { name: 'Move Back' }).click()]);
+});
+
+/** The visible terminal's screen as one text: its rows joined, so a wrapped line reads whole. */
+const screenText = () => win.locator('.terminal-slot:visible .xterm-rows').first().evaluate((el) =>
+  [...el.querySelectorAll(':scope > div')].map((r) => r.textContent ?? '').join('').replaceAll(' ', ' '));
+
+test('✦ Send to session offers this project\'s Claude sessions and a new one, no plain terminal: the block lands in the prompt unsent; Copy All Results copies the same text', async () => {
+  test.setTimeout(120_000);
+  await fresh();
+  // A plain terminal and a Claude session of this project.
+  await win.evaluate(async () => {
+    const api = (window as unknown as { atelier: AtelierApi }).atelier;
+    await api.terminals.create({ cols: 100, rows: 30, name: 'plain shell' });
+    await api.terminals.createSession({ cols: 100, rows: 30, name: 'auth refactor' });
+  });
+  // Shown once first, so its terminal has the pane's size before anything is typed into it (what this test reads is
+  // the screen as drawn).
+  await win.locator('.tab', { hasText: 'auth refactor' }).click();
+  await expect.poll(screenText, { timeout: 15000 }).toContain('FAKE-CLAUDE starting');
+  await search('TokenStore');
+  await expect(totals()).toHaveText('3 results in 2 files');
+  // A dismissed row stays out of what is sent and copied.
+  const dismissed = matchRows('src/auth/session.ts').nth(1);
+  await dismissed.hover();
+  await dismissed.getByRole('button', { name: 'Dismiss' }).click();
+  await expect(totals()).toHaveText('2 results in 2 files');
+  const block = [
+    'Search "TokenStore" (match case off, whole word off, regex off) — 2 results in 2 files',
+    "src/auth/session.ts:1  import { TokenStore } from './tokens';",
+    'src/auth/tokens.ts:1  export class TokenStore {'
+  ].join('\n');
+  const typed = block.replaceAll('\n', '⏎');
+
+  // The summary's menu: the results copied or sent, then the list's own items.
+  await view().locator('.fif-summary').click({ button: 'right' });
+  expect(await menuShape()).toEqual(['Copy All Results', 'Send to Session…', '—', 'Collapse All', 'Clear Results']);
+  await win.getByRole('menuitem', { name: 'Copy All Results' }).click();
+  await expect.poll(() => copies().at(-1)).toBe(block);
+
+  // ✦ Send to session: the send step, limited to Claude sessions, with a new one.
+  const palette = win.locator('.palette');
+  await view().getByRole('button', { name: 'Send to session' }).click();
+  await expect(palette.locator('.palette-send-head')).toContainText('Search "TokenStore" (match case off');
+  await expect(palette.locator('.palette-send-head')).toContainText('+2 lines');
+  await expect(palette.locator('.palette-input')).toHaveAttribute('placeholder', 'Search sessions');
+  await expect(palette.locator('.palette-section')).toHaveText(['Sessions']);
+  await expect(palette.locator('.palette-item .palette-label')).toHaveText(['auth refactor', 'New session']);
+  // Claude's prompt ready (its bracketed paste on): the session can take the text.
+  const session = palette.locator('.palette-item', { hasText: 'auth refactor' });
+  await expect(session).not.toHaveClass(/\bis-off\b/, { timeout: 20000 });
+  await win.mouse.move(640, 790);
+  await look(win, 'test-results/find-in-files-send.png', { settle: 300 });
+  await session.click();
+  await expect(palette).toHaveCount(0);
+  await expect(win.locator('.tab.is-active .tab-name')).toHaveText('auth refactor');
+  await expect.poll(screenText, { timeout: 15000 }).toContain(typed);
+  // In the prompt, not sent: what the user then types joins it, and their Enter sends the whole of it. Typed at a
+  // person's pace: an Enter pressed by the app once the paste settled would come between two keys and split it.
+  const sentByUser = async () => {
+    await expect(win.locator('.xterm-helper-textarea:visible')).toBeFocused();
+    await win.keyboard.type(' END', { delay: 200 });
+    await win.keyboard.press('Enter');
+    await expect.poll(screenText, { timeout: 10000 }).toContain(`FAKE-CLAUDE submitted=${typed} END`);
+  };
+  await sentByUser();
+  // The results stay as they were.
+  await expect(totals()).toHaveText('2 results in 2 files');
+
+  // Send to Session… from the list's empty area, New session: a session of its own, the block typed in once Claude is
+  // ready, not sent.
+  await view().locator('.fif-rest').click({ button: 'right' });
+  await win.getByRole('menuitem', { name: 'Send to Session…' }).click();
+  await palette.locator('.palette-item', { hasText: 'New session' }).click();
+  await expect(win.locator('.tab.is-active .tab-name')).toHaveText('search TokenStore', { timeout: 15000 });
+  await expect.poll(screenText, { timeout: 20000 }).toContain(typed);
+  await expect(win.locator('.toast', { hasText: 'The search results are in the prompt. Review them and press Enter to send.' })).toBeVisible();
+  await sentByUser();
 });

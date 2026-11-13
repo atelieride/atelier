@@ -120,8 +120,11 @@ export interface HistoryTab { repo: string; scope: ScmScope; nonce: number }
 /** A file at a commit, open read-only. */
 export interface RevFile { key: `rev:${string}`; root: string; oid: string; rel: string }
 export type NotesFilter = 'all' | 'triggers';
-/** A selection on its way to another terminal: the text and the folder its terminal is in now (null: unknown). */
-export interface PaletteSend { text: string; cwd: string | null }
+/**
+ * A selection on its way to another terminal: the text and the folder its terminal is in now (null: unknown).
+ * `newSession`: the text is context for Claude, so only Claude sessions are offered, and a new one started this way.
+ */
+export interface PaletteSend { text: string; cwd: string | null; newSession?: (send: boolean) => void }
 export type FileMode = 'margin' | 'diff';
 export type TreeEdit = { mode: 'new-file' | 'new-folder'; dir: string } | { mode: 'rename'; path: string };
 export type FolderSheet = { kind: 'session' | 'terminal'; cwd?: string };

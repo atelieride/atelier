@@ -39,7 +39,7 @@ export function SkippedPopover({ files, onClose }: { files: SkippedFile[]; onClo
             <FileIcon name={f.rel.slice(f.rel.lastIndexOf('/') + 1)} />
             <span className="fif-skipped-text">
               <span className="fif-skipped-rel mono" title={f.rel}>{f.rel}</span>
-              <span className="fif-skipped-why">{reasonOf(f)}{f.size > 0 && <span className="mono"> · {fileSize(f.size)}</span>}</span>
+              <span className="fif-skipped-why">{reasonOf(f)}{f.size > 0 && <> <span className="fif-skipped-size mono">· {fileSize(f.size)}</span></>}</span>
             </span>
             <button type="button" className="icon-btn" aria-label={`${ts.revealInFiles}: ${f.rel}`} data-tip={ts.revealInFiles}
               onClick={() => { onClose(false); useApp.getState().revealInTree(f.path); }}><Icon name="files" size={13} /></button>
