@@ -355,17 +355,16 @@ export function moveWsActivity(s: WorkspacesState, id: string, toWs: string): Wo
 }
 
 /**
- * Closing activity `id`. move: its terminals and tabs join its workspace's own tabs (keys not there yet); stop: its
- * terminals' memberships go (the store stops them). In front, its workspace's own tabs come forward. The same state
- * for anything but an activity.
+ * Closing activity `id`: its terminals belong to its workspace from now on. move: its tabs join the workspace's own tabs
+ * (keys not there yet); stop: they don't (the store stops its terminals and closes its file tabs) — its sessions wait
+ * under Resume in the workspace. In front, its workspace's own tabs come forward. The same state for anything but an
+ * activity.
  */
 export function removeWsActivity(s: WorkspacesState, id: string, how: 'move' | 'stop'): WorkspacesState {
   const a = s.list.find((w) => w.id === id);
   if (!a || !isWsActivity(a)) return s;
   const wsId = a.parent!;
-  const members = how === 'move'
-    ? Object.fromEntries(Object.entries(s.members).map(([tid, p]) => [tid, p === id ? wsId : p]))
-    : Object.fromEntries(Object.entries(s.members).filter(([, p]) => p !== id));
+  const members = Object.fromEntries(Object.entries(s.members).map(([tid, p]) => [tid, p === id ? wsId : p]));
   const list = s.list.filter((w) => w.id !== id).map((w) => {
     if (w.id !== wsId) return w;
     const n = how === 'move' ? { ...w, order: [...w.order, ...a.order.filter((x) => !w.order.includes(x))] } : w;

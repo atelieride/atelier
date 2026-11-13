@@ -668,7 +668,7 @@ export function sessionPlusMenu(o: { session: () => void; folder: () => void; te
   return [
     { id: 'new-session', label: m.newClaudeSession, icon: 'sparkle', hint: kbd('⌘N'), run: o.session },
     { id: 'session-in-folder', label: m.sessionInFolder, icon: 'files', hint: kbd('⌘⌥⇧N'), run: o.folder },
-    ...(o.terminal ? [{ id: 'new-terminal', label: m.newTerminal, icon: 'terminal' as const, hint: kbd('⌘T'), run: o.terminal }] : []),
+    ...(o.terminal ? [{ id: 'new-terminal', label: t.wsAct.newTerminal, icon: 'terminal' as const, hint: kbd('⌘T'), run: o.terminal }] : []),
     ...(o.activity ? ['sep' as const, {
       id: 'new-ws-activity', label: t.wsAct.newActivity, icon: 'wsActivity' as const, run: o.activity.run,
       ...(o.activity.disabled ? { disabled: true, tip: o.activity.disabled } : {})

@@ -198,10 +198,10 @@ describe('closing an activity', () => {
     expect(s.members).toMatchObject({ okta: 'A', mock: 'A' });
     expect(s.list.find((w) => w.id === 'A')!.order).toEqual(k('t:tok', 'f:/p/session.ts', 'f:/p/okta.ts', 't:okta', 't:mock'));
   });
-  test('stop: its terminals\' memberships go with it', () => {
+  test('stop: its terminals belong to its workspace (its sessions wait under Resume there); its tabs don\'t join it', () => {
     const s = removeWsActivity(mixed(), 'a1', 'stop');
     expect(s.list.some((w) => w.id === 'a1')).toBe(false);
-    expect('okta' in s.members || 'mock' in s.members).toBe(false);
+    expect(s.members).toMatchObject({ okta: 'A', mock: 'A' });
     expect(s.list.find((w) => w.id === 'A')!.order).toEqual(k('t:tok', 'f:/p/session.ts'));
   });
   test('in front: its workspace\'s own tabs come forward; a workspace left at it forgets it', () => {

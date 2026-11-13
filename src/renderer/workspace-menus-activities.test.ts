@@ -41,6 +41,7 @@ test('the "+" menu: New Terminal and New Activity… only when given, after a se
   const all = sessionPlusMenu({ session: noop, folder: noop, terminal: noop, activity: { run: noop } });
   expect(ids(all)).toEqual(['new-session', 'session-in-folder', 'new-terminal', '—', 'new-ws-activity']);
   expect(item(all, 'new-terminal')!.hint).toContain('T');
+  expect(item(all, 'new-terminal')!.label).toBe('New Terminal');
   expect(item(all, 'new-ws-activity')!.label).toBe('New Activity…');
   const full = item(sessionPlusMenu({ session: noop, folder: noop, terminal: noop, activity: { run: noop, disabled: 'full' } }), 'new-ws-activity')!;
   expect([full.disabled, full.tip]).toEqual([true, 'full']);

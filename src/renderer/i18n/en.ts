@@ -1651,6 +1651,7 @@ const strings = {
   wsAct: {
     activity: 'Activity',
     newActivity: 'New Activity…',
+    newTerminal: 'New Terminal',
     defaultName: 'New activity',
     rename: 'Rename Activity…',
     close: 'Close Activity…',
