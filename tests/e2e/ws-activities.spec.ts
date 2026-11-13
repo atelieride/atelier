@@ -193,6 +193,17 @@ test('activities: on; New Activity… from the "+"; its tabs alone, folded; the 
     await expect.poll(() => tabs(win)).toEqual(['Okta mock']);
     await expect(sso.locator('.term-row', { hasText: 'Okta mock' })).toHaveCount(0);
 
+    // A Claude session's row moves the same way, into the activity in front and back out to another one.
+    await sso.locator('.session-row', { hasText: 'okta-callback' }).dragTo(reset.locator('.wsa-head'));
+    await expect.poll(() => tabs(win)).toEqual(['Okta mock', expect.stringContaining('okta-callback')]);
+    await expect(sso.locator('.session-row', { hasText: 'okta-callback' })).toHaveCount(0);
+    await reset.locator('.wsa-chev').click();
+    await reset.locator('.session-row', { hasText: 'okta-callback' }).dragTo(sso.locator('.wsa-head'));
+    await expect.poll(() => tabs(win)).toEqual(['Okta mock']);
+    await expect(sso.locator('.session-row', { hasText: 'okta-callback' })).toBeVisible();
+    await expect(win.locator('.toast')).toContainText('Moved okta-callback to SSO with Okta');
+    await reset.locator('.wsa-chev').click();
+
     // Drag the tab from the strip onto the other activity's head: it leaves the strip, its toast names it.
     await win.locator('.tab', { hasText: 'Okta mock' }).dragTo(sso.locator('.wsa-head'));
     await expect.poll(() => tabs(win)).toEqual([]);
