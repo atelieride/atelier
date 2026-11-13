@@ -303,3 +303,32 @@ test('every sidebar width, 200 to 480 px: nothing spills or wraps, and the quest
     await s.stop();
   }
 });
+
+test('a long branch shows whole while the actions are hidden; under the pointer it gives way to them, and the name stays put', async () => {
+  const p = project();
+  git(join(p.root, 'docs'), 'checkout', '-q', '-b', 'feature/the-whole-branch-name');
+  const s = await launch(p.root);
+  try {
+    await s.win.getByRole('radio', { name: 'All Repositories' }).click();
+    await s.win.evaluate(() => (document.querySelector('.body') as HTMLElement).style.setProperty('--sidebar-w', '360px'));
+    const docs = block(s.win, 'docs');
+    const branch = docs.locator('.ab-branch-name');
+    await expect(branch).toHaveText('feature/the-whole-branch-name', { timeout: 15000 });
+    // The pointer elsewhere: the marks take only their own room, the branch everything up to them.
+    await s.win.locator('.scm-sidebar .sidebar-head .section-label').hover();
+    await expect(docs.locator('.ab-acts')).toHaveCSS('opacity', '0');
+    expect(await branch.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
+    const name = await docs.locator('.ab-name').boundingBox();
+    await look(s.win.locator('.scm-sidebar'), `${SHOTS}/scm-all-branch.png`, { settle: 200 });
+
+    // Under the pointer: the actions in the marks' place, the branch cut short of them, the name where it was.
+    await docs.locator('.ab-head').hover();
+    await expect(docs.locator('.ab-acts')).toHaveCSS('opacity', '1');
+    const [b, acts] = await Promise.all([docs.locator('.ab-branch').boundingBox(), docs.locator('.ab-acts').boundingBox()]);
+    expect(b!.x + b!.width).toBeLessThanOrEqual(acts!.x);
+    expect(await docs.locator('.ab-name').boundingBox()).toEqual(name);
+    await look(s.win.locator('.scm-sidebar'), `${SHOTS}/scm-all-branch-hover.png`, { settle: 200 });
+  } finally {
+    await s.stop();
+  }
+});

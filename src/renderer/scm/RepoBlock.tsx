@@ -124,16 +124,17 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
           {row.dir && <span className="ab-dir">{row.dir}</span>}<span className="ab-leaf">{row.name}</span>
         </button>
         {row.note && <span className="sw-wt ab-note" data-tip={row.tip ?? undefined}>{row.note}</span>}
-        {(branch || status.oid) && (
-          <span className="ab-branch mono"><Icon name="git" size={11} stroke={1.8} /><span className="ab-branch-name">{branch ?? status.oid!.slice(0, 7)}</span></span>
-        )}
-        {!branch && !status.oid && <span className="grow" />}
-        <span className="ab-marks">
-          {view.error && <i className="ab-error" role="img" aria-label={a.unreadable(view.error)} data-tip={a.unreadable(view.error)} />}
-          {view.changes > 0 && <span className="sw-chip is-changes" aria-label={a.changed(view.changes)}>{view.changes}</span>}
-          {/* Once: here unless the button (shown) pulls, pushes or syncs and carries them. */}
-          {(view.countsOn === 'head' || folded || !writes) && <Counts view={view} />}
-          {view.clean && <span className="sw-chip is-clean" role="img" aria-label={a.inSync} data-tip={a.inSync}><Icon name="check" size={11} stroke={2.6} /></span>}
+        <span className="ab-tail">
+          {(branch || status.oid) && (
+            <span className="ab-branch mono"><Icon name="git" size={11} stroke={1.8} /><span className="ab-branch-name">{branch ?? status.oid!.slice(0, 7)}</span></span>
+          )}
+          <span className="ab-marks">
+            {view.error && <i className="ab-error" role="img" aria-label={a.unreadable(view.error)} data-tip={a.unreadable(view.error)} />}
+            {view.changes > 0 && <span className="sw-chip is-changes" aria-label={a.changed(view.changes)}>{view.changes}</span>}
+            {/* Once: here unless the button (shown) pulls, pushes or syncs and carries them. */}
+            {(view.countsOn === 'head' || folded || !writes) && <Counts view={view} />}
+            {view.clean && <span className="sw-chip is-clean" role="img" aria-label={a.inSync} data-tip={a.inSync}><Icon name="check" size={11} stroke={2.6} /></span>}
+          </span>
         </span>
         <span className="ab-acts" role="group" aria-label={a.actions(row.name)}>
           <HeadAction label={t.git.sync.fetch} icon="fetch" off={can.fetch} onClick={() => void fetchRepo(root, 'manual')} />

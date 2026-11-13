@@ -22,14 +22,20 @@
 .ab-dir { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-4); font-weight: 500; }
 .ab-leaf { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ab.is-worktree .ab-name { font-weight: 500; color: var(--text-2); }
-/* The branch takes only the room left after the name (basis 0): narrow, it gives way first, with an ellipsis, and the
-   name shrinks only once the branch has none left (the name is the block's identity). */
+/* The actions' room under the pointer: four icons, two in Read-only, ⋯ alone when narrow. */
+.ab { --ab-acts-w: 96px; }
+.ab.is-ro { --ab-acts-w: 48px; }
+/* Branch and marks share the room left after the name (basis 0), never less than the actions' room and a gap: the name
+   shrinks only once they are down to it, so what shows under the pointer never covers or moves a name (the block's
+   identity). */
+.ab-tail { display: flex; align-items: center; gap: 6px; flex: 1 1 0; min-width: calc(var(--ab-acts-w) + 6px); }
+/* The branch takes everything up to the marks: narrow, it gives way first, with an ellipsis. */
 .ab-branch { display: inline-flex; align-items: center; gap: 4px; min-width: 0; flex: 1 1 0; overflow: hidden; font-size: 11px; color: var(--text-4); }
 .ab-branch > svg { flex-shrink: 0; }
 .ab-branch-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-/* The marks keep the actions' room (four icons; two in Read-only): what shows under the pointer never covers a name. */
-.ab-marks { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-shrink: 0; min-width: 96px; }
-.ab.is-ro .ab-marks { min-width: 48px; }
+/* The marks take only their own room; under the pointer they widen to the actions' (hidden, they hold it), and the
+   branch's ellipsis comes in short of the actions. */
+.ab-marks { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-shrink: 0; margin-left: auto; }
 .ab-counts { display: inline-flex; gap: 6px; font-size: 11.5px; font-weight: 500; }
 .ab-error { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: var(--error); }
 /* Under the pointer (or the keyboard), the actions take the marks' place: the row never widens. */
@@ -37,7 +43,7 @@
 .ab-acts .icon-btn[aria-disabled="true"] { opacity: .4; cursor: default; }
 .ab-acts .icon-btn[aria-disabled="true"]:hover { background: none; color: var(--text-4); }
 .ab-head:hover .ab-acts, .ab-head:focus-within .ab-acts { opacity: 1; pointer-events: auto; }
-.ab-head:hover .ab-marks, .ab-head:focus-within .ab-marks { visibility: hidden; }
+.ab-head:hover .ab-marks, .ab-head:focus-within .ab-marks { visibility: hidden; min-width: var(--ab-acts-w); }
 
 .ab-body { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 0 6px 10px 28px; }
 .ab-field { display: flex; align-items: center; gap: 4px; height: 32px; padding: 0 3px 0 10px; border-radius: var(--radius); background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line); cursor: text; }
@@ -88,7 +94,7 @@
 /* Narrow: the body under the name, not indented; under the pointer only ⋯ (Fetch, Pull and Push are in it). */
 @container (max-width: 240px) {
   .ab-body { padding-left: 8px; }
-  .ab-marks, .ab.is-ro .ab-marks { min-width: 24px; }
+  .ab, .ab.is-ro { --ab-acts-w: 24px; }
   .ab-acts .ab-act-sync { display: none; }
 }
 
