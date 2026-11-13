@@ -30,6 +30,9 @@ import { dropRecent, pushRecent, renameRecent, type RecentFile } from './recent'
 import { clampPanel, loadLayout, saveLayout, type Panel, type PanelWidths } from './panels';
 import { loadChangesPrefs, saveChangesPrefs, toggleAllGroups, toggleGroup } from './changes-prefs';
 import { loadPins, pinnedFirst, prunePins, relinkPin, savePins, togglePin } from './pins';
+import {
+  EMPTY_ORDER, loadOrder, moveInBand, placeBand, pruneOrder, relinkOrder, saveOrder, stepBefore, unplace, type Band, type ManualOrder
+} from './row-order';
 import { resumablesFor } from './selectors';
 import { loadShelf, loadShelfCollapsed, nudgeInShelf, outsideOf, placeInShelf, removeFromShelf, saveShelf, saveShelfCollapsed, shelvable, touchesShelf, ungranted, type ShelfItem } from './shelf';
 import { hideIds, loadHidden, saveHidden, showId } from './hidden-tabs';
@@ -278,6 +281,12 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
   /** Pinned terminal ids of this project, in pin order (their rows go to the top of their list); saved between launches. */
   pins: string[];
   togglePinned(id: string): void;
+  /** The order unpinned sidebar rows were put in by hand, sessions and terminals apart; saved per project like the pins. */
+  rowOrder: ManualOrder;
+  /** A row dropped before `before` (null: the band's end) inside its band: the pins for a pinned band, else the order. */
+  reorderRow(band: Band, id: string, before: string | null): void;
+  /** Move Up (-1) / Move Down (1) inside the row's band; nothing at its ends. */
+  moveRowStep(band: Band, id: string, dir: -1 | 1): void;
   /** The Shelf: project files kept at hand in the Sessions sidebar, in order; saved per project. */
   shelf: ShelfItem[];
   /** The Shelf section shows only its head (saved between launches, the same for every project). */
@@ -1160,6 +1169,7 @@ export const useApp = create<AppState>((set, get) => ({
   diskNonce: {},
   claudeTemp: {},
   pins: [],
+  rowOrder: EMPTY_ORDER,
   shelf: [],
   shelfCollapsed: loadShelfCollapsed(),
   shelfNonce: 0,
@@ -1607,6 +1617,7 @@ export const useApp = create<AppState>((set, get) => ({
       const info = await window.atelier.terminals.resume(id, size.cols || 120, size.rows || 36);
       get().relinkTask(id, info.id);
       setPins(relinkPin(get().pins, id, info.id));
+      setRowOrder(relinkOrder(get().rowOrder, id, info.id));
       // Its workspace too: the new id is where the old one was.
       const ws = get().ws;
       if (ws) set({ ws: wsRelink(ws, id, info.id) });
@@ -2115,6 +2126,8 @@ export const useApp = create<AppState>((set, get) => ({
       const from = memberOf(s.ws, tid);
       if (from === id) return;
       set({ ws: wsMove(wsLive(s)!, key, id, from) });
+      // Moved by hand: it arrives there as a new row, not at a place read among rows it was never put with.
+      setRowOrder(unplace(get().rowOrder, tid));
       if (id === s.ws.active) get().applyTerminals(get().terminals);
       else say();
       return;
@@ -2124,6 +2137,7 @@ export const useApp = create<AppState>((set, get) => ({
     if (tid ? !s.terminals.some((x) => x.id === tid) || memberOf(s.ws, tid) !== s.ws.active : !s.tabOrder.includes(key)) return;
     // Written into the target first: a file the target shows is "shown elsewhere", so leaving this strip keeps it open.
     set({ ws: wsMove(wsLive(s)!, key, id) });
+    if (tid) setRowOrder(unplace(get().rowOrder, tid));
     dropTabs([key], false, true);
     // Where it went, and a way there; not when it was moved into a workspace just made, which comes forward.
     say();
@@ -2231,7 +2245,7 @@ export const useApp = create<AppState>((set, get) => ({
     if (get().popout) {
       // A pop-out reads the project's data but owns none of its tabs: nothing pruned, hidden or restored from here.
       const sp = scmPrefsOf(project.root);
-      useApp.setState({ pins: loadPins(project.root), taskLinks: loadTaskLinks(project.root), scmCollapsed: sp.collapsed ?? [], scmView: sp.view ?? 'one', scmFolds: sp.folds ?? {}, ...(sp.repo && !get().scmRepo ? { scmRepo: sp.repo } : {}) });
+      useApp.setState({ pins: loadPins(project.root), rowOrder: loadOrder(project.root), taskLinks: loadTaskLinks(project.root), scmCollapsed: sp.collapsed ?? [], scmView: sp.view ?? 'one', scmFolds: sp.folds ?? {}, ...(sp.repo && !get().scmRepo ? { scmRepo: sp.repo } : {}) });
       return;
     }
     const alive = get().terminals.map((x) => x.id);
@@ -2239,7 +2253,7 @@ export const useApp = create<AppState>((set, get) => ({
     useApp.setState({ ws: loadWorkspaces(project.root) });
     cutView();
     // Pruned like on every list: also against the resumables, once known.
-    useApp.setState({ pins: loadPins(project.root), shelf: loadShelf(project.root) });
+    useApp.setState({ pins: loadPins(project.root), rowOrder: loadOrder(project.root), shelf: loadShelf(project.root) });
     prunePinned();
     setHidden(prunePins(loadHidden(project.root), alive));
     useApp.setState({ taskLinks: loadTaskLinks(project.root) });
@@ -2554,6 +2568,17 @@ export const useApp = create<AppState>((set, get) => ({
     saveChangesPrefs({ compact: !changesExpanded, collapsed, grouping: changesGroup });
   },
   togglePinned: (id) => setPins(togglePin(get().pins, id)),
+  reorderRow: (band, id, before) => {
+    const moved = moveInBand(band.ids, id, before);
+    if (!moved) return;
+    if (band.pinned) { setPins(placeBand(get().pins, moved)); return; }
+    const order = get().rowOrder;
+    setRowOrder({ ...order, [band.kind]: placeBand(order[band.kind], moved) });
+  },
+  moveRowStep: (band, id, dir) => {
+    const before = stepBefore(band.ids, id, dir);
+    if (before !== undefined) get().reorderRow(band, id, before);
+  },
   addToShelf: (path, rel, before = null) => {
     const st = get();
     if (!shelvable(path, st.project?.realRoot ?? null)) return;
@@ -3690,9 +3715,11 @@ function scmPrefsOf(root: string): ReturnType<typeof loadScmPrefs> {
  */
 function prunePinned(terminals = useApp.getState().terminals) {
   const st = useApp.getState();
-  // Likewise the pins.
+  // Likewise the pins, and the order rows were put in by hand.
   if (st.popout || !st.project || !st.resumablesKnown || terminals.length === 0) return;
-  setPins(prunePins(st.pins, [...terminals.map((x) => x.id), ...st.resumables.map((r) => r.id), ...resuming]));
+  const alive = [...terminals.map((x) => x.id), ...st.resumables.map((r) => r.id), ...resuming];
+  setPins(prunePins(st.pins, alive));
+  setRowOrder(pruneOrder(st.rowOrder, alive));
 }
 
 /** Workspace memberships of terminals that are gone (neither running, resumable nor being resumed): the pins' rule. */
@@ -3725,6 +3752,15 @@ function setPins(pins: string[]) {
   if (pins.length === st.pins.length && pins.every((x, i) => x === st.pins[i])) return;
   useApp.setState({ pins });
   if (st.project) savePins(st.project.root, pins);
+}
+
+/** A new manual order of the sidebar's rows: state and storage, only when it changed. */
+function setRowOrder(order: ManualOrder) {
+  const st = useApp.getState();
+  const same = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+  if (same(order.sessions, st.rowOrder.sessions) && same(order.terminals, st.rowOrder.terminals)) return;
+  useApp.setState({ rowOrder: order });
+  if (st.project) saveOrder(st.project.root, order);
 }
 
 /**
