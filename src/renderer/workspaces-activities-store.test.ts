@@ -4,7 +4,8 @@ import { useApp } from './store';
 import { flatten, isSplit, single } from './split';
 import type { TabKey } from './tabs-model';
 import { isOpen, isProjectKey, workspaceOf, type WorkspacesState } from './workspaces';
-import { goToWorkspaceAt, stepWorkspace } from './workspace-menus';
+import { closeWorkspaceInFront, goToWorkspaceAt, renameWorkspaceInFront, stepWorkspace } from './workspace-menus';
+import { resumeMenu } from './menus';
 import { workspacesMenu } from './workspace-view';
 import { newSessionIn, newTerminalIn } from './launch';
 
@@ -428,6 +429,78 @@ describe('Resume inside an activity', () => {
     st().setTerminals(ALL);
     await st().resumeAll('all', 'a1');
     expect(resumed.sort()).toEqual(['old1', 'old2']);
+  });
+});
+
+describe('Resume heads and rows act on their own place', () => {
+  const res = (id: string) => ({ id, projectRoot: '/p', cwd: '/p', title: id, color: '#fff', sessionId: id, endedAt: 1 });
+  test('a resume row of the workspace\'s own rows, with an activity in front: Resume All and Dismiss All act on its own rows', async () => {
+    const resumed: string[] = [];
+    const dismissed: string[] = [];
+    const api = (g.window as { atelier: { terminals: Record<string, unknown> } }).atelier.terminals;
+    api.resume = async (id: string) => { resumed.push(id); return { ...term(`${id}2`, 60), session: { state: 'idle' } as unknown as TerminalInfo['session'] }; };
+    api.dismiss = async (id: string) => { dismissed.push(id); };
+    useApp.setState({ ws: { ...wsActs(), members: { ...wsActs().members, oldA: 'A', oldB: 'A', old1: 'a1' } }, resumables: [res('oldA'), res('oldB'), res('old1')], resumablesKnown: true });
+    st().setTerminals(ALL);
+    st().switchWorkspace('a1');
+    const items = resumeMenu('oldA', () => {});
+    const run = (id: string) => (items.find((i) => i !== 'sep' && i.id === id) as { run: () => void }).run();
+    run('dismiss-all');
+    expect([st().dismissAllAsk, st().dismissAllPlace]).toEqual([true, 'A']);
+    await st().confirmDismissAll();
+    expect(dismissed.sort()).toEqual(['oldA', 'oldB']);
+    run('resume-all');
+    await new Promise((r) => setTimeout(r, 0));
+    await st().bulkResume?.queue;
+    expect(resumed.sort().every((id) => ['oldA', 'oldB'].includes(id))).toBe(true);
+    expect(resumed).not.toContain('old1');
+  });
+});
+
+describe('the palette\'s workspace commands with an activity in front', () => {
+  test('Rename Workspace… edits the workspace\'s name; Close Workspace… asks about the workspace', () => {
+    start();
+    st().switchWorkspace('a1');
+    renameWorkspaceInFront();
+    expect(st().wsRenaming).toBe('A');
+    closeWorkspaceInFront();
+    expect(st().wsCloseAsk).toBe('A');
+  });
+});
+
+describe('off and on again keep a workspace\'s own view', () => {
+  test('a workspace left at an activity gets its own split and tab in front back', () => {
+    useApp.setState({ ws: { ...wsActs(), list: wsActs().list.map((w) => (w.id === 'A' ? { ...w, order: k('t:auth', 't:own2') } : w)), members: { ...wsActs().members, own2: 'A' } } });
+    st().setTerminals([...ALL, term('own2', 6)]);
+    st().select('auth');
+    st().splitRight();
+    st().select('own2');
+    expect(st().split.panes.map((p) => p.tabs)).toEqual([k('t:auth'), k('t:own2')]);
+    st().switchWorkspace('a1');
+    useApp.setState({ settings: { ...st().settings, wsActivities: false } });
+    st().applyWsActivities();
+    useApp.setState({ settings: { ...st().settings, wsActivities: true } });
+    st().applyWsActivities();
+    expect(st().ws!.active).toBe('A');
+    expect(st().split.panes.map((p) => p.tabs)).toEqual([k('t:auth'), k('t:own2')]);
+    expect(st().activeKey()).toBe('t:own2');
+    invariant();
+  });
+});
+
+describe('Close Workspace into a workspace with no room for its activities', () => {
+  test('the extra activities\' file tabs join the strip of the workspace in front', async () => {
+    start();
+    useApp.setState({ openFiles: [{ path: '/p/okta.ts', rel: 'okta.ts' } as never] });
+    useApp.setState({ ws: { ...st().ws!, list: st().ws!.list.map((w) => (w.id === 'a1' ? { ...w, order: k(...w.order, 'f:/p/okta.ts') } : w)) } });
+    for (let i = 0; i < 19; i++) st().newWsActivity('B');
+    st().switchWorkspace('B');
+    await st().closeWorkspace('A', 'move');
+    expect(st().ws!.active).toBe('B');
+    expect(st().tabOrder).toContain('f:/p/okta.ts');
+    expect(st().tabOrder).toEqual(expect.arrayContaining(k('t:bill', 't:auth', 't:okta', 't:mock')));
+    expect(st().openFiles).toHaveLength(1);
+    invariant();
   });
 });
 

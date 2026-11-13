@@ -872,7 +872,9 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
   stopResumeAll(): void;
   /** Dismiss All… (the Resume rows' menu) asked in the Resume head; they stay in ⌘K › Resume a session…. */
   dismissAllAsk: boolean;
-  askDismissAll(): void;
+  /** The place whose Resume head asks (activities on: an activity or a workspace's own rows); null: the place in front. */
+  dismissAllPlace: string | null;
+  askDismissAll(place?: string): void;
   cancelDismissAll(): void;
   confirmDismissAll(): Promise<void>;
   /** A terminal launched as a session to the side of the focused pane (⌥Enter on a task). */
@@ -1507,14 +1509,17 @@ export const useApp = create<AppState>((set, get) => ({
     if (b && !b.stopped) set({ bulkResume: { ...b, queue: [], stopped: true } });
   },
   dismissAllAsk: false,
-  askDismissAll: () => { enterSessions(); set({ dismissAllAsk: true, activity: 'sessions', menu: null, ...sidebarTo(false) }); },
-  cancelDismissAll: () => set({ dismissAllAsk: false }),
+  dismissAllPlace: null,
+  askDismissAll: (place) => { enterSessions(); set({ dismissAllAsk: true, dismissAllPlace: place ?? null, activity: 'sessions', menu: null, ...sidebarTo(false) }); },
+  cancelDismissAll: () => set({ dismissAllAsk: false, dismissAllPlace: null }),
   confirmDismissAll: async () => {
     const root = get().project?.root;
-    set({ dismissAllAsk: false });
+    const place = get().dismissAllPlace;
+    set({ dismissAllAsk: false, dismissAllPlace: null });
     if (!root) return;
     const st = get();
-    await Promise.allSettled(resumablesFor(st.resumables, root).filter((r) => inActiveWs(st, r.id)).map((r) => window.atelier.terminals.dismiss(r.id)));
+    const mine = (id: string) => (place && wsOn(st) ? memberOf(st.ws, id) === place : inActiveWs(st, id));
+    await Promise.allSettled(resumablesFor(st.resumables, root).filter((r) => mine(r.id)).map((r) => window.atelier.terminals.dismiss(r.id)));
   },
   history: [],
   historyLoaded: false,
@@ -2073,9 +2078,10 @@ export const useApp = create<AppState>((set, get) => ({
       get().applyTerminals(get().terminals);
       return;
     }
-    // Back: the activities' terminals and tabs leave the strip for their activities.
-    set({ ws: wsUnpark(wsLive(s)!) });
-    cutView();
+    // Back: the activities' terminals and tabs leave the strip for their activities; the workspace in front shows its
+    // own tabs with its own tab in front and split.
+    showView(s, wsUnpark(wsLive(s)!));
+    get().applyTerminals(get().terminals);
   },
   goToWorkspace: (id) => {
     const ws = get().ws;
@@ -2148,7 +2154,13 @@ export const useApp = create<AppState>((set, get) => ({
     if (how === 'stop') markStopping(mine);
     set({ ws });
     closeGone(closing);
-    if (how === 'move') { get().applyTerminals(get().terminals); return; }
+    if (how === 'move') {
+      // Past the target's room for activities, the extra ones' tabs joined its own: in front, they join the strip too.
+      const tgt = ws.active === target ? ws.list.find((w) => w.id === target) : undefined;
+      if (tgt) appendToStrip(tgt.order.filter((k) => !k.startsWith('t:') && liveKey(cur, k) && !cur.tabOrder.includes(k)));
+      get().applyTerminals(get().terminals);
+      return;
+    }
     await stopTerminals(mine);
   },
   newWsActivity: (wsId, move) => {

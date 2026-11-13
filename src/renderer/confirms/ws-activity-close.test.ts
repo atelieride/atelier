@@ -9,6 +9,7 @@ import { wsActivityCloseText } from '../workspace-view';
 import { WsActivityCloseHost } from './WsActivityCloseHost';
 import { WorkspaceCloseHost } from './WorkspaceCloseHost';
 import { WorkspaceEmpty } from '../components/WorkspaceEmpty';
+import { NewWorkspaceSheet } from '../components/NewWorkspaceSheet';
 
 // Closing an activity asks what to do with what is inside; an activity with nothing open shows its own empty state.
 
@@ -65,6 +66,25 @@ test('Close Activity…: its question, Move (the default, Enter) back to its wor
   expect(out).toContain('Cancel');
   useApp.setState({ wsActCloseAsk: null });
   expect(render(WsActivityCloseHost)).toBe('');
+});
+
+test('an atelierd that can\'t keep stopped sessions under Resume: said only when a session is inside', () => {
+  const said = 'This atelierd can’t keep them under Resume';
+  useApp.setState({ wsActCloseAsk: 'a1', daemon: { ...useApp.getState().daemon, closeStopAvailable: false } });
+  expect(render(WsActivityCloseHost)).toContain(said);
+  useApp.setState({ terminals: LIST.filter((x) => !x.session) });
+  expect(render(WsActivityCloseHost)).not.toContain(said);
+  useApp.setState({ wsActCloseAsk: null, daemon: { ...useApp.getState().daemon, closeStopAvailable: true } });
+});
+
+test('New Workspace counts workspaces only toward its limit', () => {
+  const list = [
+    ...Array.from({ length: 4 }, (_, i) => ({ id: `W${i}`, name: `W${i}`, color: 1, folder: null, order: [], active: null, layout: null })),
+    ...Array.from({ length: 16 }, (_, i) => ({ id: `x${i}`, parent: 'W0', name: `x${i}`, color: 1, folder: null, order: [], active: null, layout: null }))
+  ];
+  useApp.setState({ ws: { on: true, active: 'W0', list, members: {} }, wsSheet: {} });
+  expect(render(NewWorkspaceSheet)).not.toContain('Twenty workspaces is the most');
+  useApp.setState({ wsSheet: null });
 });
 
 test('Close Workspace… moves into a workspace, never into an activity', () => {

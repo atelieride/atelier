@@ -115,6 +115,20 @@ test('drop targets: every activity but the one in front; the own rows while an a
   expect(count(out, 'data-ws-drop="A"')).toBe(2);
 });
 
+test('Dismiss All… asked from the workspace\'s own rows shows its question there only, not in an activity\'s Resume head', () => {
+  const res = (id: string) => ({ id, projectRoot: '/p', cwd: '/p', title: id, color: '#fff', sessionId: id, endedAt: 1 });
+  useApp.setState({
+    ws: WS({ active: 'a1', members: { tok: 'A', okta: 'a1', mock: 'a1', bill: 'B', o1: 'A', o2: 'A', s1: 'a1', s2: 'a1' } }, { a1: true }),
+    resumables: [res('o1'), res('o2'), res('s1'), res('s2')], tabOrder: ['t:okta', 't:mock'], selectedId: 'okta',
+    dismissAllAsk: true, dismissAllPlace: 'A'
+  });
+  const out = html();
+  expect(count(out, 'resume-head is-confirming')).toBe(1);
+  const own = out.slice(out.indexOf('class="ws-own'));
+  expect(own).toContain('resume-head is-confirming');
+  useApp.setState({ dismissAllAsk: false, dismissAllPlace: null });
+});
+
 test('with the setting off the sidebar is today\'s: no activity heads', () => {
   useApp.setState({ settings: { ...useApp.getState().settings, wsActivities: false }, ws: { ...WS(), list: WS().list.filter((w) => !w.parent), members: { tok: 'A', bill: 'B' } } });
   const out = html();

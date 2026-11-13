@@ -362,12 +362,12 @@ describe('activities kept aside (the setting off) and back', () => {
     s = { ...s, list: s.list.map((w) => (w.id === 'A' ? { ...w, order: w.order.filter((x) => x !== 'f:/p/okta.ts') } : w)) };
     expect(entry(unparkWsActivities(s), 'a1').order).toEqual(k('t:okta', 't:mock'));
   });
-  test('a workspace closed meanwhile: its activities go, their terminals stay where the close put them', () => {
+  test('a workspace closed with Move meanwhile: its activities kept aside come back in the target, with their terminals', () => {
     let s = parkWsActivities(atSso());
     s = remove(s, 'B', 'A')!;
     const back = unparkWsActivities(s);
-    expect(back.list.some((w) => w.id === 'b1')).toBe(false);
-    expect(back.members.hook).toBe('A');
+    expect(back.list.find((w) => w.id === 'b1')).toMatchObject({ parent: 'A', color: 1 });
+    expect(back.members.hook).toBe('b1');
   });
   test('a workspace recolored meanwhile: its activities wear the new color', () => {
     const s = recolor(parkWsActivities(atSso()), 'A', 7);
@@ -376,6 +376,22 @@ describe('activities kept aside (the setting off) and back', () => {
   test('nothing parked: the same state', () => {
     const s = mixed();
     expect(unparkWsActivities(s)).toBe(s);
+  });
+  test('a workspace left at an activity gets its own tab in front and split back when the activities return', () => {
+    const OWN = { v: 2, panes: [{ tabs: ['t:tok'], front: 't:tok' }, { tabs: ['f:/p/session.ts'], front: 'f:/p/session.ts' }], focus: 1 };
+    const base = atSso();
+    const s = { ...base, list: base.list.map((w) => (w.id === 'A' ? { ...w, active: 'f:/p/session.ts' as TabKey, layout: OWN } : w)) };
+    const back = unparkWsActivities(parkWsActivities(s));
+    expect(entry(back, 'A')).toMatchObject({ active: 'f:/p/session.ts', layout: OWN });
+  });
+  test('a workspace closed with Move meanwhile: its activities kept aside go with it, and come back in the target', () => {
+    const s = remove(parkWsActivities(atSso()), 'A', 'B')!;
+    expect(s.parked!.list.filter((w) => w.parent === 'B').map((w) => w.id).sort()).toEqual(['a1', 'a2', 'b1']);
+    const back = unparkWsActivities(s);
+    expect(activitiesOf(back, 'B').map((w) => w.id).sort()).toEqual(['a1', 'a2', 'b1']);
+    expect(back.members).toMatchObject({ okta: 'a1', mock: 'a1', mail: 'a2', hook: 'b1', tok: 'B' });
+    // Closed with Stop: they go.
+    expect(remove(parkWsActivities(atSso()), 'A', null)!.parked!.list.map((w) => w.id)).toEqual(['b1']);
   });
   test('a resumed session, a renamed file, a pruned terminal and a forgotten tab reach the activities kept aside', () => {
     const parked = parkWsActivities(atSso());

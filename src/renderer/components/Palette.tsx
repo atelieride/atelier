@@ -92,7 +92,7 @@ import { moveToWindow, moveToWindowCommands } from '../move-window';
 import { newSessionIn } from '../launch';
 import { WorkspaceGlyph } from './WorkspaceGlyph';
 import { cardOf, wsActivityCard, wsColorVar } from '../workspace-view';
-import { askCloseWorkspace, stepWorkspace, wsActivityCommands } from '../workspace-menus';
+import { closeWorkspaceInFront, renameWorkspaceInFront, stepWorkspace, wsActivityCommands } from '../workspace-menus';
 import { activitiesOf, workspacesOf, type Dot } from '../workspaces';
 import { canMoveStep } from '../split';
 
@@ -611,8 +611,8 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
       ...(st.project && !st.popout && !st.settings.workspacesEverywhere ? [c('ws-toggle', t.ws.toggleCmd, st.ws?.on ? t.paletteOn : '', 'workspace', () => useApp.getState().setWorkspacesOn(!useApp.getState().ws?.on))] : []),
       ...(st.ws?.on && !st.popout ? [
         c('ws-new', t.ws.newWorkspace, kbd('⌘⌥T'), 'plus', () => setTimeout(() => useApp.getState().setWsSheet({}), 0)),
-        c('ws-rename', t.ws.rename, '', 'edit', () => { const s = useApp.getState(); s.setActivity('sessions'); if (s.ws) s.setWsRenaming(s.ws.active); }),
-        c('ws-close', t.ws.close, '', 'x', () => { const s = useApp.getState(); if (s.ws) { s.setActivity('sessions'); askCloseWorkspace(s.ws.active); } }),
+        c('ws-rename', t.ws.rename, '', 'edit', renameWorkspaceInFront),
+        c('ws-close', t.ws.close, '', 'x', closeWorkspaceInFront),
         c('ws-next', t.ws.nextCmd, '', 'chevronDown', () => stepWorkspace(1)),
         c('ws-prev', t.ws.prevCmd, '', 'chevronUp', () => stepWorkspace(-1))
       ] : []),

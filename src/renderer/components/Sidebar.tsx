@@ -109,7 +109,8 @@ function ResumeRun() {
 /** The Resume section's head: Pinned (when a pinned session waits) and All; inside an activity (`place`), its sessions. */
 function ResumeHead({ count, pinned, place }: { count: number; pinned: number; place?: string }) {
   const bulk = useApp((s) => s.bulkResume);
-  const dismissAsk = useApp((s) => s.dismissAllAsk);
+  // Dismiss All… asks in the Resume head of the place it was asked for.
+  const dismissAsk = useApp((s) => s.dismissAllAsk && s.dismissAllPlace === (place ?? null));
   const st = useApp.getState;
   if (dismissAsk && !bulk) {
     return (
@@ -358,8 +359,9 @@ function Workspaces({ ws, entered }: { ws: WorkspacesState; entered: Map<string,
           const open = isOpen(ws, w.id);
           const acts = withActivities ? activitiesOf(ws, w.id) : [];
           const atOwn = ws.active === w.id;
+          // With activities on, its own rows' Resume head acts on its own sessions, whatever place is in front.
           const own = <Sections terminals={inWorkspace(ws, w.id, terminals)} toResume={pinnedFirst(resumablesIn(ws, w.id, resumables, root), pins)} entered={entered} scope={`ws:${w.id}`} inGroup
-            empty={acts.length ? null : t.ws.groupEmpty} />;
+            empty={acts.length ? null : t.ws.groupEmpty} {...(withActivities ? { place: w.id } : {})} />;
           return (
             <WorkspaceGroup key={w.id} w={w} active={here === w.id} inAct={here === w.id && !atOwn} open={open} card={cardOf(ws, w.id, terminals, resumables, root, paths, tabs)}>
               {/* Its activities first, at the same indent as its own rows; then its own rows, a drop zone of its own tabs. */}

@@ -75,6 +75,11 @@ export interface Parked {
   members: Record<string, string>;
   /** Workspace id → the keys parking added to its own tabs (taken back out when the activities return). */
   joined: Record<string, TabKey[]>;
+  /**
+   * Workspace id → its own tab in front and split, for a workspace that was left at an activity: parking gave it that
+   * activity's, and the activities' return gives its own back.
+   */
+  own?: Record<string, { active: TabKey | null; layout: unknown }>;
 }
 
 export type DotKind = 'waiting' | 'working' | 'done' | 'resume';
@@ -264,9 +269,16 @@ export function memberOf(s: WorkspacesState, terminalId: string): string {
   return m && s.list.some((w) => w.id === m) ? m : s.active;
 }
 
-/** The activities kept aside with `fn` applied to each entry, and `keys` to each workspace's joined keys. */
+/**
+ * The activities kept aside with `fn` applied to each entry (and to each workspace's own front and split kept there),
+ * and `keys` to each workspace's joined keys.
+ */
 function mapParked(p: Parked, fn: (w: Workspace) => Workspace, keys: (ks: TabKey[]) => TabKey[]): Parked {
-  return { ...p, list: p.list.map(fn), joined: Object.fromEntries(Object.entries(p.joined).map(([w, ks]) => [w, keys(ks)])) };
+  const own = p.own && Object.fromEntries(Object.entries(p.own).map(([id, o]) => {
+    const m = fn({ id, name: '', color: 1, folder: null, order: [], active: o.active, layout: o.layout });
+    return [id, { active: m.active, layout: m.layout }];
+  }));
+  return { ...p, list: p.list.map(fn), joined: Object.fromEntries(Object.entries(p.joined).map(([w, ks]) => [w, keys(ks)])), ...(own ? { own } : {}) };
 }
 
 /** A resumed session's new id keeps its workspace and its place (an activity kept aside included). */
@@ -278,7 +290,7 @@ export function relink(s: WorkspacesState, from: string, to: string): Workspaces
   const swap = (x: TabKey) => (x === a ? b : x);
   const entry = (w: Workspace) => (w.order.includes(a) || w.active === a ? { ...w, order: w.order.map(swap), active: w.active === a ? b : w.active } : w);
   const p = s.parked;
-  const parked = p && (from in p.members || p.list.some((w) => w.order.includes(a)))
+  const parked = p && (from in p.members || p.list.some((w) => w.order.includes(a)) || Object.values(p.own ?? {}).some((o) => o.active === a))
     ? (() => { const { [from]: act, ...others } = p.members; return { ...mapParked(p, entry, (ks) => ks.map(swap)), members: act ? { ...others, [to]: act } : others }; })()
     : p;
   return {
@@ -404,7 +416,22 @@ export function remove(s: WorkspacesState, id: string, moveTo: string | null): W
   }));
   const left = workspacesOf({ list });
   const active = !places.has(s.active) ? s.active : target ?? (left[Math.min(i, left.length - 1)] ?? left[0]!).id;
-  return { ...s, list, members, active };
+  const { parked: _p, ...base } = s;
+  return { ...base, list, members, active, ...parkedAfterRemove(s.parked, id, target, color) };
+}
+
+/**
+ * Its activities kept aside when workspace `id` closes: into `target` with it (they come back there when activities
+ * return), or gone with their memberships (null: stopped). Its own kept front and joined keys go.
+ */
+function parkedAfterRemove(p: Parked | undefined, id: string, target: string | null, color: number): { parked?: Parked } {
+  if (!p) return {};
+  const gone = new Set(p.list.filter((w) => w.parent === id).map((w) => w.id));
+  const list = target ? p.list.map((w) => (w.parent === id ? { ...w, parent: target, color } : w)) : p.list.filter((w) => !gone.has(w.id));
+  const members = target ? p.members : Object.fromEntries(Object.entries(p.members).filter(([, a]) => !gone.has(a)));
+  const { [id]: _j, ...joined } = p.joined;
+  const own = p.own ? (({ [id]: _o, ...rest }) => rest)(p.own) : undefined;
+  return list.length ? { parked: { list, members, joined, ...(own && Object.keys(own).length ? { own } : {}) } } : {};
 }
 
 /** The active workspace's entry takes its live view: its order (project views out), its tab in front, its layout. */
@@ -476,15 +503,18 @@ export function parkWsActivities(s: WorkspacesState): WorkspacesState {
     members[tid] = ws ?? p;
   }
   const joined = { ...prev.joined };
+  const own = { ...prev.own };
   const list = workspacesOf(s).map((w) => {
     const mine = activitiesOf(s, w.id);
     if (!mine.length) return noPlace(w);
     const add = [...new Set(mine.flatMap((a) => a.order))].filter((x) => !w.order.includes(x));
     if (add.length) joined[w.id] = [...(joined[w.id] ?? []), ...add];
     const at = mine.find((a) => a.id === w.place);
+    if (at) own[w.id] = { active: w.active, layout: w.layout };
     return noPlace({ ...w, order: [...w.order, ...add], ...(at ? { active: at.active, layout: at.layout } : {}) });
   });
-  return { ...s, list, members, active: parentOf.get(s.active) ?? s.active, parked: { list: [...prev.list, ...acts], members: parkedMembers, joined } };
+  const parked: Parked = { list: [...prev.list, ...acts], members: parkedMembers, joined, ...(Object.keys(own).length ? { own } : {}) };
+  return { ...s, list, members, active: parentOf.get(s.active) ?? s.active, parked };
 }
 
 /**
@@ -527,7 +557,10 @@ export function unparkWsActivities(s: WorkspacesState): WorkspacesState {
     const joined = new Set(p.joined[w.id] ?? []);
     const went = kept.get(w.id);
     const order = w.order.filter((x) => !returning.has(x) && !(went?.has(x) && joined.has(x)));
-    return order.length === w.order.length ? w : { ...w, order };
+    // Left at an activity when parked: its own tab in front (while it is still one of its tabs) and split come back.
+    const mine = p.own?.[w.id];
+    const back = mine ? { active: mine.active && order.includes(mine.active) ? mine.active : w.active, layout: mine.layout } : {};
+    return order.length === w.order.length && !mine ? w : { ...w, order, ...back };
   });
   return { ...rest, list: [...list, ...acts], members };
 }
@@ -608,7 +641,13 @@ function parseParked(v: unknown, wsIds: Set<string>, taken: Set<string>): Parked
   const joined = isObj(v.joined)
     ? Object.fromEntries(Object.entries(v.joined).filter(([w, ks]) => wsIds.has(w) && Array.isArray(ks)).map(([w, ks]) => [w, [...new Set((ks as unknown[]).filter(okKey))]]))
     : {};
-  return { list, members, joined };
+  const own = isObj(v.own)
+    ? Object.fromEntries(Object.entries(v.own).filter(([w, o]) => wsIds.has(w) && isObj(o)).map(([w, o]) => {
+      const r = o as Record<string, unknown>;
+      return [w, { active: okKey(r.active) ? r.active : null, layout: isObj(r.layout) ? r.layout : null }];
+    }))
+    : {};
+  return { list, members, joined, ...(Object.keys(own).length ? { own } : {}) };
 }
 
 /**

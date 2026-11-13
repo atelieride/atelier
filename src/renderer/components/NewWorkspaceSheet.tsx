@@ -7,7 +7,7 @@ import { radioNext } from '../radio';
 import { t } from '../i18n/en';
 import { kbd } from '../kbd';
 import { useApp } from '../store';
-import { MAX_NAME, nextColor, WS_COLORS } from '../workspaces';
+import { MAX_NAME, MAX_WORKSPACES, nextColor, workspacesOf, WS_COLORS } from '../workspaces';
 import { wsColorVar } from '../workspace-view';
 import { Icon } from './Icon';
 import { WorkspaceGlyph } from './WorkspaceGlyph';
@@ -27,7 +27,7 @@ export function NewWorkspaceSheet() {
   const hasTasks = useApp((s) => s.connectors.some((c) => c.status === 'connected'));
   const close = () => useApp.getState().setWsSheet(null);
   const [name, setName] = useState('');
-  const [color, setColor] = useState(() => (ws ? nextColor(ws.list) : 1));
+  const [color, setColor] = useState(() => (ws ? nextColor(workspacesOf(ws)) : 1));
   const [start, setStart] = useState<Start>('session');
   const [folder, setFolder] = useState<FolderChoice | null>(null);
   const [picking, setPicking] = useState(false);
@@ -48,7 +48,8 @@ export function NewWorkspaceSheet() {
   useEffect(() => { listEl.current?.querySelector('.folder-item.is-active')?.scrollIntoView({ block: 'nearest' }); }, [active]);
 
   if (!sheet || !ws) return null;
-  const full = ws.list.length >= 20;
+  // Workspaces only: activities don't count toward the limit.
+  const full = workspacesOf(ws).length >= MAX_WORKSPACES;
   const ready = name.trim().length > 0 && !full;
   const create = () => {
     if (!ready) return;

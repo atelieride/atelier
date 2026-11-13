@@ -4,7 +4,7 @@
 import { useApp } from '../store';
 import { t } from '../i18n/en';
 import { ConfirmPopover } from './ConfirmPopover';
-import { wsActivityCloseText } from '../workspace-view';
+import { inWorkspace, wsActivityCloseText } from '../workspace-view';
 
 export function WsActivityCloseHost() {
   const id = useApp((s) => s.wsActCloseAsk);
@@ -21,6 +21,8 @@ export function WsActivityCloseHost() {
   if (!ws || !id || !a || !parent) return null;
   // The one in front: its live tabs, not its saved entry (which lags while it is in front).
   const text = wsActivityCloseText(useApp.getState().workspacesNow() ?? ws, id, terminals, resumables, root, openFiles.map((f) => f.path), revFiles.map((f) => f.key));
+  // Only sessions wait under Resume: without one inside, nothing to say about an atelierd that can't keep them.
+  const hasSession = inWorkspace(ws, id, terminals).some((x) => !!x.session);
   const cancel = () => useApp.getState().setWsActCloseAsk(null);
   const answer = (how: 'move' | 'stop') => { cancel(); void useApp.getState().closeWsActivity(id, how); };
   const title = t.wsAct.closeTitle(a.name);
@@ -30,7 +32,7 @@ export function WsActivityCloseHost() {
         <b>{title}</b>
         {text && <span className="ws-close-body">{text}</span>}
         <span className="ws-close-body">{t.wsAct.closeExplain(parent.name)}</span>
-        {!resumable && <span className="ws-close-body">{t.ws.stopNoResume}</span>}
+        {!resumable && hasSession && <span className="ws-close-body">{t.ws.stopNoResume}</span>}
       </div>
       <div className="ws-close-actions">
         <button type="button" className="btn-primary sm" data-autofocus onClick={() => answer('move')}>{t.ws.moveThemTo(parent.name)}<span className="confirm-key mono">↵</span></button>

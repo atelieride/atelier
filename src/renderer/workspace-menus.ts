@@ -110,6 +110,22 @@ export function wsActivityMenu(id: string): MenuItem[] {
   ];
 }
 
+/** The palette's Rename Workspace…: the workspace in front's name in edit, from one of its activities too. */
+export function renameWorkspaceInFront(): void {
+  const s = st();
+  if (!s.ws) return;
+  s.setActivity('sessions');
+  s.setWsRenaming(workspaceOf(s.ws, s.ws.active));
+}
+
+/** The palette's Close Workspace…: about the workspace in front, from one of its activities too. */
+export function closeWorkspaceInFront(): void {
+  const s = st();
+  if (!s.ws) return;
+  s.setActivity('sessions');
+  askCloseWorkspace(workspaceOf(s.ws, s.ws.active));
+}
+
 /** File › New Activity… and the palette's command: a new activity in the workspace in front (its own tabs or one of its activities). */
 export function newWsActivityHere(): void {
   const s = st();
