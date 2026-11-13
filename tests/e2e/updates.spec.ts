@@ -134,3 +134,35 @@ test('an app that cannot replace itself: "Move Atelier to your Applications fold
     await stop(app, home);
   }
 });
+
+test('Restart that cannot apply the update: the toast\'s Open Release Page stays on one line beside its wrapping text, at full and minimum width', async () => {
+  const { app, home } = await launch({});
+  try {
+    const win = await app.firstWindow();
+    await expect(win.locator('.footer')).toBeVisible({ timeout: 15000 });
+    // "Update ready" as main announces a staged build; this dev app has no bundle to swap, so Restart answers false.
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.send('ev:update', true));
+    const pill = win.locator('.foot-update');
+    const toast = win.locator('.toast.has-action');
+    const button = toast.locator('.toast-action');
+    // The button's words on one line, whole, inside the toast; the message takes the wrapping.
+    const geometry = () => button.evaluate((b) => {
+      const range = document.createRange();
+      range.selectNodeContents(b);
+      const lines = new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+      const t = b.closest('.toast')!.getBoundingClientRect();
+      const r = b.getBoundingClientRect();
+      return { lines, clipped: b.scrollWidth > b.clientWidth, inside: r.left >= t.left && r.right <= t.right && r.top >= t.top && r.bottom <= t.bottom };
+    });
+    for (const size of [null, [960, 600]] as const) {
+      if (size) await app.evaluate(({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0]!.setSize(w, h), size);
+      await pill.click();
+      await expect(toast).toContainText("The update couldn't be installed — download it from the release page");
+      await expect(button).toHaveText('Open Release Page');
+      expect(await geometry()).toEqual({ lines: 1, clipped: false, inside: true });
+      await look(win, `test-results/updates-restart-failed-${size ? 'narrow' : 'wide'}.png`);
+    }
+  } finally {
+    await stop(app, home);
+  }
+});
