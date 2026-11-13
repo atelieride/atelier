@@ -158,6 +158,29 @@ describe('Find in Files IPC', () => {
     }
   });
 
+  test('the other test-only limits (none in the packaged app): fewer matches and files per search, a shorter watchdog', async () => {
+    const names = ['ATELIER_TEST_SEARCH_MAX_RESULTS', 'ATELIER_TEST_SEARCH_MAX_FILES', 'ATELIER_TEST_SEARCH_WATCHDOG_MS'] as const;
+    const had = names.map((n) => process.env[n]);
+    try {
+      process.env.ATELIER_TEST_SEARCH_MAX_RESULTS = '5';
+      process.env.ATELIER_TEST_SEARCH_MAX_FILES = '3';
+      process.env.ATELIER_TEST_SEARCH_WATCHDOG_MS = '1500';
+      const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-search-ipc-')));
+      for (const n of ['a', 'b', 'c', 'd', 'e']) writeFileSync(join(root, `${n}.txt`), 'token\n');
+      const s = setup();
+      s.projects.set(1, { root, discovered: [] });
+      s.start(new FakeContents(1), req(1));
+      const deps = s.services[0]!.deps;
+      expect(deps.limits).toEqual({ maxResults: 5 });
+      expect(deps.watchdogMs).toBe(1500);
+      const listing = await deps.list(req(1));
+      expect(listing.files.map((f) => f.rel)).toEqual(['a.txt', 'b.txt', 'c.txt']);
+      expect(listing.capped).toBe(true);
+    } finally {
+      names.forEach((n, i) => { if (had[i] === undefined) delete process.env[n]; else process.env[n] = had[i]; });
+    }
+  });
+
   test('one service per window, its events to that window only; stop reaches the same service', () => {
     const { services, start, stop, win } = setup();
     const a = win(1, '/p/a');
@@ -301,7 +324,7 @@ describe('Find in Files IPC', () => {
   });
 
   // POSIX: POSIX path fixtures.
-  posixTest("the listing: the window's project through its repositories, filtered, sorted, the real root; shared while it runs", async () => {
+  posixTest("the listing: the window's project through its repositories, filtered, sorted, the real root; shared by the searches that follow", async () => {
     const { ipc, projects, services, start, win } = setup();
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-search-ipc-')));
     git(root, 'init', '-q');
@@ -317,18 +340,68 @@ describe('Find in Files IPC', () => {
     const first = list(r);
     // Typing: the next search with the same filters takes the listing still running.
     expect(list(req(2, { query: 'other', include: '*.ts' }))).toBe(first);
-    expect(list(req(3, { include: '*.md' }))).not.toBe(first);
     const listing: SearchListing = await first;
     expect(listing.files.map((f) => f.rel)).toEqual(['a.ts', 'b.ts', 'sub/c.ts']);
     expect(listing.files.map((f) => f.path)).toEqual(['a.ts', 'b.ts', 'sub/c.ts'].map((rel) => join(root, rel)));
     expect(listing.capped).toBe(false);
     expect(listing.realRoot).toBe(root);
-    // Finished: the next search lists again.
+    // Finished, it still serves the searches that follow with the same filters (each pause in typing, Refresh)…
+    expect(list(req(4, { query: 'tok', include: '*.ts' }))).toBe(first);
+    // …until one asks for other filters (a project keeps its last listing only)…
+    const md = list(req(3, { include: '*.md' }));
+    expect(md).not.toBe(first);
     const again = list(r);
     expect(again).not.toBe(first);
-    // A change on disk while a listing runs: the next search does not take it.
+    // …or a file of the project changes on disk (a listing running then may have read the folder before the change).
     ipc.filesChanged(root);
-    expect(list(r)).not.toBe(again);
-    await again;
+    const fresh = list(r);
+    expect(fresh).not.toBe(again);
+    expect(list(r)).toBe(fresh);
+    await Promise.all([md, again, fresh]);
+  });
+
+  posixTest('a project\'s last listing serves for a while only: a folder the watcher cannot see is listed again soon', async () => {
+    const { projects, services, start, win } = setup();
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-search-ipc-')));
+    writeFileSync(join(root, 'a.ts'), 'token\n');
+    projects.set(1, { root, discovered: [] });
+    start(win(1, root), req(1));
+    const { list } = services[0]!.deps;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const first = list(req(1));
+      await first;
+      vi.setSystemTime(Date.now() + 9_000);
+      expect(list(req(2))).toBe(first);
+      // A file the watcher never reported (a network folder may have no watcher): found once the listing has aged.
+      writeFileSync(join(root, 'b.ts'), 'token\n');
+      vi.setSystemTime(Date.now() + 2_000);
+      const later = list(req(3));
+      expect(later).not.toBe(first);
+      expect((await later).files.map((f) => f.rel)).toEqual(['a.ts', 'b.ts']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  posixTest('a search that takes an earlier listing is told of a change made after that listing, even one before the search began', async () => {
+    const { ipc, projects, services, start, win } = setup();
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-search-ipc-')));
+    writeFileSync(join(root, 'a.ts'), 'token\n');
+    projects.set(1, { root, discovered: [] });
+    const a = win(1, root);
+    start(a, req(1));
+    const { list } = services[0]!.deps;
+    await list(req(1));
+    const listed = Date.now();
+    await new Promise((r) => setTimeout(r, 30));
+    // A new file, heard by the watcher now; the search that starts next takes the listing from before it.
+    const heard = Date.now();
+    expect(heard).toBeGreaterThan(listed);
+    await new Promise((r) => setTimeout(r, 30));
+    start(a, req(2));
+    await list(req(2));
+    ipc.filesChanged(root, false, heard);
+    expect(a.events).toEqual([{ kind: 'stale', searchId: 2 }]);
   });
 });

@@ -33,21 +33,37 @@ export interface SearchIpcDeps {
 /** What the IPC gives a window's service: its listing and limits; the worker is the service's own business. */
 export type WindowServiceDeps = Omit<SearchServiceDeps, 'spawn'>;
 
-/** What a window's last search needs for its stale notice: `startedAt`, when it started (Date.now()). */
-interface LastSearch { searchId: number; includeIgnored: boolean; startedAt: number; told: boolean }
+/**
+ * What a window's last search needs for its stale notice. `since` (Date.now()): a change heard from then on is news to
+ * it: when it started, or when the listing it took was made, if earlier.
+ */
+interface LastSearch { searchId: number; includeIgnored: boolean; since: number; told: boolean }
+
+/** How long a project's last listing serves the searches that follow, when no change is heard meanwhile. */
+const LISTING_KEEP_MS = 10_000;
 
 interface Entry { wc: WebContents; project: SearchProject; service: SearchServiceLike; last: LastSearch | null }
 
 /** An entry's service until its own is made. */
 const NO_SERVICE: SearchServiceLike = { start: () => {}, stop: () => {}, dispose: () => {} };
 
+/** A positive number from a test-only variable (none in the packaged app), else undefined. */
+const testNumber = (name: Parameters<typeof devEnv>[0]): number | undefined => {
+  const n = Number(devEnv(name));
+  return n > 0 ? n : undefined;
+};
+
 /**
- * Tests only (none in the packaged app): a lower size past which a file is listed as not searched, so a test needs a
- * 2 KB file rather than one over 50 MB.
+ * Tests only (none in the packaged app), so a test shows each limit with a handful of small files: a lower size past
+ * which a file is listed as not searched (a 2 KB file rather than one over 50 MB), fewer matches per search, a shorter
+ * watchdog (a stuck regular expression reported in a second or two).
  */
-function testLimits(): SearchServiceDeps['limits'] {
-  const maxBytes = Number(devEnv('ATELIER_TEST_SEARCH_MAX_BYTES'));
-  return maxBytes > 0 ? { maxBytes } : undefined;
+function testServiceDeps(): Pick<WindowServiceDeps, 'limits' | 'watchdogMs'> {
+  const maxBytes = testNumber('ATELIER_TEST_SEARCH_MAX_BYTES');
+  const maxResults = testNumber('ATELIER_TEST_SEARCH_MAX_RESULTS');
+  const watchdogMs = testNumber('ATELIER_TEST_SEARCH_WATCHDOG_MS');
+  const limits = { ...(maxBytes ? { maxBytes } : {}), ...(maxResults ? { maxResults } : {}) };
+  return { ...(Object.keys(limits).length ? { limits } : {}), ...(watchdogMs ? { watchdogMs } : {}) };
 }
 
 export function installSearchIpc(deps: SearchIpcDeps): { filesChanged(root: string, ignoredOnly?: boolean, last?: number): void } {
@@ -56,24 +72,29 @@ export function installSearchIpc(deps: SearchIpcDeps): { filesChanged(root: stri
   /** Windows whose `destroyed` and navigations are listened to already (once each, whatever their services). */
   const watched = new Set<number>();
 
-  // Listings running, by project and filters: while the user types, each search with the same filters takes the one
-  // already running instead of listing the project again. A finished listing is never reused (files come and go).
-  const running = new Map<string, { root: string; listing: Promise<SearchListing> }>();
-  const listing = (p: SearchProject, req: SearchRequest): Promise<SearchListing> => {
-    const key = JSON.stringify([p.root, p.discovered, req.include, req.exclude, req.includeIgnored]);
-    const held = running.get(key);
-    if (held) return held.listing;
+  // Each project's last listing, by root, running or done: the searches that follow with the same filters (each pause
+  // in typing, Refresh) take it rather than list the project again, which costs a 100,000-file project ~170 ms of
+  // this thread. It goes when a file of the project changes, after LISTING_KEEP_MS (a folder no watcher sees), when a
+  // search asks for other filters, and with the project's last window. A search that takes it hears of every change
+  // since it was made (`since`).
+  const lists = new Map<string, { key: string; at: number; listing: Promise<SearchListing> }>();
+  const listing = (p: SearchProject, req: SearchRequest): { at: number; listing: Promise<SearchListing> } => {
+    const key = JSON.stringify([p.discovered, req.include, req.exclude, req.includeIgnored]);
+    const held = lists.get(p.root);
+    if (held && held.key === key && Date.now() - held.at < LISTING_KEEP_MS) return held;
     const filter = compilePathFilter(req.include, req.exclude);
     const listed = (async (): Promise<SearchListing> => {
       const realRoot = await realOutAsync(p.root);
-      const { files, capped } = await listSearchFiles(p.root, p.discovered, { includeIgnored: req.includeIgnored, cap: SEARCH_LIMITS.maxFiles, filter });
+      // Tests only: fewer files per search (a handful shows the file cap).
+      const cap = testNumber('ATELIER_TEST_SEARCH_MAX_FILES') ?? SEARCH_LIMITS.maxFiles;
+      const { files, capped } = await listSearchFiles(p.root, p.discovered, { includeIgnored: req.includeIgnored, cap, filter });
       return { files, capped, realRoot };
     })();
-    const entry = { root: p.root, listing: listed };
-    running.set(key, entry);
-    const forget = (): void => { if (running.get(key) === entry) running.delete(key); };
-    listed.then(forget, forget);
-    return listed;
+    const entry = { key, at: Date.now(), listing: listed };
+    lists.set(p.root, entry);
+    // One that failed is not kept: the next search tries again.
+    listed.catch(() => { if (lists.get(p.root) === entry) lists.delete(p.root); });
+    return entry;
   };
 
   const drop = (id: number): void => {
@@ -81,6 +102,9 @@ export function installSearchIpc(deps: SearchIpcDeps): { filesChanged(root: stri
     if (!en) return;
     entries.delete(id);
     en.service.dispose();
+    // The project's last window gone: its listing with it.
+    const root = en.project.root;
+    if (![...entries.values()].some((x) => x.project.root === root)) lists.delete(root);
   };
 
   // The sender first: an untrusted page's input is never even parsed.
@@ -100,9 +124,16 @@ export function installSearchIpc(deps: SearchIpcDeps): { filesChanged(root: stri
     }
     if (had) drop(wc.id);
     const en: Entry = { wc, project, service: NO_SERVICE, last: null };
-    // The project as it is when a search lists it (a later start may have brought new repositories).
-    const limits = testLimits();
-    en.service = create({ list: (req) => listing(en.project, req), ...(limits ? { limits } : {}) });
+    // The project as it is when a search lists it (a later start may have brought new repositories). A search that
+    // takes a listing made before it began hears of the changes since that listing.
+    en.service = create({
+      list: (req) => {
+        const l = listing(en.project, req);
+        if (en.last?.searchId === req.searchId) en.last.since = Math.min(en.last.since, l.at);
+        return l.listing;
+      },
+      ...testServiceDeps()
+    });
     entries.set(wc.id, en);
     if (!watched.has(wc.id)) {
       watched.add(wc.id);
@@ -121,7 +152,7 @@ export function installSearchIpc(deps: SearchIpcDeps): { filesChanged(root: stri
     // Closing: its `destroyed` may not have come yet, and would never come again for a new service.
     if (wc.isDestroyed()) { drop(wc.id); return; }
     const en = entryOf(wc, project);
-    en.last = { searchId: req.searchId, includeIgnored: req.includeIgnored, startedAt: Date.now(), told: false };
+    en.last = { searchId: req.searchId, includeIgnored: req.includeIgnored, since: Date.now(), told: false };
     en.service.start(req, (ev: SearchEvent) => {
       if (entries.get(wc.id) === en && !wc.isDestroyed()) wc.send(IPC.evSearch, ev);
     });
@@ -142,16 +173,18 @@ export function installSearchIpc(deps: SearchIpcDeps): { filesChanged(root: stri
      * Files of `root` changed on disk: each window's last search there (running or finished) is told once that its
      * results may be out of date. `ignoredOnly`: every file that changed is one git ignores, which only a search
      * that includes ignored files covers. `last`: when the last of these changes was heard (Date.now()); changes that
-     * all came before a search started are in what it read, however late the watcher passes them on.
+     * all came before a search started (and before the listing it took) are in what it read, however late the watcher
+     * passes them on.
      */
     filesChanged(root, ignoredOnly = false, last = Date.now()) {
-      // A listing running now may have read the folder before the change: the next search lists again.
-      for (const [key, r] of running) if (r.root === root) running.delete(key);
+      // The project's listing, even one running now (it may have read the folder before the change): the next search
+      // lists again.
+      lists.delete(root);
       for (const en of entries.values()) {
         const search = en.last;
         if (en.project.root !== root || !search || search.told) continue;
         if (ignoredOnly && !search.includeIgnored) continue;
-        if (last < search.startedAt) continue;
+        if (last < search.since) continue;
         if (en.wc.isDestroyed()) continue;
         search.told = true;
         en.wc.send(IPC.evSearch, { kind: 'stale', searchId: search.searchId } satisfies SearchEvent);
