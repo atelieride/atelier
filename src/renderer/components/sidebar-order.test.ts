@@ -42,7 +42,7 @@ test('grouping off: sessions and terminals in manual order, unplaced at the bott
   const out = html();
   expect(ids(out, 'session-row')).toEqual(['b', 'c', 'a']);
   expect(ids(out, 'term-row')).toEqual(['s3', 's1', 's2']);
-  // Without an order: as today.
+  // Without an order: oldest first.
   useApp.setState({ rowOrder: { sessions: [], terminals: [] }, pins: [] });
   expect(ids(html(), 'session-row')).toEqual(['a', 'b', 'c']);
 });

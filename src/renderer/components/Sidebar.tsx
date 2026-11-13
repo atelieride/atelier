@@ -277,11 +277,12 @@ function Sections({ terminals, toResume, entered, scope, inGroup = false, empty 
   const split = splitTerminals(terminals, starting);
   const tracked = trackSections(entered.get(scope) ?? new Map<string, Entered>(), split.sessions, Date.now());
   useEffect(() => { entered.set(scope, tracked); });
-  // The order rows were put in by hand: unpinned ones follow it, the ones never placed keep today's place.
+  // The order rows were put in by hand: unpinned ones follow it; the ones never placed come after them, oldest first
+  // (in Idle before them, the latest to arrive on top).
   const order = useApp((s) => s.rowOrder);
   const groups = grouped ? groupSessions(split.sessions, pins, tracked, order.sessions) : [];
 
-  // Pinned rows first, in pin order; the rest in their manual order, then by age as before.
+  // Pinned rows first, in pin order; then the placed rows in their manual order; then the others, oldest first.
   const sessions = pinnedFirst(arrangeUnpinned(split.sessions, order.sessions, 'last'), pins);
   const shells = pinnedFirst(arrangeUnpinned(split.shells, order.terminals, 'last'), pins);
   // What a row can be dragged among: grouped by state, only Idle's rows (the other sections order themselves).

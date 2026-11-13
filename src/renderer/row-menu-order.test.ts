@@ -30,6 +30,14 @@ test('only with a band; right after the Move to items, before the separator', ()
   expect(item(sessionRowMenu(term('b'), band), 'row-down')).toMatchObject({ label: 'Move Down', icon: 'arrowDown' });
 });
 
+test('a row in a window of its own keeps Move Up / Move Down (it is still in the sidebar, and draggable)', () => {
+  useApp.setState({ poppedOut: ['t:b'] });
+  const menu = ids(sessionRowMenu(term('b'), band));
+  expect(menu).toContain('move-back');
+  expect(menu.indexOf('row-up')).toBe(menu.indexOf('move-back') + 1);
+  expect(menu.indexOf('row-down')).toBe(menu.indexOf('row-up') + 1);
+});
+
 test('disabled at the band\'s ends; they step the row', () => {
   expect(item(sessionRowMenu(term('a'), band), 'row-up')?.disabled).toBe(true);
   expect(item(sessionRowMenu(term('a'), band), 'row-down')?.disabled).toBe(false);

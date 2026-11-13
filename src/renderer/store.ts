@@ -31,7 +31,7 @@ import { clampPanel, loadLayout, saveLayout, type Panel, type PanelWidths } from
 import { loadChangesPrefs, saveChangesPrefs, toggleAllGroups, toggleGroup } from './changes-prefs';
 import { loadPins, pinnedFirst, prunePins, relinkPin, savePins, togglePin } from './pins';
 import {
-  EMPTY_ORDER, loadOrder, moveInBand, placeBand, pruneOrder, relinkOrder, saveOrder, stepBefore, unplace, type Band, type ManualOrder
+  EMPTY_ORDER, loadOrder, moveInBand, placeBand, pruneOrder, relinkOrder, sameOrder, saveOrder, stepBefore, unplace, type Band, type ManualOrder
 } from './row-order';
 import { resumablesFor } from './selectors';
 import { loadShelf, loadShelfCollapsed, nudgeInShelf, outsideOf, placeInShelf, removeFromShelf, saveShelf, saveShelfCollapsed, shelvable, touchesShelf, ungranted, type ShelfItem } from './shelf';
@@ -2571,9 +2571,11 @@ export const useApp = create<AppState>((set, get) => ({
   reorderRow: (band, id, before) => {
     const moved = moveInBand(band.ids, id, before);
     if (!moved) return;
-    if (band.pinned) { setPins(placeBand(get().pins, moved)); return; }
-    const order = get().rowOrder;
-    setRowOrder({ ...order, [band.kind]: placeBand(order[band.kind], moved) });
+    // The band was read when the menu opened or the drag started: a row closed since is never written back.
+    const { pins, terminals, rowOrder: order } = get();
+    if (band.pinned) { setPins(placeBand(pins, moved.filter((x) => pins.includes(x)))); return; }
+    const alive = new Set(terminals.map((x) => x.id));
+    setRowOrder({ ...order, [band.kind]: placeBand(order[band.kind], moved.filter((x) => alive.has(x))) });
   },
   moveRowStep: (band, id, dir) => {
     const before = stepBefore(band.ids, id, dir);
@@ -3757,8 +3759,7 @@ function setPins(pins: string[]) {
 /** A new manual order of the sidebar's rows: state and storage, only when it changed. */
 function setRowOrder(order: ManualOrder) {
   const st = useApp.getState();
-  const same = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
-  if (same(order.sessions, st.rowOrder.sessions) && same(order.terminals, st.rowOrder.terminals)) return;
+  if (sameOrder(order, st.rowOrder)) return;
   useApp.setState({ rowOrder: order });
   if (st.project) saveOrder(st.project.root, order);
 }

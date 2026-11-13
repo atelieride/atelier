@@ -6,7 +6,8 @@ export type RowKind = 'sessions' | 'terminals';
 
 /**
  * Ids in the order the rows were put in by hand. A row switches between session and terminal (Claude exits, `claude`
- * typed in a shell): each kind has its own list, so it arrives in the other list as today and finds its place back.
+ * typed in a shell): each kind has its own list, so it arrives in the other list as a row never placed there, and
+ * finds its place back when it switches again.
  */
 export interface ManualOrder { sessions: string[]; terminals: string[] }
 
@@ -90,6 +91,11 @@ export function stepBefore(ids: string[], id: string, dir: -1 | 1): string | nul
 }
 
 const same = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+/** Both lists hold the same ids in the same order (nothing to save). */
+export function sameOrder(a: ManualOrder, b: ManualOrder): boolean {
+  return same(a.sessions, b.sessions) && same(a.terminals, b.terminals);
+}
 
 /** A resumed session is a new terminal: the new id takes the old one's place in both lists. */
 export function relinkOrder(order: ManualOrder, from: string, to: string): ManualOrder {

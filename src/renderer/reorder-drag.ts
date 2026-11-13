@@ -32,6 +32,16 @@ export const useReorder = create<ReorderDrag>((set, get) => ({
   end: () => set({ dragging: null, caret: null })
 }));
 
+/**
+ * A reorder drag starting from `row`. Its end is caught on the row element itself: `dragend` goes to the element the drag
+ * started from even once React has moved it to another place's list or stopped handing it a handler (its band gone
+ * mid-drag), so the dragged row never stays dimmed.
+ */
+export function startReorder(id: string, row: HTMLElement): void {
+  useReorder.getState().start(id);
+  row.addEventListener('dragend', () => useReorder.getState().end(), { once: true });
+}
+
 /** What a drag at this point would do: a move (band, row, where), no move here (null), or nothing of this list's. */
 type Landing = { band: Band; id: string; before: string | null } | null | undefined;
 

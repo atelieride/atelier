@@ -11,7 +11,7 @@ import { newTerminalIn } from '../launch';
 import { kbd } from '../kbd';
 import { openBelow, sessionPlusMenu } from '../menus';
 import { ACT_MIME, ROW_MIME, fromType, placeDrop, type PlaceTarget } from '../place-drop';
-import { REORDER_MIME, useReorder } from '../reorder-drag';
+import { REORDER_MIME, startReorder, useReorder } from '../reorder-drag';
 import type { Band } from '../row-order';
 
 /**
@@ -49,6 +49,8 @@ export function usePlaceDrop(target: PlaceTarget): { dropping: boolean; handlers
     if (!what) return;
     e.preventDefault();
     e.stopPropagation();
+    // A row that could also have been reordered lands in another place: its drag is over here.
+    useReorder.getState().end();
     const st = useApp.getState();
     if (what === 'activity') st.moveWsActivity(e.dataTransfer.getData(ACT_MIME), target.id);
     else { const id = e.dataTransfer.getData(ROW_MIME); if (id) st.moveToWorkspace(`t:${id}`, target.id); }
@@ -60,7 +62,7 @@ export function usePlaceDrop(target: PlaceTarget): { dropping: boolean; handlers
  * Props that make a sidebar row draggable: onto another place (a workspace's head, an activity) while workspaces are on,
  * and inside its band (`band`: the rows it can be put among) for a reorder. Neither: not draggable.
  */
-export function useRowDrag(id: string, band?: Band): { draggable?: true; onDragStart?: (e: DragEvent) => void; onDragEnd?: () => void } {
+export function useRowDrag(id: string, band?: Band): { draggable?: true; onDragStart?: (e: DragEvent) => void } {
   const on = useApp((s) => !!s.ws?.on && !s.popout);
   if (!on && !band) return {};
   return {
@@ -73,11 +75,10 @@ export function useRowDrag(id: string, band?: Band): { draggable?: true; onDragS
       }
       if (band) {
         e.dataTransfer.setData(REORDER_MIME, id);
-        useReorder.getState().start(id);
+        startReorder(id, e.currentTarget as HTMLElement);
       }
       e.dataTransfer.effectAllowed = 'move';
-    },
-    onDragEnd: () => useReorder.getState().end()
+    }
   };
 }
 

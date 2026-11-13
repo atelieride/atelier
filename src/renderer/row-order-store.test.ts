@@ -28,6 +28,7 @@ describe('row order', () => {
 
   test('loaded per project, reordered and saved; a stay-put drop saves nothing', () => {
     st().setProject({ root: '/p', name: 'p', realRoot: '/p' });
+    useApp.setState({ terminals: ['a', 'b', 'c'].map(term) });
     expect(st().rowOrder.sessions).toEqual(['b', 'a', 'gone']);
     st().reorderRow(unpinned('b', 'a', 'c'), 'c', 'b');
     expect(st().rowOrder.sessions).toEqual(['c', 'b', 'a', 'gone']);
@@ -40,6 +41,7 @@ describe('row order', () => {
 
   test('a terminals band writes the terminals list only', () => {
     st().setProject({ root: '/p', name: 'p', realRoot: '/p' });
+    useApp.setState({ terminals: ['s1', 's2'].map(term) });
     st().reorderRow({ kind: 'terminals', pinned: false, ids: ['s1', 's2'] }, 's2', 's1');
     expect(st().rowOrder).toEqual({ sessions: ['b', 'a', 'gone'], terminals: ['s2', 's1'] });
   });
@@ -52,8 +54,23 @@ describe('row order', () => {
     expect(st().rowOrder.sessions).toEqual(['b', 'a', 'gone']);
   });
 
+  test('a band read before a row closed never writes the closed row back', () => {
+    st().setProject({ root: '/p', name: 'p', realRoot: '/p' });
+    useApp.setState({ terminals: [term('a'), term('c')], pins: ['p1', 'p2'], rowOrder: { sessions: [], terminals: [] } });
+    // b closed after the menu or the drag read the band.
+    st().reorderRow(unpinned('a', 'b', 'c'), 'c', 'a');
+    expect(st().rowOrder.sessions).toEqual(['c', 'a']);
+    useApp.setState({ terminals: [term('a'), term('c'), term('p2')] });
+    st().reorderRow({ kind: 'sessions', pinned: true, ids: ['p1', 'p2'] }, 'p2', 'p1');
+    expect(st().pins).toEqual(['p2', 'p1']);
+    useApp.setState({ pins: ['p2'] });
+    st().reorderRow({ kind: 'sessions', pinned: true, ids: ['p1', 'p2', 'p3'] }, 'p3', 'p1');
+    expect(st().pins).toEqual(['p2']);
+  });
+
   test('moveRowStep: up, down, nothing at the ends', () => {
     st().setProject({ root: '/p', name: 'p', realRoot: '/p' });
+    useApp.setState({ terminals: ['a', 'b'].map(term) });
     st().moveRowStep(unpinned('b', 'a'), 'a', -1);
     expect(st().rowOrder.sessions).toEqual(['a', 'b', 'gone']);
     st().moveRowStep(unpinned('a', 'b'), 'a', 1);

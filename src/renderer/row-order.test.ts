@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { MAX_PINNED_PROJECTS } from './pins';
 import {
-  EMPTY_ORDER, arrangeUnpinned, bandAttr, bandWith, bandsOf, sameBand, landingAt, moveInBand, parseOrder, placeBand, pruneOrder, relinkOrder,
+  EMPTY_ORDER, arrangeUnpinned, bandAttr, bandWith, bandsOf, sameBand, sameOrder, landingAt, moveInBand, parseOrder, placeBand, pruneOrder, relinkOrder,
   stepBefore, unplace, withProjectOrder, type ManualOrder
 } from './row-order';
 
@@ -85,6 +85,12 @@ test('bands: pinned and unpinned of a list, only with two rows or more', () => {
   expect(bandWith(bandsOf('sessions', rows, ['p1']), 'b')?.ids).toEqual(['p2', 'a', 'b', 'c']);
   expect(bandWith([], 'b')).toBeNull();
   expect(bandWith(bandsOf('sessions', rows, []), null)).toBeNull();
+});
+
+test('two orders are the same when both lists hold the same ids in the same order', () => {
+  expect(sameOrder({ sessions: ['a', 'b'], terminals: ['t'] }, { sessions: ['a', 'b'], terminals: ['t'] })).toBe(true);
+  expect(sameOrder({ sessions: ['a', 'b'], terminals: [] }, { sessions: ['b', 'a'], terminals: [] })).toBe(false);
+  expect(sameOrder({ sessions: [], terminals: ['t'] }, { sessions: [], terminals: [] })).toBe(false);
 });
 
 test('a row re-renders when its band changes, and names it for the drop target', () => {

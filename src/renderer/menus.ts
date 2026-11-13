@@ -368,6 +368,7 @@ export function sessionRowMenu(term: TerminalInfo, band?: Band): MenuItem[] {
     return [
       { id: 'show-window', label: t.popout.show, icon: 'window', run: () => void window.atelier.popout.focus(key).catch(() => {}) },
       { id: 'move-back', label: t.popout.back, icon: 'dock', run: () => void window.atelier.popout.recall(key).catch(() => {}) },
+      ...orderItems(term.id, band),
       'sep', ...background, ...(background.length ? ['sep' as const] : []), ...terminalItems(term, true)
     ];
   }

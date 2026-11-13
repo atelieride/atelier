@@ -85,9 +85,10 @@ test('sessions: a row dropped above another stays there after a reload; a caret 
       const c = getComputedStyle(el, '::before');
       const s = el.closest('.sidebar')!.getBoundingClientRect();
       const left = r.left + parseFloat(c.left);
-      return { inside: left >= s.left && left + parseFloat(c.width) <= s.right, top: c.top, height: c.height };
+      return { inside: left >= s.left && left + parseFloat(c.width) <= s.right, top: c.top, height: c.height, animation: c.animationName };
     });
-    expect(await caretBox()).toEqual({ inside: true, top: '-2px', height: '2px' });
+    // No entrance of its own: it is drawn anew on every row the pointer crosses, and a fade would shimmer.
+    expect(await caretBox()).toEqual({ inside: true, top: '-2px', height: '2px', animation: 'none' });
     await look(win.locator('.sidebar'), 'test-results/row-order-caret-narrow.png');
     await win.locator('.body').evaluate((el, w) => (el as HTMLElement).style.setProperty('--sidebar-w', w), width);
     // Just above itself: it would stay put, no caret.
@@ -105,6 +106,22 @@ test('sessions: a row dropped above another stays there after a reload; a caret 
     await win.getByRole('menuitem', { name: 'Move Up' }).click();
     await expect.poll(() => titles(win)).toEqual(['Alfa', 'Gamma', 'Beta']);
     await expect(row('Alfa').locator('.row-main')).toBeFocused();
+    await win.keyboard.press('Shift+F10');
+    await win.getByRole('menuitem', { name: 'Move Down' }).click();
+    await expect.poll(() => titles(win)).toEqual(['Gamma', 'Alfa', 'Beta']);
+    await expect(row('Alfa').locator('.row-main')).toBeFocused();
+    // Dropped further down, the row keeps the keyboard focus too.
+    const drag = await win.evaluateHandle(() => new DataTransfer());
+    await row('Alfa').dispatchEvent('dragstart', { dataTransfer: drag });
+    const below = (await row('Beta').boundingBox())!;
+    const lower = { dataTransfer: drag, clientX: below.x + 40, clientY: below.y + below.height - 4 };
+    await row('Beta').dispatchEvent('dragover', lower);
+    await expect(row('Beta')).toHaveClass(/\bis-caret-after\b/);
+    await row('Beta').dispatchEvent('drop', lower);
+    await row('Alfa').dispatchEvent('dragend', { dataTransfer: drag });
+    await expect.poll(() => titles(win)).toEqual(['Gamma', 'Beta', 'Alfa']);
+    await expect(row('Alfa').locator('.row-main')).toBeFocused();
+    await expect(win.locator('.is-caret-before, .is-caret-after, .is-dragging')).toHaveCount(0);
   } finally {
     await stop(app, home);
   }
@@ -183,7 +200,7 @@ test('Idle: rows reorder there only; one that leaves Idle comes back to its plac
     await row(s1!).locator('.row-main').click();
     await expect.poll(() => sections(win), { timeout: 10000 }).toEqual([['Idle', [s3, s0, s1, s2]]]);
 
-    // A newcomer, never placed, arrives on top of Idle, as before.
+    // A newcomer, never placed, arrives on top of Idle (the latest to enter first).
     await newSession(win, 'Echo');
     await typeInto(win, 'Echo', '\r');
     await expect(row('Echo')).toHaveClass(/\bstate-done\b/, { timeout: 10000 });
@@ -194,7 +211,38 @@ test('Idle: rows reorder there only; one that leaves Idle comes back to its plac
   }
 });
 
-test('a placed session whose Claude exits arrives among the terminals as before, not on top', async () => {
+test('a row that leaves Idle mid-drag: the caret goes, the drop does nothing, and the drag still ends cleanly', async () => {
+  const { app, win, home } = await launch();
+  try {
+    const row = (name: string) => win.locator('.session-row', { hasText: name });
+    for (const name of ['Alfa', 'Beta']) await newSession(win, name);
+    for (const name of ['Alfa', 'Beta']) await typeInto(win, name, '\r');
+    for (const name of ['Alfa', 'Beta']) await expect(row(name)).toHaveClass(/\bstate-done\b/, { timeout: 10000 });
+    for (const name of ['Alfa', 'Beta']) await row(name).locator('.row-main').click();
+    await expect.poll(async () => (await sections(win)).map(([s, rows]) => [s, rows.length]), { timeout: 10000 }).toEqual([['Idle', 2]]);
+    const before = (await sections(win))[0]![1];
+    const [top, bottom] = before;
+    const dt = await win.evaluateHandle(() => new DataTransfer());
+    await row(bottom!).dispatchEvent('dragstart', { dataTransfer: dt });
+    const box = (await row(top!).boundingBox())!;
+    await row(top!).dispatchEvent('dragover', { dataTransfer: dt, clientX: box.x + 40, clientY: box.y + 4 });
+    await expect(row(top!)).toHaveClass(/\bis-caret-before\b/);
+    // It starts working: Working orders itself, so it has nothing to land among any more.
+    await typeInto(win, bottom!, 'ev:work\r');
+    await expect.poll(() => sections(win)).toEqual([['Working', [bottom]], ['Idle', [top]]]);
+    const over = (await row(top!).boundingBox())!;
+    await row(top!).dispatchEvent('dragover', { dataTransfer: dt, clientX: over.x + 40, clientY: over.y + 4 });
+    await expect(win.locator('.is-caret-before, .is-caret-after')).toHaveCount(0);
+    await row(top!).dispatchEvent('drop', { dataTransfer: dt, clientX: over.x + 40, clientY: over.y + 4 });
+    await row(bottom!).dispatchEvent('dragend', { dataTransfer: dt });
+    await expect(win.locator('.is-dragging, .is-caret-before, .is-caret-after')).toHaveCount(0);
+    expect(await sections(win)).toEqual([['Working', [bottom]], ['Idle', [top]]]);
+  } finally {
+    await stop(app, home);
+  }
+});
+
+test('a placed session whose Claude exits arrives among the terminals by age, not on top', async () => {
   const { app, win, home } = await launch();
   try {
     const row = (name: string) => win.locator('.session-row', { hasText: name });
@@ -275,6 +323,8 @@ test('inside an activity: its rows reorder there; another activity still takes a
     await expect(win.locator('.is-caret-before, .is-caret-after')).toHaveCount(0);
     await win.mouse.up();
     await expect(act('Reset').locator(`.term-row[data-term-row="${second}"]`)).toBeVisible();
+    // Moved, it is a row like any other there: nothing stays dimmed.
+    await expect(win.locator('.is-dragging, .is-caret-before, .is-caret-after')).toHaveCount(0);
     await expect.poll(ssoIds).toEqual([third, first]);
   } finally {
     await stop(app, home);

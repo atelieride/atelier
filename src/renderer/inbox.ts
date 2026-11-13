@@ -48,8 +48,8 @@ export function trackSections(prev: Map<string, Entered>, sessions: TerminalInfo
 /**
  * Non-empty sections in order; inside each, pinned rows first (pin order), then the row that entered the section last
  * (`entered`, from trackSections; without it, the most recently updated). Idle — the stopped sessions, the only section
- * that doesn't empty by itself — also follows `order`, the order rows were put in by hand: the rows never placed arrive
- * on top, as before, and the placed ones follow in their order.
+ * that doesn't empty by itself — also follows `order`, the order rows were put in by hand: the rows never placed come
+ * first, the latest to enter on top, and the placed ones follow in their order.
  */
 export function groupSessions(sessions: TerminalInfo[], pins: string[], entered?: Map<string, Entered>, order: string[] = []): { key: InboxSection; items: TerminalInfo[] }[] {
   const by = new Map<InboxSection, TerminalInfo[]>(INBOX_ORDER.map((k) => [k, []]));
