@@ -1,6 +1,7 @@
 // Workspace menus: the workspace's own (right-click on its head or card,
 // Shift+F10) and Move to Workspace › on rows and tabs.
 import type { MenuItem } from './menu-model';
+import type { IconName } from './components/Icon';
 import type { TabKey } from './tabs-model';
 import { useApp } from './store';
 import { t } from './i18n/en';
@@ -118,6 +119,16 @@ export function newWsActivityHere(): void {
 /** View › Activities Inside Workspaces and the palette's command: the setting, the same for every project. */
 export function toggleWsActivities(): void {
   void window.atelier.settings.set({ wsActivities: !st().settings.wsActivities }).catch(() => {});
+}
+
+/** The palette's activity commands: New Activity… while activities are on, their switch while the window's workspaces are on. */
+export function wsActivityCommands(): { key: string; label: string; hint: string; icon: IconName; run: () => void }[] {
+  const s = st();
+  if (!s.ws?.on || s.popout) return [];
+  return [
+    ...(s.settings.wsActivities ? [{ key: 'ws-new-act', label: t.wsAct.newActivity, hint: '', icon: 'wsActivity' as const, run: () => setTimeout(newWsActivityHere, 0) }] : []),
+    { key: 'ws-acts-toggle', label: t.wsAct.toggleCmd, hint: s.settings.wsActivities ? t.paletteOn : '', icon: 'wsActivity', run: toggleWsActivities }
+  ];
 }
 
 /** Close Activity…: an empty activity closes at once; one with something in it asks first. */
