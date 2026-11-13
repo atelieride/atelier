@@ -8,6 +8,7 @@ import type { TabKey } from './tabs-model';
 import { mapLayoutKeys } from './split';
 import { spaceOf } from './spaces';
 import { inboxSection } from './inbox';
+import { t } from './i18n/en';
 
 export const MAX_WORKSPACES = 20;
 /** Activities one workspace may hold. */
@@ -149,8 +150,27 @@ export function create(s: WorkspacesState, opts: { name: string; color?: number;
   return { ...s, list: [...s.list, w] };
 }
 
+/**
+ * A new activity in workspace `wsId`, last among its activities and folded, in its color, empty (null: `wsId` is no
+ * workspace, it holds MAX_ACTIVITIES already, or the id is taken). An empty name gives the default one. The place in
+ * front doesn't change.
+ */
+export function createWsActivity(s: WorkspacesState, wsId: string, name: string, id = newWorkspaceId()): WorkspacesState | null {
+  const ws = s.list.find((w) => w.id === wsId);
+  if (!ws || isWsActivity(ws) || activitiesOf(s, wsId).length >= MAX_ACTIVITIES || s.list.some((w) => w.id === id)) return null;
+  const a: Workspace = { id, parent: wsId, name: tidy(name) || t.wsAct.defaultName, color: ws.color, folder: null, order: [], active: null, layout: null };
+  return { ...s, list: [...s.list, a] };
+}
+
 function patch(s: WorkspacesState, id: string, fn: (w: Workspace) => Workspace): WorkspacesState {
   return { ...s, list: s.list.map((w) => (w.id === id ? fn(w) : w)) };
+}
+
+/** The entry without its `place` (its own tabs are where a way back lands). */
+function noPlace(w: Workspace): Workspace {
+  if (!('place' in w)) return w;
+  const { place: _, ...rest } = w;
+  return rest;
 }
 
 export function rename(s: WorkspacesState, id: string, name: string): WorkspacesState {
@@ -158,8 +178,10 @@ export function rename(s: WorkspacesState, id: string, name: string): Workspaces
   return n ? patch(s, id, (w) => ({ ...w, name: n })) : s;
 }
 
+/** A workspace's color, worn by its activities too. */
 export function recolor(s: WorkspacesState, id: string, color: number): WorkspacesState {
-  return patch(s, id, (w) => ({ ...w, color: inRange(color) }));
+  const c = inRange(color);
+  return { ...s, list: s.list.map((w) => (w.id === id || w.parent === id ? { ...w, color: c } : w)) };
 }
 
 /**
@@ -291,19 +313,69 @@ export function moveKey(s: WorkspacesState, key: TabKey, to: string, from: strin
 }
 
 /**
- * Closing workspace `id` (null: it is the last one). moveTo: its terminals join that workspace (membership and order);
- * null: they stop, their memberships go. Its files close (the store drops those no other workspace shows).
+ * Activity `id` goes to workspace `toWs` with everything in it (its terminals keep pointing at it), last among that
+ * workspace's activities, in its color. The same state when `toWs` is no workspace, is its own, or is full, or `id` is
+ * no activity. The workspace it left forgets it as the place it was left at.
+ */
+export function moveWsActivity(s: WorkspacesState, id: string, toWs: string): WorkspacesState {
+  const a = s.list.find((w) => w.id === id);
+  const to = s.list.find((w) => w.id === toWs);
+  if (!a || !isWsActivity(a) || !to || isWsActivity(to) || a.parent === toWs || activitiesOf(s, toWs).length >= MAX_ACTIVITIES) return s;
+  const list = s.list.filter((w) => w.id !== id).map((w) => (w.id === a.parent && w.place === id ? noPlace(w) : w));
+  return { ...s, list: [...list, { ...a, parent: toWs, color: to.color }] };
+}
+
+/**
+ * Closing activity `id`. move: its terminals and tabs join its workspace's own tabs (keys not there yet); stop: its
+ * terminals' memberships go (the store stops them). In front, its workspace's own tabs come forward. The same state
+ * for anything but an activity.
+ */
+export function removeWsActivity(s: WorkspacesState, id: string, how: 'move' | 'stop'): WorkspacesState {
+  const a = s.list.find((w) => w.id === id);
+  if (!a || !isWsActivity(a)) return s;
+  const wsId = a.parent!;
+  const members = how === 'move'
+    ? Object.fromEntries(Object.entries(s.members).map(([tid, p]) => [tid, p === id ? wsId : p]))
+    : Object.fromEntries(Object.entries(s.members).filter(([, p]) => p !== id));
+  const list = s.list.filter((w) => w.id !== id).map((w) => {
+    if (w.id !== wsId) return w;
+    const n = how === 'move' ? { ...w, order: [...w.order, ...a.order.filter((x) => !w.order.includes(x))] } : w;
+    return n.place === id ? noPlace(n) : n;
+  });
+  return { ...s, list, members, active: s.active === id ? wsId : s.active };
+}
+
+/**
+ * Closing workspace `id` (null: it is the last one). moveTo: its terminals join that workspace (membership and order)
+ * and its activities go there as activities, folded — past MAX_ACTIVITIES the extra ones' terminals and tabs join its
+ * own tabs instead; null: everything in it stops, the memberships go. Its own files close (the store drops those no
+ * other place shows). One of its places in front: the target (or the next workspace) comes forward.
  */
 export function remove(s: WorkspacesState, id: string, moveTo: string | null): WorkspacesState | null {
-  const i = s.list.findIndex((w) => w.id === id);
-  if (i === -1 || s.list.length <= 1) return null;
-  const gone = s.list[i]!;
-  const target = moveTo && moveTo !== id && s.list.some((w) => w.id === moveTo) ? moveTo : null;
-  const mine = Object.keys(s.members).filter((t) => s.members[t] === id);
-  const moved = gone.order.filter((x) => x.startsWith('t:'));
-  const list = s.list.filter((w) => w.id !== id).map((w) => (w.id === target ? { ...w, order: [...w.order, ...moved.filter((x) => !w.order.includes(x))] } : w));
-  const members = Object.fromEntries(Object.entries(s.members).filter(([t]) => target || !mine.includes(t)).map(([t, w]) => [t, w === id ? target! : w]));
-  const active = s.active !== id ? s.active : target ?? (list[Math.min(i, list.length - 1)] ?? list[0]!).id;
+  const wss = workspacesOf(s);
+  const i = wss.findIndex((w) => w.id === id);
+  if (i === -1 || wss.length <= 1) return null;
+  const gone = wss[i]!;
+  const target = moveTo && moveTo !== id && wss.some((w) => w.id === moveTo) ? moveTo : null;
+  const acts = activitiesOf(s, id);
+  const room = target ? Math.max(0, MAX_ACTIVITIES - activitiesOf(s, target).length) : 0;
+  const kept = target ? acts.slice(0, room) : [];
+  const flat = target ? acts.slice(room) : [];
+  const flatIds = new Set(flat.map((w) => w.id));
+  const places = new Set([id, ...acts.map((w) => w.id)]);
+  const color = target ? wss.find((w) => w.id === target)!.color : 1;
+  const extra = [...new Set([...gone.order.filter((x) => x.startsWith('t:')), ...flat.flatMap((w) => w.order)])];
+  const list = [
+    ...s.list.filter((w) => !places.has(w.id)).map((w) => (w.id === target ? { ...w, order: [...w.order, ...extra.filter((x) => !w.order.includes(x))] } : w)),
+    ...kept.map((w) => ({ ...w, parent: target!, color, open: false }))
+  ];
+  const members = Object.fromEntries(Object.entries(s.members).flatMap(([tid, p]): [string, string][] => {
+    if (!places.has(p)) return [[tid, p]];
+    if (!target) return [];
+    return [[tid, p === id || flatIds.has(p) ? target : p]];
+  }));
+  const left = workspacesOf({ list });
+  const active = !places.has(s.active) ? s.active : target ?? (left[Math.min(i, left.length - 1)] ?? left[0]!).id;
   return { ...s, list, members, active };
 }
 

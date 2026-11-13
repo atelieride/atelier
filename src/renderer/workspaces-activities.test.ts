@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'vitest';
 import type { TabKey } from './tabs-model';
 import {
-  MAX_ACTIVITIES, MAX_WORKSPACES, activitiesOf, create, isOpen, isWsActivity, placeOnReturn, placesInOrder, reorder, toFront,
-  toggleOpen, workspaceOf, workspacesOf, type Workspace, type WorkspacesState
+  MAX_ACTIVITIES, MAX_NAME, MAX_WORKSPACES, activitiesOf, create, createWsActivity, isOpen, isWsActivity, moveKey, moveWsActivity,
+  placeOnReturn, placesInOrder, recolor, remove, removeWsActivity, reorder, toFront, toggleOpen, workspaceOf, workspacesOf, type Workspace,
+  type WorkspacesState
 } from './workspaces';
 
 // Activities: entries of the workspaces' list with a parent, each a place with its own tabs.
@@ -103,6 +104,152 @@ describe('switching places', () => {
     const s = toFront(mixed(), 'B');
     expect('place' in entry(s, 'B')).toBe(false);
     expect('place' in entry(s, 'A')).toBe(false);
+  });
+});
+
+describe('creating an activity', () => {
+  test('a new activity: last among its workspace\'s, its color, no folder, nothing inside, folded; the front stays', () => {
+    const s = createWsActivity(mixed(), 'A', '  Rate limits  ', 'a3')!;
+    expect(s.list.at(-1)).toEqual({ id: 'a3', parent: 'A', name: 'Rate limits', color: 1, folder: null, order: [], active: null, layout: null });
+    expect(activitiesOf(s, 'A').map((w) => w.id)).toEqual(['a1', 'a2', 'a3']);
+    expect(isOpen(s, 'a3')).toBe(false);
+    expect(s.active).toBe('A');
+    expect(createWsActivity(mixed(), 'B', 'x', 'b2')!.list.at(-1)!.color).toBe(2);
+  });
+  test('recoloring a workspace recolors its activities', () => {
+    const s = recolor(mixed(), 'A', 6);
+    expect(s.list.filter((w) => w.id === 'A' || w.parent === 'A').map((w) => w.color)).toEqual([6, 6, 6]);
+    expect(s.list.find((w) => w.id === 'b1')!.color).toBe(2);
+  });
+  test('an empty name becomes "New activity"; a long one is cut', () => {
+    expect(createWsActivity(mixed(), 'A', '   ', 'a3')!.list.at(-1)!.name).toBe('New activity');
+    expect(createWsActivity(mixed(), 'A', 'x'.repeat(MAX_NAME + 5), 'a3')!.list.at(-1)!.name).toHaveLength(MAX_NAME);
+  });
+  test('refused: inside an activity, in a workspace that is not there, past twenty, with an id already used', () => {
+    expect(createWsActivity(mixed(), 'a1', 'x', 'z')).toBeNull();
+    expect(createWsActivity(mixed(), 'nope', 'x', 'z')).toBeNull();
+    expect(createWsActivity(mixed(), 'A', 'x', 'B')).toBeNull();
+    let s = mixed();
+    for (let i = 0; i < MAX_ACTIVITIES - 2; i++) s = createWsActivity(s, 'A', `x${i}`, `ax${i}`)!;
+    expect(activitiesOf(s, 'A')).toHaveLength(MAX_ACTIVITIES);
+    expect(createWsActivity(s, 'A', 'one more', 'z')).toBeNull();
+    // Another workspace still has room.
+    expect(createWsActivity(s, 'B', 'fine', 'z')).not.toBeNull();
+  });
+});
+
+describe('moving tabs between places', () => {
+  test('a terminal from an activity to its workspace\'s own tabs', () => {
+    const s = moveKey(mixed(), 't:mock', 'A');
+    expect(s.members.mock).toBe('A');
+    expect(s.list.find((w) => w.id === 'a1')!.order).toEqual(k('t:okta', 'f:/p/okta.ts'));
+    expect(s.list.find((w) => w.id === 'A')!.order).toEqual(k('t:tok', 'f:/p/session.ts', 't:mock'));
+  });
+  test('a terminal from an activity to another workspace\'s activity', () => {
+    const s = moveKey(mixed(), 't:okta', 'b1');
+    expect(s.members.okta).toBe('b1');
+    expect(s.list.find((w) => w.id === 'b1')!.order).toEqual(k('t:hook', 't:okta'));
+    expect(s.list.find((w) => w.id === 'a1')!.order).toEqual(k('t:mock', 'f:/p/okta.ts'));
+  });
+  test('a file leaves the activity it was moved from and joins another place once', () => {
+    const s = moveKey({ ...mixed(), active: 'a1' }, 'f:/p/okta.ts', 'a2');
+    expect(s.list.find((w) => w.id === 'a1')!.order).toEqual(k('t:okta', 't:mock'));
+    expect(s.list.find((w) => w.id === 'a2')!.order).toEqual(k('t:mail', 'f:/p/okta.ts'));
+  });
+});
+
+describe('moving an activity to another workspace', () => {
+  test('it changes workspace with everything in it, takes that workspace\'s color and goes last among its activities', () => {
+    const s = moveWsActivity(mixed(), 'a1', 'B');
+    const a1 = s.list.find((w) => w.id === 'a1')!;
+    expect(a1).toMatchObject({ parent: 'B', color: 2, order: k('t:okta', 't:mock', 'f:/p/okta.ts') });
+    expect(activitiesOf(s, 'B').map((w) => w.id)).toEqual(['b1', 'a1']);
+    expect(activitiesOf(s, 'A').map((w) => w.id)).toEqual(['a2']);
+    expect(s.members).toEqual(mixed().members);
+  });
+  test('the workspace it left forgets it as its place', () => {
+    const left: WorkspacesState = { ...mixed(), list: mixed().list.map((w) => (w.id === 'A' ? { ...w, place: 'a1' } : w)) };
+    expect('place' in moveWsActivity(left, 'a1', 'B').list.find((w) => w.id === 'A')!).toBe(false);
+  });
+  test('the activity in front moves too, still in front', () => {
+    const s = moveWsActivity({ ...mixed(), active: 'a1' }, 'a1', 'B');
+    expect(s.active).toBe('a1');
+    expect(workspaceOf(s, s.active)).toBe('B');
+  });
+  test('refused (the same state): into an activity, into its own workspace, into a full one, an unknown id, a workspace', () => {
+    const s = mixed();
+    expect(moveWsActivity(s, 'a1', 'b1')).toBe(s);
+    expect(moveWsActivity(s, 'a1', 'A')).toBe(s);
+    expect(moveWsActivity(s, 'nope', 'B')).toBe(s);
+    expect(moveWsActivity(s, 'B', 'A')).toBe(s);
+    let full = s;
+    for (let i = 0; i < MAX_ACTIVITIES - 1; i++) full = createWsActivity(full, 'B', `x${i}`, `bx${i}`)!;
+    expect(moveWsActivity(full, 'a1', 'B')).toBe(full);
+  });
+});
+
+describe('closing an activity', () => {
+  test('move: its terminals and tabs join its workspace\'s own tabs (once), the entry goes', () => {
+    const base = mixed();
+    const withFile: WorkspacesState = { ...base, list: base.list.map((w) => (w.id === 'A' ? { ...w, order: k(...w.order, 'f:/p/okta.ts') } : w)) };
+    const s = removeWsActivity(withFile, 'a1', 'move');
+    expect(s.list.some((w) => w.id === 'a1')).toBe(false);
+    expect(s.members).toMatchObject({ okta: 'A', mock: 'A' });
+    expect(s.list.find((w) => w.id === 'A')!.order).toEqual(k('t:tok', 'f:/p/session.ts', 'f:/p/okta.ts', 't:okta', 't:mock'));
+  });
+  test('stop: its terminals\' memberships go with it', () => {
+    const s = removeWsActivity(mixed(), 'a1', 'stop');
+    expect(s.list.some((w) => w.id === 'a1')).toBe(false);
+    expect('okta' in s.members || 'mock' in s.members).toBe(false);
+    expect(s.list.find((w) => w.id === 'A')!.order).toEqual(k('t:tok', 'f:/p/session.ts'));
+  });
+  test('in front: its workspace\'s own tabs come forward; a workspace left at it forgets it', () => {
+    const base = toFront(mixed(), 'a1');
+    const s = removeWsActivity(base, 'a1', 'move');
+    expect(s.active).toBe('A');
+    expect('place' in s.list.find((w) => w.id === 'A')!).toBe(false);
+  });
+  test('an unknown id or a workspace: the same state', () => {
+    const s = mixed();
+    expect(removeWsActivity(s, 'nope', 'move')).toBe(s);
+    expect(removeWsActivity(s, 'B', 'stop')).toBe(s);
+  });
+});
+
+describe('closing a workspace that has activities', () => {
+  test('move: its activities go to the target as activities, folded, in its color; its own tabs join the target\'s', () => {
+    const open = toggleOpen(mixed(), 'a1');
+    const s = remove(open, 'A', 'B')!;
+    expect(workspacesOf(s).map((w) => w.id)).toEqual(['B']);
+    expect(activitiesOf(s, 'B').map((w) => w.id)).toEqual(['b1', 'a1', 'a2']);
+    for (const id of ['a1', 'a2']) expect(s.list.find((w) => w.id === id)).toMatchObject({ parent: 'B', color: 2, open: false });
+    expect(s.members).toMatchObject({ tok: 'B', okta: 'a1', mail: 'a2' });
+    expect(s.list.find((w) => w.id === 'B')!.order).toEqual(k('t:bill', 't:tok'));
+  });
+  test('stop: its activities and every membership in it go', () => {
+    const s = remove(mixed(), 'A', null)!;
+    expect(s.list.map((w) => w.id)).toEqual(['B', 'b1']);
+    expect(s.members).toEqual({ bill: 'B', hook: 'b1' });
+  });
+  test('one of its activities in front: the target comes forward', () => {
+    expect(remove({ ...mixed(), active: 'a2' }, 'A', 'B')!.active).toBe('B');
+    expect(remove({ ...mixed(), active: 'a2' }, 'A', null)!.active).toBe('B');
+  });
+  test('past twenty in the target: the extra activities\' terminals and tabs join the target\'s own tabs', () => {
+    let s = mixed();
+    // B holds 19: room for one more.
+    for (let i = 0; i < MAX_ACTIVITIES - 2; i++) s = createWsActivity(s, 'B', `x${i}`, `bx${i}`)!;
+    const r = remove(s, 'A', 'B')!;
+    expect(activitiesOf(r, 'B')).toHaveLength(MAX_ACTIVITIES);
+    // a1 fits (the 20th), a2 does not: its terminal and tab land in B's own tabs.
+    expect(r.list.some((w) => w.id === 'a1')).toBe(true);
+    expect(r.list.some((w) => w.id === 'a2')).toBe(false);
+    expect(r.members.mail).toBe('B');
+    expect(r.list.find((w) => w.id === 'B')!.order).toEqual(k('t:bill', 't:tok', 't:mail'));
+  });
+  test('the last workspace still can\'t be closed, whatever activities it has', () => {
+    const s = remove(mixed(), 'A', null)!;
+    expect(remove(s, 'B', null)).toBeNull();
   });
 });
 
