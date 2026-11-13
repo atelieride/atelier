@@ -1,9 +1,12 @@
-import { beforeEach, expect, test } from 'vitest';
+import { createElement } from 'react';
+import { afterEach, beforeEach, expect, test } from 'vitest';
 import type { TerminalInfo } from '@shared/protocol';
 import { useApp } from './store';
 import { single } from './split';
 import type { MenuItem } from './menu-model';
-import { moveToWorkspaceItems, workspaceMenu } from './workspace-menus';
+import { askCloseWorkspace, closeWorkspaceInFront, moveToWorkspaceItems, workspaceMenu } from './workspace-menus';
+import { Palette } from './components/Palette';
+import { renderLive } from './databases/test-render';
 import type { WorkspacesState } from './workspaces';
 
 // The workspace's menu (right-click on its head or card) and Move to Workspace ›.
@@ -26,6 +29,8 @@ beforeEach(() => {
   useApp.setState({ project: { root: '/p', name: 'p', realRoot: '/p' }, popout: null, terminals: [], tabOrder: [], selectedId: null, activeTab: 'term', hidden: [], split: single(), ws: WS, wsRenaming: null, wsSheet: null, wsCloseAsk: null, menu: null });
   st().setTerminals([term('a', 1), term('b', 2)]);
 });
+
+afterEach(() => useApp.setState({ paletteQuery: '' }));
 
 test('the workspace menu: rename, color, new here, move up/down, new, close', () => {
   expect(ids(workspaceMenu('B'))).toEqual(['ws-rename', 'ws-color', '—', 'ws-new-session', 'ws-new-terminal', '—', 'ws-up', 'ws-down', '—', 'ws-new', 'ws-close']);
@@ -74,6 +79,29 @@ test('the last workspace\'s Close is disabled and says why', () => {
   const close = item(workspaceMenu('A'), 'ws-close')!;
   expect(close.disabled).toBe(true);
   expect(close.tip).toBeTruthy();
+});
+
+test('the last workspace asks nothing when told to close: there is nowhere for what it holds to go', async () => {
+  useApp.setState({ ws: { ...WS, list: [WS.list[0]!], members: { a: 'A' } } });
+  askCloseWorkspace('A');
+  closeWorkspaceInFront();
+  await Promise.resolve();
+  expect(st().wsCloseAsk).toBeNull();
+  expect(st().ws!.list.map((w) => w.id)).toEqual(['A']);
+});
+
+/** The palette's command labels as it opens on `>workspace`. */
+const paletteWorkspaceCommands = () => {
+  useApp.setState({ paletteQuery: '>workspace' });
+  const html = renderLive(createElement(Palette, { onNewSession: () => {}, onNewTerminal: () => {} }));
+  return [...html.matchAll(/<span class="palette-label[^"]*"[^>]*>([^<]*)<\/span>/g)].map((m) => m[1]!);
+};
+
+test('the palette offers Close Workspace… only while there is another workspace to close into', () => {
+  expect(paletteWorkspaceCommands()).toContain('Close Workspace…');
+  useApp.setState({ ws: { ...WS, list: [WS.list[0]!], members: { a: 'A' } } });
+  expect(paletteWorkspaceCommands()).not.toContain('Close Workspace…');
+  expect(paletteWorkspaceCommands()).toContain('Rename Workspace…');
 });
 
 test('Move to Workspace ›: the other workspaces, then New Workspace…; none for project views or with workspaces off', () => {

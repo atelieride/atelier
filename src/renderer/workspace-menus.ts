@@ -74,11 +74,14 @@ export function goToWorkspaceAt(n: number): void {
   if (w) s.goToWorkspace(w.id);
 }
 
-/** Close Workspace…: an empty workspace closes at once; one with something in it asks first. */
+/**
+ * Close Workspace…: an empty workspace closes at once; one with something in it asks first. The last one stays (what it
+ * holds would have nowhere to go), so nothing is asked about it.
+ */
 export function askCloseWorkspace(id: string): void {
   const s = st();
   const ws = s.workspacesNow();
-  if (!ws || !s.project) return;
+  if (!ws || !s.project || workspacesOf(ws).length <= 1) return;
   const card = cardOf(ws, id, s.terminals, s.resumables, s.project.root, s.openFiles.map((f) => f.path), s.revFiles.map((f) => f.key));
   if (card.empty) void s.closeWorkspace(id, 'move');
   else s.setWsCloseAsk(id);

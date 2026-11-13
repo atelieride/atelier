@@ -1,4 +1,4 @@
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -202,6 +202,26 @@ test('workspaces: off by default; on; a new one with its own tabs; switching by 
     await group(win, 'Billing').locator('.ws-head').click({ button: 'right' });
     await win.getByRole('menuitem', { name: 'Close Workspace…' }).click();
     await expect(win.locator('.ws-group')).toHaveCount(1);
+
+    // The last one's Close Workspace… looks as disabled as its Move Up, hovered too: a danger item's red is for one
+    // that runs. It says why, and choosing it closes nothing.
+    await front(win).click({ button: 'right' });
+    const closeLast = win.getByRole('menuitem', { name: 'Close Workspace…' });
+    const moveUp = win.getByRole('menuitem', { name: 'Move Up' });
+    const paint = (l: Locator) => l.evaluate((el) => { const c = getComputedStyle(el); return { color: c.color, ring: c.boxShadow }; });
+    await expect(closeLast).toHaveAttribute('aria-disabled', 'true');
+    await expect(closeLast).toHaveAttribute('data-tip', /^The last workspace stays/);
+    const dim = (await paint(moveUp)).color;
+    expect((await paint(closeLast)).color).toBe(dim);
+    await closeLast.hover();
+    await expect(closeLast).toHaveClass(/is-active/);
+    expect(await paint(closeLast)).toEqual({ color: dim, ring: 'none' });
+    await look(win.locator('.ctx-menu'), `${SHOTS}/workspaces-last-close.png`);
+    await closeLast.click({ force: true });
+    await win.keyboard.press('Escape');
+    await expect(win.locator('.ctx-menu')).toHaveCount(0);
+    await expect(win.locator('.ws-group')).toHaveCount(1);
+    await expect(win.locator('.ws-close-body')).toHaveCount(0);
 
     // Off: today's sidebar and one strip; nothing stopped. On again: Workspace 1 back as it was.
     await menu(app, 'Toggle Workspaces for This Project');

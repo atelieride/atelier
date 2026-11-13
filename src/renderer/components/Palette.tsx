@@ -612,7 +612,8 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
       ...(st.ws?.on && !st.popout ? [
         c('ws-new', t.ws.newWorkspace, kbd('⌘⌥T'), 'plus', () => setTimeout(() => useApp.getState().setWsSheet({}), 0)),
         c('ws-rename', t.ws.rename, '', 'edit', renameWorkspaceInFront),
-        c('ws-close', t.ws.close, '', 'x', closeWorkspaceInFront),
+        // The last workspace stays (its menu says why): nothing to close here.
+        ...(workspacesOf(st.ws).length > 1 ? [c('ws-close', t.ws.close, '', 'x', closeWorkspaceInFront)] : []),
         c('ws-next', t.ws.nextCmd, '', 'chevronDown', () => stepWorkspace(1)),
         c('ws-prev', t.ws.prevCmd, '', 'chevronUp', () => stepWorkspace(-1))
       ] : []),
