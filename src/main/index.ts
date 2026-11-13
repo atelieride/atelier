@@ -1459,7 +1459,7 @@ if (!app.requestSingleInstanceLock()) {
     const menuWatched = new Set<number>();
     // View › Services and Automations (2026-11-02): listed once turned on in Settings, from main's settings; Toggle
     // Workspaces for This Project disabled while they are on in every project. View › Word Wrap checked while it is on.
-    const menuViews = () => ({ services: settings.get().showServices, automations: settings.get().automationsEnabled, wsEverywhere: settings.get().workspacesEverywhere, wordWrap: settings.get().wordWrap });
+    const menuViews = () => ({ services: settings.get().showServices, automations: settings.get().automationsEnabled, wsEverywhere: settings.get().workspacesEverywhere, wordWrap: settings.get().wordWrap, wsActivities: settings.get().wsActivities });
     // Windows: no native menu; each window draws its own from this model.
     const winMenu = new WindowsMenuHost({
       windows: () => menuTargets(BrowserWindow.getAllWindows(), isAppUrl)

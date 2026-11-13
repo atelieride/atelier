@@ -109,6 +109,17 @@ export function wsActivityMenu(id: string): MenuItem[] {
   ];
 }
 
+/** File › New Activity… and the palette's command: a new activity in the workspace in front (its own tabs or one of its activities). */
+export function newWsActivityHere(): void {
+  const s = st();
+  if (s.ws?.on && !s.popout) s.newWsActivity(workspaceOf(s.ws, s.ws.active));
+}
+
+/** View › Activities Inside Workspaces and the palette's command: the setting, the same for every project. */
+export function toggleWsActivities(): void {
+  void window.atelier.settings.set({ wsActivities: !st().settings.wsActivities }).catch(() => {});
+}
+
 /** Close Activity…: an empty activity closes at once; one with something in it asks first. */
 export function askCloseWsActivity(id: string): void {
   const s = st();

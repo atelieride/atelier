@@ -78,7 +78,7 @@ export function windowsMenu(spec: readonly MenuSpecMenu[], env: WinMenuEnv): Win
     profiles: env.profiles !== null, 'git-undo': env.state.gitUndo, 'git-repos': env.state.hasRepos,
     'git-writes': env.state.gitWrites, 'git-messages': env.state.gitWrites && env.state.messages, workspaces: !!env.state.workspaces, project: !!env.state.project,
     services: !!env.state.services, automations: !!env.state.automations, 'ws-toggle': !!env.state.project && !env.state.wsEverywhere,
-    'word-wrap': !!env.state.wordWrap
+    'word-wrap': !!env.state.wordWrap, 'ws-activities': !!env.state.wsActivities, 'ws-activities-here': !!env.state.wsActivities && !!env.state.workspaces
   };
   const accel = (a: string | undefined) => (a ? windowsAccelerator(a) : null);
   // Workspaces: one item per workspace, Ctrl+Alt+1…9 on the first nine, the active one checked.

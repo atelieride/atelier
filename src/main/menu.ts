@@ -35,7 +35,8 @@ export function menuTemplate(actions: MenuActions, profiles: { key: ProfileKey; 
   const holds: Record<MenuCondition, boolean> = {
     profiles: profiles !== null, 'git-undo': state.gitUndo, 'git-repos': state.hasRepos, 'git-writes': state.gitWrites, 'git-messages': state.gitWrites && state.messages,
     workspaces: !!state.workspaces, project: !!state.project, services: !!state.services, automations: !!state.automations,
-    'ws-toggle': !!state.project && !state.wsEverywhere, 'word-wrap': !!state.wordWrap
+    'ws-toggle': !!state.project && !state.wsEverywhere, 'word-wrap': !!state.wordWrap,
+    'ws-activities': !!state.wsActivities, 'ws-activities-here': !!state.wsActivities && !!state.workspaces
   };
   const enabled = (i: { enabledWhen?: MenuCondition }) => (i.enabledWhen ? { enabled: holds[i.enabledWhen] } : {});
   // Hidden, not left out: the item keeps its place (and its key, which the renderer refuses in Read-only too).

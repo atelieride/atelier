@@ -16,8 +16,10 @@ export type MenuAction = 'check-for-updates' | 'new-window' | 'open-folder' | 'r
  * The front window's (MenuState): 'git-undo', its project has a commit main still offers an Undo
  * for; 'git-repos', its project has a repository; 'git-writes', Git actions are on (not Read-only);
  * 'git-messages', Git actions on and messages with Claude on. 'word-wrap': the editors wrap long lines (main's settings).
+ * 'ws-activities': activities inside workspaces are on (main's settings); 'ws-activities-here': on, and the front
+ * window's workspaces are on.
  */
-export type MenuCondition = 'profiles' | 'git-undo' | 'git-repos' | 'git-writes' | 'git-messages' | 'workspaces' | 'project' | 'services' | 'automations' | 'ws-toggle' | 'word-wrap';
+export type MenuCondition = 'profiles' | 'git-undo' | 'git-repos' | 'git-writes' | 'git-messages' | 'workspaces' | 'project' | 'services' | 'automations' | 'ws-toggle' | 'word-wrap' | 'ws-activities' | 'ws-activities-here';
 
 /** The menu state before any window said anything (and for a window that never does): no repository, no Git menu. */
 export const NO_MENU_STATE: MenuState = { gitUndo: false, hasRepos: false, gitWrites: false, messages: false };
@@ -94,6 +96,8 @@ export const MENU_SPEC: readonly MenuSpecMenu[] = [
     // Workspaces: shown while the window's project has them on (its key reaches the page
     // either way, which ignores it then).
     { label: 'New Workspace…', accelerator: 'CmdOrCtrl+Alt+T', command: 'new-workspace', visibleWhen: 'workspaces' },
+    // Activities: a new one in the workspace in front, while they are on there (no key).
+    { label: 'New Activity…', command: 'new-ws-activity', visibleWhen: 'ws-activities-here' },
     sep,
     { label: 'Save', accelerator: 'CmdOrCtrl+S', command: 'save' },
     { label: 'Save All', accelerator: 'CmdOrCtrl+Alt+S', command: 'save-all' },
@@ -149,6 +153,8 @@ export const MENU_SPEC: readonly MenuSpecMenu[] = [
     // Workspaces: on or off for this window's project, as in Settings › Appearance;
     // disabled while Settings turns them on in every project (2026-11-02).
     { label: 'Toggle Workspaces for This Project', command: 'toggle-workspaces', enabledWhen: 'ws-toggle' },
+    // Activities inside workspaces, as in Settings › Appearance (every project): usable while the window's workspaces are on.
+    { label: 'Activities Inside Workspaces', command: 'toggle-ws-activities', checkedWhen: 'ws-activities', enabledWhen: 'workspaces' },
     { label: 'Notifications', accelerator: 'CmdOrCtrl+Shift+J', command: 'show-notifications' },
     // Session panel: the selected session's model, mode and quick actions (no shortcut).
     { label: 'Session Panel', command: 'session-panel' },

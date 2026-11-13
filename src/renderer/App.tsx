@@ -53,7 +53,7 @@ import { dirtyPaths, saveMany, saveOne } from './editor/savers';
 import { Logo } from './components/Logo';
 import { WorkspaceEmpty } from './components/WorkspaceEmpty';
 import { SpaceEmpty } from './components/SpaceEmpty';
-import { goToWorkspaceAt, stepWorkspace } from './workspace-menus';
+import { goToWorkspaceAt, newWsActivityHere, stepWorkspace, toggleWsActivities } from './workspace-menus';
 import { NewWorkspaceSheet } from './components/NewWorkspaceSheet';
 import { Icon } from './components/Icon';
 import { disposeLiveTerminal, redrawTerminal, resetTerminal, writeToTerminal } from './terminal/registry';
@@ -513,6 +513,8 @@ export function App() {
           if (cmd === 'open-connectors') { st.setSettingsOpen('connectors'); return; }
           // Word wrap is a setting: the sheet stays and shows Editor, where its toggle and preview change in front of you.
           if (cmd === 'toggle-word-wrap') { st.setSettingsOpen('editor'); toggleWordWrap(); return; }
+          // So is Activities Inside Workspaces: Appearance shows its switch change.
+          if (cmd === 'toggle-ws-activities') { st.setSettingsOpen('appearance'); toggleWsActivities(); return; }
           st.setSettingsOpen(null);
         }
         switch (cmd) {
@@ -598,6 +600,8 @@ export function App() {
           // Workspaces: nothing while the project has them off (the keys reach the page anyway).
           case 'new-workspace': if (st.ws?.on) st.setWsSheet({}); break;
           case 'toggle-workspaces': st.setWorkspacesOn(!st.ws?.on); break;
+          case 'new-ws-activity': newWsActivityHere(); break;
+          case 'toggle-ws-activities': toggleWsActivities(); break;
           case 'next-workspace': case 'prev-workspace': stepWorkspace(cmd === 'next-workspace' ? 1 : -1); break;
           default:
             if (cmd.startsWith('tab-')) { const k = nth(st.focusedStrip(), Number(cmd.slice(4))); if (k) st.activate(k); }

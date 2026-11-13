@@ -6,7 +6,7 @@ import { useApp } from './store';
 import { single } from './split';
 import type { MenuItem } from './menu-model';
 import { sessionPlusMenu } from './menus';
-import { askCloseWsActivity, moveToWorkspaceItems, workspaceMenu, wsActivityMenu } from './workspace-menus';
+import { askCloseWsActivity, moveToWorkspaceItems, newWsActivityHere, toggleWsActivities, workspaceMenu, wsActivityMenu } from './workspace-menus';
 import type { WorkspacesState } from './workspaces';
 import { ContextMenu } from './components/ContextMenu';
 
@@ -109,6 +109,27 @@ test('activities off: today\'s Move to Workspace ›', () => {
   useApp.setState({ settings: { ...st().settings, wsActivities: false }, ws: { ...WS(), list: WS().list.filter((w) => !w.parent), members: { a: 'A', b: 'B' } } });
   const [m] = moveToWorkspaceItems('t:a');
   expect((m as Entry).label).toBe('Move to Workspace');
+});
+
+test('File › New Activity… makes one in the workspace in front, from one of its activities too', () => {
+  st().switchWorkspace('a1');
+  newWsActivityHere();
+  const made = st().ws!.list.at(-1)!;
+  expect(made.parent).toBe('A');
+  expect(st().ws!.active).toBe(made.id);
+});
+
+test('View › Activities Inside Workspaces switches the setting for every project', () => {
+  const g = globalThis as { window?: unknown };
+  const had = g.window;
+  const patches: unknown[] = [];
+  g.window = { atelier: { settings: { set: async (p: unknown) => { patches.push(p); } } } };
+  try {
+    toggleWsActivities();
+    useApp.setState({ settings: { ...st().settings, wsActivities: false } });
+    toggleWsActivities();
+  } finally { g.window = had; }
+  expect(patches).toEqual([{ wsActivities: false }, { wsActivities: true }]);
 });
 
 test('the context menu draws an indented item indented', () => {
