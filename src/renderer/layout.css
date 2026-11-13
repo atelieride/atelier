@@ -301,6 +301,9 @@ button.foot-item:disabled { cursor: default; }
 .wsa-group { position: relative; display: flex; flex-direction: column; gap: 2px; min-width: 0; border-radius: var(--radius);
   transition: background-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
 .wsa-group.is-open { background: var(--ws-band); padding-bottom: 3px; }
+/* Its rows step in under its head, so they read as its contents: a row's icon centred under the activity's glyph
+   (chevron 20 + 2 + half the 15 px glyph, less the row's 8 px padding and half its 22 px icon). The band stays full width. */
+.wsa-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-left: 10px; }
 .wsa-head { position: relative; height: 30px; flex: none; display: flex; align-items: center; padding-right: 3px; border-radius: var(--r-sm);
   transition: background-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
 .wsa-head:hover { background: var(--bg-hover); }
