@@ -59,12 +59,22 @@ export interface WorkspacesState {
    * Activities kept aside while activities are turned off: the entries and their terminals' places. Their tabs live in
    * their workspaces meanwhile; turning activities on again brings them back.
    */
-  parked?: { list: Workspace[]; members: Record<string, string> };
+  parked?: Parked;
   /**
    * On only because Settings turns workspaces on in every project (2026-11-02): the project's own switch is off, and
    * they go back off when that setting does. Only with `on`.
    */
   forced?: true;
+}
+
+/** Activities kept aside while activities are off. */
+export interface Parked {
+  /** The activities, as they were (their tabs, tab in front, split, fold). */
+  list: Workspace[];
+  /** Terminal id → the activity it was in. */
+  members: Record<string, string>;
+  /** Workspace id → the keys parking added to its own tabs (taken back out when the activities return). */
+  joined: Record<string, TabKey[]>;
 }
 
 export type DotKind = 'waiting' | 'working' | 'done' | 'resume';
@@ -254,46 +264,65 @@ export function memberOf(s: WorkspacesState, terminalId: string): string {
   return m && s.list.some((w) => w.id === m) ? m : s.active;
 }
 
-/** A resumed session's new id keeps its workspace and its place. */
+/** The activities kept aside with `fn` applied to each entry, and `keys` to each workspace's joined keys. */
+function mapParked(p: Parked, fn: (w: Workspace) => Workspace, keys: (ks: TabKey[]) => TabKey[]): Parked {
+  return { ...p, list: p.list.map(fn), joined: Object.fromEntries(Object.entries(p.joined).map(([w, ks]) => [w, keys(ks)])) };
+}
+
+/** A resumed session's new id keeps its workspace and its place (an activity kept aside included). */
 export function relink(s: WorkspacesState, from: string, to: string): WorkspacesState {
   if (!(from in s.members) || from === to) return s;
   const { [from]: ws, ...rest } = s.members;
   const a = `t:${from}` as TabKey;
   const b = `t:${to}` as TabKey;
+  const swap = (x: TabKey) => (x === a ? b : x);
+  const entry = (w: Workspace) => (w.order.includes(a) || w.active === a ? { ...w, order: w.order.map(swap), active: w.active === a ? b : w.active } : w);
+  const p = s.parked;
+  const parked = p && (from in p.members || p.list.some((w) => w.order.includes(a)))
+    ? (() => { const { [from]: act, ...others } = p.members; return { ...mapParked(p, entry, (ks) => ks.map(swap)), members: act ? { ...others, [to]: act } : others }; })()
+    : p;
   return {
     ...s,
     members: { ...rest, [to]: ws! },
-    list: s.list.map((w) => (w.order.includes(a) || w.active === a ? { ...w, order: w.order.map((x) => (x === a ? b : x)), active: w.active === a ? b : w.active } : w))
+    list: s.list.map(entry),
+    ...(parked ? { parked } : {})
   };
 }
 
 /**
- * A file renamed or moved (or an untitled tab saved as a file): its key changes in every workspace — order, tab in
- * front, split layout. The same state when no key changes.
+ * A file renamed or moved (or an untitled tab saved as a file): its key changes in every place — order, tab in
+ * front, split layout — those kept aside included. The same state when no key changes.
  */
 export function renameKeys(s: WorkspacesState, fn: (k: TabKey) => TabKey): WorkspacesState {
   let changed = false;
   const map = (k: TabKey) => { const n = fn(k); if (n !== k) changed = true; return n; };
   // A layout's panes: v1 one key each, v2 `{ tabs, front }`; anything else as it is.
-  const list = s.list.map((w) => ({ ...w, order: w.order.map(map), active: w.active ? map(w.active) : null, layout: mapLayoutKeys(w.layout, map) }));
-  return changed ? { ...s, list } : s;
+  const entry = (w: Workspace) => ({ ...w, order: w.order.map(map), active: w.active ? map(w.active) : null, layout: mapLayoutKeys(w.layout, map) });
+  const list = s.list.map(entry);
+  const parked = s.parked ? mapParked(s.parked, entry, (ks) => ks.map(map)) : undefined;
+  return changed ? { ...s, list, ...(parked ? { parked } : {}) } : s;
 }
 
 /**
- * Tabs closed for good (the table tabs of a removed connection, Settings › Databases › Never): out of every workspace's
- * order and front, so no switch brings them back. The same state when no workspace holds one.
+ * Tabs closed for good (the table tabs of a removed connection, Settings › Databases › Never): out of every place's
+ * order and front (those kept aside included), so no switch brings them back. The same state when none holds one.
  */
 export function forget(s: WorkspacesState, gone: (k: TabKey) => boolean): WorkspacesState {
-  if (!s.list.some((w) => w.order.some(gone) || (w.active !== null && gone(w.active)))) return s;
-  return { ...s, list: s.list.map((w) => ({ ...w, order: w.order.filter((k) => !gone(k)), active: w.active !== null && gone(w.active) ? null : w.active })) };
+  const holds = (w: Workspace) => w.order.some(gone) || (w.active !== null && gone(w.active));
+  if (!s.list.some(holds) && !s.parked?.list.some(holds)) return s;
+  const entry = (w: Workspace) => ({ ...w, order: w.order.filter((k) => !gone(k)), active: w.active !== null && gone(w.active) ? null : w.active });
+  const parked = s.parked ? mapParked(s.parked, entry, (ks) => ks.filter((k) => !gone(k))) : undefined;
+  return { ...s, list: s.list.map(entry), ...(parked ? { parked } : {}) };
 }
 
-/** Memberships of terminals not in `keep` (neither running nor resumable) go; the same state if none does. */
+/** Memberships of terminals not in `keep` (neither running nor resumable) go, kept aside too; the same state if none does. */
 export function prune(s: WorkspacesState, keep: Iterable<string>): WorkspacesState {
   const k = new Set(keep);
   const ids = Object.keys(s.members);
-  if (ids.every((id) => k.has(id))) return s;
-  return { ...s, members: Object.fromEntries(ids.filter((id) => k.has(id)).map((id) => [id, s.members[id]!])) };
+  const pids = Object.keys(s.parked?.members ?? {});
+  if (ids.every((id) => k.has(id)) && pids.every((id) => k.has(id))) return s;
+  const only = (m: Record<string, string>) => Object.fromEntries(Object.keys(m).filter((id) => k.has(id)).map((id) => [id, m[id]!]));
+  return { ...s, members: only(s.members), ...(s.parked ? { parked: { ...s.parked, members: only(s.parked.members) } } : {}) };
 }
 
 /**
@@ -394,13 +423,14 @@ export function viewOf(s: WorkspacesState, id: string, alive: (k: TabKey) => boo
 }
 
 /**
- * Every workspace's tabs in workspace order (the active one's live order in its place), then the live project views:
- * one strip for "off", and what tabs.json saves. A file in several workspaces comes once, where it first is.
+ * Every place's tabs in the sidebar's order — each workspace's own tabs, then its activities' — with the place in
+ * front's live order in its place, then the live project views: one strip for "off", and what tabs.json saves. A file
+ * in several places comes once, where it first is.
  */
 export function union(s: WorkspacesState, liveOrder: TabKey[]): TabKey[] {
   const seen = new Set<TabKey>();
   const out: TabKey[] = [];
-  for (const w of s.list) {
+  for (const w of placesInOrder(s)) {
     const keys = w.id === s.active ? liveOrder.filter(own) : w.order.filter(own);
     for (const x of keys) if (!seen.has(x)) { seen.add(x); out.push(x); }
   }
@@ -426,6 +456,81 @@ export function absorb(s: WorkspacesState, liveOrder: TabKey[]): WorkspacesState
   }
   if (!adds.size && members === s.members) return s;
   return { ...s, members, list: s.list.map((w) => (adds.has(w.id) ? { ...w, order: [...w.order, ...adds.get(w.id)!] } : w)) };
+}
+
+/**
+ * Activities turned off: they are kept aside and every workspace holds what its activities held — their terminals,
+ * and their tabs after its own (sidebar order, each key once). A workspace left at an activity (the one in front
+ * included) takes that activity's tab in front and split, and becomes the place in front if its activity was. Nothing
+ * stops, nothing closes. The same state when there is no activity.
+ */
+export function parkWsActivities(s: WorkspacesState): WorkspacesState {
+  const acts = s.list.filter(isWsActivity);
+  if (!acts.length) return s;
+  const parentOf = new Map(acts.map((a) => [a.id, a.parent!]));
+  const prev: Parked = s.parked ?? { list: [], members: {}, joined: {} };
+  const parkedMembers = { ...prev.members };
+  const members: Record<string, string> = {};
+  for (const [tid, p] of Object.entries(s.members)) {
+    const ws = parentOf.get(p);
+    if (ws) parkedMembers[tid] = p;
+    members[tid] = ws ?? p;
+  }
+  const joined = { ...prev.joined };
+  const list = workspacesOf(s).map((w) => {
+    const mine = activitiesOf(s, w.id);
+    if (!mine.length) return noPlace(w);
+    const add = [...new Set(mine.flatMap((a) => a.order))].filter((x) => !w.order.includes(x));
+    if (add.length) joined[w.id] = [...(joined[w.id] ?? []), ...add];
+    const at = mine.find((a) => a.id === w.place);
+    return noPlace({ ...w, order: [...w.order, ...add], ...(at ? { active: at.active, layout: at.layout } : {}) });
+  });
+  return { ...s, list, members, active: parentOf.get(s.active) ?? s.active, parked: { list: [...prev.list, ...acts], members: parkedMembers, joined } };
+}
+
+/**
+ * Activities turned on again: those kept aside whose workspace is still there come back as they were (others go, with
+ * their memberships), in its color. A terminal goes back to its activity only while it is still in that workspace (one
+ * moved elsewhere meanwhile stays there); a file goes back while its workspace still shows it. What parking added to a
+ * workspace's own tabs and went back leaves them; what was opened meanwhile stays. The place in front stays. The same
+ * state when nothing is kept aside.
+ */
+export function unparkWsActivities(s: WorkspacesState): WorkspacesState {
+  const p = s.parked;
+  if (!p) return s;
+  const { parked: _, ...rest } = s;
+  const wss = new Map(workspacesOf(s).map((w) => [w.id, w]));
+  const count = new Map<string, number>();
+  for (const w of s.list) if (w.parent) count.set(w.parent, (count.get(w.parent) ?? 0) + 1);
+  const back = p.list.filter((a) => {
+    const ws = a.parent!;
+    if (!wss.has(ws) || s.list.some((w) => w.id === a.id) || (count.get(ws) ?? 0) >= MAX_ACTIVITIES) return false;
+    count.set(ws, (count.get(ws) ?? 0) + 1);
+    return true;
+  });
+  const backIds = new Map(back.map((a) => [a.id, a.parent!]));
+  const members = { ...s.members };
+  const returning = new Set<TabKey>();
+  for (const [tid, act] of Object.entries(p.members)) {
+    if (backIds.has(act) && s.members[tid] === backIds.get(act)) { members[tid] = act; returning.add(`t:${tid}` as TabKey); }
+  }
+  const kept = new Map<string, Set<TabKey>>();
+  const acts = back.map((a) => {
+    const ws = wss.get(a.parent!)!;
+    const shown = new Set(ws.order);
+    const order = a.order.filter((x) => { const tid = termId(x); return tid ? members[tid] === a.id : shown.has(x); });
+    const set = kept.get(ws.id) ?? new Set<TabKey>();
+    for (const x of order) set.add(x);
+    kept.set(ws.id, set);
+    return { ...a, color: ws.color, order, active: a.active && order.includes(a.active) ? a.active : null };
+  });
+  const list = s.list.map((w) => {
+    const joined = new Set(p.joined[w.id] ?? []);
+    const went = kept.get(w.id);
+    const order = w.order.filter((x) => !returning.has(x) && !(went?.has(x) && joined.has(x)));
+    return order.length === w.order.length ? w : { ...w, order };
+  });
+  return { ...rest, list: [...list, ...acts], members };
 }
 
 /** A card's state dots: one per state present (needs you, working, finished and not seen), then those to resume. */
@@ -466,23 +571,71 @@ function parseOne(v: unknown): Workspace | null {
     id: v.id, name: name || 'Workspace', color: typeof v.color === 'number' ? inRange(v.color) : 1,
     folder: typeof v.folder === 'string' && isAbsPath(v.folder) ? v.folder : null,
     order, active, layout: isObj(v.layout) ? v.layout : null,
-    ...(typeof v.open === 'boolean' ? { open: v.open } : {})
+    ...(typeof v.open === 'boolean' ? { open: v.open } : {}),
+    ...(typeof v.parent === 'string' && ID.test(v.parent) ? { parent: v.parent } : {}),
+    ...(typeof v.place === 'string' && ID.test(v.place) ? { place: v.place } : {})
   };
 }
 
-/** A saved state read field by field (junk entries dropped, never the whole state); null if it holds no workspace. */
+/** Entries read one by one (junk dropped), each id once. */
+function parseEntries(raw: unknown[], taken: Set<string> = new Set()): Workspace[] {
+  const out: Workspace[] = [];
+  for (const v of raw) {
+    const w = parseOne(v);
+    if (w && !taken.has(w.id) && !out.some((x) => x.id === w.id)) out.push(w);
+  }
+  return out;
+}
+
+/** Activities of workspaces in `wsIds` only, MAX_ACTIVITIES each (`count` holds those already kept); activities have no place. */
+function keepActivities(acts: Workspace[], wsIds: Set<string>, count = new Map<string, number>()): Workspace[] {
+  return acts.filter((a) => {
+    const n = count.get(a.parent!) ?? 0;
+    if (!wsIds.has(a.parent!) || n >= MAX_ACTIVITIES) return false;
+    count.set(a.parent!, n + 1);
+    return true;
+  }).map(noPlace);
+}
+
+/** Activities kept aside, read like the list: those of a workspace that exists, memberships pointing into them; null if none is usable. */
+function parseParked(v: unknown, wsIds: Set<string>, taken: Set<string>): Parked | null {
+  if (!isObj(v) || !Array.isArray(v.list)) return null;
+  const list = keepActivities(parseEntries(v.list, taken).filter(isWsActivity), wsIds);
+  if (!list.length) return null;
+  const ids = new Set(list.map((w) => w.id));
+  const members = isObj(v.members)
+    ? Object.fromEntries(Object.entries(v.members).filter(([t, a]) => TERM.test(t) && typeof a === 'string' && ids.has(a)) as [string, string][])
+    : {};
+  const joined = isObj(v.joined)
+    ? Object.fromEntries(Object.entries(v.joined).filter(([w, ks]) => wsIds.has(w) && Array.isArray(ks)).map(([w, ks]) => [w, [...new Set((ks as unknown[]).filter(okKey))]]))
+    : {};
+  return { list, members, joined };
+}
+
+/**
+ * A saved state read field by field (junk entries dropped, never the whole state); null if it holds no workspace.
+ * At most MAX_WORKSPACES workspaces and MAX_ACTIVITIES activities each; an activity whose workspace is missing (or
+ * is itself an activity) is dropped with its memberships; a workspace's place must be one of its activities.
+ */
 export function parseWorkspaces(raw: unknown): WorkspacesState | null {
   if (!isObj(raw) || !Array.isArray(raw.list)) return null;
-  const list: Workspace[] = [];
-  for (const v of raw.list) {
-    const w = parseOne(v);
-    if (w && !list.some((x) => x.id === w.id) && list.length < MAX_WORKSPACES) list.push(w);
-  }
-  if (!list.length) return null;
+  const all = parseEntries(raw.list);
+  const wsIds = new Set(all.filter((w) => !isWsActivity(w)).slice(0, MAX_WORKSPACES).map((w) => w.id));
+  if (!wsIds.size) return null;
+  const count = new Map<string, number>();
+  const kept = new Set(keepActivities(all.filter(isWsActivity), wsIds, count).map((a) => a.id));
+  const list = all
+    .filter((w) => (isWsActivity(w) ? kept.has(w.id) : wsIds.has(w.id)))
+    .map((w) => (isWsActivity(w) ? noPlace(w) : w.place && !all.some((a) => a.id === w.place && a.parent === w.id && kept.has(a.id)) ? noPlace(w) : w));
   const ids = new Set(list.map((w) => w.id));
   const members = isObj(raw.members)
     ? Object.fromEntries(Object.entries(raw.members).filter(([t, w]) => TERM.test(t) && typeof w === 'string' && ids.has(w)) as [string, string][])
     : {};
-  const active = typeof raw.active === 'string' && ids.has(raw.active) ? raw.active : list[0]!.id;
-  return { on: raw.on === true, active, list, members, ...(raw.on === true && raw.forced === true ? { forced: true as const } : {}) };
+  const active = typeof raw.active === 'string' && ids.has(raw.active) ? raw.active : list.find((w) => !isWsActivity(w))!.id;
+  const parked = parseParked(raw.parked, wsIds, ids);
+  return {
+    on: raw.on === true, active, list, members,
+    ...(raw.on === true && raw.forced === true ? { forced: true as const } : {}),
+    ...(parked ? { parked } : {})
+  };
 }

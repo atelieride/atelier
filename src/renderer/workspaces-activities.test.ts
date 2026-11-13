@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'vitest';
 import type { TabKey } from './tabs-model';
 import {
-  MAX_ACTIVITIES, MAX_NAME, MAX_WORKSPACES, activitiesOf, create, createWsActivity, isOpen, isWsActivity, moveKey, moveWsActivity,
-  placeOnReturn, placesInOrder, recolor, remove, removeWsActivity, reorder, toFront, toggleOpen, workspaceOf, workspacesOf, type Workspace,
-  type WorkspacesState
+  MAX_ACTIVITIES, MAX_NAME, MAX_WORKSPACES, activitiesOf, create, createWsActivity, forget, isOpen, isWsActivity, moveKey, moveWsActivity,
+  parkWsActivities, parseWorkspaces, placeOnReturn, placesInOrder, prune, recolor, relink, remove, removeWsActivity, renameKeys, reorder,
+  toFront, toggleOpen, union, unparkWsActivities, workspaceOf, workspacesOf, type Workspace, type WorkspacesState
 } from './workspaces';
+import { loadWorkspaces, saveWorkspaces } from './workspaces-save';
 
 // Activities: entries of the workspaces' list with a parent, each a place with its own tabs.
 
@@ -279,5 +280,182 @@ describe('the workspace list ignores activities', () => {
     expect(isOpen(s, 'A')).toBe(true);
     expect(isOpen(s, 'B')).toBe(false);
     expect(isOpen({ ...s, list: s.list.map((w) => (w.id === 'A' ? { ...w, open: false } : w)) }, 'A')).toBe(false);
+  });
+});
+
+describe('one strip for every place (off, ⌘J, what tabs.json saves)', () => {
+  test('each workspace\'s own tabs, then its activities\', in the sidebar\'s order; the live order in its place', () => {
+    expect(union(mixed(), k('t:tok', 'f:/p/session.ts', 'review'))).toEqual(
+      k('t:tok', 'f:/p/session.ts', 't:okta', 't:mock', 'f:/p/okta.ts', 't:mail', 't:bill', 't:hook', 'review')
+    );
+    // An activity in front: its live order in its place.
+    expect(union({ ...mixed(), active: 'a1' }, k('t:mock', 't:okta'))).toEqual(
+      k('t:tok', 'f:/p/session.ts', 't:mock', 't:okta', 't:mail', 't:bill', 't:hook')
+    );
+  });
+  test('a file in two places comes once, where it first is', () => {
+    const s: WorkspacesState = { ...mixed(), list: mixed().list.map((w) => (w.id === 'a2' ? { ...w, order: k('t:mail', 'f:/p/session.ts') } : w)) };
+    expect(union(s, k('t:tok', 'f:/p/session.ts')).filter((x) => x === 'f:/p/session.ts')).toHaveLength(1);
+  });
+});
+
+describe('activities kept aside (the setting off) and back', () => {
+  const LAYOUT = { v: 2, panes: [{ tabs: ['t:okta'], front: 't:okta' }, { tabs: ['t:mock'], front: 't:mock' }], focus: 1 };
+  /** SSO in front, its mock in front there, split in two. */
+  const atSso = (): WorkspacesState => {
+    const s = toFront(mixed(), 'a1');
+    return { ...s, list: s.list.map((w) => (w.id === 'a1' ? { ...w, active: 't:mock' as TabKey, layout: LAYOUT } : w)) };
+  };
+  const entry = (s: WorkspacesState, id: string) => s.list.find((w) => w.id === id)!;
+
+  test('nothing to keep aside: the same state', () => {
+    const s = mixed();
+    const plain: WorkspacesState = { ...s, list: workspacesOf(s), members: { tok: 'A', bill: 'B' } };
+    expect(parkWsActivities(plain)).toBe(plain);
+  });
+  test('parked: only workspaces stay; each holds its activities\' tabs after its own; every terminal is its workspace\'s', () => {
+    const s = parkWsActivities(atSso());
+    expect(s.list.map((w) => w.id)).toEqual(['A', 'B']);
+    expect(entry(s, 'A').order).toEqual(k('t:tok', 'f:/p/session.ts', 't:okta', 't:mock', 'f:/p/okta.ts', 't:mail'));
+    expect(entry(s, 'B').order).toEqual(k('t:bill', 't:hook'));
+    expect(s.members).toEqual({ tok: 'A', okta: 'A', mock: 'A', bill: 'B', mail: 'A', hook: 'B' });
+    expect(s.parked!.members).toEqual({ okta: 'a1', mock: 'a1', mail: 'a2', hook: 'b1' });
+    expect(s.parked!.list.map((w) => w.id)).toEqual(['a1', 'a2', 'b1']);
+  });
+  test('the activity in front: its workspace\'s own tabs come forward with its tab in front and its split', () => {
+    const s = parkWsActivities(atSso());
+    expect(s.active).toBe('A');
+    expect(entry(s, 'A')).toMatchObject({ active: 't:mock', layout: LAYOUT });
+    expect('place' in entry(s, 'A')).toBe(false);
+  });
+  test('a key the workspace already held comes once, and stays its own when the activities come back', () => {
+    const base = atSso();
+    const s = { ...base, list: base.list.map((w) => (w.id === 'A' ? { ...w, order: k(...w.order, 'f:/p/okta.ts') } : w)) };
+    const parked = parkWsActivities(s);
+    expect(entry(parked, 'A').order.filter((x) => x === 'f:/p/okta.ts')).toHaveLength(1);
+    const back = unparkWsActivities(parked);
+    expect(entry(back, 'A').order).toContain('f:/p/okta.ts');
+    expect(entry(back, 'a1').order).toContain('f:/p/okta.ts');
+  });
+  test('back on: the activities, their tabs and their terminals come back as they were; the place in front stays', () => {
+    const s = unparkWsActivities(parkWsActivities(atSso()));
+    expect(s.parked).toBeUndefined();
+    expect(s.list.map((w) => w.id)).toEqual(['A', 'B', 'a1', 'a2', 'b1']);
+    expect(activitiesOf(s, 'A').map((w) => w.id)).toEqual(['a1', 'a2']);
+    expect(s.members).toEqual(mixed().members);
+    expect(entry(s, 'A').order).toEqual(k('t:tok', 'f:/p/session.ts'));
+    expect(entry(s, 'a1')).toMatchObject({ order: k('t:okta', 't:mock', 'f:/p/okta.ts'), active: 't:mock', layout: LAYOUT, parent: 'A' });
+    expect(s.active).toBe('A');
+  });
+  test('a terminal moved to another workspace meanwhile stays there; a file opened meanwhile stays in the own tabs', () => {
+    let s = parkWsActivities(atSso());
+    s = moveKey(s, 't:okta', 'B', 'A');
+    s = { ...s, list: s.list.map((w) => (w.id === 'A' ? { ...w, order: k(...w.order, 'f:/p/new.ts') } : w)) };
+    const back = unparkWsActivities(s);
+    expect(back.members.okta).toBe('B');
+    expect(entry(back, 'B').order).toContain('t:okta');
+    expect(entry(back, 'a1').order).toEqual(k('t:mock', 'f:/p/okta.ts'));
+    expect(entry(back, 'A').order).toEqual(k('t:tok', 'f:/p/session.ts', 'f:/p/new.ts'));
+  });
+  test('a file closed meanwhile does not come back into its activity', () => {
+    let s = parkWsActivities(atSso());
+    s = { ...s, list: s.list.map((w) => (w.id === 'A' ? { ...w, order: w.order.filter((x) => x !== 'f:/p/okta.ts') } : w)) };
+    expect(entry(unparkWsActivities(s), 'a1').order).toEqual(k('t:okta', 't:mock'));
+  });
+  test('a workspace closed meanwhile: its activities go, their terminals stay where the close put them', () => {
+    let s = parkWsActivities(atSso());
+    s = remove(s, 'B', 'A')!;
+    const back = unparkWsActivities(s);
+    expect(back.list.some((w) => w.id === 'b1')).toBe(false);
+    expect(back.members.hook).toBe('A');
+  });
+  test('a workspace recolored meanwhile: its activities wear the new color', () => {
+    const s = recolor(parkWsActivities(atSso()), 'A', 7);
+    expect(entry(unparkWsActivities(s), 'a2').color).toBe(7);
+  });
+  test('nothing parked: the same state', () => {
+    const s = mixed();
+    expect(unparkWsActivities(s)).toBe(s);
+  });
+  test('a resumed session, a renamed file, a pruned terminal and a forgotten tab reach the activities kept aside', () => {
+    const parked = parkWsActivities(atSso());
+    const relinked = unparkWsActivities(relink(parked, 'okta', 'okta2'));
+    expect(relinked.members.okta2).toBe('a1');
+    expect(entry(relinked, 'a1').order).toEqual(k('t:okta2', 't:mock', 'f:/p/okta.ts'));
+    const renamed = renameKeys(parked, (x) => (x === 'f:/p/okta.ts' ? ('f:/p/okta2.ts' as TabKey) : x));
+    expect(renamed.parked!.list[0]!.order).toEqual(k('t:okta', 't:mock', 'f:/p/okta2.ts'));
+    expect(entry(unparkWsActivities(renamed), 'a1').order).toEqual(k('t:okta', 't:mock', 'f:/p/okta2.ts'));
+    expect(prune(parked, ['tok', 'okta', 'bill', 'mail', 'hook']).parked!.members).toEqual({ okta: 'a1', mail: 'a2', hook: 'b1' });
+    expect(forget(parked, (x) => x === 'f:/p/okta.ts').parked!.list[0]!.order).toEqual(k('t:okta', 't:mock'));
+  });
+});
+
+describe('reading a saved state with activities', () => {
+  const raw = () => JSON.parse(JSON.stringify(toFront(mixed(), 'a2'))) as Record<string, unknown>;
+  test('parents, the place a workspace was left at and the place in front survive', () => {
+    const s = parseWorkspaces(raw())!;
+    expect(s.list.map((w) => [w.id, w.parent ?? null])).toEqual([['A', null], ['a1', 'A'], ['B', null], ['a2', 'A'], ['b1', 'B']]);
+    expect(s.active).toBe('a2');
+    expect(s.list[0]!.place).toBe('a2');
+    expect(s.members).toEqual(mixed().members);
+  });
+  test('an activity whose workspace is missing, or that sits in an activity, is dropped with its memberships', () => {
+    const r = raw();
+    const list = r.list as Record<string, unknown>[];
+    list.push({ id: 'x1', parent: 'gone', name: 'x', order: [] }, { id: 'x2', parent: 'a1', name: 'y', order: [] });
+    r.members = { ...(r.members as object), q: 'x1', w: 'x2' };
+    const s = parseWorkspaces(r)!;
+    expect(s.list.some((w) => w.id === 'x1' || w.id === 'x2')).toBe(false);
+    expect('q' in s.members || 'w' in s.members).toBe(false);
+  });
+  test('at most twenty activities per workspace and twenty workspaces, activities aside', () => {
+    const list: unknown[] = [];
+    for (let i = 0; i < 22; i++) list.push({ id: `w${i}`, name: `w${i}`, order: [] });
+    for (let i = 0; i < 22; i++) list.push({ id: `a${i}`, parent: 'w0', name: `a${i}`, order: [] });
+    const s = parseWorkspaces({ on: true, active: 'w0', list, members: {} })!;
+    expect(workspacesOf(s)).toHaveLength(MAX_WORKSPACES);
+    expect(activitiesOf(s, 'w0')).toHaveLength(MAX_ACTIVITIES);
+  });
+  test('a place naming no activity of that workspace is dropped; a bad parent is no parent', () => {
+    const r = raw();
+    const list = r.list as Record<string, unknown>[];
+    list[2] = { ...list[2], place: 'a1' };
+    list[0] = { ...list[0], place: 'nope' };
+    list.push({ id: 'z', parent: 42, name: 'z', order: [] });
+    const s = parseWorkspaces(r)!;
+    expect('place' in s.list[0]!).toBe(false);
+    expect('place' in s.list.find((w) => w.id === 'B')!).toBe(false);
+    expect(s.list.find((w) => w.id === 'z')!.parent).toBeUndefined();
+  });
+  test('activities kept aside are read the same way; junk there never drops the state', () => {
+    const parked = JSON.parse(JSON.stringify(parkWsActivities(toFront(mixed(), 'a1')))) as Record<string, unknown>;
+    const s = parseWorkspaces(parked)!;
+    expect(s.parked!.list.map((w) => w.id)).toEqual(['a1', 'a2', 'b1']);
+    expect(s.parked!.members).toEqual({ okta: 'a1', mock: 'a1', mail: 'a2', hook: 'b1' });
+    expect(unparkWsActivities(s).members).toEqual(mixed().members);
+    const bad = parseWorkspaces({ ...parked, parked: { list: [{ id: 'p', parent: 'gone', name: 'p' }, 'junk'], members: { okta: 'p', x: 3 } } })!;
+    expect(bad.list.map((w) => w.id)).toEqual(['A', 'B']);
+    expect(bad.parked).toBeUndefined();
+    expect(parseWorkspaces({ ...parked, parked: 'junk' })!.list).toHaveLength(2);
+  });
+  test('a state saved by an older version (no parents) reads as before', () => {
+    const old = { on: true, active: 'B', list: [{ id: 'A', name: 'a', order: ['t:x'] }, { id: 'B', name: 'b', order: [] }], members: { x: 'A' } };
+    const s = parseWorkspaces(old)!;
+    expect(s.list.every((w) => !('parent' in w) && !('place' in w))).toBe(true);
+    expect('parked' in s).toBe(false);
+  });
+  test('saved and loaded: parents, places, folds and activities kept aside survive', () => {
+    const g = globalThis as { localStorage?: unknown };
+    const prev = g.localStorage;
+    const saved = new Map<string, string>();
+    g.localStorage = { getItem: (key: string) => saved.get(key) ?? null, setItem: (key: string, v: string) => void saved.set(key, v) };
+    try {
+      const live = toggleOpen(toFront(mixed(), 'a2'), 'a1');
+      saveWorkspaces('/p', live);
+      expect(loadWorkspaces('/p')).toEqual(live);
+      const off = parkWsActivities(live);
+      saveWorkspaces('/p', off);
+      expect(loadWorkspaces('/p')).toEqual(off);
+    } finally { g.localStorage = prev; }
   });
 });
