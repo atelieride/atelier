@@ -2,6 +2,7 @@
 import type { Resumable, TerminalInfo } from '@shared/protocol';
 import { dots, memberOf, workspaceOf, workspacesOf, type Dot, type WorkspacesState } from './workspaces';
 import { t } from './i18n/en';
+import { inboxSection } from './inbox';
 import { resumablesFor } from './selectors';
 import { buildRows } from './changes';
 import type { RepoStatus } from '@shared/git';
@@ -127,6 +128,26 @@ export function wsActivityCard(ws: WorkspacesState, id: string, terminals: Termi
     terminals: mine.length - sessions, files: files + tabs, resume: toResume
   });
   return { dots: d, empty: mine.length === 0 && files === 0 && tabs === 0 && toResume === 0, label: `${a?.name ?? ''} · ${summary}` };
+}
+
+/**
+ * Close Activity…'s sentence: who is inside and what each does ("okta-callback is waiting for you, okta mock is
+ * running and old waits to be resumed."), then its file tabs.
+ */
+export function wsActivityCloseText(ws: WorkspacesState, id: string, terminals: TerminalInfo[], resumables: Resumable[], root: string, openFiles: string[], openTabs: readonly string[]): string {
+  const how = (x: TerminalInfo) => {
+    if (!x.session) return 'running' as const;
+    const sec = inboxSection(x);
+    return sec === 'needs' ? 'waiting' as const : sec === 'working' ? 'working' as const : sec === 'review' ? 'done' as const : 'idle' as const;
+  };
+  const parts = [
+    ...inWorkspace(ws, id, terminals).map((x) => t.wsAct.closeItem(x.title, how(x))),
+    ...resumablesIn(ws, id, resumables, root).map((r) => t.wsAct.closeItem(r.title, 'resume'))
+  ];
+  const said = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}.` : parts.length ? `${parts[0]}.` : '';
+  const a = ws.list.find((x) => x.id === id);
+  const { files, tabs } = openCounts(a?.order ?? [], openFiles, openTabs);
+  return [said, files + tabs ? t.wsAct.closeFiles(files + tabs) : ''].filter(Boolean).join(' ');
 }
 
 /**

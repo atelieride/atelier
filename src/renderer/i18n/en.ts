@@ -1677,6 +1677,7 @@ const strings = {
     closeItem: (name: string, how: 'waiting' | 'working' | 'done' | 'idle' | 'running' | 'resume') =>
       `${name} ${{ waiting: 'is waiting for you', working: 'is working', done: 'is done', idle: 'is idle', running: 'is running', resume: 'waits to be resumed' }[how]}`,
     closeFiles: (n: number) => (n === 1 ? 'It has a file tab.' : `It has ${n} file tabs.`),
+    closeWsActs: (n: number, to: string) => `Moving them takes its ${n === 1 ? 'activity' : `${n} activities`} to ${to} as ${n === 1 ? 'it is' : 'they are'}.`,
     closeExplain: (ws: string) => `Moving them puts their tabs back in ${ws}. Stopping them closes its terminals and file tabs; its sessions wait under Resume in ${ws}.`,
     /** A head's tooltip after its name: what is inside, or "empty". */
     summary: (n: { waiting: number; working: number; done: number; idle: number; terminals: number; files: number; resume: number }) => {

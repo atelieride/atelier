@@ -1616,6 +1616,9 @@ button.either:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .ws-empty-card { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 100%; padding: 0 16px; text-align: center; }
 .ws-empty-card h2 { margin: 8px 0 0; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; color: var(--text); }
 .ws-empty-card p { max-width: 440px; margin: 0 0 8px; color: var(--text-3); line-height: 1.55; }
+/* An activity's empty state: its glyph in its workspace's color, and how to fill it under the buttons. */
+.ws-empty-glyph { display: flex; }
+.ws-empty-card .ws-empty-tip { max-width: 380px; margin: 4px 0 0; font-size: 11.5px; color: var(--text-4); }
 /* One line per button, whatever the shortcut's width (Windows' Ctrl+Shift+N); a narrow pane stacks them instead. */
 .ws-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
 .ws-empty-actions button { white-space: nowrap; }
