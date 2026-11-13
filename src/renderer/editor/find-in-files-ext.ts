@@ -223,10 +223,11 @@ let watching = false;
 
 /**
  * Shows a result in its editor, `line` being the document line it points at: its match selected and centred (the line
- * alone when the match is gone), every occurrence of the query marked; the keyboard moves there unless the result keeps
- * it where it is. The selection is the result's, not the user's: no "Comment" button for it.
+ * alone when the match is gone), every occurrence of the query marked; the keyboard moves there when `focus` lets it
+ * (the caller knows whether it was taken meanwhile) unless the result keeps it where it is. The selection is the
+ * result's, not the user's: no "Comment" button for it.
  */
-export function showFound(view: EditorView, line: number, found: FoundTarget): void {
+export function showFound(view: EditorView, line: number, found: FoundTarget, focus: boolean): void {
   if (!watching) {
     watching = true;
     // The search's query emptied (the field cleared, Clear Results): every editor's marks go with it.
@@ -243,7 +244,7 @@ export function showFound(view: EditorView, line: number, found: FoundTarget): v
   const r = foundRange(view.state, n, found);
   const sel = r ? EditorSelection.single(r.from, r.to) : EditorSelection.single(doc.line(n).from);
   // Focus first: an editor gaining focus later reads the page's selection back and would undo the move.
-  if (!found.keepFocus) view.focus();
+  if (focus && !found.keepFocus) view.focus();
   view.dispatch({
     selection: sel,
     userEvent: RESULT_SELECT,

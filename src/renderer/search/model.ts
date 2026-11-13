@@ -75,14 +75,16 @@ export function previewWindow(line: SearchLine, index: number, lead: number = LE
   const local = line.ranges.map(([a, b]): [number, number] => [a - line.start, b - line.start]);
   const own = local[index];
   if (!own || own[1] <= 0 || own[0] >= text.length || own[1] <= own[0]) return { text: '…', marks: [], strong: -1, cut: false, cutEnd: false };
-  let begin = text.length - text.trimStart().length;
-  let cut = line.cutStart;
   const ownFrom = Math.max(0, own[0]);
+  // From the first non-blank character, or from the row's own match when that starts in the leading blanks.
+  let begin = Math.min(text.length - text.trimStart().length, ownFrom);
+  let cut = line.cutStart;
   if (ownFrom - begin > lead) {
     begin = ownFrom - lead;
-    // Never start inside a surrogate pair.
+    // Never start inside a surrogate pair, nor inside another match (it would show as a piece): after it.
     const c = text.charCodeAt(begin);
     if (c >= 0xdc00 && c <= 0xdfff) begin++;
+    for (const [a, b] of local) if (a < begin && begin < b && b <= ownFrom) begin = b;
     cut = true;
   }
   let end = Math.min(text.length, begin + PREVIEW_CHARS);
@@ -174,13 +176,22 @@ export function totals(files: SearchFile[], dismissed: ReadonlySet<string>): { r
 const onOff = (v: boolean): string => (v ? 'on' : 'off');
 const plural = (n: number, one: string, many: string): string => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
 
+/** What the results of a search are not: the paths it was narrowed to, past the result limit, stopped by the user. */
+export interface ResultsAbout { include?: string; exclude?: string; more?: boolean; stopped?: boolean }
+
 /**
  * The block sent to a session or copied: a header, then `path:line  text` per matching line, at most `cap` lines
- * (the rest counted), dismissed rows left out.
+ * (the rest counted), dismissed rows left out. The header says what a reader could not tell otherwise: the filters,
+ * that there are more results than the limit kept ("20,000+"), that the search was stopped.
  */
-export function resultsText(spec: SearchSpec, files: SearchFile[], dismissed: ReadonlySet<string>, cap: number = SEARCH_LIMITS.sendLines): string {
+export function resultsText(spec: SearchSpec, files: SearchFile[], dismissed: ReadonlySet<string>, about: ResultsAbout = {}, cap: number = SEARCH_LIMITS.sendLines): string {
   const t = totals(files, dismissed);
-  const out = [`Search "${spec.query}" (match case ${onOff(spec.matchCase)}, whole word ${onOff(spec.wholeWord)}, regex ${onOff(spec.regex)}) — ${plural(t.results, 'result', 'results')} in ${plural(t.files, 'file', 'files')}`];
+  const more = about.more ? '+' : '';
+  const results = `${t.results.toLocaleString('en-US')}${more} ${t.results === 1 && !more ? 'result' : 'results'}`;
+  const include = about.include?.trim();
+  const exclude = about.exclude?.trim();
+  const where = `${include ? `, in ${include}` : ''}${exclude ? `, excluding ${exclude}` : ''}${about.stopped ? ' (stopped)' : ''}`;
+  const out = [`Search "${spec.query}" (match case ${onOff(spec.matchCase)}, whole word ${onOff(spec.wholeWord)}, regex ${onOff(spec.regex)}) — ${results} in ${plural(t.files, 'file', 'files')}${where}`];
   // A line with several matches is one line of text but several results.
   const perLine = new Map<SearchLine, { file: SearchFile; results: number }>();
   for (const row of buildRows(files, new Set(), dismissed)) {
@@ -197,7 +208,7 @@ export function resultsText(spec: SearchSpec, files: SearchFile[], dismissed: Re
     listed++;
     shown += results;
   }
-  if (t.results > shown) out.push(`…and ${plural(t.results - shown, 'more result', 'more results')}`);
+  if (t.results > shown) out.push(`…and ${(t.results - shown).toLocaleString('en-US')}${more} more ${t.results - shown === 1 && !more ? 'result' : 'results'}`);
   return out.join('\n');
 }
 

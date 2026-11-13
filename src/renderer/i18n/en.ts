@@ -2349,6 +2349,8 @@ const strings = {
     moreLines: (n: number) => `+${n} ${n === 1 ? 'line' : 'lines'}`,
     type: 'type',
     typeAndRun: 'type and run',
+    /** Text for Claude (Find in Files' results): ⌘↵ sends it, nothing runs. */
+    typeAndSend: 'type and send',
     typedInto: (name: string) => `Typed into ${name} · press Enter to run`,
     closed: 'That terminal has closed.',
     notReady: "The new terminal didn't show its prompt in time, so nothing was typed.",

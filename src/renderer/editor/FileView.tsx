@@ -26,6 +26,7 @@ import { baselineFor } from '../baseline';
 import { FileIcon } from '../components/FileIcon';
 import { t } from '../i18n/en';
 import { forgetFound, useApp, type OpenFile } from '../store';
+import { mayFocusLate } from '../pane-focus';
 import { editorMenu, mentionInSession } from '../menus';
 import { selectionLines } from '../mention';
 import { isUntitled } from '../untitled';
@@ -124,6 +125,11 @@ export function FileView({ file, visible, focused = visible, place }: { file: Op
   // the tab shown, the code view back) until the tab is hidden or its pane loses the focus (`released`).
   const released = useRef(0);
   const held = () => !!file.found?.keepFocus && released.current !== file.nonce;
+  // Where each open left the keyboard: what comes once the text has loaded (the editor, a result's match) takes it only
+  // from there, never from the palette, Settings, a sheet or a menu opened meanwhile, nor from wherever the user went.
+  const openedFrom = useRef<Element | null>(null);
+  useEffect(() => { openedFrom.current = document.activeElement; }, [file.nonce]);
+  const late = () => mayFocusLate(openedFrom.current, host.current?.closest('.file-view') ?? null);
   const [content, setContent] = useState<FileContent | null>(null);
   const [original, setOriginal] = useState<string | null>(null);
   const [plain, setPlain] = useState(false);
@@ -641,7 +647,7 @@ export function FileView({ file, visible, focused = visible, place }: { file: Op
     hlLang.current = lang;
     // CSV colors itself (rainbow columns): no grammar, and no "Plain text" note.
     if (hasGrammar(lang)) void highlight(doc, lang, hlKey).then((spans) => { if (view.current === v && spans !== 'dropped' && langRef.current === lang) { if (spans) v.dispatch({ effects: setTokens.of(spans) }); else setPlain(true); } });
-    if (visible && focusedRef.current && !held()) focusShown();
+    if (visible && focusedRef.current && !held() && late()) focusShown();
     targeted.current = null;
     pushText();
     readCursor(v.state);
@@ -735,7 +741,7 @@ export function FileView({ file, visible, focused = visible, place }: { file: Op
     // (should it fail, the line alone, and the result is let go).
     const found = file.found;
     const current = () => view.current === v && targeted.current === file.nonce;
-    if (found) void import('./find-in-files-ext').then((m) => { if (current()) m.showFound(v, n, found); }).catch(() => { forgetFound(found); if (current()) toLine(); });
+    if (found) void import('./find-in-files-ext').then((m) => { if (current()) m.showFound(v, n, found, late()); }).catch(() => { forgetFound(found); if (current()) toLine(); });
     else toLine();
   }, [file.line, file.nonce, content, diff, hasText]);
 

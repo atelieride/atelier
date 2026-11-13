@@ -877,7 +877,7 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
             // The send step: Enter types the text, ⌘Enter types and runs it.
             <>
               <span className="palette-keys"><b className="mono">↵</b> {t.send.type}</span>
-              <span className="palette-keys"><b className="mono">{kbd('⌘↵')}</b> {t.send.typeAndRun}</span>
+              <span className="palette-keys"><b className="mono">{kbd('⌘↵')}</b> {sending.newSession ? t.send.typeAndSend : t.send.typeAndRun}</span>
             </>
           ) : taskStep?.step === 'account' ? (
             // The account step: Enter starts as asked (⌘ / ⌥ already pressed on the way), ⌘Enter also sends.

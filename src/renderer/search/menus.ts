@@ -48,9 +48,11 @@ export function searchAreaMenu(): MenuItem[] {
   const rows = buildRows(s.files, s.collapsed, s.dismissed);
   const shown = rows.length > 0;
   const anyOpen = anyExpanded(rows);
+  // The results as a whole only once the search is over (✦ Send to session shows then too).
+  const whole = shown && s.phase !== 'running';
   return [
-    { id: 'copy-all', label: ts.copyAll, icon: 'copy', disabled: !shown, run: copyAllResults },
-    { id: 'send', label: ts.sendMenu, icon: 'sparkle', disabled: !shown, run: sendResults },
+    { id: 'copy-all', label: ts.copyAll, icon: 'copy', disabled: !whole, run: copyAllResults },
+    { id: 'send', label: ts.sendMenu, icon: 'sparkle', disabled: !whole, run: sendResults },
     'sep',
     anyOpen
       ? { id: 'collapse-all', label: ts.collapseAll, icon: 'collapseAll', disabled: !shown, run: () => useSearch.getState().setAllCollapsed(true) }

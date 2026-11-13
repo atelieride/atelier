@@ -21,6 +21,8 @@ export interface SearchState {
   spec: SearchSpec;
   /** The spec the listed results were searched with (the field may already hold a newer query, not run yet). */
   ranSpec: SearchSpec;
+  /** The paths those results were narrowed to, likewise. */
+  ranFilters: { include: string; exclude: string };
   include: string;
   exclude: string;
   includeIgnored: boolean;
@@ -74,6 +76,7 @@ let buffers = new Map<string, SearchFile>();
 let listedMatches = 0;
 const foldPath = (p: string): string => (pathStyle() === 'win32' ? p.toLowerCase() : p);
 const NO_SPEC: SearchSpec = { query: '', matchCase: false, wholeWord: false, regex: false };
+const NO_FILTERS = { include: '', exclude: '' };
 const NONE: ReadonlySet<string> = new Set();
 
 const noResults = {
@@ -158,6 +161,7 @@ export const useSearch = create<SearchState>((set, get) => {
   return {
     spec: { ...NO_SPEC },
     ranSpec: NO_SPEC,
+    ranFilters: NO_FILTERS,
     include: '',
     exclude: '',
     includeIgnored: false,
@@ -204,7 +208,7 @@ export const useSearch = create<SearchState>((set, get) => {
       buffers = unsaved.results;
       listedMatches = 0;
       // The id is current before the request leaves: an event may arrive before `start` settles.
-      set({ ...noResults, collapsed: new Set(), dismissed: new Set(), searchId, ranSpec: spec, phase: 'running' });
+      set({ ...noResults, collapsed: new Set(), dismissed: new Set(), searchId, ranSpec: spec, ranFilters: { include, exclude }, phase: 'running' });
       window.atelier.search.start({ ...spec, searchId, include, exclude, includeIgnored: s.includeIgnored, unsaved: unsaved.paths }).catch((err: unknown) => {
         if (get().searchId !== searchId) return;
         set({ phase: 'error', error: { message: err instanceof Error ? err.message : String(err), rel: null } });
@@ -223,7 +227,7 @@ export const useSearch = create<SearchState>((set, get) => {
       abandon();
       buffers = new Map();
       listedMatches = 0;
-      set({ ...noResults, collapsed: new Set(), dismissed: new Set(), searchId: 0, ranSpec: NO_SPEC, phase: 'idle' });
+      set({ ...noResults, collapsed: new Set(), dismissed: new Set(), searchId: 0, ranSpec: NO_SPEC, ranFilters: NO_FILTERS, phase: 'idle' });
     },
 
     toggleCollapsed(key) {

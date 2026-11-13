@@ -58,6 +58,7 @@ const strings = {
   sendMenu: 'Send to Session…',
   /** The results typed into a new session's prompt. */
   typedInNew: 'The search results are in the prompt. Review them and press Enter to send.',
+  notStarted: "Couldn't start a new session, so nothing was typed.",
   /** The skipped files' popover. */
   skippedTitle: (n: number) => `${files(n)} not searched`,
   tooLarge: (limit: string) => `Too large to search (over ${limit})`,

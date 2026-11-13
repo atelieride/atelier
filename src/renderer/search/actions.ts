@@ -2,6 +2,7 @@
 // as a whole can do (copied, sent to a Claude session).
 import type { SearchFile, SearchLine } from '@shared/search';
 import { copyText } from '../clipboard';
+import { t } from '../i18n/en';
 import { newSessionIn } from '../launch';
 import { useApp } from '../store';
 import { typeWhenReadyAs } from '../task-session';
@@ -30,10 +31,13 @@ export function openFileResult(file: SearchFile, how: OpenHow): void {
   if (line) openResult(file, line, 0, how);
 }
 
-/** The results as text: the query and options they were searched with, dismissed rows left out, 200 lines at most. */
+/**
+ * The results as text: the query, options and filters they were searched with, whether there are more than the limit
+ * kept or the search was stopped; dismissed rows left out, 200 lines at most.
+ */
 function resultsBlock(): string {
   const s = useSearch.getState();
-  return resultsText(s.ranSpec, s.files, s.dismissed);
+  return resultsText(s.ranSpec, s.files, s.dismissed, { ...s.ranFilters, more: s.limitHit, stopped: s.phase === 'stopped' });
 }
 
 /** Copy All Results. */
@@ -54,8 +58,10 @@ export function sendResults(): void {
   // Cut between characters, never inside one.
   const q = [...useSearch.getState().ranSpec.query];
   const name = `search ${q.length > SESSION_QUERY_CHARS ? `${q.slice(0, SESSION_QUERY_CHARS - 1).join('')}…` : q.join('')}`;
+  // A session that could not start (atelierd not reachable): said, with the results at hand to copy.
+  const failed = () => useApp.getState().showToast(ts.notStarted, { label: t.send.copyText, run: () => void copyText(text) });
   useApp.getState().openSendPalette({
     text, cwd: null,
-    newSession: (send) => void newSessionIn(name).then((info) => { if (info) typeWhenReadyAs(info.id, text, send, ts.typedInNew); })
+    newSession: (send) => void newSessionIn(name).then((info) => { if (info) typeWhenReadyAs(info.id, text, send, ts.typedInNew); }, failed)
   });
 }

@@ -71,6 +71,17 @@ export function isPaneContent(x: FocusFacts): boolean {
 const OVERLAY = '[role="dialog"], [role="menu"], [aria-modal="true"], .palette, .settings';
 /** The element is in a sheet, menu, popover or dialog (the palette and Settings included). */
 export const insideOverlay = (el: Element | null | undefined): boolean => !!el?.closest(OVERLAY);
+/**
+ * A focus that comes late (a file's editor made once its text has loaded, a search result shown once its module has):
+ * it takes the keyboard only while nothing is open over the window (the palette, Settings, a sheet, a menu) and the
+ * keyboard is still where the open left it (`openedFrom`), inside `view` itself, or nowhere.
+ */
+export function mayFocusLate(openedFrom: Element | null, view: Element | null): boolean {
+  const st = useApp.getState();
+  if (st.paletteOpen || st.settingsOpen || document.querySelector(OVERLAY)) return false;
+  const a = document.activeElement;
+  return !a || a === document.body || a === openedFrom || !!view?.contains(a);
+}
 /** A pane's own chrome, not its content: its header, its session bar, the tabs. */
 const PANE_CHROME = '.session-bar, .pane-head, .tabs';
 

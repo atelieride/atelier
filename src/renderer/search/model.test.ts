@@ -155,6 +155,20 @@ test('previewWindow never starts inside a surrogate pair', () => {
   expect(p.text.slice(m[0], m[1])).toBe('hit');
 });
 
+test('previewWindow never starts inside another match: it starts at that match\'s end, never past its own', () => {
+  // "expiresAt: entry.expiresAt" with the lead landing inside the first one: no "…sAt" half mark.
+  const text = '  return { userId: entry.userId, expiresAt: entry.expiresAt };';
+  const p = previewWindow(ln(1, text, [[33, 42], [50, 59]], 0), 1, 12);
+  expect(p.cut).toBe(true);
+  expect(p.text.startsWith(': entry.expiresAt')).toBe(true);
+  expect(p.marks).toEqual([[8, 17]]);
+  expect(p.text.slice(8, 17)).toBe('expiresAt');
+  // A match that starts in the leading whitespace (a regular expression's \s+) is shown whole: the row starts there.
+  const ws = previewWindow(ln(1, '    return x;', [[1, 10]], 0), 0);
+  expect(ws.text).toBe('   return x;');
+  expect(ws.marks).toEqual([[0, 9]]);
+});
+
 test('totals count undismissed results and the files that still have some', () => {
   expect(totals([A, B], none)).toEqual({ results: 4, files: 2 });
   expect(totals([A, B], new Set([fileKey(A.path), matchKey(B.path, 2, 0)]))).toEqual({ results: 0, files: 0 });
@@ -183,10 +197,23 @@ test('resultsText marks a line cut at either end with "…"', () => {
 
 test('resultsText stops at the cap and counts the rest', () => {
   const many = file('m.ts', Array.from({ length: 5 }, (_, i) => ln(i + 1, 'token', [[0, 5]])));
-  const t = resultsText(spec, [many], none, 3).split('\n');
+  const t = resultsText(spec, [many], none, {}, 3).split('\n');
   expect(t).toHaveLength(5);
   expect(t[4]).toBe('…and 2 more results');
   expect(resultsText(spec, [many], none).split('\n')).toHaveLength(6);
+});
+
+test('resultsText says what the results are not: past the result limit, stopped, narrowed by the filters', () => {
+  const many = file('m.ts', Array.from({ length: 5 }, (_, i) => ln(i + 1, 'token', [[0, 5]])));
+  const head = (about: Parameters<typeof resultsText>[3]) => resultsText(spec, [many], none, about, 3).split('\n');
+  const q = 'Search "token" (match case off, whole word off, regex off) — ';
+  expect(head({ more: true })[0]).toBe(`${q}5+ results in 1 file`);
+  expect(head({ more: true })[4]).toBe('…and 2+ more results');
+  expect(head({ stopped: true })[0]).toBe(`${q}5 results in 1 file (stopped)`);
+  expect(head({ include: ' src/ ', exclude: '**/*.test.ts' })[0]).toBe(`${q}5 results in 1 file, in src/, excluding **/*.test.ts`);
+  expect(head({ exclude: 'dist' })[0]).toBe(`${q}5 results in 1 file, excluding dist`);
+  expect(head({ include: 'src/', more: true, stopped: true })[0]).toBe(`${q}5+ results in 1 file, in src/ (stopped)`);
+  expect(head({ include: '  ', exclude: '' })[0]).toBe(`${q}5 results in 1 file`);
 });
 
 test('nearestMatch finds a match moved by two lines and gives up past the distance', () => {

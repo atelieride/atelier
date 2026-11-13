@@ -5,7 +5,7 @@
 // either side of the window, and the results sent to a Claude session's prompt (fake-claude-prompt.pl) or copied.
 import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import type { AtelierApi } from '../../src/shared/api';
@@ -567,6 +567,9 @@ test('a notice that arrives once rows are on screen sits right under the last of
   await line.getByRole('button', { name: 'Refresh' }).click();
   await expect(line).toHaveCount(0);
   await expect(totals()).toHaveText('15 results in 4 files');
+  // The project as the other tests know it again: the file gone, its own change seen here before they search.
+  rmSync(join(project, 'src/auth/pangolin.ts'));
+  await expect(line).toBeVisible({ timeout: 15000 });
 });
 
 test('at the 600 px window height, ten recent searches with the filters open still reach the bottom', async () => {
@@ -978,12 +981,13 @@ test('F4 in a pop-out: its project window walks the results; one in the pop-out\
   await expect(selectedRow()).toHaveAttribute('data-rel', 'src/auth/tokens.ts');
   await expect(activeTab()).toContainText('tokens.ts');
   await expect.poll(revealed).toContain(mainId);
-  // Shown, the keyboard in its editor (before the palette opens over it).
-  await expect.poll(strongLine).toBe('export class TokenStore {');
-  await expect(content()).toBeFocused();
-  // ⇧F4 from the pop-out again: back in its file, the project window left where it is, its palette open as it was.
+  // The palette opened there at once, the file maybe still loading: once its result shows, the palette keeps the
+  // keyboard.
   await win.keyboard.press('F1');
   await expect(win.locator('.palette-input')).toBeFocused();
+  await expect.poll(strongLine).toBe('export class TokenStore {');
+  await expect(win.locator('.palette-input')).toBeFocused();
+  // ⇧F4 from the pop-out again: back in its file, the project window left where it is, its palette open as it was.
   await pop.locator('.cm-content').focus();
   await pop.keyboard.press('Shift+F4');
   await expect(selectedRow()).toHaveAttribute('data-line', '8');
@@ -1056,6 +1060,8 @@ test('✦ Send to session offers this project\'s Claude sessions and a new one, 
   await expect(palette.locator('.palette-input')).toHaveAttribute('placeholder', 'Search sessions');
   await expect(palette.locator('.palette-section')).toHaveText(['Sessions']);
   await expect(palette.locator('.palette-item .palette-label')).toHaveText(['auth refactor', 'New session']);
+  // ⌘↵ sends it: Claude reads the text, nothing runs.
+  await expect(palette.locator('.palette-foot .palette-keys')).toHaveText(['↵ type', '⌘↵ type and send']);
   // Claude's prompt ready (its bracketed paste on): the session can take the text.
   const session = palette.locator('.palette-item', { hasText: 'auth refactor' });
   await expect(session).not.toHaveClass(/\bis-off\b/, { timeout: 20000 });

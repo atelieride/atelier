@@ -242,6 +242,18 @@ test('the spec of the listed results is the one their search ran with, not what 
   expect(st().ranSpec.query).toBe('');
 });
 
+test('the filters of the listed results are the ones their search ran with, not those being typed meanwhile', () => {
+  st().setFilters({ include: 'src/', exclude: '**/*.test.ts' });
+  st().setQuery('token'); st().run();
+  expect(st().ranFilters).toEqual({ include: 'src/', exclude: '**/*.test.ts' });
+  st().setFilters({ include: 'lib/' });
+  expect(st().ranFilters.include).toBe('src/');
+  vi.advanceTimersByTime(250);
+  expect(st().ranFilters).toEqual({ include: 'lib/', exclude: '**/*.test.ts' });
+  st().clear();
+  expect(st().ranFilters).toEqual({ include: '', exclude: '' });
+});
+
 test('the recent list gets the query on done with results only', () => {
   const saved = new Map<string, string>();
   g.localStorage = { getItem: (k: string) => saved.get(k) ?? null, setItem: (k: string, v: string) => void saved.set(k, v), removeItem: () => {} };

@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
-import { isPaneContent, shouldReturnFocus, type FocusFacts } from './pane-focus';
+import { isPaneContent, mayFocusLate, shouldReturnFocus, type FocusFacts } from './pane-focus';
+import { useApp } from './store';
 
 // Coming back to the window puts the keyboard back in the pane — only from a control the mouse focused.
 const f = (o: Partial<FocusFacts>): FocusFacts => ({ tag: 'BUTTON', role: null, inPane: true, focusVisible: false, overlayOpen: false, ...o });
@@ -42,4 +43,46 @@ test('only a pane\'s own content is come back to: never a field outside the pane
   expect(isPaneContent(f({ tag: 'TEXTAREA', inPane: false }))).toBe(false);
   // Rename inputs (session bar, tabs) live and die in a moment; the terminal or the editor is what to come back to.
   expect(isPaneContent(f({ tag: 'INPUT' }))).toBe(false);
+});
+
+test('a focus that comes late takes the keyboard only from where the open left it, and never from what is open over the window', () => {
+  const g = globalThis as { document?: unknown };
+  const had = g.document;
+  const body = { name: 'body' };
+  // The result row the open came from, an element of the file's own view, a field the user went to meanwhile.
+  const row = { name: 'row' };
+  const own = { name: 'editor' };
+  const field = { name: 'field' };
+  let active: unknown = body;
+  let overlay: unknown = null;
+  g.document = { body, get activeElement() { return active; }, querySelector: () => overlay };
+  const view = { contains: (el: unknown) => el === own };
+  const ok = () => mayFocusLate(row as unknown as Element, view as unknown as Element);
+  try {
+    expect(ok()).toBe(true);
+    active = null;
+    expect(ok()).toBe(true);
+    active = row;
+    expect(ok()).toBe(true);
+    active = own;
+    expect(ok()).toBe(true);
+    // The user went on elsewhere: the keyboard stays there.
+    active = field;
+    expect(ok()).toBe(false);
+    // A sheet, a menu or a dialog open: never, wherever the keyboard is.
+    active = row;
+    overlay = {};
+    expect(ok()).toBe(false);
+    overlay = null;
+    // The palette or Settings asked for, not drawn yet.
+    useApp.setState({ paletteOpen: true });
+    expect(ok()).toBe(false);
+    useApp.setState({ paletteOpen: false, settingsOpen: 'general' as never });
+    expect(ok()).toBe(false);
+    useApp.setState({ settingsOpen: null });
+    expect(ok()).toBe(true);
+  } finally {
+    g.document = had;
+    useApp.setState({ paletteOpen: false, settingsOpen: null });
+  }
 });

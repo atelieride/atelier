@@ -1,6 +1,7 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { existsSync, lstatSync } from 'node:fs';
 import { resolve } from './cpath';
+import { testMs } from './dev-env';
 import { IPC } from '@shared/api';
 import type { FileContent, ImageContent } from '@shared/files';
 import { insideProject, listDir, readLargeProjectFile, readProjectFile, readProjectImage, resolveCandidate, type Granted } from './fs/files';
@@ -142,8 +143,11 @@ export function installFilesIpc(projectOf: (wcId: number) => string | null, isTr
     if (!r || !isTrusted(e)) throw new Error('unauthorized sender');
     return r;
   };
+  // Tests only (none in the packaged app): a file's text answers this much later, so a test can act while it loads.
+  const readDelay = testMs('ATELIER_TEST_FILE_READ_DELAY_MS');
+  const later = <T,>(v: T): T | Promise<T> => (readDelay ? new Promise((ok) => setTimeout(() => ok(v), readDelay)) : v);
   ipcMain.handle(IPC.filesList, (e, arg) => { const o = filesListSchema.parse(arg); return listDir(root(e), o.dir, o.showHidden); });
-  ipcMain.handle(IPC.filesRead, (e, arg) => { const r = root(e); return markTempRead(r, readProjectFile(r, filesReadSchema.parse(arg), granted(r)), claude, heldReadOnly(r, claude, outside)); });
+  ipcMain.handle(IPC.filesRead, (e, arg) => { const r = root(e); return later(markTempRead(r, readProjectFile(r, filesReadSchema.parse(arg), granted(r)), claude, heldReadOnly(r, claude, outside))); });
   ipcMain.handle(IPC.filesReadLarge, (e, arg) => { const r = root(e); return markTempRead(r, readLargeProjectFile(r, filesReadSchema.parse(arg), granted(r)), claude, heldReadOnly(r, claude, outside)); });
   ipcMain.handle(IPC.filesReadImage, (e, arg) => { const r = root(e); return markClaudeTemp(readProjectImage(r, filesReadSchema.parse(arg), granted(r)), claude); });
   ipcMain.handle(IPC.filesResolve, (e, arg) => { const o = filesResolveSchema.parse(arg); return resolveCandidate(root(e), o.cwd, o.candidate); });
