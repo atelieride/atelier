@@ -327,6 +327,90 @@ describe('closing a workspace that has activities', () => {
   });
 });
 
+describe('the setting off and on again', () => {
+  const setting = (on: boolean) => useApp.setState({ settings: { ...st().settings, wsActivities: on } });
+  test('off with an activity in front: its workspace\'s own tabs come forward with every place\'s, front and split kept; nothing stops', () => {
+    start();
+    st().switchWorkspace('a1');
+    st().select('okta');
+    st().splitRight();
+    st().select('mock');
+    expect(st().split.panes.map((p) => p.tabs)).toEqual([k('t:okta'), k('t:mock')]);
+    setting(false);
+    st().applyWsActivities();
+    expect(st().ws!.list.some((w) => w.parent)).toBe(false);
+    expect(st().ws!.parked!.list.map((w) => w.id)).toEqual(['a1', 'b1']);
+    expect(st().ws!.active).toBe('A');
+    expect(st().activeKey()).toBe('t:mock');
+    // The other places' tabs join the focused pane.
+    expect(st().split.panes.map((p) => p.tabs)).toEqual([k('t:okta'), k('t:mock', 't:auth')]);
+    expect(st().ws!.members).toMatchObject({ okta: 'A', mock: 'A', hook: 'B' });
+    expect(stopped).toEqual([]);
+    invariant();
+  });
+  test('off with the own tabs in front: the activities\' tabs join the strip after the own ones', () => {
+    start();
+    setting(false);
+    st().applyWsActivities();
+    expect(st().tabOrder).toEqual(k('t:auth', 't:okta', 't:mock'));
+    expect(st().activeKey()).toBe('t:auth');
+    st().switchWorkspace('B');
+    expect(st().tabOrder).toEqual(k('t:bill', 't:hook'));
+    invariant();
+  });
+  test('on again: back as they were, but for what moved meanwhile; the place in front stays the workspace', () => {
+    start();
+    st().switchWorkspace('a1');
+    setting(false);
+    st().applyWsActivities();
+    st().moveToWorkspace('t:okta', 'B');
+    st().setTerminals([...ALL, term('later', 9)]);
+    setting(true);
+    st().applyWsActivities();
+    expect(st().ws!.parked).toBeUndefined();
+    expect(st().ws!.active).toBe('A');
+    expect(st().ws!.members).toMatchObject({ mock: 'a1', okta: 'B', later: 'A', hook: 'b1' });
+    expect(st().tabOrder.filter((x) => x.startsWith('t:')).sort()).toEqual(k('t:auth', 't:later'));
+    st().switchWorkspace('a1');
+    expect(st().tabOrder).toEqual(k('t:mock'));
+    invariant();
+  });
+  test('a window whose save holds activities while the setting is off keeps them aside; the reverse brings them back', () => {
+    useApp.setState({ ws: wsActs() });
+    setting(false);
+    st().setTerminals(ALL);
+    st().applyWsActivities();
+    expect(st().ws!.parked).toBeDefined();
+    expect(st().tabOrder).toEqual(k('t:auth', 't:okta', 't:mock'));
+    setting(true);
+    st().applyWsActivities();
+    expect(st().ws!.list.filter((w) => w.parent).map((w) => w.id)).toEqual(['a1', 'b1']);
+    expect(st().tabOrder).toEqual(k('t:auth'));
+    invariant();
+  });
+  test('changed while another space is in front: Sessions takes it when it comes back', () => {
+    start();
+    st().switchSpace('docker');
+    setting(false);
+    st().applyWsActivities();
+    expect(st().ws!.list.some((w) => w.parent)).toBe(true);
+    st().switchSpace('sessions');
+    expect(st().ws!.parked).toBeDefined();
+    expect(st().tabOrder).toEqual(k('t:auth', 't:okta', 't:mock'));
+  });
+  test('workspaces off: nothing changes; turning them on finds the activities kept aside', () => {
+    useApp.setState({ ws: { ...wsActs(), on: false } });
+    setting(false);
+    st().setTerminals(ALL);
+    st().applyWsActivities();
+    expect(st().ws!.list.some((w) => w.parent)).toBe(true);
+    st().setWorkspacesOn(true);
+    expect(st().ws!.parked).toBeDefined();
+    expect(st().tabOrder).toEqual(k('t:auth', 't:okta', 't:mock'));
+    invariant();
+  });
+});
+
 describe('the Go menu', () => {
   test('lists workspaces only; its check marks the workspace in front whichever of its places is', () => {
     expect(workspacesMenu({ ...wsActs(), active: 'b1' })).toEqual({ names: ['Auth', 'Billing'], active: 1 });

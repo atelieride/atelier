@@ -79,7 +79,8 @@ import {
   absorb as wsAbsorb, assign as wsAssign, create as wsCreate, forget as wsForget, initial as wsInitial, isProjectKey, workspaceKey, memberOf, moveKey as wsMove, newWorkspaceId,
   projectLast, prune as wsPrune, recolor as wsRecolor, relink as wsRelink, remove as wsRemove, rename as wsRename, renameKeys as wsRenameKeys, reorder as wsReorder,
   toFront as wsToFront, toggleOpen as wsToggleOpen, union as wsUnion, viewOf, withView, placeOnReturn, workspacesOf, activitiesOf, workspaceOf,
-  createWsActivity as wsCreateAct, moveWsActivity as wsMoveAct, removeWsActivity as wsRemoveAct, type WorkspacesState
+  createWsActivity as wsCreateAct, moveWsActivity as wsMoveAct, removeWsActivity as wsRemoveAct, isWsActivity, parkWsActivities as wsPark,
+  unparkWsActivities as wsUnpark, type WorkspacesState
 } from './workspaces';
 import { revTitle } from './scm/titles';
 import { loadWorkspaces, saveWorkspaces } from './workspaces-save';
@@ -644,6 +645,11 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
    * left — the activity in front then, or its own tabs.
    */
   goToWorkspace(id: string): void;
+  /**
+   * Settings › Activities inside workspaces, applied to this project window (its workspaces on): off, the activities
+   * are kept aside and their tabs join their workspaces; on, they come back. Nothing stops, nothing closes.
+   */
+  applyWsActivities(): void;
   /**
    * The space in front: Sessions, Docker, Redis, Databases or Automations. tabOrder, split,
    * activeTab are its view; the others wait in spaceViews. selectedId stays Sessions' (Send to, dictation, ⌘J).
@@ -1825,10 +1831,12 @@ export const useApp = create<AppState>((set, get) => ({
     const leaving = s.space === 'sessions' && spaceOfActivity(s.activity) === 'sessions' ? { sessionsActivity: s.activity } : {};
     // One update: the split subscription never sees one space's tabs with another's panes.
     hush(() => set({ space: to, spaceViews: views, ws, tabOrder: order, split, pendingAnchor: null, ...shown, ...leaving, activity: act, menu: null }));
-    // What waited for Sessions: the layout saved for the project, workspaces turned on in every project meanwhile.
+    // What waited for Sessions: the layout saved for the project, workspaces turned on in every project meanwhile,
+    // activities turned on or off meanwhile.
     if (to === 'sessions') {
       restoreLayoutOnce();
       if (wsEverywhereWaits) { wsEverywhereWaits = false; get().applyWorkspacesEverywhere(); }
+      if (wsActivitiesWait) { wsActivitiesWait = false; get().applyWsActivities(); }
     }
   },
   wsRenaming: null,
@@ -2027,6 +2035,8 @@ export const useApp = create<AppState>((set, get) => ({
     // Back on: what was opened meanwhile belongs to the active workspace, the rest goes back where it was.
     set({ ws: { ...s.ws, on: true } });
     cutView();
+    // Activities turned on or off while workspaces were off: applied now.
+    get().applyWsActivities();
   },
   applyWorkspacesEverywhere: () => {
     const s = get();
@@ -2046,21 +2056,24 @@ export const useApp = create<AppState>((set, get) => ({
     const s = get();
     if (!wsOn(s) || id === s.ws.active || !s.ws.list.some((w) => w.id === id)) return;
     // The one you go to opens in the sidebar; the one you leave stays as it showed (revised).
-    const next = wsToFront(wsLive(s)!, id);
-    const view = viewOf(next, id, (k) => liveKey(s, k));
-    // Its live terminals its saved order misses (back from a pop-out, moved while it was away) get their tab now.
-    const missing = s.terminals.map((x) => `t:${x.id}` as TabKey).filter((k) => memberOf(next, k.slice(2)) === id && liveKey(s, k) && !view.order.includes(k));
-    const tabOrder = [...view.order, ...missing, ...s.tabOrder.filter(isProjectKey)];
-    const restored = restoreLayout(view.layout, tabOrder);
-    const front = restored ? restored.panes[restored.focus]!.front : view.active ?? tabOrder.filter((k) => !isProjectKey(k)).at(-1) ?? null;
-    const split = restored ?? single();
-    // One update: the split subscription never sees one workspace's tabs with the other's panes.
-    // A restored split brings its own order (the panes' tabs, left to right).
-    const order = restored ? flatten(restored) : tabOrder;
-    // Tables are Databases': their preview stays whatever workspace comes forward.
-    hush(() => set({
-      ws: next, tabOrder: order, split, pendingAnchor: null, ...frontOf(front, order, split), ...(get().preview && !order.includes(`f:${get().preview}`) ? { preview: null } : {})
-    }));
+    showView(s, wsToFront(wsLive(s)!, id));
+  },
+  applyWsActivities: () => {
+    const s = get();
+    if (s.popout || !s.project || !wsOn(s)) return;
+    const want = s.settings.wsActivities;
+    if (want ? !s.ws.parked : !s.ws.list.some(isWsActivity)) return;
+    // Activities cut Sessions' strip: changed while another space is in front, Sessions takes it when it comes back.
+    if (s.space !== 'sessions') { wsActivitiesWait = true; return; }
+    if (!want) {
+      // Kept aside: the workspace in front shows every place's tabs, the front and split of the place that was in front.
+      showView(s, wsPark(wsLive(s)!));
+      get().applyTerminals(get().terminals);
+      return;
+    }
+    // Back: the activities' terminals and tabs leave the strip for their activities.
+    set({ ws: wsUnpark(wsLive(s)!) });
+    cutView();
   },
   goToWorkspace: (id) => {
     const ws = get().ws;
@@ -2846,6 +2859,8 @@ function forgetKeys(s: AppState, gone: (k: TabKey) => boolean): SpaceViews {
 
 /** Workspaces turned on (or off) in every project while another space was in front: Sessions takes it when it comes back. */
 let wsEverywhereWaits = false;
+/** Activities turned on or off while another space was in front: Sessions takes it when it comes back. */
+let wsActivitiesWait = false;
 
 /** A terminal (or a session to resume) belongs to the active workspace; always true while workspaces are off. */
 function inActiveWs(s: AppState, id: string): boolean {
@@ -2864,6 +2879,28 @@ function wsLive(s: AppState): WorkspacesState | null {
   // Before the saved tabs are back (tabs.json), its files that aren't open yet are still its own: kept at the end.
   const saved = s.tabsRestored ? [] : (s.ws.list.find((w) => w.id === s.ws.active)?.order ?? []).filter((k) => (k.startsWith('f:') || k.startsWith('rev:') || k.startsWith('db:')) && !s.tabOrder.includes(k));
   return withView(s.ws, [...s.tabOrder, ...saved], s.activeKey(), serializeLayout(s.split));
+}
+
+/**
+ * The strip becomes the view of `next`'s place in front: its tabs, its split, its tab in front, in one update (the
+ * split subscription never sees one place's tabs with another's panes). A restored split brings its own order (the
+ * panes' tabs, left to right).
+ */
+function showView(s: AppState, next: WorkspacesState): void {
+  const id = next.active;
+  const view = viewOf(next, id, (k) => liveKey(s, k));
+  // Its live terminals its saved order misses (back from a pop-out, moved while it was away) get their tab now.
+  const missing = s.terminals.map((x) => `t:${x.id}` as TabKey).filter((k) => memberOf(next, k.slice(2)) === id && liveKey(s, k) && !view.order.includes(k));
+  const tabOrder = [...view.order, ...missing, ...s.tabOrder.filter(isProjectKey)];
+  const restored = restoreLayout(view.layout, tabOrder);
+  const front = restored ? restored.panes[restored.focus]!.front : view.active ?? tabOrder.filter((k) => !isProjectKey(k)).at(-1) ?? null;
+  const split = restored ?? single();
+  const order = restored ? flatten(restored) : tabOrder;
+  // Tables are Databases': their preview stays whatever place comes forward.
+  const preview = useApp.getState().preview;
+  hush(() => useApp.setState({
+    ws: next, tabOrder: order, split, pendingAnchor: null, ...frontOf(front, order, split), ...(preview && !order.includes(`f:${preview}`) ? { preview: null } : {})
+  }));
 }
 
 /** What a row or tab shows as its title: a terminal's title, a file's name, a file at a commit's "name @ commit". */

@@ -194,6 +194,9 @@ export function App() {
   const wsEverywhere = useApp((s) => s.settings.workspacesEverywhere);
   const wsReady = useApp((s) => s.settingsLoaded && s.tabsRestored && s.daemon.listed && !!s.project && !s.popout);
   useEffect(() => { if (wsReady) useApp.getState().applyWorkspacesEverywhere(); }, [wsReady, wsEverywhere, project?.root]);
+  // Activities inside workspaces (one setting for every project): kept aside or brought back in this window.
+  const wsActivities = useApp((s) => s.settings.wsActivities);
+  useEffect(() => { if (wsReady) useApp.getState().applyWsActivities(); }, [wsReady, wsActivities, project?.root]);
   const selectedId = useApp((s) => s.selectedId);
   const openFiles = useApp((s) => s.openFiles);
   const activeTab = useApp((s) => s.activeTab);
