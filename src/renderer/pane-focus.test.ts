@@ -48,15 +48,15 @@ test('only a pane\'s own content is come back to: never a field outside the pane
 test('a focus that comes late takes the keyboard only from where the open left it, and never from what is open over the window', () => {
   const g = globalThis as { document?: unknown };
   const had = g.document;
-  const body = { name: 'body' };
+  const body = el();
   // The result row the open came from, an element of the file's own view, a field the user went to meanwhile.
-  const row = { name: 'row' };
-  const own = { name: 'editor' };
-  const field = { name: 'field' };
+  const row = el(['.sidebar']);
+  const own = el(['.workspace-body']);
+  const field = el(['.sidebar']);
   let active: unknown = body;
   let overlay: unknown = null;
   g.document = { body, get activeElement() { return active; }, querySelector: () => overlay };
-  const view = { contains: (el: unknown) => el === own };
+  const view = { contains: (x: unknown) => x === own };
   const ok = () => mayFocusLate(row as unknown as Element, view as unknown as Element);
   try {
     expect(ok()).toBe(true);
@@ -84,5 +84,67 @@ test('a focus that comes late takes the keyboard only from where the open left i
   } finally {
     g.document = had;
     useApp.setState({ paletteOpen: false, settingsOpen: null });
+  }
+});
+
+/** An element of a fake page: inside the parts named by `within` (selectors), still in the page or not. */
+const el = (within: string[] = [], isConnected = true) => ({
+  isConnected,
+  closest: (sel: string) => (sel.split(',').map((s) => s.trim()).some((s) => within.includes(s)) ? {} : null)
+});
+
+test('a late focus: only what is modal stops it (a sheet, a menu, the palette, Settings), or a panel the keyboard is in; a panel merely open beside the work does not', () => {
+  const g = globalThis as { document?: unknown };
+  const had = g.document;
+  const body = el();
+  // What is open in the page, by the selector that finds it.
+  let open: string[] = [];
+  let active: unknown = body;
+  g.document = { body, get activeElement() { return active; }, querySelector: (sel: string) => (sel.split(',').map((s) => s.trim()).some((s) => open.includes(s)) ? {} : null) };
+  const row = el(['.sidebar']);
+  const view = { contains: () => false };
+  const ok = () => mayFocusLate(row as unknown as Element, view as unknown as Element);
+  try {
+    active = row;
+    // A session's panel, the notifications, a file's compare view (in a tab behind): dialogs, not modal.
+    open = ['[role="dialog"]'];
+    expect(ok()).toBe(true);
+    // The keyboard in one of them: the user is there; even one inside the file's own view (its compare view).
+    active = el(['[role="dialog"]']);
+    expect(ok()).toBe(false);
+    expect(mayFocusLate(row as unknown as Element, { contains: () => true } as unknown as Element)).toBe(false);
+    active = row;
+    for (const modal of ['[aria-modal="true"]', '[role="menu"]', '.ctx-menu', '.palette', '.settings']) {
+      open = ['[role="dialog"]', modal];
+      expect(ok(), modal).toBe(false);
+    }
+  } finally {
+    g.document = had;
+  }
+});
+
+test('a late focus whose open came from what has closed since (the palette): the keyboard the app put back in a pane is taken, a field outside the panes is not', () => {
+  const g = globalThis as { document?: unknown };
+  const had = g.document;
+  const body = el();
+  let active: unknown = body;
+  g.document = { body, get activeElement() { return active; }, querySelector: () => null };
+  const paletteInput = el(['.palette'], false);
+  const view = { contains: () => false };
+  const ok = () => mayFocusLate(paletteInput as unknown as Element, view as unknown as Element);
+  try {
+    expect(ok()).toBe(true);
+    // The terminal of the pane, or another editor: where the app left the keyboard once the palette went.
+    active = el(['.workspace-body']);
+    expect(ok()).toBe(true);
+    // The sidebar's field: somewhere the user went.
+    active = el(['.sidebar']);
+    expect(ok()).toBe(false);
+    // The open's place still there: only it, as before.
+    const kept = el(['.sidebar']);
+    active = el(['.workspace-body']);
+    expect(mayFocusLate(kept as unknown as Element, view as unknown as Element)).toBe(false);
+  } finally {
+    g.document = had;
   }
 });
