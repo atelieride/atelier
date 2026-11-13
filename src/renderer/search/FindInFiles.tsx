@@ -3,7 +3,7 @@
 // list. Loaded on first use with its list, popover, strings and stylesheet.
 import './search.css';
 import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { SEARCH_LIMITS, type SearchSpec, type SkippedFile } from '@shared/search';
+import type { SearchSpec, SkippedFile } from '@shared/search';
 import { compileSearch } from '@shared/search-match';
 import { Icon } from '../components/Icon';
 import { regexError } from '../editor/find/find-logic';
@@ -13,7 +13,7 @@ import { useApp } from '../store';
 import { sendResults } from './actions';
 import { ts } from './copy';
 import { searchAreaMenu } from './menus';
-import { anyExpanded, buildRows, rowTotals, takesFocusOnMount } from './model';
+import { anyExpanded, buildRows, rowTotals, runsSearch, takesFocusOnMount } from './model';
 import { loadRecent } from './recent';
 import { ResultList, type ResultListHandle } from './ResultList';
 import { SkippedPopover } from './SkippedPopover';
@@ -137,6 +137,8 @@ function SearchView({ root }: { root: string }) {
     hadRows.current = has;
   }, [rows.length > 0]);
   const cap = live && limitHit && !running;
+  // Where the cap stopped: every match listed, dismissed ones too.
+  const listed = useMemo(() => (cap ? files.reduce((n, f) => n + f.lines.reduce((m, l) => m + l.ranges.length, 0), 0) : 0), [files, cap]);
   const capped = live && fileCap !== null && !running;
   const failed = searchId !== 0 && phase === 'error' && error !== null;
   const stopped = live && phase === 'stopped';
@@ -152,11 +154,17 @@ function SearchView({ root }: { root: string }) {
     if (k.isComposing) return;
     const opt = k.altKey && !k.metaKey && !k.ctrlKey && !k.shiftKey ? TOGGLE_KEYS[k.code] : undefined;
     if (opt) toggle(opt);
-    else if (e.key === 'Enter' && !k.altKey && !k.metaKey && !k.ctrlKey && !k.shiftKey) { if (st().spec.query) st().run(); }
+    else if (runsSearch(k)) { if (st().spec.query) st().run(); }
     else if (e.key === 'ArrowDown' && rows.length > 0) list.current?.focusRow();
     else return;
     e.preventDefault();
     e.stopPropagation();
+  };
+
+  const onFilterKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (!runsSearch(e.nativeEvent) || !st().spec.query) return;
+    e.preventDefault();
+    st().run();
   };
 
   const opt = (k: Toggle, label: string, keys: string, body: ReactNode) => (
@@ -196,11 +204,11 @@ function SearchView({ root }: { root: string }) {
           <div className="fif-filters">
             <label className="fif-flab">{ts.include}
               <input type="text" className="fif-glob" spellCheck={false} autoComplete="off" value={include} placeholder={ts.includeHint}
-                onChange={(e) => st().setFilters({ include: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter' && st().spec.query) st().run(); }} />
+                onChange={(e) => st().setFilters({ include: e.target.value })} onKeyDown={onFilterKey} />
             </label>
             <label className="fif-flab">{ts.exclude}
               <input type="text" className="fif-glob" spellCheck={false} autoComplete="off" value={exclude} placeholder={ts.excludeHint}
-                onChange={(e) => st().setFilters({ exclude: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter' && st().spec.query) st().run(); }} />
+                onChange={(e) => st().setFilters({ exclude: e.target.value })} onKeyDown={onFilterKey} />
             </label>
             <button type="button" className="cf-switch fif-ignored" role="switch" aria-checked={includeIgnored} onClick={() => st().setFilters({ includeIgnored: !includeIgnored })}>
               <span>{ts.includeIgnored}</span><span className="cf-toggle" aria-hidden="true"><i /></span>
@@ -254,7 +262,7 @@ function SearchView({ root }: { root: string }) {
       {(cap || capped || failed || stopped || changed) && (
         <div className="fif-foot">
           {failed && error && <div className="fif-notice is-error" role="alert"><span className="fif-why">{error.message}</span>{refreshButton}</div>}
-          {cap && <div className="fif-notice is-amber"><Icon name="warning" size={14} stroke={1.7} /><span>{ts.limit(SEARCH_LIMITS.maxResults)}</span></div>}
+          {cap && <div className="fif-notice is-amber"><Icon name="warning" size={14} stroke={1.7} /><span>{ts.limit(listed)}</span></div>}
           {capped && fileCap !== null && <div className="fif-notice is-amber"><Icon name="warning" size={14} stroke={1.7} /><span>{includeIgnored ? ts.fileCapIgnored(fileCap) : ts.fileCap(fileCap)}</span></div>}
           {stopped && <p className="fif-quiet">{ts.stopped(progress.searched, progress.total)}</p>}
           {changed && <p className="fif-quiet">{ts.stale} <span aria-hidden="true">·</span> {refreshButton}</p>}

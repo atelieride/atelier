@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import type { SearchFile, SearchLine } from '@shared/search';
-import { anyExpanded, anyResult, buildRows, fileKey, fileSize, lineCopy, matchKey, nearestMatch, pillCount, previewWindow, resultsText, rowTotals, stepResult, takesFocusOnMount, totals, treePositions } from './model';
+import { anyExpanded, anyResult, buildRows, fileKey, fileSize, lineCopy, matchKey, nearestMatch, pillCount, previewWindow, resultsText, rowTotals, runsSearch, stepResult, takesFocusOnMount, totals, treePositions } from './model';
 
 const ln = (line: number, text: string, ranges: [number, number][], start = 0, cutEnd = false): SearchLine => ({ line, text, start, ranges, cutStart: start > 0, cutEnd });
 const file = (rel: string, lines: SearchLine[]): SearchFile => ({ path: `/p/${rel}`, rel, size: 10, lines });
@@ -75,6 +75,15 @@ test('takesFocusOnMount: an open on purpose, or nothing holding the keyboard; ne
   expect(takesFocusOnMount('none', false)).toBe(true);
   expect(takesFocusOnMount('other', false)).toBe(false);
   expect(takesFocusOnMount('other', true)).toBe(true);
+});
+
+test('runsSearch: Enter alone runs the search, never while an input method is composing nor with a modifier', () => {
+  const key = (o: Partial<Parameters<typeof runsSearch>[0]> = {}) => ({ key: 'Enter', isComposing: false, altKey: false, metaKey: false, ctrlKey: false, shiftKey: false, ...o });
+  expect(runsSearch(key())).toBe(true);
+  // Enter confirming a Japanese or Chinese candidate is the input method's.
+  expect(runsSearch(key({ isComposing: true }))).toBe(false);
+  for (const mod of ['altKey', 'metaKey', 'ctrlKey', 'shiftKey'] as const) expect(runsSearch(key({ [mod]: true }))).toBe(false);
+  expect(runsSearch(key({ key: 'a' }))).toBe(false);
 });
 
 test('previewWindow says when the kept text ends before the line does', () => {

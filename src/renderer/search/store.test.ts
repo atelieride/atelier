@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from 'vitest';
-import type { SearchEvent, SearchFile, SearchLine, SearchRequest } from '@shared/search';
+import { SEARCH_LIMITS, type SearchEvent, type SearchFile, type SearchLine, type SearchRequest } from '@shared/search';
 
 const dirty = vi.hoisted(() => ({ docs: new Map<string, string>() }));
 const app = vi.hoisted(() => ({ openSearchResult: vi.fn() }));
@@ -186,7 +186,7 @@ test('done records the summary; stopped phase follows the event', () => {
   expect(st().phase).toBe('stopped');
 });
 
-test('stale sets stale for the current search only, and a new run clears it with the dismissed rows', () => {
+test('stale sets stale for the current search only, and the next search clears it with the dismissed rows once its rows come', () => {
   st().setQuery('a'); st().run();
   emit(batch([file('a.ts')]));
   emit(done());
@@ -195,11 +195,69 @@ test('stale sets stale for the current search only, and a new run clears it with
   st().dismiss(fileKey('/p/a.ts'));
   st().select('x');
   expect(st().dismissed.size).toBe(1);
-  st().run();
+  st().setQuery('ab'); st().run();
+  emit(batch([file('b.ts')]));
   expect(st().stale).toBe(false);
   expect(st().dismissed.size).toBe(0);
   expect(st().selected).toBeNull();
-  expect(st().files).toEqual([]);
+  expect(st().files.map((f) => f.rel)).toEqual(['b.ts']);
+});
+
+test('a new search leaves the rows on screen until its own first rows come, then replaces them all at once', () => {
+  st().setQuery('token'); st().run();
+  emit(batch([file('a.ts'), file('b.ts')]));
+  emit(done({ skipped: [{ path: '/p/z', rel: 'z', size: 9, reason: 'too-large' }], limitHit: true, fileCap: 7 }));
+  const old = st().files;
+  st().setQuery('tokens'); st().run();
+  // Running: the old rows stay, with the spec and filters they were found with (their marks, Copy All, F4).
+  expect(st()).toMatchObject({ phase: 'running', progress: { searched: 0, total: 0 } });
+  expect(st().files).toBe(old);
+  expect(st().ranSpec.query).toBe('token');
+  // Progress alone, or a placeholder whose buffer has no match: nothing to show yet, so nothing changes.
+  emit(batch([]));
+  emit(batch([placeholder('gone.ts')]));
+  expect(st().files).toBe(old);
+  expect(st().progress).toEqual({ searched: 1, total: 10 });
+  // Its first rows: the list is the new search's from here on, and only grows.
+  emit(batch([file('c.ts')]));
+  expect(st().files.map((f) => f.rel)).toEqual(['c.ts']);
+  expect(st()).toMatchObject({ ranSpec: { query: 'tokens' }, skipped: [], limitHit: false, fileCap: null });
+  emit(batch([file('d.ts')]));
+  expect(st().files.map((f) => f.rel)).toEqual(['c.ts', 'd.ts']);
+});
+
+test('a new search that finds nothing, fails or is stopped replaces the old rows when it ends', () => {
+  const ran = () => { st().setQuery(`q${started.length}`); st().run(); emit(batch([file('a.ts')])); emit(done()); expect(st().files).toHaveLength(1); };
+  ran();
+  st().setQuery('none'); st().run();
+  expect(st().files).toHaveLength(1);
+  emit(done());
+  expect(st()).toMatchObject({ phase: 'done', files: [], ranSpec: { query: 'none' } });
+  ran();
+  st().setQuery('fails'); st().run();
+  emit({ kind: 'error', searchId: cur(), message: 'boom', rel: null });
+  expect(st()).toMatchObject({ phase: 'error', files: [] });
+  ran();
+  st().setQuery('stopped'); st().run();
+  st().stop();
+  expect(st()).toMatchObject({ phase: 'stopped', files: [] });
+});
+
+test('Refresh (the same query and filters) keeps the selection and the collapsed files; another search does not', () => {
+  st().setQuery('token'); st().run();
+  emit(batch([file('a.ts'), file('b.ts')]));
+  emit(done());
+  st().select(matchKey('/p/a.ts', 1, 0));
+  st().toggleCollapsed(fileKey('/p/b.ts'));
+  st().run();
+  emit(batch([file('a.ts'), file('b.ts')]));
+  expect(st().selected).toBe(matchKey('/p/a.ts', 1, 0));
+  expect([...st().collapsed]).toEqual([fileKey('/p/b.ts')]);
+  emit(done());
+  st().setQuery('tokens'); st().run();
+  emit(batch([file('a.ts'), file('b.ts')]));
+  expect(st().selected).toBeNull();
+  expect(st().collapsed.size).toBe(0);
 });
 
 test('stop keeps what was found and tells main', () => {
@@ -230,13 +288,18 @@ test('the spec of the listed results is the one their search ran with, not what 
   st().setQuery('token'); st().run();
   expect(st().ranSpec).toEqual({ query: 'token', matchCase: false, wholeWord: true, regex: false });
   emit(batch([file('a.ts')]));
-  // Typed on, the debounce not over yet: the rows on screen are still "token"'s.
+  // Typed on, the debounce not over yet: the rows on screen are still "token"'s; and still once "tokens" runs, until
+  // its own rows replace them.
   st().setQuery('tokens');
   expect(st().ranSpec.query).toBe('token');
   vi.advanceTimersByTime(250);
+  expect(st().ranSpec.query).toBe('token');
+  emit(batch([file('b.ts')]));
   expect(st().ranSpec.query).toBe('tokens');
   // The query sent is capped: so is the spec kept.
   st().setQuery('x'.repeat(1200)); st().run();
+  expect(started.at(-1)!.query).toHaveLength(1000);
+  emit(done());
   expect(st().ranSpec.query).toHaveLength(1000);
   st().clear();
   expect(st().ranSpec.query).toBe('');
@@ -330,6 +393,36 @@ test('a dirty file in an ignored section keeps main\'s order', () => {
   st().setQuery('token'); st().run();
   emit(batch([file('z.ts'), placeholder('node_modules/x.js'), file('node_modules/y.js')]));
   expect(st().files.map((f) => f.rel)).toEqual(['z.ts', 'node_modules/x.js', 'node_modules/y.js']);
+});
+
+test('an unsaved buffer counts toward the result cap: cut at the room left, the cap says so, nothing after it is listed', () => {
+  const max = SEARCH_LIMITS.maxResults;
+  dirty.docs.set('/p/b.ts', 'token\n'.repeat(max));
+  st().setQuery('token'); st().run();
+  emit(batch([file('a.ts', 5), placeholder('b.ts'), file('c.ts')]));
+  expect(st().files.map((f) => f.rel)).toEqual(['a.ts', 'b.ts']);
+  expect(st().files[1]!.lines.reduce((n, l) => n + l.ranges.length, 0)).toBe(max - 5);
+  expect(st().limitHit).toBe(true);
+  emit(batch([file('d.ts')]));
+  expect(st().files).toHaveLength(2);
+  // Main's own search never reached its cap: the page's still counts.
+  emit(done({ limitHit: false }));
+  expect(st()).toMatchObject({ phase: 'done', limitHit: true });
+});
+
+test('a buffer whose one line holds a million matches is matched no further than the cap', () => {
+  dirty.docs.set('/p/min.js', 'a'.repeat(1_000_000));
+  st().setQuery('a'); st().run();
+  emit(batch([placeholder('min.js')]));
+  expect(st().files[0]!.lines[0]!.ranges).toHaveLength(SEARCH_LIMITS.maxResults);
+  expect(st().limitHit).toBe(true);
+});
+
+test('more open files with unsaved changes than a request may name: the first 500 are searched as shown, the rest from disk', () => {
+  for (let i = 0; i < 600; i++) dirty.docs.set(`/p/d${String(i).padStart(3, '0')}.ts`, 'token');
+  st().setQuery('token'); st().run();
+  expect(started[0]!.unsaved).toHaveLength(500);
+  expect(started[0]!.unsaved[0]).toBe('/p/d000.ts');
 });
 
 test('a buffer over the editable size is left to the disk search', () => {

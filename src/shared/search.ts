@@ -49,6 +49,8 @@ export const SEARCH_LIMITS = {
   keptLineChars: 2_000,
   queryMax: 1_000,
   globMax: 2_000,
+  /** Open files with unsaved changes a search request names (searched as shown); more are searched from disk. */
+  unsavedMax: 500,
   /** Lines in a result list sent to a session or copied. */
   sendLines: 200,
 } as const;

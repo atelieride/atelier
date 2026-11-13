@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { MAX_FILE_BYTES } from '@shared/files';
 import { pathStyle } from '@shared/platform';
-import { SEARCH_LIMITS, type SearchEvent, type SearchFile, type SearchSpec, type SkippedFile } from '@shared/search';
+import { SEARCH_LIMITS, type SearchEvent, type SearchFile, type SearchLine, type SearchSpec, type SkippedFile } from '@shared/search';
 import { compileSearch, lineResult } from '@shared/search-match';
 import { dirtyPaths, handoffOf } from '../editor/savers';
 import { useApp } from '../store';
@@ -72,8 +72,16 @@ let subscribed = false;
  * placeholder, and the buffer's result goes there (no entry: the buffer has no match, the placeholder is dropped).
  */
 let buffers = new Map<string, SearchFile>();
-/** Matches in the list so far, for the auto-collapse threshold. */
+/** Matches the current search has listed so far, for the auto-collapse threshold and the result cap. */
 let listedMatches = 0;
+/** The result cap cut a file of the current search here (an unsaved buffer counts toward it): nothing more is listed. */
+let capReached = false;
+/**
+ * The search running whose rows are not shown yet: the list keeps the previous search's rows (with the spec and
+ * filters they were found with) until this one has rows of its own or ends, then they are all replaced at once; from
+ * there the list only grows. Typing never empties the list in between.
+ */
+let incoming: { spec: SearchSpec; filters: { include: string; exclude: string } } | null = null;
 const foldPath = (p: string): string => (pathStyle() === 'win32' ? p.toLowerCase() : p);
 const NO_SPEC: SearchSpec = { query: '', matchCase: false, wholeWord: false, regex: false };
 const NO_FILTERS = { include: '', exclude: '' };
@@ -103,16 +111,31 @@ function matchCount(f: SearchFile): number {
   return n;
 }
 
+/** The file with its first `room` matches only. */
+function firstMatches(f: SearchFile, room: number): SearchFile {
+  const lines: SearchLine[] = [];
+  for (const l of f.lines) {
+    if (room <= 0) break;
+    lines.push(l.ranges.length <= room ? l : { ...l, ranges: l.ranges.slice(0, room) });
+    room -= l.ranges.length;
+  }
+  return { ...f, lines };
+}
+
 /**
  * The open files with unsaved changes, searched as their buffers show them: the paths to tell main (it decides which
- * of them the search covers and where they sit) and the results by path. An editable buffer is at most 5 MB (larger
- * files open read-only, never dirty); one over that is left to the disk search rather than scanned on this thread.
+ * of them the search covers and where they sit; a request names at most `unsavedMax`, the rest are searched from disk)
+ * and the results by path. An editable buffer is at most 5 MB (larger files open read-only, never dirty); one over
+ * that is left to the disk search rather than scanned on this thread. A buffer is matched up to the result cap and one
+ * more (enough to know the cap cuts it), never further.
  */
 function unsavedResults(root: string, spec: SearchSpec): { paths: string[]; results: Map<string, SearchFile> } {
   const paths: string[] = [];
   const results = new Map<string, SearchFile>();
   const compiled = compileSearch(spec);
+  const budget = SEARCH_LIMITS.maxResults + 1;
   for (const path of dirtyPaths()) {
+    if (paths.length >= SEARCH_LIMITS.unsavedMax) break;
     const rel = relativeTo(root, path);
     if (rel === null) continue;
     const doc = handoffOf(path)?.state.doc;
@@ -121,16 +144,22 @@ function unsavedResults(root: string, spec: SearchSpec): { paths: string[]; resu
     if (compiled.kind !== 'ok') continue;
     const lines = [];
     const text = doc.split('\n');
-    for (let i = 0; i < text.length; i++) {
+    let count = 0;
+    for (let i = 0; i < text.length && count < budget; i++) {
       const raw = text[i]!;
       const t = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
-      const ranges = compiled.ranges(t);
-      if (ranges.length) lines.push(lineResult(i + 1, t, ranges, SEARCH_LIMITS.keptLineChars));
+      const ranges = compiled.ranges(t, budget - count);
+      if (ranges.length === 0) continue;
+      lines.push(lineResult(i + 1, t, ranges, SEARCH_LIMITS.keptLineChars));
+      count += ranges.length;
     }
     if (lines.length) results.set(foldPath(path), { path, rel, size: doc.length, lines });
   }
   return { paths, results };
 }
+
+const sameSpec = (a: SearchSpec, b: SearchSpec): boolean =>
+  a.query === b.query && a.matchCase === b.matchCase && a.wholeWord === b.wholeWord && a.regex === b.regex;
 
 function relativeTo(root: string, path: string): string | null {
   for (const sep of ['/', '\\']) {
@@ -156,6 +185,22 @@ export const useSearch = create<SearchState>((set, get) => {
   function abandon(): void {
     const { searchId, phase } = get();
     if (searchId && phase === 'running') void window.atelier.search.stop(searchId).catch(() => {});
+  }
+
+  /**
+   * The running search's rows take the list's place, once: the previous search's rows, its notices and dismissed rows
+   * go. A Refresh (the same query and filters) keeps the selection and the collapsed files.
+   */
+  function swapIn(): void {
+    const next = incoming;
+    if (!next) return;
+    incoming = null;
+    const s = get();
+    const again = sameSpec(s.ranSpec, next.spec) && s.ranFilters.include === next.filters.include && s.ranFilters.exclude === next.filters.exclude;
+    set({
+      files: [], skipped: [], limitHit: false, fileCap: null, error: null, dismissed: new Set(),
+      collapsed: again ? s.collapsed : new Set(), selected: again ? s.selected : null, ranSpec: next.spec, ranFilters: next.filters
+    });
   }
 
   return {
@@ -207,10 +252,16 @@ export const useSearch = create<SearchState>((set, get) => {
       const unsaved = root ? unsavedResults(root, spec) : { paths: [], results: new Map<string, SearchFile>() };
       buffers = unsaved.results;
       listedMatches = 0;
-      // The id is current before the request leaves: an event may arrive before `start` settles.
-      set({ ...noResults, collapsed: new Set(), dismissed: new Set(), searchId, ranSpec: spec, ranFilters: { include, exclude }, phase: 'running' });
+      capReached = false;
+      incoming = { spec, filters: { include, exclude } };
+      // The id is current before the request leaves: an event may arrive before `start` settles. A change on disk
+      // noticed before this search counts no more.
+      set({ searchId, phase: 'running', progress: { searched: 0, total: 0 }, stale: false });
+      // Nothing on screen to keep: the list is this search's from the start.
+      if (s.files.length === 0) swapIn();
       window.atelier.search.start({ ...spec, searchId, include, exclude, includeIgnored: s.includeIgnored, unsaved: unsaved.paths }).catch((err: unknown) => {
         if (get().searchId !== searchId) return;
+        swapIn();
         set({ phase: 'error', error: { message: err instanceof Error ? err.message : String(err), rel: null } });
       });
     },
@@ -219,6 +270,7 @@ export const useSearch = create<SearchState>((set, get) => {
       const { searchId, phase } = get();
       if (phase !== 'running') return;
       void window.atelier.search.stop(searchId).catch(() => {});
+      swapIn();
       set({ phase: 'stopped' });
     },
 
@@ -227,6 +279,8 @@ export const useSearch = create<SearchState>((set, get) => {
       abandon();
       buffers = new Map();
       listedMatches = 0;
+      capReached = false;
+      incoming = null;
       set({ ...noResults, collapsed: new Set(), dismissed: new Set(), searchId: 0, ranSpec: NO_SPEC, ranFilters: NO_FILTERS, phase: 'idle' });
     },
 
@@ -268,37 +322,59 @@ export const useSearch = create<SearchState>((set, get) => {
       switch (e.kind) {
         case 'batch': {
           if (s.phase !== 'running') return;
+          const progress = { searched: e.searched, total: e.total };
           const added: SearchFile[] = [];
-          // The same set unless a file arrives collapsed: the list rebuilds its rows only when what it shows changed.
-          let collapsed = s.collapsed;
+          // The cap counts every match listed, an unsaved buffer's too (main counts only what it read): the file that
+          // passes it is cut there, and nothing after it is listed.
+          let count = listedMatches;
           for (const disk of e.files) {
+            if (capReached) break;
             // A placeholder stands for a file the page searched itself: its buffer's result, or nothing.
-            const f = disk.unsaved ? buffers.get(foldPath(disk.path)) : disk;
+            let f = disk.unsaved ? buffers.get(foldPath(disk.path)) : disk;
             if (!f) continue;
-            if (listedMatches >= AUTO_COLLAPSE_AFTER) {
-              if (collapsed === s.collapsed) collapsed = new Set(s.collapsed);
-              collapsed.add(fileKey(f.path));
+            const room = SEARCH_LIMITS.maxResults - count;
+            let n = matchCount(f);
+            if (n > room) {
+              capReached = true;
+              if (room <= 0) break;
+              f = firstMatches(f, room);
+              n = room;
             }
             added.push(f);
+            count += n;
+          }
+          const cut = capReached ? { limitHit: true } : {};
+          if (added.length === 0) { set({ progress, ...cut }); return; }
+          swapIn();
+          const now = get();
+          // The same set unless a file arrives collapsed: the list rebuilds its rows only when what it shows changed.
+          let collapsed = now.collapsed;
+          for (const f of added) {
+            if (listedMatches >= AUTO_COLLAPSE_AFTER) {
+              if (collapsed === now.collapsed) collapsed = new Set(now.collapsed);
+              collapsed.add(fileKey(f.path));
+            }
             listedMatches += matchCount(f);
           }
-          const files = added.length ? [...s.files, ...added] : s.files;
-          set({ files, collapsed, progress: { searched: e.searched, total: e.total } });
+          set({ files: [...now.files, ...added], collapsed, progress, ...cut });
           return;
         }
         case 'done': {
+          swapIn();
+          const now = get();
           set({
             phase: e.stopped ? 'stopped' : 'done', progress: { searched: e.searched, total: e.total },
-            skipped: e.skipped, limitHit: e.limitHit, fileCap: e.fileCap
+            skipped: e.skipped, limitHit: e.limitHit || capReached, fileCap: e.fileCap
           });
-          if (!e.stopped && s.files.length > 0) {
+          if (!e.stopped && now.files.length > 0) {
             const root = useApp.getState().project?.root;
             // What was searched, not what may have been typed since.
-            if (root) pushRecent(root, s.ranSpec);
+            if (root) pushRecent(root, now.ranSpec);
           }
           return;
         }
         case 'error':
+          swapIn();
           set({ phase: 'error', error: { message: e.message, rel: e.rel } });
           return;
         case 'stale':

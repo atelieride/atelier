@@ -109,7 +109,7 @@ export const searchStartSchema = z.object({
   include: z.string().max(SEARCH_LIMITS.globMax),
   exclude: z.string().max(SEARCH_LIMITS.globMax),
   includeIgnored: z.boolean(),
-  unsaved: z.array(absPathSchema(1, 4096)).max(500)
+  unsaved: z.array(absPathSchema(1, 4096)).max(SEARCH_LIMITS.unsavedMax)
 }).strict();
 /** A page's answer to main's question: which one, and the answer's word. */
 export const askAnswerSchema = z.object({ id: z.string().min(1).max(32), answer: z.string().min(1).max(16) }).strict();

@@ -114,6 +114,14 @@ export function takesFocusOnMount(active: 'activity' | 'none' | 'other', request
   return requested || active !== 'other';
 }
 
+/**
+ * Whether a key in the query field or a filter field runs the search at once: Enter alone, and not the Enter that
+ * confirms an input method's candidate (Japanese, Chinese) while it composes.
+ */
+export function runsSearch(k: { key: string; isComposing: boolean; altKey: boolean; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean }): boolean {
+  return k.key === 'Enter' && !k.isComposing && !k.altKey && !k.metaKey && !k.ctrlKey && !k.shiftKey;
+}
+
 /** A line as Copy Line gives it: the whole line, or its kept text with "…" where the line goes on. */
 export function lineCopy(line: SearchLine): string {
   return `${line.cutStart ? '…' : ''}${line.text}${line.cutEnd ? '…' : ''}`;
