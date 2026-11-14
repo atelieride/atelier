@@ -13,12 +13,13 @@ import { wsActivityMenu } from '../workspace-menus';
 import { newTerminalIn } from '../launch';
 
 /**
- * An activity in its workspace's body, at the same indent as the workspace's own rows: a head — chevron, glyph and
- * name, the folded state's dot, "+" — and, open, its rows on a neutral band, indented under its head. The chevron
+ * An activity in its workspace's body, at the same indent as the workspace's own rows, in a color of its own: a head —
+ * chevron, glyph and name, the folded state's dot, "+" — and, open, its rows on a band of its color, indented under its
+ * head. The chevron
  * folds or opens without switching; the name brings the activity forward and leaves it as it is in the sidebar. Folded
  * and in front, its head is the selected box: it stands for the tab in front.
  */
-export function WsActivityGroup({ a, color, current, open, card, children }: { a: Workspace; color: number; current: boolean; open: boolean; card: WsActivityCard; children?: ReactNode }) {
+export function WsActivityGroup({ a, current, open, card, children }: { a: Workspace; current: boolean; open: boolean; card: WsActivityCard; children?: ReactNode }) {
   const editing = useApp((s) => s.wsRenaming === a.id);
   const st = useApp.getState;
   // Rows and tabs dropped on its head (or its band, open) move into it.
@@ -46,7 +47,7 @@ export function WsActivityGroup({ a, color, current, open, card, children }: { a
   const glyph = <span className="wsa-glyph"><Icon name="wsActivity" size={15} stroke={1.5} /></span>;
   return (
     <section className={`wsa-group${open ? ' is-open' : ''}${current ? ' is-current' : ''}${dropping ? ' is-drop' : ''}`} aria-label={a.name} data-wsa-group={a.id}
-      {...(current ? {} : { 'data-ws-drop': a.id })} style={{ '--ws-c': wsColorVar(color) } as React.CSSProperties} {...handlers}>
+      {...(current ? {} : { 'data-ws-drop': a.id })} style={{ '--ws-c': wsColorVar(a.color) } as React.CSSProperties} {...handlers}>
       {/* Shift+F10 on its buttons opens this menu too (App's handler sends a contextmenu that bubbles here). */}
       <div className={`wsa-head${current && !open ? ' is-selected' : ''}`} data-tip={card.label} onContextMenu={menu} {...drag}>
         <button type="button" className="ws-chev wsa-chev" aria-expanded={open} aria-label={open ? t.wsAct.hideRows(a.name) : t.wsAct.showRows(a.name)}

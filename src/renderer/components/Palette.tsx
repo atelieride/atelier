@@ -981,7 +981,7 @@ export function workspaceSections(text: string): Group[] {
       ...acts.map((a): Item => {
         const ac = wsActivityCard(ws, a.id, s.terminals, s.resumables, root, files, tabs);
         return {
-          key: `ws-${a.id}`, kind: 'workspace', label: t.wsAct.path(w.name, a.name), hint: '', ws: { color: w.color, dots: ac.dots, activity: true },
+          key: `ws-${a.id}`, kind: 'workspace', label: t.wsAct.path(w.name, a.name), hint: '', ws: { color: a.color, dots: ac.dots, activity: true },
           ...place(a.id, () => useApp.getState().switchWorkspace(a.id))
         };
       })
