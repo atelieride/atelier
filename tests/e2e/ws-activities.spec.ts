@@ -159,14 +159,17 @@ test('activities: on; New Activity… from the "+"; its tabs alone, folded; the 
     await wsChev.click();
     await expect(sso).toBeVisible();
 
-    // Its chevron: the band, no box; its rows at the same left edge as the workspace's own rows.
+    // Its chevron: the band, no box; its rows indented under its head, right of the workspace's own rows, a row's icon
+    // centred under the activity's glyph.
     await sso.locator('.wsa-chev').click();
     await expect(sso).toHaveClass(/is-open/);
     await expect(sso.locator('.wsa-head')).not.toHaveClass(/is-selected/);
     const mockRow = sso.locator('.term-row', { hasText: 'Okta mock' });
     const alphaRow = group(win, 'Workspace 1').locator('.ws-own .term-row', { hasText: 'Alpha' });
     await expect(mockRow).toBeVisible();
-    expect(await left(mockRow)).toBe(await left(alphaRow));
+    expect(await left(mockRow)).toBeGreaterThan(await left(alphaRow));
+    const centre = (l: Locator) => l.evaluate((el) => { const r = el.getBoundingClientRect(); return r.left + r.width / 2; });
+    expect(Math.abs(await centre(mockRow.locator('.term-icon')) - await centre(sso.locator('.wsa-glyph')))).toBeLessThanOrEqual(1);
     expect(await sso.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
     await away(win);
     await look(win.locator('.sidebar'), `${SHOTS}/ws-activities-band.png`);
@@ -187,6 +190,9 @@ test('activities: on; New Activity… from the "+"; its tabs alone, folded; the 
     const box = (await target.boundingBox())!;
     await win.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 });
     await expect(reset).toHaveClass(/is-drop/);
+    // The drop state redraws the head under the pointer (its hint takes the name's place); a hand held still keeps
+    // sending dragover, a synthetic drag only on a move: one more pixel delivers it before the drop.
+    await win.mouse.move(box.x + box.width / 2 + 1, box.y + box.height / 2);
     await look(win.locator('.sidebar'), `${SHOTS}/ws-activities-drop.png`);
     await win.mouse.up();
     await expect(reset).not.toHaveClass(/is-drop/);
@@ -255,6 +261,103 @@ test('activities: on; New Activity… from the "+"; its tabs alone, folded; the 
     }
     // Everything kept running all along.
     expect(await api(win)).toHaveLength(3);
+  } finally {
+    await stop(app, home);
+  }
+});
+
+/** A color token as the page resolves it (e.g. '--ws-2' → 'rgb(…)'). */
+const token = (win: Page, name: string) => win.evaluate((n) => {
+  const probe = document.createElement('span');
+  probe.style.color = `var(${n})`;
+  document.body.append(probe);
+  const c = getComputedStyle(probe).color;
+  probe.remove();
+  return c;
+}, name);
+const rect = (l: Locator) => l.evaluate((el) => el.getBoundingClientRect().toJSON() as DOMRect);
+const style = (l: Locator, prop: 'color' | 'backgroundColor' | 'boxShadow' | 'animationName') => l.evaluate((el, p) => getComputedStyle(el)[p], prop);
+
+test('activities: each in a color of its own, on an edgeless band apart from the next; Color › with swatches; a session row\'s avatar a quiet 22 px tile', async () => {
+  const { app, win, home } = await launch();
+  try {
+    await menu(app, 'Toggle Workspaces for This Project');
+    await expect(win.locator('.ws-group.is-active')).toContainText('Workspace 1');
+    await expect.poll(async () => (await menuItem(app, 'Activities Inside Workspaces'))?.enabled).toBe(true);
+    await menu(app, 'Activities Inside Workspaces');
+
+    // SSO holds a Claude session (the fake one starts asking for a permission) and a terminal.
+    await newActivity(win, 'Workspace 1', 'SSO');
+    const sso = act(win, 'SSO');
+    await sso.locator('.wsa-head').hover();
+    await sso.locator('.wsa-plus').click();
+    await win.getByRole('menuitem', { name: /New Claude Session/ }).click();
+    await win.getByPlaceholder('Session name (optional)').fill('okta-callback');
+    await win.keyboard.press('Enter');
+    await expect.poll(async () => (await api(win)).some((x) => x.title === 'okta-callback' && x.session), { timeout: 20000 }).toBe(true);
+    await sso.locator('.wsa-head').hover();
+    await sso.locator('.wsa-plus').click();
+    await win.getByRole('menuitem', { name: /New Terminal/ }).click();
+    await expect.poll(() => tabs(win), { timeout: 10000 }).toHaveLength(2);
+    await sso.locator('.wsa-chev').click();
+    await expect(sso).toHaveClass(/is-open/);
+
+    // A session row's avatar: 22 px like a terminal's icon, in the same column; no ring, waiting included. Its tab's
+    // avatar keeps the ring.
+    const avatar = sso.locator('.session-row .avatar');
+    await expect(avatar).toHaveClass(/av-waiting/, { timeout: 15000 });
+    const icon = sso.locator('.term-row .term-icon');
+    const [a, i] = [await rect(avatar), await rect(icon)];
+    expect([a.width, a.height]).toEqual([22, 22]);
+    expect(Math.abs(a.left + a.width / 2 - (i.left + i.width / 2))).toBeLessThanOrEqual(0.5);
+    expect(await style(avatar, 'boxShadow')).toBe('none');
+    expect(await style(avatar, 'animationName')).toBe('none');
+    expect(await style(win.locator('.tab .avatar.av-waiting'), 'boxShadow')).not.toBe('none');
+
+    // The band: SSO's own color (the first after its workspace's), tinted, no edge; the selected row stops short of its
+    // right edge.
+    expect(await style(sso.locator('.wsa-glyph'), 'color')).toBe(await token(win, '--ws-2'));
+    expect(await style(sso, 'boxShadow')).toBe('none');
+    expect(await style(sso, 'backgroundColor')).not.toBe('rgba(0, 0, 0, 0)');
+    const band = await rect(sso);
+    expect(band.right - (await rect(sso.locator('.is-selected'))).right).toBeGreaterThanOrEqual(4);
+
+    // A second activity: the next color nothing wears, its band apart from SSO's.
+    await newActivity(win, 'Workspace 1', 'Reset');
+    const reset = act(win, 'Reset');
+    await reset.locator('.wsa-chev').click();
+    await expect(reset).toHaveClass(/is-open/);
+    expect(await style(reset.locator('.wsa-glyph'), 'color')).toBe(await token(win, '--ws-3'));
+    expect(await style(reset, 'backgroundColor')).not.toBe(await style(sso, 'backgroundColor'));
+    expect((await rect(reset)).top - (await rect(sso)).bottom).toBeGreaterThanOrEqual(6);
+    await away(win);
+    await look(win.locator('.sidebar'), `${SHOTS}/ws-activities-colors.png`);
+
+    // Color › on SSO's head: the eight swatches, Teal (its own) ringed and checked; Color shows it too.
+    await sso.locator('.wsa-head').click({ button: 'right' });
+    const color = win.getByRole('menuitem', { name: 'Color' });
+    await expect(color.locator('.ctx-swatch')).toHaveCount(1);
+    await color.hover();
+    const sub = win.locator('.ctx-submenu');
+    await expect(sub.locator('[role="menuitemradio"]')).toHaveText(['Violet', 'Teal', 'Lime', 'Orchid', 'Indigo', 'Apricot', 'Sky', 'Rose']);
+    await expect(sub.locator('.ctx-swatch')).toHaveCount(8);
+    const teal = sub.getByRole('menuitemradio', { name: 'Teal' });
+    await expect(teal).toHaveAttribute('aria-checked', 'true');
+    await expect(teal.locator('.ctx-swatch')).toHaveClass(/is-on/);
+    await expect(teal.locator('.ctx-check')).toBeVisible();
+    await look(win, `${SHOTS}/ws-activities-color-menu.png`, { settle: 300 });
+    // Sky: SSO alone changes.
+    await sub.getByRole('menuitemradio', { name: 'Sky' }).click();
+    await expect.poll(() => style(sso.locator('.wsa-glyph'), 'color')).toBe(await token(win, '--ws-7'));
+    expect(await style(reset.locator('.wsa-glyph'), 'color')).toBe(await token(win, '--ws-3'));
+
+    // The workspace recolored from its own Color ›: its activities keep theirs.
+    await group(win, 'Workspace 1').locator('.ws-head').click({ button: 'right' });
+    await win.getByRole('menuitem', { name: 'Color' }).hover();
+    await win.locator('.ctx-submenu').getByRole('menuitemradio', { name: 'Apricot' }).click();
+    await expect(group(win, 'Workspace 1')).toHaveAttribute('style', /--ws-c: var\(--ws-6\)/);
+    expect(await style(sso.locator('.wsa-glyph'), 'color')).toBe(await token(win, '--ws-7'));
+    expect(await style(reset.locator('.wsa-glyph'), 'color')).toBe(await token(win, '--ws-3'));
   } finally {
     await stop(app, home);
   }

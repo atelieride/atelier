@@ -382,7 +382,7 @@ function Workspaces({ ws, entered }: { ws: WorkspacesState; entered: Map<string,
               {open && acts.map((a) => {
                 const aOpen = isOpen(ws, a.id);
                 return (
-                  <WsActivityGroup key={a.id} a={a} color={w.color} current={ws.active === a.id} open={aOpen} card={wsActivityCard(ws, a.id, terminals, resumables, root, paths, tabs)}>
+                  <WsActivityGroup key={a.id} a={a} current={ws.active === a.id} open={aOpen} card={wsActivityCard(ws, a.id, terminals, resumables, root, paths, tabs)}>
                     {aOpen && <Sections terminals={inWorkspace(ws, a.id, terminals)} toResume={pinnedFirst(resumablesIn(ws, a.id, resumables, root), pins)} entered={entered} scope={`act:${a.id}`} inGroup
                       empty={t.wsAct.emptyRows} place={a.id} />}
                   </WsActivityGroup>

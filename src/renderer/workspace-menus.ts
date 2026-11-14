@@ -8,7 +8,7 @@ import { t } from './i18n/en';
 import { kbd } from './kbd';
 import { newTerminalIn } from './launch';
 import { MAX_ACTIVITIES, activitiesOf, memberOf, workspaceKey, workspaceOf, workspacesOf, WS_COLORS, type Workspace } from './workspaces';
-import { cardOf, wsActivityCard } from './workspace-view';
+import { cardOf, wsActivityCard, wsColorVar } from './workspace-view';
 
 const st = () => useApp.getState();
 
@@ -34,11 +34,11 @@ export function workspaceMenu(id: string): MenuItem[] {
   const here = (fn: () => void) => () => { st().switchWorkspace(id); fn(); };
   const last = wss.length <= 1;
   const colors: MenuItem[] = Array.from({ length: WS_COLORS }, (_, n) => ({
-    id: `ws-color:${n + 1}`, label: t.ws.colors[n]!, ...(w.color === n + 1 ? { icon: 'check' as const } : {}), run: () => st().recolorWorkspace(id, n + 1)
+    id: `ws-color:${n + 1}`, label: t.ws.colors[n]!, swatch: wsColorVar(n + 1), checked: w.color === n + 1, radio: true as const, run: () => st().recolorWorkspace(id, n + 1)
   }));
   return [
     { id: 'ws-rename', label: t.ws.rename, icon: 'edit', run: () => st().setWsRenaming(id) },
-    { id: 'ws-color', label: t.ws.color, run: () => {}, submenu: colors },
+    { id: 'ws-color', label: t.ws.color, swatch: wsColorVar(w.color), run: () => {}, submenu: colors },
     'sep',
     { id: 'ws-new-session', label: t.ws.newSessionHere, icon: 'sparkle', hint: kbd('⌘N'), run: here(() => st().setNewSessionOpen(true)) },
     { id: 'ws-new-terminal', label: t.ws.newTerminalHere, icon: 'terminal', hint: kbd('⌘T'), run: here(() => void newTerminalIn()) },
@@ -88,8 +88,8 @@ export function askCloseWorkspace(id: string): void {
 }
 
 /**
- * An activity's menu (right-click on its head, Shift+F10): New Session/Terminal Here, Rename Activity…, Move to
- * Workspace › (the other workspaces; a full one disabled), Close Activity….
+ * An activity's menu (right-click on its head, Shift+F10): New Session/Terminal Here, Rename Activity…, Color ›, Move
+ * to Workspace › (the other workspaces; a full one disabled), Close Activity….
  */
 export function wsActivityMenu(id: string): MenuItem[] {
   const ws = st().ws;
@@ -102,11 +102,15 @@ export function wsActivityMenu(id: string): MenuItem[] {
     const full = activitiesOf(ws, w.id).length >= MAX_ACTIVITIES;
     return { id: `wsa-move:${w.id}`, label: w.name, icon: 'workspace', ...(full ? { disabled: true, tip: t.wsAct.full(w.name) } : {}), run: () => st().moveWsActivity(id, w.id) };
   });
+  const colors: MenuItem[] = Array.from({ length: WS_COLORS }, (_, n) => ({
+    id: `wsa-color:${n + 1}`, label: t.ws.colors[n]!, swatch: wsColorVar(n + 1), checked: a.color === n + 1, radio: true as const, run: () => st().recolorWorkspace(id, n + 1)
+  }));
   return [
     { id: 'wsa-new-session', label: t.ws.newSessionHere, icon: 'sparkle', hint: kbd('⌘N'), run: here(() => st().setNewSessionOpen(true)) },
     { id: 'wsa-new-terminal', label: t.ws.newTerminalHere, icon: 'terminal', hint: kbd('⌘T'), run: here(() => void newTerminalIn()) },
     'sep',
     { id: 'wsa-rename', label: t.wsAct.rename, icon: 'edit', run: () => st().setWsRenaming(id) },
+    { id: 'wsa-color', label: t.ws.color, swatch: wsColorVar(a.color), run: () => {}, submenu: colors },
     { id: 'wsa-move', label: t.wsAct.moveToWs, icon: 'workspace', disabled: !others.length, run: () => {}, submenu: sub },
     'sep',
     { id: 'wsa-close', label: t.wsAct.close, icon: 'x', danger: true, run: () => askCloseWsActivity(id) }

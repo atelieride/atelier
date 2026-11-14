@@ -103,7 +103,8 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
   // Session avatars off: the title starts the row; the automation
   // mark and the pin move to the end of the title line.
   const avatars = useApp((st) => st.settings.sessionAvatars);
-  const lead = avatars ? <Avatar title={term.title} color={term.color} state={state} pinned={pinned} auto={automated} /> : null;
+  // 22 px like a terminal row's icon: sessions and terminals line up in one column of icons.
+  const lead = avatars ? <Avatar title={term.title} color={term.color} state={state} pinned={pinned} auto={automated} size={22} /> : null;
   const stop = () => { setEditing(false); if (asked) useApp.getState().setRenaming(null); };
   const commit = (v: string) => { stop(); commitRename(term, v); };
   const inner = (

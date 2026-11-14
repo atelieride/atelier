@@ -293,14 +293,24 @@ button.foot-item:disabled { cursor: default; }
 .ws-dot.is-resume i { background: none; box-shadow: inset 0 0 0 1.5px currentColor; }
 .ws-drop-hint { flex: none; padding: 0 6px; font-size: 11px; color: var(--ws-c); white-space: nowrap; pointer-events: none; }
 .ws-dots { flex: none; display: inline-flex; align-items: center; gap: 10px; }
-/* Activities: places inside a workspace, at the same indent as its own rows; an open one sits on a neutral band, the
-   folded one in front is the selected box. (Never a class starting with "act": the activity bar's.) */
+/* Activities: places inside a workspace, at the same indent as its own rows, each in a color of its own; an open one
+   sits on a band of that color, the folded one in front is the selected box. (Never a class starting with "act": the
+   activity bar's.) */
 /* Its activity's head in sight (open), the workspace's name steps down; folded, the name is where you are again. */
 .ws-group.is-active.is-open.in-act .ws-name { color: var(--text-2); }
 .ws-group.in-act .ws-head:hover .ws-name, .ws-group.in-act .ws-name-btn:focus-visible .ws-name { color: var(--text); }
 .wsa-group { position: relative; display: flex; flex-direction: column; gap: 2px; min-width: 0; border-radius: var(--radius);
   transition: background-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
-.wsa-group.is-open { background: var(--ws-band); padding-bottom: 3px; }
+/* Open, it sits on a band tinted with its own color, so neighbouring activities part at a glance. The band has no edge:
+   the selected row inside stays the only outlined box, a level above it. That row and the head's hover stop short of
+   the band's right edge (the left keeps the rows' step under the head). */
+.wsa-group.is-open { background: color-mix(in srgb, var(--ws-c) 8%, transparent); padding: 0 4px 3px 0; }
+/* An open band keeps some air from whatever sits next to it, so the bands read as separate cards; folded heads stay
+   packed at the list's own gap. */
+.wsa-group.is-open:not(:first-child), .wsa-group.is-open + * { margin-top: 4px; }
+/* Its rows step in under its head, so they read as its contents: a row's icon centred under the activity's glyph
+   (chevron 20 + 2 + half the 15 px glyph, less the row's 8 px padding and half its 22 px icon). The band stays full width. */
+.wsa-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-left: 10px; }
 .wsa-head { position: relative; height: 30px; flex: none; display: flex; align-items: center; padding-right: 3px; border-radius: var(--r-sm);
   transition: background-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
 .wsa-head:hover { background: var(--bg-hover); }
@@ -310,17 +320,17 @@ button.foot-item:disabled { cursor: default; }
 .wsa-name { min-width: 0; font-size: 12.5px; font-weight: 500; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color var(--t-fast) var(--ease); }
 .wsa-head:hover .wsa-name, .wsa-name-btn:focus-visible .wsa-name, .wsa-group.is-current .wsa-name { color: var(--text); }
 .wsa-group.is-current .wsa-name { font-weight: 600; }
-.wsa-glyph { flex: none; display: flex; color: var(--ws-c); opacity: .6; transition: opacity var(--t-fast) var(--ease); }
+.wsa-glyph { flex: none; display: flex; color: var(--ws-c); opacity: .85; transition: opacity var(--t-fast) var(--ease); }
 .wsa-head:hover .wsa-glyph, .wsa-group.is-current .wsa-glyph { opacity: 1; }
 .wsa-head .ws-dot { flex: none; padding: 0 4px; font-size: 10.5px; }
 .wsa-plus { opacity: 0; transition: opacity var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
 .wsa-group.is-current .wsa-plus, .wsa-head:is(:hover, :has(:focus-visible)) .wsa-plus { opacity: 1; }
 .ws-own { display: flex; flex-direction: column; gap: 2px; min-width: 0; min-height: 2px; border-radius: var(--radius);
   transition: background-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
-/* An activity's row in the palette's "#": its outline glyph in its workspace's color, where a workspace shows its own. */
+/* An activity's row in the palette's "#": its outline glyph in its own color, where a workspace shows its own glyph. */
 .palette-wsa-glyph { flex: none; display: flex; }
 /* A drop onto an activity or a workspace's own rows: the workspace head's drop state, on the whole target. */
-.wsa-group.is-drop, .ws-own.is-drop { background: color-mix(in srgb, var(--ws-c) 8%, transparent); box-shadow: inset 0 0 0 1.5px var(--ws-c); }
+.wsa-group.is-drop, .ws-own.is-drop { background: color-mix(in srgb, var(--ws-c) 12%, transparent); box-shadow: inset 0 0 0 1.5px var(--ws-c); }
 .palette-ws-dots { margin-left: 4px; }
 
 /* Avatar and context ring */
@@ -332,6 +342,10 @@ button.foot-item:disabled { cursor: default; }
 .avatar, .confirm-av, .sw-avatar, .ref-session, .git-sheet-by { color: var(--avatar-color, color-mix(in srgb, var(--id) var(--id-mix), var(--text))); --ring: var(--avatar-color, color-mix(in srgb, var(--id) var(--id-mix), var(--text))); }
 .avatar { position: relative; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; font-weight: 700; background: color-mix(in srgb, var(--ring) 14%, var(--bg-3)); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--ring) 70%, transparent); }
 .avatar.is-dim { opacity: .55; }
+/* In the sidebar's rows the avatar is a quiet tile the size of a terminal's icon: no ring in any state, so the
+   activity's band and the selected box stay the louder levels (the row's status line and its section say what the
+   session needs; its tab's avatar keeps the ring and the waiting cue). */
+.session-row .avatar, .session-row .avatar:is(.av-waiting, .av-error) { border-radius: 7px; box-shadow: none; animation: none; }
 /* Also over .wt-avatars' separating ring (same specificity, later): a waiting worktree avatar keeps its ring at rest. */
 .avatar.av-waiting, .wt-avatars .avatar.av-waiting { box-shadow: 0 0 0 1.5px var(--ring, var(--waiting-mark)); animation: atl-ring-cue 2.2s ease-in-out var(--cue-cycles); }
 .avatar.av-error { box-shadow: 0 0 0 1.5px var(--error); }
@@ -1626,7 +1640,7 @@ button.either:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .ws-empty-card { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 100%; padding: 0 16px; text-align: center; }
 .ws-empty-card h2 { margin: 8px 0 0; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; color: var(--text); }
 .ws-empty-card p { max-width: 440px; margin: 0 0 8px; color: var(--text-3); line-height: 1.55; }
-/* An activity's empty state: its glyph in its workspace's color, and how to fill it under the buttons. */
+/* An activity's empty state: its glyph in its own color, and how to fill it under the buttons. */
 .ws-empty-glyph { display: flex; }
 .ws-empty-card .ws-empty-tip { max-width: 380px; margin: 4px 0 0; font-size: 11.5px; color: var(--text-4); }
 /* One line per button, whatever the shortcut's width (Windows' Ctrl+Shift+N); a narrow pane stacks them instead. */
@@ -1677,6 +1691,10 @@ html.is-tab-dragging, html.is-tab-dragging * { cursor: grabbing !important; user
 .ctx-sep { height: 1px; margin: 4px 8px; background: var(--line); }
 .ctx-sub { display: flex; margin-right: -4px; color: var(--text-4); }
 .ctx-item.is-active .ctx-sub { color: var(--text-2); }
+/* A color choice: its swatch in the icon's place, ringed (as in the New Workspace sheet) and checked when worn. */
+.ctx-swatch { width: 12px; height: 12px; border-radius: 50%; background: var(--sw); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent); }
+.ctx-swatch.is-on { outline: 1.5px solid var(--sw); outline-offset: 2px; }
+.ctx-check { display: flex; margin-right: -2px; color: var(--text-2); }
 .ctx-submenu { min-width: 200px; animation-duration: 120ms; }
 /* Two-line items (JSON's Copy Path As): the name small above, the value in mono below. */
 .ctx-item.has-detail { height: 40px; }

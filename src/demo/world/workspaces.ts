@@ -14,7 +14,7 @@ const FRONTS: readonly { id: string; name: string; sessions: readonly ScenarioNa
   { id: 'w-docs', name: 'Docs & copy', sessions: ['onboarding-copy', 'docs'] }
 ];
 
-/** The demo's workspaces for its sessions, off, the auth front in front. */
+/** The demo's workspaces for its sessions, off, the auth front in front; saved as this version saves them (ownColors). */
 export function demoWorkspaces(sessions: readonly { scenario: ScenarioName; terminal: { id: string } }[]): WorkspacesState {
   const idOf = (n: ScenarioName) => sessions.find((s) => s.scenario === n)?.terminal.id;
   const list = FRONTS.map((f, i) => {
@@ -22,7 +22,7 @@ export function demoWorkspaces(sessions: readonly { scenario: ScenarioName; term
     return { id: f.id, name: f.name, color: i + 1, folder: null, layout: null, order, active: order[0] ?? null };
   });
   const members = Object.fromEntries(FRONTS.flatMap((f) => f.sessions.map((n) => [idOf(n), f.id] as const)).filter(([id]) => !!id)) as Record<string, string>;
-  return { on: false, active: FRONTS[0]!.id, list, members };
+  return { on: false, active: FRONTS[0]!.id, list, members, ownColors: true };
 }
 
 /** Writes them where the app reads them (`atelier.workspaces`, by project root), before the renderer starts. */

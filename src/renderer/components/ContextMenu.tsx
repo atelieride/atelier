@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { Icon } from './Icon';
 import { edgeIndex, itemRole, menuFocus, nextIndex, placeAnchored, placeDropDown, placeMenu, placeSubmenu, type MenuItem } from '../menu-model';
 import { useApp } from '../store';
@@ -12,12 +12,17 @@ function Item({ it, i, active, prefix, onEnter, onClick }: { it: Entry; i: numbe
       aria-haspopup={it.submenu ? 'menu' : undefined} data-tip={it.tip}
       className={`ctx-item ${active ? 'is-active' : ''} ${it.danger ? 'is-danger' : ''} ${it.accent ? 'is-accent' : ''} ${it.detail !== undefined ? 'has-detail' : ''} ${it.indent ? 'is-indent' : ''}`}
       onMouseEnter={onEnter} onClick={onClick}>
-      <span className="ctx-icon">{it.icon && <Icon name={it.icon} size={14} stroke={1.7} />}</span>
+      <span className="ctx-icon">
+        {it.swatch
+          ? <span className={`ctx-swatch${it.checked ? ' is-on' : ''}`} style={{ '--sw': it.swatch } as CSSProperties} />
+          : it.icon && <Icon name={it.icon} size={14} stroke={1.7} />}
+      </span>
       {it.detail !== undefined
         ? <span className="ctx-label"><span className="ctx-detail-name">{it.label}</span><span className="ctx-detail mono">{it.detail}</span></span>
         : <span className="ctx-label">{it.label}</span>}
       {it.hint && <span className="ctx-hint mono">{it.hint}</span>}
       {it.submenu && <span className="ctx-sub"><Icon name="chevron" size={12} stroke={1.9} /></span>}
+      {it.swatch && it.checked && <span className="ctx-check"><Icon name="check" size={13} stroke={2} /></span>}
     </button>
   );
 }
