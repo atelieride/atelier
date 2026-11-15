@@ -175,3 +175,69 @@ test('split in both directions: side by side as before, ⌥-click stacks, every 
     await stop(app, home);
   }
 });
+
+/** Drags tab `name` (pressed in its strip) to client point (x, y) and keeps the button down. */
+async function dragTabTo(win: Page, name: string, x: number, y: number) {
+  const box = (await win.locator('.tab', { hasText: name }).boundingBox())!;
+  await win.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await win.mouse.down();
+  await win.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2 + 30, { steps: 4 });
+  await win.mouse.move(x, y, { steps: 8 });
+}
+
+test('a tab dropped on a pane\'s bottom edge stacks it there; at the minimum window an edge without room only moves the tab', async () => {
+  const project = mkdtempSync(join(tmpdir(), 'atl-prj-'));
+  const { env, home } = e2eEnv({ ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl') });
+  const app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env });
+  try {
+    const win = await app.firstWindow();
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1440, 900));
+    await alphaBravo(app, win);
+    if (await win.locator('.changes-toggle.is-on').count()) await win.locator('.changes-toggle').click();
+
+    // Bravo dragged onto the bottom band of the only pane: the bottom half lights up; released, Bravo has its own pane
+    // under Alpha's, as wide as it.
+    const body = (await win.locator('.workspace-body').boundingBox())!;
+    await dragTabTo(win, 'Bravo', body.x + body.width / 2, body.y + body.height - 20);
+    const drop = win.locator('.pane-drop[data-zone="bottom"]');
+    await expect(drop).toBeVisible();
+    const lit = (await drop.boundingBox())!;
+    expect(near(lit.y, body.y + body.height / 2, 10)).toBe(true);
+    expect(near(lit.width, body.width - 12, 2)).toBe(true);
+    // Its label shows a window cut across (Split Down's glyph).
+    await expect(drop.locator('path[d="M3 10h14"]')).toHaveCount(1);
+    await still(win);
+    await look(win.locator('.workspace'), `${SHOTS}/split-drop-bottom.png`);
+    await win.mouse.up();
+    await expect.poll(() => win.locator('.workspace-body > .pane-strip').count()).toBe(2);
+    await expect(win.locator('.pane-strip[data-pane="0"] .tab')).toHaveText([/Alpha/]);
+    await expect(win.locator('.pane-strip[data-pane="1"] .tab')).toHaveText([/Bravo/]);
+    await expect(win.locator('.pane-strip[data-pane="1"]')).toHaveClass(/is-focused/);
+    const g = await geometry(win);
+    expect(near(g.strips[0]!.x, g.strips[1]!.x) && near(g.strips[0]!.w, g.strips[1]!.w)).toBe(true);
+    expect(g.strips[1]!.y).toBeGreaterThan(g.frames[0]!.y + 100);
+
+    // Back to one pane, then the minimum window with Changes open: two columns still fit, a third does not.
+    await win.locator('.pane-strip[data-pane="1"] .pane-close').click();
+    await expect(win.locator('.workspace-body.is-split')).toHaveCount(0);
+    await win.locator('.changes-toggle').click();
+    await expect(win.locator('.changes-toggle.is-on')).toHaveCount(1);
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(960, 600));
+    await menu(app, 'Split Right');
+    await expect.poll(() => win.locator('.workspace-body > .pane-strip').count()).toBe(2);
+    // Alpha over the right pane's right edge: no room for a third column, so the pane itself lights up (Move to this pane).
+    const right = (await win.locator('.workspace-body > .pane-frame[data-pane="1"]').boundingBox())!;
+    await dragTabTo(win, 'Alpha', right.x + right.width - 6, right.y + right.height / 2);
+    await expect(win.locator('.pane-drop[data-zone="middle"]')).toBeVisible();
+    await expect(win.locator('.pane-drop[data-zone="right"]')).toHaveCount(0);
+    await win.mouse.up();
+    await expect(win.locator('.pane-strip[data-pane="1"] .tab')).toHaveText([/Alpha/]);
+    await expect(win.locator('.workspace-body > .pane-strip')).toHaveCount(2);
+    // ⌘\ says why instead of making a pane too narrow to use.
+    await menu(app, 'Split Right');
+    await expect(win.locator('.toast')).toContainText('Not enough room: widen the window or hide a panel');
+    await expect(win.locator('.workspace-body > .pane-strip')).toHaveCount(2);
+  } finally {
+    await stop(app, home);
+  }
+});

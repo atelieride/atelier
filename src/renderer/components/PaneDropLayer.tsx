@@ -9,12 +9,12 @@ import { Icon } from './Icon';
 
 interface Hit { pane: number; zone: DropZone; box: { left: number; top: number; width: number; height: number } }
 
-const sameHit = (a: Hit | null, b: Hit | null) => a?.pane === b?.pane && a?.zone === b?.zone && a?.box.width === b?.box.width && a?.box.left === b?.box.left;
+const sameHit = (a: Hit | null, b: Hit | null) => a?.pane === b?.pane && a?.zone === b?.zone && a?.box.width === b?.box.width && a?.box.left === b?.box.left && a?.box.top === b?.box.top && a?.box.height === b?.box.height;
 
 /**
  * Where a dragged tab would land in the workspace (drags with the pointer): another pane's middle moves it into that
- * pane ("Move to this pane"; its own pane's has no zone); a left
- * or right edge band opens a new pane on that side (fewer than three panes, not for a tab alone in that pane). The
+ * pane ("Move to this pane"; its own pane's has no zone); an
+ * edge band opens a new pane on that side (fewer than four panes, room for it, not for a tab alone in that pane). The
  * pointer is captured by the strip while it drags, so this layer only shows, from the point the store holds; the
  * release is applied by tab-drag.ts (which also computes where it lands, tabDragTarget). A pop-out dragged back over the window lights up the same
  * zones from the point main sends, and the middle says the tab moves back here.
@@ -36,10 +36,15 @@ export function PaneDropLayer() {
   /** The lit area for a pane and zone, in the layer's coordinates (split: each pane's content frame; one pane: the whole body). */
   const boxOf = (pane: number, zone: DropZone, origin: DOMRect, r: DOMRect): Hit => {
     // A new pane takes about half of this one: the half on that side lights up; the middle lights up the whole pane.
-    const half = r.width / 2;
-    const left = zone === 'right' ? r.left + half : r.left;
+    const across = zone === 'left' || zone === 'right';
+    const along = zone === 'top' || zone === 'bottom';
+    const left = zone === 'right' ? r.left + r.width / 2 : r.left;
+    const top = zone === 'bottom' ? r.top + r.height / 2 : r.top;
     const inset = 6;
-    return { pane, zone, box: { left: left - origin.left + inset, top: r.top - origin.top + inset, width: (zone === 'middle' ? r.width : half) - 2 * inset, height: r.height - 2 * inset } };
+    return {
+      pane, zone,
+      box: { left: left - origin.left + inset, top: top - origin.top + inset, width: (across ? r.width / 2 : r.width) - 2 * inset, height: (along ? r.height / 2 : r.height) - 2 * inset }
+    };
   };
   useLayoutEffect(() => {
     if (!point) return;
@@ -67,7 +72,7 @@ export function PaneDropLayer() {
       {hit && (
         <div className={`pane-drop is-${hit.zone}`} style={hit.box} data-zone={hit.zone} data-pane={hit.pane}>
           <span className="pane-drop-label">
-            <Icon name={hit.zone !== 'middle' ? 'split' : docking ? 'dock' : 'splitFocus'} size={13} stroke={1.8} />
+            <Icon name={hit.zone === 'top' || hit.zone === 'bottom' ? 'splitDown' : hit.zone !== 'middle' ? 'split' : docking ? 'dock' : 'splitFocus'} size={13} stroke={1.8} />
             {away ? t.spaces.backTo(t.spaces.names[away]) : hit.zone !== 'middle' ? t.split.dropNew : docking ? (across ? t.moveWin.dropHere : t.popout.dropHere) : t.split.dropHere}
           </span>
         </div>

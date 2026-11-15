@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'vitest';
 import { useApp } from './store';
 import { single } from './split';
 import { row } from './split-tree';
+import { usePaneArea } from './pane-area';
 import { dockTargetAt, paneSize, tabDropAt } from './dock-target';
 import { DEFAULT_SETTINGS } from '@shared/settings';
 
@@ -176,6 +177,37 @@ test('Review Focus 2: a pane that closes mid-drag clears the drop target (the ne
   expect(useApp.getState().tabDragTarget).toBeNull();
   expect(useApp.getState().tabDrag).toBe('t:a');
   useApp.setState({ tabDrag: null });
+});
+
+// Stacked panes: the zones above and below, and the room a new pane needs.
+const stacked = () => {
+  useApp.setState({ tabOrder: ['t:a', 't:c', 't:b'], split: { panes: [{ tabs: ['t:a', 't:c'], front: 't:a' }, { tabs: ['t:b'], front: 't:b' }], focus: 0, tree: { kind: 'group', dir: 'column', children: [{ kind: 'pane' }, { kind: 'pane' }], sizes: [0.5, 0.5] } } });
+  return mainWindow([
+    el({ left: 300, top: 80, width: 900, height: 299 }, { pane: '0' }),
+    el({ left: 300, top: 380, width: 900, height: 300 }, { pane: '1' })
+  ]);
+};
+
+test('stacked panes: the pane under the pointer in both directions; its top and bottom bands', () => {
+  const doc = stacked();
+  expect(dockTargetAt({ x: 750, y: 370 }, doc)).toEqual({ kind: 'pane', pane: 0, zone: 'bottom' });
+  expect(dockTargetAt({ x: 750, y: 390 }, doc)).toEqual({ kind: 'pane', pane: 1, zone: 'top' });
+  expect(dockTargetAt({ x: 750, y: 530 }, doc)).toEqual({ kind: 'pane', pane: 1, zone: 'middle' });
+  // The 1 px gap between the two frames: the nearest one.
+  expect(dockTargetAt({ x: 750, y: 379.6 }, doc)).toMatchObject({ kind: 'pane', pane: 1 });
+});
+
+test('an edge without room for a new pane becomes that pane\'s middle; over the dragged tab\'s own pane, nothing', () => {
+  const doc = stacked();
+  // 554 px of height: two stacked panes fit, a third (about 184 px each) fits too; 400 px: a third would be under 140.
+  usePaneArea.setState({ area: { width: 900, height: 400 }, panes: [] });
+  expect(dockTargetAt({ x: 750, y: 670 }, doc)).toEqual({ kind: 'pane', pane: 1, zone: 'middle' });
+  expect(tabDropAt({ x: 750, y: 670 }, doc, 't:a')).toEqual({ kind: 'pane', pane: 1, zone: 'middle' });
+  expect(tabDropAt({ x: 750, y: 90 }, doc, 't:c')).toBeNull();
+  // Side by side there is room: the right edge stays an edge.
+  expect(dockTargetAt({ x: 1190, y: 530 }, doc)).toEqual({ kind: 'pane', pane: 1, zone: 'right' });
+  usePaneArea.setState({ area: null, panes: [] });
+  expect(tabDropAt({ x: 750, y: 90 }, doc, 't:c')).toEqual({ kind: 'pane', pane: 0, zone: 'top' });
 });
 
 test('no workspace on screen (welcome, no project): nowhere', () => {

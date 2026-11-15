@@ -42,7 +42,7 @@ export function paneRects(body: Pick<Element, 'getBoundingClientRect' | 'querySe
  * somewhere shown. Null without a workspace.
  */
 export function dockTargetAt(p: Point, doc: Document = document): DockTarget | null {
-  return targetAt(p, doc, true);
+  return targetAt(p, doc, true, null);
 }
 
 /**
@@ -51,7 +51,7 @@ export function dockTargetAt(p: Point, doc: Document = document): DockTarget | n
  * elsewhere in the window (released over the rest of the sidebar or a header, nothing changes).
  */
 export function tabDropAt(p: Point, doc: Document = document, key: TabKey | null = useApp.getState().tabDrag): TabDropTarget | null {
-  return workspaceTargetAt(p, doc, key) ?? shelfTargetAt(p, doc, key) ?? ownPane(targetAt(p, doc, false), key);
+  return workspaceTargetAt(p, doc, key) ?? shelfTargetAt(p, doc, key) ?? ownPane(targetAt(p, doc, false, key), key);
 }
 
 /**
@@ -114,7 +114,7 @@ function stripTargetAt(p: Point, pane: number, strip: Element | null, bar: Eleme
   return { kind: 'strip', pane, before: first && p.x < first.rect.left ? first.key : null };
 }
 
-function targetAt(p: Point, doc: Document, fallback: boolean): DockTarget | null {
+function targetAt(p: Point, doc: Document, fallback: boolean, key: TabKey | null): DockTarget | null {
   const st = useApp.getState();
   if (isSplit(st.split)) {
     // One strip per pane: `.pane-strip[data-pane]`, each holding its `.tab-strip`.
@@ -131,10 +131,13 @@ function targetAt(p: Point, doc: Document, fallback: boolean): DockTarget | null
   if (!body) return null;
   if (within(body.getBoundingClientRect(), p)) {
     const rects = paneRects(body);
-    // Between two frames (their 1 px gap): the nearest.
-    const dist = (r: DOMRect) => (p.x < r.left ? r.left - p.x : p.x >= r.right ? p.x - r.right : 0);
+    // Between two frames (their 1 px gap), or over a strip's band: the nearest frame.
+    const dist = (r: DOMRect) => Math.hypot(p.x < r.left ? r.left - p.x : p.x >= r.right ? p.x - r.right : 0, p.y < r.top ? r.top - p.y : p.y >= r.bottom ? p.y - r.bottom : 0);
     const hit = rects.reduce((a, b) => (dist(b.rect) < dist(a.rect) ? b : a));
-    return { kind: 'pane', pane: hit.pane, zone: dropZone({ left: hit.rect.left, top: hit.rect.top, width: hit.rect.width, height: hit.rect.height }, p, st.split.panes.length) };
+    const zone = dropZone({ left: hit.rect.left, top: hit.rect.top, width: hit.rect.width, height: hit.rect.height }, p, st.split.panes.length);
+    // An edge without room for a new pane there (the window's current size) is that pane's middle.
+    const room = zone === 'middle' || st.canSplitHere(key, hit.pane, zone);
+    return { kind: 'pane', pane: hit.pane, zone: room ? zone : 'middle' };
   }
   return fallback ? { kind: 'pane', pane: st.split.focus, zone: 'middle' } : null;
 }
