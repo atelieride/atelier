@@ -61,6 +61,17 @@ test('the Workspace row says lines of work go in workspaces and the activities i
   expect(row.bullets).toHaveLength(3);
 });
 
+test('the Workspace row and its tile: up to four panes, side by side or stacked, with both split keys', async () => {
+  const { tiles } = await import('../../src/content/features');
+  const row = rows.find((r) => r.id === 'workspace')!;
+  const tile = tiles.find((t) => t.id === 'workspace')!;
+  for (const copy of [row.text, row.bullets[0], tile.text]) {
+    expect(copy).toMatch(/up to four panes, side by side or stacked/);
+    expect(copy).not.toMatch(/three/);
+  }
+  expect(row.bullets[0]).toContain('(⌘\\, ⌥⌘\\)');
+});
+
 test('the Ask row: right after Sessions, its shot, Try it opens Ask on a session at work; its copy claims only what Ask does', () => {
   const ids = rows.map((r) => r.id);
   expect(ids.indexOf('ask')).toBe(ids.indexOf('sessions') + 1);

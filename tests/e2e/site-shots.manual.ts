@@ -139,7 +139,7 @@ async function openFile(win: Page, query: string, file: string, side = false) {
 
 // The window, and the part of it each feature row shows (CSS px). The site draws every shot 1:1 on a Retina desktop
 // (site/src/components/Window.astro): the hero is the whole window at 1280, a feature row's column is 640 wide, so its
-// shot is a 640-wide crop of what the feature is about. Panes: sidebar to 313, workspace to 976 (split at 645), Changes.
+// shot is a 640-wide crop of what the feature is about. Panes: sidebar to 313, workspace to 976 (split at 640), Changes.
 const WINDOW = { width: 1280, height: 800 };
 // The Changes shot's window (the last one): as wide, shorter, so the commit drawer meets the rows.
 const GIT_WINDOW = { width: 1280, height: 680 };
@@ -149,7 +149,9 @@ const ASK_WINDOW = { width: 1280, height: 980 };
 const FEATURE = { width: 640, height: 440 };
 const CLIPS: Record<string, { x: number; y: number; width: number; height: number }> = {
   sessions: { x: 0, y: 0, ...FEATURE },
-  workspace: { x: 313, y: 45, ...FEATURE },
+  // The split from the strips down to the start of db-migration's transcript, stacked under the file: taller than the
+  // others, so the pane below shows what it holds and not only its strip.
+  workspace: { x: 313, y: 45, width: FEATURE.width, height: 554 },
   // The diff of welcome.tsx and Changes with the commit drawer open, down to the panel's bottom (GIT_WINDOW): taller
   // than the others, the rows and the drawer tell one story.
   changes: { x: 640, y: 45, width: FEATURE.width, height: 609 },
@@ -188,7 +190,8 @@ const CLIPS: Record<string, { x: number; y: number; width: number; height: numbe
 const MOBILE: Record<string, { x: number; y: number; width: number; height: number }> = {
   overview: { x: 313, y: 45, width: 360, height: 320 },
   sessions: { x: 0, y: 45, width: 320, height: 400 },
-  workspace: { x: 313, y: 45, width: 360, height: 400 },
+  // The right column (from x 640): the file, and db-migration stacked under it down to its transcript.
+  workspace: { x: 640, y: 45, width: 336, height: 554 },
   // The panel from the store's header down: the staged row, the folded mailer, the drawer with ✦'s message.
   changes: { x: 976, y: 90, width: 304, height: 564 },
   editor: { x: 640, y: 45, width: 336, height: 400 },
@@ -432,9 +435,19 @@ test('website screenshots', async () => {
     }
 
     await openFile(win, 'invoice', 'invoice.ts', true);  // split: session | file
-    await shot(win, shots, 'workspace', win.locator('.workspace-body > .pane-frame').nth(1));
     // The right pane starts where the 640-wide crops of Changes and the editor do (x 640): no sliver of the left one.
     await rightPaneAt(win, 640);
+    // A mixed layout: db-migration stacked under the file, picked in the pane Split Down opens below it.
+    await menu(app, 'View', 'Split Down');
+    await expect(win.locator('.workspace-body > .pane-frame')).toHaveCount(3);
+    await win.locator('.pane-picker .pp-item', { hasText: 'db-migration' }).click();
+    await expect(win.locator('.pane-strip[data-pane="2"] .tab[aria-selected="true"]')).toContainText('db-migration');
+    if (process.env.SHOTS_DEBUG) await win.screenshot({ path: join(process.env.SHOTS_DEBUG, 'workspace-full.png') });
+    await shot(win, shots, 'workspace', win.locator('.workspace-body > .pane-frame').nth(2));
+    // Back to session | file for the next shots: db-migration returns to the left pane and its emptied pane closes.
+    await menu(app, 'View', 'Move Tab to Left Pane');
+    await expect(win.locator('.workspace-body > .pane-frame')).toHaveCount(2);
+    await expect.poll(async () => Math.round((await win.locator('.workspace-body > .pane-frame').nth(1).boundingBox())!.x)).toBe(640);
 
     await win.locator('.session-row', { hasText: 'onboarding-copy' }).click();
     await expect(win.locator('.changes-body')).toContainText('welcome.tsx', { timeout: 90000 });

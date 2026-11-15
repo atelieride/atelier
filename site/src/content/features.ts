@@ -56,9 +56,9 @@ export const rows: FeatureRowData[] = [
   },
   {
     id: 'workspace', eyebrow: 'Workspace', title: 'Everything side by side.',
-    text: 'Sessions, terminals and files are tabs. Put up to three side by side, and keep separate lines of work in workspaces and the activities inside them.',
-    bullets: ['Split view with up to three panes (⌘\\)', 'Command palette (⌘K) for files, sessions and commands', 'Drag a tab out into its own window (⇧⌘O)'],
-    shot: 'workspace', corner: false, alt: 'A Claude Code session next to a file in split view',
+    text: 'Sessions, terminals and files are tabs. Split them into up to four panes, side by side or stacked, and keep separate lines of work in workspaces and the activities inside them.',
+    bullets: ['Split view with up to four panes, side by side or stacked (⌘\\, ⌥⌘\\)', 'Command palette (⌘K) for files, sessions and commands', 'Drag a tab out into its own window (⇧⌘O)'],
+    shot: 'workspace', corner: false, alt: 'Split view: a Claude Code session next to a file, with another session stacked under the file',
     shortcut: '⌘\\  split',
     demo: { view: 'split-right' }
   },
@@ -175,7 +175,7 @@ export const keys = [
 export const tiles: Tile[] = [
   { id: 'editor', title: 'Editor', text: 'Edit a file while Claude does. Nothing gets lost.', focus: '0% 80%' },
   { id: 'changes', title: 'Changes and review', text: 'Each change in the colour of the session that made it. Commit from there.', focus: '96% 11%' },
-  { id: 'workspace', title: 'Split view', text: 'Sessions, terminals and files, up to three side by side.', focus: '53% 0%' },
+  { id: 'workspace', title: 'Split view', text: 'Sessions, terminals and files in up to four panes, side by side or stacked.', focus: '53% 75%' },
   { id: 'docker', title: 'Docker', text: 'Logs and why a container stopped. Read-only.', focus: '20% 74%' },
   { id: 'redis', title: 'Redis', text: 'Keys and queues, failed jobs with their stack.', focus: '2% 71%' },
   { id: 'databases', title: 'Databases', text: 'Your Postgres, browsed in a read-only transaction.', focus: '50% 80%' },

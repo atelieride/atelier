@@ -69,7 +69,7 @@ terminal).
 | <kbd>⌘N</kbd> | New Claude session |
 | <kbd>⌘J</kbd> | Next session that needs you |
 | <kbd>⌘K</kbd> | Command palette: files, sessions, commands |
-| <kbd>⌘\\</kbd> / <kbd>⌘⌥\\</kbd> | Split right / split down |
+| <kbd>⌘\\</kbd> / <kbd>⌥⌘\\</kbd> | Split right / split down |
 | <kbd>⇧⌘N</kbd> | Resume a session |
 | <kbd>⌘L</kbd> | Mention the selected lines in the session |
 
