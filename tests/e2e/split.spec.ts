@@ -56,7 +56,7 @@ async function ptySettled(app: ElectronApplication, win: Page, id: string) {
 /** The visible terminal views, left to right: their grid column and screen text. */
 const slots = (win: Page) => win.evaluate(() => [...document.querySelectorAll<HTMLElement>('.workspace-body > .terminal-slot')]
   .filter((el) => el.style.display !== 'none')
-  .map((el) => ({ col: Number(el.style.gridColumnStart || 1), text: el.querySelector('.xterm-rows')?.textContent ?? '' }))
+  .map((el) => ({ col: Number(/^p(\d+)l$/.exec(el.style.gridColumnStart)?.[1] ?? 0) + 1, text: el.querySelector('.xterm-rows')?.textContent ?? '' }))
   .sort((a, b) => a.col - b.col));
 /**
  * Every visible view, picker and pane frame is exactly as wide as its pane's strip (one column, right under it) and runs
@@ -69,7 +69,7 @@ const overflowing = (win: Page) => win.evaluate(() => {
     .filter((el) => getComputedStyle(el).display !== 'none')
     .filter((el) => {
       const r = el.getBoundingClientRect();
-      const s = stripOf(Number(el.style.gridColumnStart));
+      const s = stripOf(Number(/^p(\d+)l$/.exec(el.style.gridColumnStart)?.[1] ?? -1) + 1);
       const bar = el.classList.contains('session-bar');
       return !s || Math.abs(r.left - s.left) > 0.5 || Math.abs(r.right - s.right) > 0.5 || r.top < s.bottom - 0.5 || (!bar && Math.abs(r.bottom - body.bottom) > 0.5);
     }).map((el) => el.className);
@@ -124,7 +124,7 @@ test('split view: a strip per pane, the picker, typing in the focused pane, focu
     // picker, which offers Alpha — it sits in the left strip, so it would move here.
     await menu(app, 'Split Right');
     await expect(win.locator('.workspace-body.is-split')).toBeVisible();
-    await expect(win.locator('.tabs.is-split > .pane-strip')).toHaveCount(2);
+    await expect(win.locator('.workspace-body > .pane-strip')).toHaveCount(2);
     expect(await strips(win)).toEqual([['Alpha', 'Bravo'], []]);
     const picker = win.locator('.pane-picker');
     await expect(picker.locator('.pp-item')).toHaveText([/Alpha/]);
@@ -187,13 +187,13 @@ test('split view: a strip per pane, the picker, typing in the focused pane, focu
     // Its session bar sits under its strip, without avatar or name (the tab right above says who).
     const bar = win.locator('.workspace-body > .session-bar');
     await expect(bar).toHaveClass(/is-focused/);
-    expect(await bar.evaluate((el) => el.style.gridColumnStart)).toBe('2');
+    expect(await bar.evaluate((el) => el.style.gridColumnStart)).toBe('p1l');
     await expect(bar.locator('.sb-title, .avatar')).toHaveCount(0);
     await expect.poll(async () => (await slots(win)).length).toBe(3);
     expect(await overflowing(win)).toEqual([]);
     // The waiting glow is the pane's own (Charlie needs permission), not the whole workspace's.
     await expect(win.locator('.workspace-body > .pane-frame.is-waiting')).toHaveCount(1);
-    expect(await win.locator('.workspace-body > .pane-frame.is-waiting').evaluate((el) => el.style.gridColumnStart)).toBe('2');
+    expect(await win.locator('.workspace-body > .pane-frame.is-waiting').evaluate((el) => el.style.gridColumnStart)).toBe('p1l');
     await expect(win.locator('.workspace-body.is-waiting')).toHaveCount(0);
     // No pane marks, no linked hover, no pane headers any more; each strip ends with its tools, the last with Changes.
     await expect(win.locator('.pane-mark, .is-linked, .workspace-body > .pane-head')).toHaveCount(0);
@@ -210,12 +210,12 @@ test('split view: a strip per pane, the picker, typing in the focused pane, focu
     // The pane ×: its tooltip says where its tab goes, and the tab lights up while it is hovered.
     const x = strip(win, 1).locator('.pane-close');
     await expect(x).toHaveAttribute('aria-label', 'Unsplit');
-    await expect(x).toHaveAttribute('data-tip', 'Unsplit — its tab moves to the left pane');
-    await expect(strip(win, 0).locator('.pane-close')).toHaveAttribute('data-tip', 'Unsplit — its tab moves to the right pane');
+    await expect(x).toHaveAttribute('data-tip', 'Unsplit — its tab moves to the pane on the left');
+    await expect(strip(win, 0).locator('.pane-close')).toHaveAttribute('data-tip', 'Unsplit — its tab moves to the pane on the right');
     await x.hover();
     await expect(strip(win, 1).locator('.tab.is-leaving')).toHaveText([/Charlie/]);
     await expect(win.locator('.tab.is-leaving')).toHaveCount(1);
-    await expect(win.locator('.tooltip', { hasText: 'Unsplit — its tab moves to the left pane' })).toBeVisible();
+    await expect(win.locator('.tooltip', { hasText: 'Unsplit — its tab moves to the pane on the left' })).toBeVisible();
     // Its own hover: rose.
     await expect.poll(() => x.evaluate((el) => getComputedStyle(el).color)).toBe('rgb(251, 113, 133)');
     await look(win, `${SHOTS}/split-unsplit-hover.png`, { settle: 250 });
@@ -235,7 +235,7 @@ test('split view: a strip per pane, the picker, typing in the focused pane, focu
     await win.evaluate((id) => (window as unknown as { atelier: Api }).atelier.terminals.input(id, 'exit\n'), bravo);
     await expect(win.locator('.workspace-body.is-split > .pane-frame')).toHaveCount(2, { timeout: 10000 });
     await expect(bar).toHaveClass(/is-focused/);
-    expect(await bar.evaluate((el) => el.style.gridColumnStart)).toBe('1');
+    expect(await bar.evaluate((el) => el.style.gridColumnStart)).toBe('p0l');
     expect(await strips(win)).toEqual([['Charlie'], ['Alpha']]);
     await look(win.locator('.workspace'), `${SHOTS}/split-2panes.png`, { settle: 300 });
     // At the 960 px minimum with Changes open: the strips and the bar adapt, nothing wraps or overlaps.
@@ -286,12 +286,15 @@ test('split view: a strip per pane, the picker, typing in the focused pane, focu
     await expect(win.locator('.workspace-body.is-split')).toHaveCount(0);
     await expect(win.locator('.tab', { hasText: 'Alpha' })).toHaveCount(0);
     await expect(win.locator('.tab.is-active')).toHaveText([/Charlie/]);
-    // The fourth pane is refused with a toast.
+    // The fifth pane is refused with a toast (Changes closed: four panes fit side by side at 1280 px).
+    if (await win.locator('.changes-toggle.is-on').count()) await win.locator('.changes-toggle').click();
     await menu(app, 'Split Right');
     await menu(app, 'Split Right');
     await menu(app, 'Split Right');
-    await expect(win.locator('.workspace-body.is-split > .pane-frame')).toHaveCount(3);
-    await expect(win.locator('.toast')).toContainText('Up to three panes side by side');
+    await expect(win.locator('.workspace-body.is-split > .pane-frame')).toHaveCount(4);
+    await menu(app, 'Split Right');
+    await expect(win.locator('.workspace-body.is-split > .pane-frame')).toHaveCount(4);
+    await expect(win.locator('.toast')).toContainText('Up to four panes');
 
     // A file from the palette opens in the focused (empty, rightmost) pane, as a tab of its strip; it takes the whole pane
     // (no bar above it), its own file bar inside.
@@ -299,13 +302,13 @@ test('split view: a strip per pane, the picker, typing in the focused pane, focu
     await win.locator('.palette-input').fill('notes');
     await win.locator('.palette-item', { hasText: 'notes.md' }).click();
     await expect(win.locator('.workspace-body > .file-view')).toBeVisible();
-    expect(await win.locator('.workspace-body > .file-view').evaluate((el) => el.style.gridColumnStart)).toBe('3');
-    await expect(strip(win, 2).locator('.tab.is-active')).toHaveText([/notes\.md/]);
-    await expect(win.locator('.pane-picker')).toHaveCount(1);
+    expect(await win.locator('.workspace-body > .file-view').evaluate((el) => el.style.gridColumnStart)).toBe('p3l');
+    await expect(strip(win, 3).locator('.tab.is-active')).toHaveText([/notes\.md/]);
+    await expect(win.locator('.pane-picker')).toHaveCount(2);
     expect(await overflowing(win)).toEqual([]);
     await win.locator('.workspace-body .cm-content').click();
     await win.keyboard.type('# Split');
-    await expect(strip(win, 2).locator('.tab-dirty')).toHaveCount(1);
+    await expect(strip(win, 3).locator('.tab-dirty')).toHaveCount(1);
     await look(win.locator('.workspace'), `${SHOTS}/split-file.png`, { settle: 300 });
   } finally {
     await stop(app, home);
@@ -402,7 +405,7 @@ test('tabs move between panes with ⌃⌘←/→ and the strip; a file with unsa
     await win.mouse.up();
     await expect.poll(() => strips(win)).toEqual([['Alpha'], ['notes.md', 'Bravo']]);
     await expect(strip(win, 1).locator('.tab.is-active')).toHaveText([/notes\.md/]);
-    expect(await win.locator('.workspace-body > .file-view:visible').evaluate((el) => el.style.gridColumnStart)).toBe('2');
+    expect(await win.locator('.workspace-body > .file-view:visible').evaluate((el) => el.style.gridColumnStart)).toBe('p1l');
     await expect(editor).toContainText('Unsaved line');
     await editor.click();
     await win.keyboard.press('Meta+z');

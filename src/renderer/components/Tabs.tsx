@@ -29,11 +29,10 @@ import { realPath, worktreeAt } from '../worktrees';
 import { isExternal, outsideDir } from '../external';
 import { dockTargetAt } from '../dock-target';
 import { pressTab, sameSpot } from '../tab-drag';
-import { MAX_PANES, gridColumns, stripKeys, unsplitTarget } from '../split';
-import { sizesAt } from '../split-tree';
-
-/** One pane's widths, while a split has no row at its root. */
-const WHOLE = [1];
+import { MAX_PANES, stripKeys, unsplitTarget } from '../split';
+import { topRight } from '../split-tree';
+import { paneBox } from '../pane-place';
+import { usePaneArea } from '../pane-area';
 import { isProjectKey } from '../workspaces';
 import { kbd } from '../kbd';
 import { wsChangeCount } from '../workspace-view';
@@ -140,24 +139,34 @@ const Tab = memo(function Tab({ k, active, front, drop, lifted, leaving, term, s
   );
 }, (a, b) => tabPropsEqual(a, b) && a.lifted === b.lifted && !!a.leaving === !!b.leaving);
 
+/** A "+" handler that never changes identity: the memoized strips never re-render for a new one. */
+function useStableNew(onNew: (anchor: HTMLElement) => void): (anchor: HTMLElement) => void {
+  const newRef = useRef(onNew);
+  newRef.current = onNew;
+  return useCallback((anchor: HTMLElement) => newRef.current(anchor), []);
+}
+
 /**
- * The tab bar: with one pane, today's bar — the strip, "+", the Changes toggle. Split, the
- * row keeps its height and is cut into one strip per pane, each exactly above its pane (the panes' own columns, so a
- * divider moves the strips' edges too), with the pane tools at its end; the last strip ends with the Changes toggle.
+ * The tab bar above the workspace with one pane: today's bar — the strip, "+", the Changes toggle. Split, there is no
+ * bar here: every pane has its own strip on top of it (PaneStrips).
  */
 export function Tabs({ onNew }: { onNew: (anchor: HTMLElement) => void }) {
   const count = useApp((s) => s.split.panes.length);
-  const fractions = useApp((s) => sizesAt(s.split.tree, []) ?? WHOLE);
-  // A stable "+" handler: the memoized strips never re-render for a divider drag (only the grid's columns change).
-  const newRef = useRef(onNew);
-  newRef.current = onNew;
-  const stableNew = useCallback((anchor: HTMLElement) => newRef.current(anchor), []);
-  if (count <= 1) return <div className="tabs"><PaneStrip pane={0} split={false} last onNew={stableNew} /></div>;
-  return (
-    <div className="tabs is-split" style={{ gridTemplateColumns: gridColumns(fractions) }}>
-      {Array.from({ length: count }, (_, i) => <PaneStrip key={i} pane={i} split last={i === count - 1} onNew={stableNew} />)}
-    </div>
-  );
+  const stableNew = useStableNew(onNew);
+  if (count > 1) return null;
+  return <div className="tabs"><PaneStrip pane={0} split={false} last onNew={stableNew} /></div>;
+}
+
+/**
+ * Split: one strip per pane, placed in the workspace body on top of its pane (its strip band: a divider or a resize
+ * moves it with the pane, without re-rendering it), with the pane tools at its end. The strip of the pane in the
+ * top-right corner ends with the Changes toggle, where the bar above had it.
+ */
+export function PaneStrips({ onNew }: { onNew: (anchor: HTMLElement) => void }) {
+  const count = useApp((s) => s.split.panes.length);
+  const corner = useApp((s) => topRight(s.split.tree));
+  const stableNew = useStableNew(onNew);
+  return <>{Array.from({ length: count }, (_, i) => <PaneStrip key={i} pane={i} split last={i === corner} onNew={stableNew} />)}</>;
 }
 
 /** One strip: pane `pane`'s tabs (one pane: every tab), its "+", in a split its tools, and on the last the Changes toggle. */
@@ -349,7 +358,8 @@ export const PaneStrip = memo(function PaneStrip({ pane, split, last, onNew }: {
   // A press anywhere in the strip focuses its pane (its blank parts never take the keyboard from the pane's view); a
   // right-click on its empty part opens the pane's menu. The focused pane's strip is the current one for assistive tech.
   return (
-    <div className={`pane-strip${focused ? ' is-focused' : ''}`} data-pane={pane} role="group" aria-label={t.split.paneN(pane + 1)} aria-current={focused || undefined}
+    <div className={`pane-strip${focused ? ' is-focused' : ''}${last ? ' has-changes' : ''}`} data-pane={pane} role="group" aria-label={t.split.paneN(pane + 1)} aria-current={focused || undefined}
+      style={paneBox(pane, 'strip')}
       onMouseDown={keepPaneKeyboard}
       // The window's own controls in it (the Changes toggle, data-pane-keep) leave the focus where it is.
       onPointerDown={(e) => { if (!useApp.getState().tabDrag && !(e.target as HTMLElement).closest?.('[data-pane-keep]')) useApp.getState().focusPane(pane); }}
@@ -359,19 +369,46 @@ export const PaneStrip = memo(function PaneStrip({ pane, split, last, onNew }: {
   );
 });
 
-/** A pane's tools at the end of its strip: Split Right, then the × that unsplits it (its tabs move, nothing closes). */
+/** Whether ⌥ is held, while the component is mounted (the Split button turns into Split Down). */
+function useAltHeld(): boolean {
+  const [held, setHeld] = useState(false);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => setHeld(e.altKey);
+    const off = () => setHeld(false);
+    window.addEventListener('keydown', key);
+    window.addEventListener('keyup', key);
+    window.addEventListener('blur', off);
+    return () => { window.removeEventListener('keydown', key); window.removeEventListener('keyup', key); window.removeEventListener('blur', off); };
+  }, []);
+  return held;
+}
+
+/**
+ * A pane's tools at the end of its strip: Split Right (with ⌥, Split Down), then the × that unsplits it (its tabs move,
+ * nothing closes). The split is offered only while there is room for it: at four panes, or with a pane too small at
+ * the window's current size, it says why instead.
+ */
 function PaneTools({ pane, onLeaving }: { pane: number; onLeaving: (on: boolean) => void }) {
+  const alt = useAltHeld();
+  const side = alt ? 'bottom' : 'right';
   const full = useApp((s) => s.split.panes.length >= MAX_PANES);
+  // The room depends on the body's size too: re-checked when it changes.
+  const area = usePaneArea((a) => a.area);
+  const room = useApp((s) => { void area; return s.canSplitHere(null, pane, side); });
   const target = useApp((s) => { const x = unsplitTarget(s.split, pane); return x ? `${x.to}:${x.count}` : ''; });
   const [to, count] = target.split(':') as ['left' | 'right' | 'top' | 'bottom', string];
   const tip = t.split.unsplitTip(to ?? 'left', Number(count ?? 0));
   useEffect(() => () => onLeaving(false), [onLeaving]);
+  const blocked = full || !room;
   return (
     <span className="tab-tools">
-      <button type="button" className="sb-btn icon pane-split" aria-label={t.split.splitRight} aria-disabled={full || undefined}
-        data-tip={full ? t.split.max : t.split.splitHint} data-kbd={full ? undefined : kbd('⌘\\')}
-        onClick={() => { if (!full) useApp.getState().splitRight(); }}>
-        <Icon name="split" size={13} stroke={1.8} />
+      <button type="button" className="sb-btn icon pane-split" aria-label={alt ? t.split.splitDown : t.split.splitRight} aria-disabled={blocked || undefined}
+        data-tip={full ? t.split.max : !room ? t.split.noRoom : t.split.splitHint} data-kbd={blocked ? undefined : kbd(alt ? '⇧⌘\\' : '⌘\\')}
+        onClick={(e) => {
+          const s = e.altKey ? 'bottom' : 'right';
+          if (useApp.getState().canSplitHere(null, pane, s)) useApp.getState().splitPane(s);
+        }}>
+        <Icon name={alt ? 'splitDown' : 'split'} size={13} stroke={1.8} />
       </button>
       <span className="pane-sep" aria-hidden="true" />
       <button type="button" className="sb-btn icon pane-close" aria-label={t.split.close} data-tip={tip}

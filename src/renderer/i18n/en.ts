@@ -1541,11 +1541,12 @@ const strings = {
     newTerminal: 'New terminal',
     close: 'Unsplit',
     splitRight: 'Split right',
-    splitHint: 'Split right · drag a tab onto a pane edge',
+    splitDown: 'Split down',
+    splitHint: 'Split right · ⌥ split down · drag a tab onto a pane edge',
     dropHere: 'Move to this pane',
     dropNew: 'New pane',
     divider: 'Resize panes',
-    dividerHint: 'Drag to resize · double-click for equal widths'
+    dividerHint: 'Drag to resize · double-click for equal sizes'
   },
   /** Spaces: Docker, Redis, Databases and Automations, each with its own tabs. */
   spaces: {

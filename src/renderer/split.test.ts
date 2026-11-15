@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
-  canMoveStep, canMoveToNewPane, dropZone, focusDir, focusPane, flatten, fronts, isSplit, lift, mapLayoutKeys, mapLayoutPanes, moveStep, moveTab, moveToNewPane, openToSide, paneCell, paneOf,
+  canMoveStep, canMoveToNewPane, dropZone, focusDir, focusPane, flatten, fronts, isSplit, lift, mapLayoutKeys, mapLayoutPanes, moveStep, moveTab, moveToNewPane, openToSide, paneOf,
   pickableKeys, placeOpened, reconcile, removeKeys, renameKeys, restoreLayout, savedKeys, serializeLayout, single, splitPane, stripKeys, unsplit, unsplitAll, unsplitTarget, visibleKeys,
   MAX_PANES, type Pane, type Split
 } from './split';
@@ -494,16 +494,6 @@ describe('renamed tabs', () => {
     const s = S([P(['t:a', 'f:/p/x.ts'], 'f:/p/x.ts'), P([], null)]);
     expect(renameKeys(s, (k) => (k === 'f:/p/x.ts' ? 'f:/p/z.ts' : k))).toEqual(S([P(['t:a', 'f:/p/z.ts'], 'f:/p/z.ts'), P([], null)]));
     expect(renameKeys(s, (k) => k)).toBe(s);
-  });
-});
-
-describe('grid cells', () => {
-  test('a cell spans exactly one column and one row: an absolutely placed view with an `auto` end line would run to the grid\'s edge', () => {
-    expect(paneCell(0, 'body')).toEqual({ gridColumn: '1 / 2', gridRow: '2 / 3' });
-    expect(paneCell(2, 'head')).toEqual({ gridColumn: '3 / 4', gridRow: '1 / 2' });
-  });
-  test('a pane without a bar (anything but a Claude session) puts its view in both rows', () => {
-    expect(paneCell(1, 'full')).toEqual({ gridColumn: '2 / 3', gridRow: '1 / 3' });
   });
 });
 

@@ -150,6 +150,7 @@ export const SPECS: Record<string, Area[]> = {
   'source-control-fetch.spec.ts': ['scm', 'changes'],
   'source-control.spec.ts': ['scm'],
   'split-focus.spec.ts': ['workspace'],
+  'split-grid.spec.ts': ['workspace'],
   'split-layout.spec.ts': ['workspace'],
   'split.spec.ts': ['workspace'],
   'workspaces.spec.ts': ['workspace', 'sessions'],
@@ -307,7 +308,8 @@ export const SOURCES: Record<string, Area[]> = {
   'src/renderer/open-paths.ts': ['files'],
   'src/renderer/palette-query.ts': ['workspace'],
   'src/renderer/pointer-hover.ts': ['workspace', 'scm'],
-  'src/renderer/pane-focus.ts': ['workspace'],
+  // Split view panes: pane-focus.ts, pane-place.ts, pane-area.ts.
+  'src/renderer/pane-': ['workspace'],
   'src/renderer/panels.ts': ['workspace'],
   'src/renderer/pins.ts': ['sessions'],
   // The sidebar's own order: manual orders, bands, moves.

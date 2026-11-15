@@ -137,6 +137,7 @@
 .resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: -1px; width: 2px; background: var(--brand); opacity: 0; transition: opacity var(--t-fast) var(--ease); pointer-events: none; }
 .resizer:hover::after, .resizer.is-dragging::after, .resizer:focus-visible::after { opacity: 1; }
 html.is-resizing, html.is-resizing * { cursor: col-resize !important; user-select: none !important; }
+html.is-resizing-rows, html.is-resizing-rows * { cursor: row-resize !important; user-select: none !important; }
 /* Bottom bar */
 .footer { height: 26px; flex-shrink: 0; display: flex; align-items: center; gap: 16px; padding: 0 12px; border-top: 1px solid var(--line-soft); font-size: 11px; color: var(--text-4); }
 .foot-item { display: inline-flex; align-items: center; gap: 6px; color: var(--text-4); }
@@ -1480,7 +1481,9 @@ button.either:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 /* Split view: panes side by side under their strips. The views stay children of the body and
    are only placed in a grid cell (row 1: a Claude session's bar, row 2: its content; any other view takes both rows);
    the 1 px gap between columns is the divider. A pane's focus shows on its strip's tab and its frame. */
-.workspace-body.is-split { display: grid; grid-template-rows: 36px minmax(0, 1fr); column-gap: 1px; background: var(--line); }
+/* Split: a grid whose lines are every pane's edges and bands, in px from the layout (written on the element by
+   PaneLayout); its 1 px gaps show the line between panes. */
+.workspace-body.is-split { display: grid; background: var(--line); }
 .is-split > .session-bar { position: relative; min-width: 0; overflow: hidden; }
 /* A pop-out's bar for anything but a session. */
 .pane-head { container: phead / inline-size; height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--line-soft); background: var(--bg-2); color: var(--text-2); }
@@ -1534,10 +1537,13 @@ button.either:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 /* A narrow window: the project name goes first, then Move Back keeps only its icon (its name is the tooltip). */
 @container sbar (max-width: 300px) { .popout-bar .popout-project { display: none; } }
 @media (max-width: 620px) { .popout-back span { display: none; } .popout-back { width: 28px; padding: 0; justify-content: center; } }
-/* Between two panes (placed in the left one's columns, both rows): a 9 px grab area centered on the 1 px gap; its line
-   lights up with the brand on hover (after a beat, so passing over it doesn't flash), while dragging and with focus. */
-.pane-divider { position: absolute; top: 0; bottom: 0; right: -5px; left: auto; width: 9px; z-index: 6; cursor: col-resize; outline: none; touch-action: none; }
+/* Between two neighbours of a layout group: a 9 px grab area centered on the 1 px gap, along the whole gap (placed in px
+   by PaneDivider); vertical between side-by-side panes, horizontal between stacked ones. Its line lights up with the
+   brand on hover (after a beat, so passing over it doesn't flash), while dragging and with focus. */
+.pane-divider { position: absolute; z-index: 6; cursor: col-resize; outline: none; touch-action: none; }
+.pane-divider[data-dir="column"] { cursor: row-resize; }
 .pane-divider::after { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: var(--brand); opacity: 0; transition: opacity var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); pointer-events: none; }
+.pane-divider[data-dir="column"]::after { top: 4px; bottom: auto; left: 0; right: 0; width: auto; height: 1px; }
 .pane-divider:hover::after { opacity: 1; transition-delay: 90ms; }
 .pane-divider.is-dragging::after, .pane-divider:focus-visible::after { opacity: 1; transition-delay: 0ms; box-shadow: 0 0 0 1px var(--edge-violet); }
 /* A tab dragged over the workspace (the strip holds the pointer), or a pop-out dragged back: where
@@ -1596,9 +1602,7 @@ button.either:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 }
 /* A file in a pane: the pane header names it (and its folder); the editor's own bar stays only for its notes and the
    margin/diff switch. */
-/* Split view with tab groups: the tab row keeps its height and is cut into one strip per
-   pane, on the panes' own columns; the 1px gaps show the line between panes, as in the workspace below. */
-.tabs.is-split { display: grid; column-gap: 1px; background: var(--line); box-shadow: none; }
+/* Split view with tab groups: every pane's own strip, on top of it in the workspace body. */
 .pane-strip { --fr: 8px; display: flex; align-items: stretch; min-width: 0; background: var(--bg-tabs); box-shadow: inset 0 -1px 0 var(--line-soft); }
 .pane-strip > .tab-strip { padding: 0 8px; }
 /* The pane tools at the strip's end: Split Right and the ×, apart by a hairline; quiet on an unfocused pane. */
@@ -1607,7 +1611,7 @@ button.either:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .pane-strip.is-focused .tab-tools .sb-btn, .pane-strip:hover .tab-tools .sb-btn { color: var(--text-2); }
 .tab-tools .pane-split[aria-disabled] { opacity: .45; cursor: default; }
 .pane-strip .tab-tools .sb-btn.pane-close:hover, .pane-strip .tab-tools .sb-btn.pane-close:focus-visible { background: var(--tint-error-strong); color: var(--error); }
-.pane-strip:last-child .tab-tools { padding-right: 0; }
+.pane-strip.has-changes .tab-tools { padding-right: 0; }
 /* A narrow strip keeps its tab in front readable: Split Right gives way first, then "+" (⌘\, the menus and the strip's
    right-click still have both); the × stays. */
 .pane-strip { container: pstrip / inline-size; }

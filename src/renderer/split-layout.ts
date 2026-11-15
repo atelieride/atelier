@@ -32,11 +32,13 @@ export function minSize(node: LayoutNode, axis: Axis): number {
 
 /**
  * How much of `available` px each child gets: its share, children under their minimum raised to it and the difference
- * taken from the others in proportion to what they have above theirs; with less room than every minimum, plain shares.
+ * taken from the others in proportion to what they have above theirs. With less room than every minimum, the minimums
+ * shrink together to fit (each child its minimum's part of the room): no child is starved because of a small share.
  */
-function allocate(sizes: readonly number[], mins: readonly number[], available: number): number[] {
+function allocate(sizes: readonly number[], minimums: readonly number[], available: number): number[] {
   const target = sizes.map((s) => s * available);
-  if (mins.reduce((a, b) => a + b, 0) >= available) return target;
+  const total = minimums.reduce((a, b) => a + b, 0);
+  const mins = total > available ? minimums.map((m) => (total > 0 ? (m * available) / total : 0)) : minimums;
   const deficit = target.reduce((a, t, i) => a + Math.max(0, mins[i]! - t), 0);
   if (deficit <= 0) return target;
   const excess = target.map((t, i) => Math.max(0, t - mins[i]!));

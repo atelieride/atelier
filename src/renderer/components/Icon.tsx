@@ -66,6 +66,8 @@ const paths = {
   prClosed: <><circle cx="6" cy="4.8" r="1.9" /><circle cx="6" cy="15.2" r="1.9" /><circle cx="14" cy="15.2" r="1.9" /><path d="M6 6.7v6.6M14 10.2v3.1M12.2 4.2l3.6 3.6M15.8 4.2l-3.6 3.6" /></>,
   // Split view: a window in two columns; the arrows step between panes.
   split: <><rect x="3" y="4" width="14" height="12" rx="2" /><path d="M10 4v12" /></>,
+  // Split Down: the same window cut across, one pane over the other.
+  splitDown: <><rect x="3" y="4" width="14" height="12" rx="2" /><path d="M3 10h14" /></>,
   // Show or hide the sidebar: a window with its left column.
   sidebar: <><rect x="3" y="4" width="14" height="12" rx="2" /><path d="M8 4v12" /></>,
   splitFocus: <><rect x="3" y="4" width="14" height="12" rx="2" /><path d="M10 4v12M5.5 10h2.5M7 8.6l1.4 1.4L7 11.4" /></>,

@@ -21,9 +21,9 @@ async function menu(app: ElectronApplication, label: string) {
   }, label);
 }
 
-/** The screen text of the terminal shown in grid column `col` (1-based). */
+/** The screen text of the terminal shown in pane `col` (1-based; one pane: 1). */
 const textOf = (win: Page, col: number) => win.evaluate((c) => [...document.querySelectorAll<HTMLElement>('.workspace-body > .terminal-slot')]
-  .find((el) => el.style.display !== 'none' && Number(el.style.gridColumnStart || 1) === c)?.querySelector('.xterm-rows')?.textContent ?? '', col);
+  .find((el) => el.style.display !== 'none' && Number(/^p(\d+)l$/.exec(el.style.gridColumnStart)?.[1] ?? 0) + 1 === c)?.querySelector('.xterm-rows')?.textContent ?? '', col);
 
 test('split view: typing never reaches a pane that is not focused; strip clicks and drops keep the keyboard in their pane', async () => {
   // Test-ONLY tmux server (a Services pane): socket in the run's temp root (tests/support/temp-root.ts), dedicated name.

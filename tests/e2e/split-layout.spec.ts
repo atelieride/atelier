@@ -108,15 +108,16 @@ test('open to the side, a tab\'s moves, the pane\'s menu and Split Right; tabs d
     await tabMenu(win, 'Alpha', 'Move to New Pane Right');
     await expect.poll(() => strips(win)).toEqual([['Charlie'], ['Bravo'], ['Alpha']]);
     expect(await focusedIndex(win)).toBe(2);
-    // At three panes Split Right stays, quiet, and says why.
-    await expect(strip(win, 0).locator('.pane-split')).toHaveAttribute('aria-disabled', 'true');
-    await expect(strip(win, 0).locator('.pane-split')).toHaveAttribute('data-tip', 'Up to three panes side by side');
+    // At three panes Split Right is still offered: a fourth pane fits (Changes closed, the window 1280 px wide).
+    if (await win.locator('.changes-toggle.is-on').count()) await win.locator('.changes-toggle').click();
+    await expect(strip(win, 0).locator('.pane-split')).not.toHaveAttribute('aria-disabled', 'true');
+    await expect(strip(win, 0).locator('.pane-split')).toHaveAttribute('data-tip', 'Split right · ⌥ split down · drag a tab onto a pane edge');
 
     // The pane's menu on its strip's empty part (the press focuses that pane): Unsplit on the first one. Its tab joins
     // the right neighbour, before that pane's own; the neighbour's front stays in front.
     const s0 = (await strip(win, 0).boundingBox())!;
     await win.mouse.click(s0.x + s0.width - 90, s0.y + s0.height / 2, { button: 'right' });
-    await expect(win.getByRole('menuitem', { name: /Split Right/ })).toHaveAttribute('aria-disabled', 'true');
+    await expect(win.getByRole('menuitem', { name: /Split Right/ })).not.toHaveAttribute('aria-disabled', 'true');
     await win.getByRole('menuitem', { name: 'Unsplit', exact: true }).click();
     await expect.poll(() => strips(win)).toEqual([['Charlie', 'Bravo'], ['Alpha']]);
     expect(await focusedIndex(win)).toBe(0);
@@ -283,9 +284,9 @@ test('dividers resize and equalize; every pane\'s tabs — a file too — come b
     const ratio = ws[0]! / (ws[0]! + ws[1]!);
     const count = await termCount(win);
     // Saved (debounced) before the app closes: three panes with their tabs, the left one focused, at the dragged ratio.
-    type Saved = { v: number; panes: { tabs: string[] }[]; fractions: number[]; focus: number };
+    type Saved = { v: number; panes: { tabs: string[] }[]; tree: { sizes: number[] }; focus: number };
     const saved = () => win.evaluate(() => Object.values(JSON.parse(localStorage.getItem('atelier.splitLayout') ?? '{}') as Record<string, Saved>)[0] ?? null);
-    await expect.poll(async () => { const l = await saved(); return !!l && l.v === 2 && l.panes.length === 3 && l.focus === 0 && Math.abs(l.fractions[0]! / (l.fractions[0]! + l.fractions[1]!) - ratio) < 0.02; }).toBe(true);
+    await expect.poll(async () => { const l = await saved(); return !!l && l.v === 3 && l.panes.length === 3 && l.focus === 0 && Math.abs(l.tree.sizes[0]! / (l.tree.sizes[0]! + l.tree.sizes[1]!) - ratio) < 0.02; }).toBe(true);
     expect((await saved())!.panes[2]!.tabs[0]).toMatch(/^f:.*notes\.md$/);
     await app.close();
 

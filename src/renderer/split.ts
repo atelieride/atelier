@@ -7,7 +7,6 @@
 // store did to the order and the active key (a tab opened, closed, a terminal exited, a key activated). The layout tree
 // (split-tree.ts) says where each pane is; `panes[i]` is its i-th leaf, so pane indices are the reading order.
 import type { TerminalInfo } from '@shared/protocol';
-import { MIN_PANE_PX } from './split-layout';
 import { insertBeside, isLayoutNode, leaf, leafCount, neighbour, normalize, receiverOf, removeLeaf, row, type LayoutNode, type Side } from './split-tree';
 import { afterClose, moveTab as moveKey, openTab, type TabKey } from './tabs-model';
 
@@ -342,17 +341,6 @@ export function unsplitTarget(s: Split, i: number): { to: Side; count: number } 
 }
 
 /**
- * A pane's grid cell: row 1 its bar (a Claude session's session bar), row 2 the content under it, or both rows for a
- * pane without a bar (`full`: anything but a session). Both lines explicit: for an absolutely
- * positioned view an `auto` end line is the grid container's edge, so `grid-column: 2` alone would run over the panes on
- * its right.
- */
-export function paneCell(i: number, row: 'head' | 'body' | 'full'): { gridColumn: string; gridRow: string } {
-  const rows = row === 'head' ? '1 / 2' : row === 'body' ? '2 / 3' : '1 / 3';
-  return { gridColumn: `${i + 1} / ${i + 2}`, gridRow: rows };
-}
-
-/**
  * Where a tab opened from a click goes, with a window's preview slot (files' and tables'): openTab's
  * placement, except that a preview shown in a pane that isn't focused is never replaced (it stays there, the new tab
  * opens after the active one); a replaced preview gives the new key its place in its pane in the same result — never a
@@ -403,29 +391,6 @@ export function dropZone(pane: { left: number; top: number; width: number; heigh
   ];
   const [side, d] = near.reduce((a, b) => (b[1] < a[1] ? b : a));
   return d < 1 ? side : 'middle';
-}
-
-export { DIVIDER_STEP_PX, MIN_PANE_PX } from './split-layout';
-
-/**
- * Divider `i` (between panes i and i+1) dragged by `dx` px in a workspace whose panes add up to `width` px: only those
- * two panes change, neither below MIN_PANE_PX. Too narrow for every pane's minimum: unchanged (they are shown equal).
- */
-export function dragDivider(fractions: number[], i: number, dx: number, width: number, min = MIN_PANE_PX): number[] {
-  const n = fractions.length;
-  if (i < 0 || i >= n - 1 || width <= 0 || width < n * min) return fractions;
-  const m = min / width;
-  const pair = fractions[i]! + fractions[i + 1]!;
-  if (pair < 2 * m) return fractions;
-  const left = Math.min(Math.max(fractions[i]! + dx / width, m), pair - m);
-  return fractions.map((f, j) => (j === i ? left : j === i + 1 ? pair - left : f));
-}
-
-/** The pane columns: each fraction as `fr`, never below MIN_PANE_PX — or an equal share when the workspace is too narrow for that. */
-export function gridColumns(fractions: number[]): string {
-  const n = fractions.length;
-  const floor = `min(${MIN_PANE_PX}px, calc((100% - ${n - 1}px) / ${n}))`;
-  return fractions.map((f) => `minmax(${floor}, ${f}fr)`).join(' ');
 }
 
 /**

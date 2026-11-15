@@ -63,10 +63,14 @@ describe('layoutPanes', () => {
     expect(panes[1]!.x + panes[1]!.w).toBe(801);
     expect(panes[0]!.h).toBe(600);
   });
-  test('honours minimums when there is room, else shares in proportion', () => {
+  test('honours minimums when there is room; with less, the minimums shrink together, so no pane is starved', () => {
     expect(layoutPanes(R([L, L], [0.1, 0.9]), 1000, 600).panes.map((r) => r.w)).toEqual([240, 759]);
-    expect(layoutPanes(R([L, L], [0.1, 0.9]), 300, 600).panes.map((r) => r.w)).toEqual([30, 269]);
     expect(layoutPanes(C([L, L], [0.1, 0.9]), 800, 1000).panes.map((r) => r.h)).toEqual([180, 819]);
+    // 299 px for two 240 px minimums: each pane gets half, whatever its share.
+    expect(layoutPanes(R([L, L], [0.1, 0.9]), 300, 600).panes.map((r) => r.w)).toEqual([150, 149]);
+    expect(layoutPanes(R([L, L], [2 / 3, 1 / 3]), 343, 600).panes.map((r) => r.w)).toEqual([171, 171]);
+    // A three-pane column at 299 px of room (minimums 3 × 180): each pane gets a third, the gaps their pixel.
+    expect(layoutPanes(C([L, L, L], [0.6, 0.2, 0.2]), 800, 301).panes.map((r) => r.h)).toEqual([100, 99, 100]);
   });
   test('a nested column\'s minimum height is the sum of its children\'s; across, the largest child\'s', () => {
     expect(minSize(C([L, L]), 'h')).toBe(2 * 180 + 1);

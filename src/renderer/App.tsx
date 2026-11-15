@@ -3,7 +3,7 @@ import { ActivityBar } from './components/ActivityBar';
 import { Footer } from './components/Footer';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
-import { Tabs } from './components/Tabs';
+import { PaneStrips, Tabs } from './components/Tabs';
 import { Welcome } from './components/Welcome';
 import { TerminalView } from './terminal/TerminalView';
 import { FileView } from './editor/FileView';
@@ -44,9 +44,10 @@ import { applyOpenPaths } from './open-paths';
 import { runShellCommand } from './shell-command';
 import { openNewMenu } from './menus';
 import { cycle, nth, type TabKey } from './tabs-model';
-import { fronts, gridColumns, paneCell } from './split';
-import { sizesAt } from './split-tree';
-import { PaneDivider } from './components/PaneDivider';
+import { fronts } from './split';
+import { paneBox } from './pane-place';
+import { usePaneArea } from './pane-area';
+import { PaneLayout } from './components/PaneLayout';
 import { PaneDropLayer } from './components/PaneDropLayer';
 import { goToAttention, seenNow } from './attention-nav';
 import { viewingNow } from './notes';
@@ -146,16 +147,14 @@ const OriginSheet = lazy(() => import('./components/OriginSheet').then((m) => ({
 // in; 2026-11-08).
 const ThemeSheet = lazy(() => import('./components/ThemeSheet').then((m) => ({ default: m.ThemeSheet })));
 
-/** A divider sits in the columns of the pane on its left, over both rows (header and content), on that pane's right edge. */
-const dividerCell = (i: number): CSSProperties => ({ gridColumn: `${i + 1} / ${i + 2}`, gridRow: '1 / 3' });
-
 /** Split view: pointer down anywhere in a pane focuses it, before the terminal, editor or header gets the click (a pane's Close buttons excepted: closing another pane keeps the focus where it is). */
 function focusPaneAt(e: ReactPointerEvent<HTMLDivElement>) {
   if ((e.target as HTMLElement).closest?.('[data-pane-keep]')) return;
-  for (const el of e.currentTarget.querySelectorAll<HTMLElement>(':scope > .pane-frame')) {
-    const r = el.getBoundingClientRect();
-    if (e.clientX >= r.left && e.clientX < r.right) { useApp.getState().focusPane(Number(el.dataset.pane)); return; }
-  }
+  const origin = e.currentTarget.getBoundingClientRect();
+  const x = e.clientX - origin.left;
+  const y = e.clientY - origin.top;
+  const at = usePaneArea.getState().panes.findIndex((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
+  if (at >= 0) useApp.getState().focusPane(at);
 }
 
 /**
@@ -167,8 +166,8 @@ function PaneChrome({ k, index, focused }: { k: TabKey | null; index: number; fo
   const term = useApp((s) => (k?.startsWith('t:') ? s.terminals.find((x) => x.id === k.slice(2)) : undefined));
   const starting = useApp((s) => !!term && isStarting(term, s.starting));
   const barred = !!term && (!!term.session || starting);
-  const pane: PaneSlot = useMemo(() => ({ index, focused, style: paneCell(index, 'head') }), [index, focused]);
-  const body = useMemo(() => paneCell(index, barred ? 'body' : 'full'), [index, barred]);
+  const pane: PaneSlot = useMemo(() => ({ index, focused, style: paneBox(index, 'head') }), [index, focused]);
+  const body = paneBox(index, barred ? 'body' : 'full');
   // A docked Ask: the waiting glow rings the terminal, not the panel beside it.
   const askDocked = useApp((s) => !!term && s.askDock[term.id] === 'dock');
   return (
@@ -256,7 +255,7 @@ export function App() {
   const docked = (k: TabKey | null | undefined) => !!k?.startsWith('t:') && askDock[k.slice(2)] === 'dock';
   const cell = (i: number): CSSProperties | undefined => {
     if (!multi || i < 0) return undefined;
-    const place = paneCell(i, barred(panes[i]) ? 'body' : 'full');
+    const place = paneBox(i, barred(panes[i]) ? 'body' : 'full');
     return docked(panes[i]) ? { ...place, ...ASK_INSET } : place;
   };
   // The paste notice moves left of an Ask sheet in the pane it shows over.
@@ -642,8 +641,10 @@ export function App() {
           {!multi && current && (current.session || currentStarting) && activeTab === 'term' && <SessionBar term={current} />}
           {!multi && current && activeTab === 'term' && <RunStrip term={current} />}
           <div ref={workspaceBody} className={`workspace-body ${multi ? 'is-split' : ''} ${!multi && isWaiting(current?.session) && activeTab === 'term' ? 'is-waiting' : ''}`}
-            style={multi ? { gridTemplateColumns: gridColumns(sizesAt(split.tree, []) ?? [1]) } : activeTab === 'term' && docked(selectedId ? `t:${selectedId}` : null) ? ASK_INSET : undefined}
+            style={multi ? undefined : activeTab === 'term' && docked(selectedId ? `t:${selectedId}` : null) ? ASK_INSET : undefined}
             onPointerDownCapture={multi ? focusPaneAt : undefined}>
+            {/* Split: every pane's tab strip, on top of it. */}
+            {multi && <PaneStrips onNew={onNewMenu} />}
             <ErrorBoundary id="terminal" panel={t.crashPanels.terminal} visible={multi ? panes.some((k) => k?.startsWith('t:')) : activeTab === 'term'}>
               {terminals.map((term) => {
                 const k: TabKey = `t:${term.id}`;
@@ -678,7 +679,7 @@ export function App() {
             {/* One pane: the session in front's Ask (a split's are in their pane's chrome, after its header). */}
             {!multi && activeTab === 'term' && selectedId && <AskHost key={selectedId} terminalId={selectedId} />}
             {multi && panes.map((k, i) => <PaneChrome key={k ?? `empty-${i}`} k={k} index={i} focused={i === split.focus} />)}
-            {multi && panes.slice(1).map((_, i) => <PaneDivider key={`divider-${i}`} index={i} style={dividerCell(i)} />)}
+            <PaneLayout body={workspaceBody} />
             <PaneDropLayer />
             {pastedAt && activeTab === 'term' && <div className={`paste-toast${pasteLeft ? ' is-left' : ''}`} style={cell(split.focus)}><i />{t.pasted}</div>}
             {/* Over the pane of the session the text goes to (the focused pane when that one isn't shown). */}
