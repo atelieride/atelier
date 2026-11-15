@@ -123,17 +123,18 @@ export function WorkspaceGroup({ w, active, inAct = false, open, card, children 
   const editing = useApp((s) => s.wsRenaming === w.id);
   const st = useApp.getState;
   const toggle = () => st().toggleWorkspaceOpen(w.id);
-  // The Sessions drop-down: either way the session starts in this workspace.
+  // The Sessions drop-down: whatever it starts, it starts in this workspace.
   const here = (run: () => void) => () => { if (w.id !== st().ws?.active) st().switchWorkspace(w.id); run(); };
-  // With activities on it also starts a terminal here and makes an activity in it.
+  // It starts a terminal too: a group lists its terminals without a Terminals head, so this is the sidebar's only
+  // "+" for one here. With activities on it also makes an activity in it.
   const plus = (e: MouseEvent<HTMLButtonElement>) => {
     const s = st();
     const full = !!s.ws && activitiesOf(s.ws, w.id).length >= MAX_ACTIVITIES;
     openBelow(e.currentTarget, sessionPlusMenu({
       session: here(() => st().setNewSessionOpen(true)),
       folder: here(() => st().setFolderSheet({ kind: 'session' })),
+      terminal: here(() => void newTerminalIn()),
       ...(s.settings.wsActivities ? {
-        terminal: here(() => void newTerminalIn()),
         activity: { run: () => void st().newWsActivity(w.id), ...(full ? { disabled: t.wsAct.full(w.name) } : {}) }
       } : {})
     }));

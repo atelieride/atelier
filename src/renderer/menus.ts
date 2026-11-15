@@ -683,7 +683,7 @@ export function newMenu(actions: { session: () => void; terminal: () => void }):
 
 /** Sessions' "+": the two ways to start a session, below the button. */
 export function sessionPlusMenu(o: { session: () => void; folder: () => void; terminal?: () => void; activity?: { run: () => void; disabled?: string } }): MenuItem[] {
-  // With activities: New Terminal (a workspace's and an activity's "+"), and New Activity… (a workspace's).
+  // New Terminal on a workspace's and an activity's "+"; New Activity… on a workspace's, with activities on.
   return [
     { id: 'new-session', label: m.newClaudeSession, icon: 'sparkle', hint: kbd('⌘N'), run: o.session },
     { id: 'session-in-folder', label: m.sessionInFolder, icon: 'files', hint: kbd('⌘⌥⇧N'), run: o.folder },

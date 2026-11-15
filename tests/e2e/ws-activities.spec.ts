@@ -88,10 +88,10 @@ test('activities: on; New Activity… from the "+"; its tabs alone, folded; the 
     expect(await menuItem(app, 'Activities Inside Workspaces')).toMatchObject({ enabled: false, checked: false });
     await menu(app, 'Toggle Workspaces for This Project');
     await expect(win.locator('.ws-group.is-active')).toContainText('Workspace 1');
-    // Activities off: the "+" menu is today's.
+    // Activities off: the "+" menu has no New Activity….
     await group(win, 'Workspace 1').locator('.ws-head').hover();
     await group(win, 'Workspace 1').locator('.ws-plus').click();
-    await expect(win.locator('.ctx-menu [role="menuitem"]')).toHaveText([/New Claude Session/, /Session in Folder…/]);
+    await expect(win.locator('.ctx-menu [role="menuitem"]')).toHaveText([/New Claude Session/, /Session in Folder…/, /New Terminal/]);
     await win.keyboard.press('Escape');
 
     // On from View › Activities Inside Workspaces.

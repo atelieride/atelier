@@ -169,11 +169,11 @@ test('workspaces: off by default; on; a new one with its own tabs; switching by 
     await front(win).locator('.ws-name-btn').click();
     await expect(win.locator('.ws-group.is-active .ws-body')).toBeVisible();
     await expect.poll(() => tabs(win)).toEqual(['Bravo']);
-    // "+" on another workspace's head: the Sessions drop-down; New Claude Session brings
+    // "+" on another workspace's head: the Sessions drop-down with New Terminal; New Claude Session brings
     // that workspace forward with New Session open.
     await group(win, 'Workspace 1').locator('.ws-head').hover();
     await group(win, 'Workspace 1').locator('.ws-plus').click();
-    await expect(win.locator('.ctx-menu [role="menuitem"]')).toHaveText([/New Claude Session/, /Session in Folder…/]);
+    await expect(win.locator('.ctx-menu [role="menuitem"]')).toHaveText([/New Claude Session/, /Session in Folder…/, /New Terminal/]);
     await expect(front(win)).toContainText('Billing');
     await win.getByRole('menuitem', { name: /New Claude Session/ }).click();
     await expect(front(win)).toContainText('Workspace 1');
@@ -378,6 +378,51 @@ test('workspaces: ⌘J follows a session waiting in another workspace; Close wit
     await expect(front(win)).toContainText('Workspace 1');
     await expect.poll(() => tabs(win)).toEqual(['Alpha', expect.stringContaining('Claude')]);
     expect(await list(win)).toHaveLength(2);
+  } finally {
+    await stop(app, home);
+  }
+});
+
+// With workspaces on, a group lists its terminals without a Terminals head of its own: the workspace's "+" is the
+// sidebar's only way to start one there, activities on or off.
+test('workspaces: a workspace\'s "+" starts a terminal in it, with activities off', async () => {
+  const project = mkdtempSync(join(tmpdir(), 'atl-prj-'));
+  const { env, home } = e2eEnv({ ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl') });
+  const app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env });
+  try {
+    const win = await app.firstWindow();
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 800));
+    await win.getByRole('button', { name: 'Open a terminal' }).click();
+    await expect(win.locator('.tab-strip .tab')).toHaveCount(1, { timeout: 10000 });
+    await rename(win, 'Alpha');
+    await menu(app, 'Toggle Workspaces for This Project');
+    await expect(front(win)).toContainText('Workspace 1');
+    await menu(app, 'New Workspace…');
+    const sheet = win.getByRole('dialog', { name: 'New Workspace' });
+    await sheet.getByRole('radio', { name: 'Terminal' }).click();
+    await sheet.locator('.nws-input').first().fill('Billing');
+    await sheet.locator('.nws-input').first().press('Enter');
+    await expect(front(win)).toContainText('Billing');
+    await expect.poll(() => tabs(win), { timeout: 10000 }).toHaveLength(1);
+    await rename(win, 'Bravo');
+    await expect.poll(() => tabs(win)).toEqual(['Bravo']);
+
+    // Workspace 1's "+", from Billing: New Terminal, with its key, under the two ways to start a session.
+    await group(win, 'Workspace 1').locator('.ws-head').hover();
+    await group(win, 'Workspace 1').locator('.ws-plus').click();
+    const items = win.locator('.ctx-menu [role="menuitem"]');
+    await expect(items).toHaveText([/New Claude Session\s*⌘N/, /Session in Folder…\s*⌘⌥⇧N/, /New Terminal\s*⌘T/]);
+    await still(win);
+    await look(win.locator('.ctx-menu'), `${SHOTS}/workspaces-plus-terminal.png`);
+    // It brings Workspace 1 forward with a new terminal beside Alpha; Billing keeps Bravo alone.
+    await win.getByRole('menuitem', { name: /New Terminal/ }).click();
+    await expect(front(win)).toContainText('Workspace 1');
+    await expect.poll(() => tabs(win), { timeout: 10000 }).toHaveLength(2);
+    expect((await tabs(win))[0]).toBe('Alpha');
+    await expect(group(win, 'Workspace 1').locator('.ws-body .term-row')).toHaveCount(2);
+    expect(await list(win)).toHaveLength(3);
+    await group(win, 'Billing').locator('.ws-name-btn').click();
+    await expect.poll(() => tabs(win)).toEqual(['Bravo']);
   } finally {
     await stop(app, home);
   }
