@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { gridTemplate, paneBox, HEAD_PX, STRIP_PX } from './pane-place';
+import { gridTemplate, paneBox, roomyPanes, FLOAT_MIN_BODY_PX, HEAD_PX, STRIP_PX } from './pane-place';
 import { layoutPanes } from './split-layout';
 import type { LayoutNode } from './split-tree';
 
@@ -37,6 +37,16 @@ describe('paneBox', () => {
   });
   test('the same object every time, so placed views never re-render for it', () => {
     expect(paneBox(1, 'body')).toBe(paneBox(1, 'body'));
+  });
+});
+
+describe('roomyPanes', () => {
+  test('a pane has room for floating notices when its content, under a strip and a session bar, is at least 120 px tall', () => {
+    expect(FLOAT_MIN_BODY_PX).toBe(120);
+    const tall = { x: 0, y: 0, w: 400, h: STRIP_PX + HEAD_PX + 120 };
+    const short = { ...tall, h: STRIP_PX + HEAD_PX + 119 };
+    expect(roomyPanes([tall, short])).toEqual([true, false]);
+    expect(roomyPanes([])).toEqual([]);
   });
 });
 

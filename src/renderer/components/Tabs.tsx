@@ -236,7 +236,12 @@ export const PaneStrip = memo(function PaneStrip({ pane, split, last, onNew }: {
         const before = width.current;
         width.current = el.clientWidth;
         const tab = revealed.current ? el.querySelector<HTMLElement>(`.tab[data-key="${CSS.escape(revealed.current)}"]`) : null;
-        const left = tab && before !== null ? keepInView({ left: tab.offsetLeft, width: tab.offsetWidth }, el.scrollLeft, before, el.clientWidth, REVEAL_PAD) : null;
+        // The first measure (a strip just placed: a split laid out after it mounted) shows the tab in front, as
+        // bringing it there would.
+        const box = tab ? { left: tab.offsetLeft, width: tab.offsetWidth } : null;
+        const left = !box ? null : before === null
+          ? revealLeft(box, { scrollLeft: el.scrollLeft, width: el.clientWidth }, REVEAL_PAD)
+          : keepInView(box, el.scrollLeft, before, el.clientWidth, REVEAL_PAD);
         if (left !== null) el.scrollTo({ left, behavior: 'instant' });
       }
       fade();

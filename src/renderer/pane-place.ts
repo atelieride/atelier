@@ -12,6 +12,17 @@ export const STRIP_PX = 38;
 /** A Claude session's bar, under the strip. */
 export const HEAD_PX = 36;
 
+/**
+ * The content height a pane needs for the notices that float over it (the dictation pill, a scheduled prompt's
+ * countdown, the paste notice) to sit inside its content, never over its strip or a session bar.
+ */
+export const FLOAT_MIN_BODY_PX = 120;
+
+/** Which panes (laid out at `panes`, px) have room for floating notices, counting a session bar over every content. */
+export function roomyPanes(panes: Rect[]): boolean[] {
+  return panes.map((r) => r.h - STRIP_PX - HEAD_PX >= FLOAT_MIN_BODY_PX);
+}
+
 /** strip: the tab strip; head: a session's bar; body: the content under the bar; full: bar and content together (a pane without a bar). */
 export type Band = 'strip' | 'head' | 'body' | 'full';
 

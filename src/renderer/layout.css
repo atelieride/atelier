@@ -1557,7 +1557,7 @@ button.either:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .pane-drop-label { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 13px; border-radius: 999px; background: var(--bg-float); backdrop-filter: blur(18px) saturate(150%); box-shadow: var(--shadow-float); font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; animation: atl-pop var(--t-med) var(--ease) both; }
 .pane-drop-label svg { color: var(--pink); }
 /* An empty pane: "Show here", the picker card. */
-.pane-picker { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px min(16px, 4%); background: var(--bg-2); overflow: auto; }
+.pane-picker { position: absolute; inset: 0; display: flex; align-items: safe center; justify-content: safe center; padding: 24px min(16px, 4%); background: var(--bg-2); overflow: auto; }
 .pp-card { width: min(420px, 100%); display: flex; flex-direction: column; gap: 10px; padding: 14px 12px 12px; border-radius: var(--r-lg); background: var(--bg-1); border: 1px solid var(--line); box-shadow: var(--shadow-float); outline: none; transition: border-color var(--t-med) var(--ease), box-shadow var(--t-med) var(--ease); }
 .pane-picker.is-focused .pp-card { border-color: var(--edge-violet-soft); box-shadow: var(--shadow-float); }
 .pp-head { display: flex; align-items: center; justify-content: space-between; padding: 0 6px; }

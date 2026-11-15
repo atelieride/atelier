@@ -45,7 +45,7 @@ import { runShellCommand } from './shell-command';
 import { openNewMenu } from './menus';
 import { cycle, nth, type TabKey } from './tabs-model';
 import { fronts } from './split';
-import { paneBox } from './pane-place';
+import { paneBox, roomyPanes } from './pane-place';
 import { usePaneArea } from './pane-area';
 import { PaneLayout } from './components/PaneLayout';
 import { PaneDropLayer } from './components/PaneDropLayer';
@@ -258,6 +258,10 @@ export function App() {
     const place = paneBox(i, barred(panes[i]) ? 'body' : 'full');
     return docked(panes[i]) ? { ...place, ...ASK_INSET } : place;
   };
+  // Split: which panes are tall enough for the notices that float over them ('1' each; a string, so a resize re-renders
+  // only when one of them flips). A pane too short shows none, or the dictation pill over the whole workspace.
+  const roomy = usePaneArea((a) => roomyPanes(a.panes).map((r) => (r ? '1' : '0')).join(''));
+  const floatCell = (i: number): CSSProperties | undefined => (roomy[i] === '1' ? cell(i) : undefined);
   // The paste notice moves left of an Ask sheet in the pane it shows over.
   const pasteLeft = sheetIn({ askOpen, askDock }, multi ? panes[split.focus] ?? null : activeTab === 'term' && selectedId ? `t:${selectedId}` : null);
   const shownIn = (k: TabKey, single: boolean) => (multi ? paneOf(k) >= 0 : single);
@@ -686,12 +690,13 @@ export function App() {
             {multi && panes.map((k, i) => <PaneChrome key={k ?? `empty-${i}`} k={k} index={i} focused={i === split.focus} />)}
             <PaneLayout body={workspaceBody} />
             <PaneDropLayer />
-            {pastedAt && activeTab === 'term' && <div className={`paste-toast${pasteLeft ? ' is-left' : ''}`} style={cell(split.focus)}><i />{t.pasted}</div>}
+            {pastedAt && activeTab === 'term' && (!multi || roomy[split.focus] === '1') && <div className={`paste-toast${pasteLeft ? ' is-left' : ''}`} style={cell(split.focus)}><i />{t.pasted}</div>}
             {/* Over the pane of the session the text goes to (the focused pane when that one isn't shown). */}
-            <DictationPill place={cell(multi ? dictationPane(split, currentDictationTarget()) : split.focus)} />
+            {/* A pane too short for it: over the whole workspace (it must stay visible while dictating). */}
+            <DictationPill place={multi ? floatCell(dictationPane(split, currentDictationTarget())) : cell(split.focus)} />
             {/* A scheduled prompt's countdown over the session it goes to. */}
             {multi
-              ? panes.map((k, i) => (k?.startsWith('t:') ? <ScheduleCountdown key={`sc-${k}`} terminalId={k.slice(2)} place={cell(i)} /> : null))
+              ? panes.map((k, i) => (k?.startsWith('t:') && roomy[i] === '1' ? <ScheduleCountdown key={`sc-${k}`} terminalId={k.slice(2)} place={cell(i)} /> : null))
               : selectedId && activeTab === 'term' && <ScheduleCountdown terminalId={selectedId} />}
             {/* No terminal, or every tab closed (the sessions keep running in the sidebar): the same invitation. */}
             {/* Workspaces on: the workspace's own empty state, with what it can resume. */}

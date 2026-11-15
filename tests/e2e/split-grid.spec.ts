@@ -1,8 +1,9 @@
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { e2eEnv } from './env';
+import { layoutProblems, NO_PROBLEMS } from './layout';
 import { look } from './shots';
 
 // Split view in both directions: panes side by side or stacked, nested, up to four; every pane has its own strip on top
@@ -281,6 +282,155 @@ test('View menu: Split Down, focus the pane above and below, move the tab up and
     await expect.poll(strips).toEqual([['Bravo'], ['Alpha']]);
     g = await geometry(win);
     expect(near(g.strips[0]!.w, g.strips[1]!.w) && g.strips[1]!.y > g.frames[0]!.y).toBe(true);
+  } finally {
+    await stop(app, home);
+  }
+});
+
+/** The window's content size; waits two frames so the layout has followed. */
+async function size(app: ElectronApplication, win: Page, w: number, h: number) {
+  await app.evaluate(({ BrowserWindow }, s) => BrowserWindow.getAllWindows()[0]!.setContentSize(s[0]!, s[1]!), [w, h]);
+  await expect.poll(() => win.evaluate(() => window.innerWidth)).toBe(w);
+  await win.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
+}
+
+/** The strips, frames and session bars of the panes: nothing over anything else, nothing outside the body. */
+const paneParts = ['.workspace-body > .pane-strip', '.workspace-body > .pane-frame', '.workspace-body > .session-bar'];
+
+/**
+ * Every pane's × and its tab in front (when it has one): at least 12 px of it shown in its strip (the tab row scrolls,
+ * so a tab wider than the room is shown from its start), and the element at the middle of that part: a click lands.
+ */
+const reachable = (win: Page) => win.evaluate(() => [...document.querySelectorAll<HTMLElement>('.workspace-body > .pane-strip')].flatMap((strip) => {
+  const s = strip.getBoundingClientRect();
+  const row = strip.querySelector<HTMLElement>('.tab-strip')?.getBoundingClientRect() ?? s;
+  const shown = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    const box = el.classList.contains('tab') ? row : s;
+    return { left: Math.max(r.left, box.left), right: Math.min(r.right, box.right), top: r.top, bottom: r.bottom };
+  };
+  const parts = [strip.querySelector<HTMLElement>('.pane-close'), strip.querySelector<HTMLElement>('.tab.is-front, .tab.is-active')].filter((el): el is HTMLElement => !!el);
+  return parts.filter((el) => {
+    const v = shown(el);
+    const hit = document.elementFromPoint((v.left + v.right) / 2, (v.top + v.bottom) / 2);
+    return v.right - v.left < 12 || !(hit === el || el.contains(hit));
+  }).map((el) => `pane ${strip.dataset.pane}: ${el.className}`);
+}));
+
+test('responsive: at the minimum window two columns and three stacked panes hold; four-pane layouts squeezed never overlap and come back as they were', async () => {
+  const project = mkdtempSync(join(tmpdir(), 'atl-prj-'));
+  const { env, home } = e2eEnv({ ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl') });
+  const app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env });
+  try {
+    const win = await app.firstWindow();
+    await size(app, win, 1440, 900);
+    await alphaBravo(app, win);
+    if (!(await win.locator('.changes-toggle.is-on').count())) await win.locator('.changes-toggle').click();
+    const body = win.locator('.workspace-body');
+
+    // The minimum window, sidebar and Changes open: two columns fit, as do three stacked panes; a fourth stacked does not.
+    await size(app, win, 960, 600);
+    await menu(app, 'Split Right');
+    await expect.poll(() => win.locator('.workspace-body > .pane-strip').count()).toBe(2);
+    expect(await layoutProblems(body, paneParts)).toEqual(NO_PROBLEMS);
+    expect(await reachable(win)).toEqual([]);
+    await look(win.locator('.workspace'), `${SHOTS}/split-min-columns.png`, { settle: 300 });
+    await menu(app, 'Unsplit All');
+    await menu(app, 'Split Down');
+    await menu(app, 'Split Down');
+    await expect.poll(() => win.locator('.workspace-body > .pane-strip').count()).toBe(3);
+    expect(await layoutProblems(body, paneParts)).toEqual(NO_PROBLEMS);
+    expect(await reachable(win)).toEqual([]);
+    await look(win.locator('.workspace'), `${SHOTS}/split-min-stacked.png`, { settle: 300 });
+    await menu(app, 'Split Down');
+    await expect(win.locator('.toast')).toContainText('Not enough room');
+    await expect(win.locator('.workspace-body > .pane-strip')).toHaveCount(3);
+    await menu(app, 'Unsplit All');
+
+    // Four panes made at a larger size, then the window shrunk to its minimum: squeezed, never overlapping, every ×
+    // and front tab reachable; back at the larger size, every pane is where it was.
+    const layouts: [string, string[]][] = [
+      ['row', ['Split Right', 'Split Right', 'Split Right']],
+      ['stack', ['Split Down', 'Split Down', 'Split Down']],
+      ['grid', ['Split Right', 'Split Down', 'Focus Pane Left', 'Split Down']],
+      ['left-and-stack', ['Split Right', 'Split Down', 'Split Down']]
+    ];
+    for (const [name, steps] of layouts) {
+      await size(app, win, 1440, 900);
+      for (const s of steps) await menu(app, s);
+      await expect.poll(() => win.locator('.workspace-body > .pane-strip').count(), { message: name }).toBe(4);
+      const before = (await geometry(win)).frames;
+      await size(app, win, 960, 600);
+      await look(win.locator('.workspace'), `${SHOTS}/split-squeezed-${name}.png`, { settle: 300 });
+      const squeezed = await layoutProblems(body, paneParts);
+      expect({ name, overlaps: squeezed.overlaps, outside: squeezed.outside }).toEqual({ name, overlaps: [], outside: [] });
+      expect({ name, unreachable: await reachable(win) }).toEqual({ name, unreachable: [] });
+      // An empty pane's picker too short for its card shows the card from its top (it scrolls), never cut above.
+      const cutAbove = await win.evaluate(() => [...document.querySelectorAll<HTMLElement>('.workspace-body > .pane-picker')]
+        .filter((p) => (p.querySelector('.pp-card')?.getBoundingClientRect().top ?? Infinity) < p.getBoundingClientRect().top - 0.5).length);
+      expect({ name, cutAbove }).toEqual({ name, cutAbove: 0 });
+      await size(app, win, 1440, 900);
+      const after = (await geometry(win)).frames;
+      expect(after.every((f, i) => near(f.x, before[i]!.x) && near(f.y, before[i]!.y) && near(f.w, before[i]!.w) && near(f.h, before[i]!.h)), name).toBe(true);
+      await menu(app, 'Unsplit All');
+      await expect(win.locator('.workspace-body.is-split')).toHaveCount(0);
+    }
+  } finally {
+    await stop(app, home);
+  }
+});
+
+test('a pane too short for the dictation pill: it shows over the whole workspace, never over a strip or a session bar', async () => {
+  const project = mkdtempSync(join(tmpdir(), 'atl-prj-'));
+  const spec = { file: 'm.bin', url: 'http://127.0.0.1:9/m.bin', size: 3, sha256: 'a'.repeat(64) };
+  const { env, home } = e2eEnv({
+    ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl'),
+    ATELIER_TEST_FAKE_MIC: resolve('tests/fixtures/dictation-it.wav'),
+    ATELIER_TEST_WHISPER_BIN: resolve('tests/fixtures/fake-whisper.mjs'),
+    ATELIER_TEST_MODEL_SPEC: JSON.stringify(spec),
+    FAKE_WHISPER_TEXT: 'ciao'
+  });
+  mkdirSync(join(home, 'models'));
+  writeFileSync(join(home, 'models', 'm.bin'), 'abc');
+  writeFileSync(join(home, 'models', 'm.bin.ok'), spec.sha256);
+  writeFileSync(join(home, 'preferences.json'), JSON.stringify({ dictationEnabled: true }));
+  const app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env });
+  try {
+    const win = await app.firstWindow();
+    await size(app, win, 1440, 900);
+    await win.locator('.btn-new').click();
+    await win.getByRole('menuitem', { name: 'Claude Session' }).click();
+    await win.keyboard.press('Enter');
+    await expect(win.locator('.session-row').first()).toHaveClass(/state-waiting/, { timeout: 20000 });
+    // Four stacked panes, the session in the top one, focused; then the minimum window: each pane is too short.
+    await menu(app, 'Split Down');
+    await menu(app, 'Split Down');
+    await menu(app, 'Split Down');
+    await menu(app, 'Focus Pane Below');
+    await expect.poll(() => win.locator('.workspace-body > .pane-strip.is-focused').getAttribute('data-pane')).toBe('0');
+    await size(app, win, 960, 600);
+    // A tap of ⌥Space: hands-free dictation, the pill shows while listening.
+    await win.locator('.xterm-helper-textarea:visible').first().focus();
+    await win.keyboard.down('Alt');
+    await win.keyboard.down('Space');
+    await win.waitForTimeout(80);
+    await win.keyboard.up('Space');
+    await win.keyboard.up('Alt');
+    const pill = win.locator('.dictation-pill');
+    await expect(pill).toBeVisible({ timeout: 10000 });
+    const clash = await win.evaluate(() => {
+      const p = document.querySelector('.dictation-pill')!.getBoundingClientRect();
+      const b = document.querySelector('.workspace-body')!.getBoundingClientRect();
+      const over = [...document.querySelectorAll('.workspace-body > .pane-strip, .workspace-body > .session-bar')].filter((el) => {
+        const r = el.getBoundingClientRect();
+        return Math.min(p.right, r.right) - Math.max(p.left, r.left) > 0.5 && Math.min(p.bottom, r.bottom) - Math.max(p.top, r.top) > 0.5;
+      }).map((el) => el.className);
+      return { over, inside: p.left >= b.left - 0.5 && p.right <= b.right + 0.5 && p.top >= b.top - 0.5 && p.bottom <= b.bottom + 0.5 };
+    });
+    expect(clash).toEqual({ over: [], inside: true });
+    await look(win.locator('.workspace'), `${SHOTS}/split-dictation-squeezed.png`);
+    await win.keyboard.press('Escape');
+    await expect(pill).toHaveCount(0);
   } finally {
     await stop(app, home);
   }
