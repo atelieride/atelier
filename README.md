@@ -37,9 +37,9 @@ the session that made it, and an editor, terminals and Git right beside them.
   sent back to Claude, then commit and push from the same panel.
 - **Catch up without interrupting.** Ask a session where it is and why, in a read-only side chat that leaves its
   context untouched.
-- **Everything side by side.** Sessions, terminals and files are tabs: split up to three panes, open anything from the
-  command palette, keep separate lines of work in workspaces, and in activities inside them, each with tabs of their
-  own.
+- **Everything side by side.** Sessions, terminals and files are tabs: split into up to four panes, side by side or
+  stacked, open anything from the command palette, keep separate lines of work in workspaces, and in activities inside
+  them, each with tabs of their own.
 - **Prompts and tasks that start themselves.** Schedule a prompt for later, for instance when your usage limit resets,
   or let ClickUp, Notion and Jira tasks start sessions in worktrees of their own.
 - **Your stack next to Claude.** Read your Docker logs, browse Redis keys and queues and Postgres tables, and send what
@@ -69,7 +69,7 @@ terminal).
 | <kbd>⌘N</kbd> | New Claude session |
 | <kbd>⌘J</kbd> | Next session that needs you |
 | <kbd>⌘K</kbd> | Command palette: files, sessions, commands |
-| <kbd>⌘\\</kbd> | Split view |
+| <kbd>⌘\\</kbd> / <kbd>⌘⌥\\</kbd> | Split right / split down |
 | <kbd>⇧⌘N</kbd> | Resume a session |
 | <kbd>⌘L</kbd> | Mention the selected lines in the session |
 
