@@ -28,7 +28,7 @@ export function PaneDivider({ index, style }: { index: number; style: CSSPropert
   const flush = () => {
     if (frame.current) cancelAnimationFrame(frame.current);
     frame.current = 0;
-    if (pending.current) useApp.getState().setFractions(pending.current);
+    if (pending.current) useApp.getState().setSizes([], pending.current);
     pending.current = null;
   };
   useEffect(() => () => { if (frame.current) cancelAnimationFrame(frame.current); document.documentElement.classList.remove('is-resizing'); }, []);
@@ -68,7 +68,7 @@ export function PaneDivider({ index, style }: { index: number; style: CSSPropert
         if (!step) return;
         e.preventDefault();
         const m = shown(e.currentTarget);
-        if (m) useApp.getState().setFractions(dragDivider(m.fractions, index, step, m.width));
+        if (m) useApp.getState().setSizes([], dragDivider(m.fractions, index, step, m.width));
       }} />
   );
 }

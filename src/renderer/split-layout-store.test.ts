@@ -45,11 +45,11 @@ describe('dividers (store)', () => {
   test('fractions set by a divider; equalize; a stale list is ignored', () => {
     st().setTerminals(LIST);
     st().openToSide('t:a');
-    st().setFractions([0.7, 0.3]);
+    st().setSizes([], [0.7, 0.3]);
     expect(sizesAt(st().split.tree, [])).toEqual([0.7, 0.3]);
     st().equalizePanes();
     expect(sizesAt(st().split.tree, [])).toEqual([0.5, 0.5]);
-    st().setFractions([1]);
+    st().setSizes([], [1]);
     expect(sizesAt(st().split.tree, [])).toEqual([0.5, 0.5]);
   });
 });
@@ -127,7 +127,7 @@ describe('saved layout (store)', () => {
     vi.advanceTimersByTime(1000);
     expect(layouts()['/p']).toEqual(first);
     st().setTerminals(LIST);
-    st().setFractions([0.25, 0.75]);
+    st().setSizes([], [0.25, 0.75]);
     st().focusPane(1);
     vi.advanceTimersByTime(100);
     expect(layouts()['/p']).toEqual(first);

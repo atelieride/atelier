@@ -444,12 +444,12 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
     // it has somewhere to go (a pane on that side, or room and company for a new one there).
     const moveTab = (dir: 1 | -1) => canMoveStep(st.split, st.tabOrder, st.activeKey(), dir === 1 ? 'right' : 'left');
     const tabMoves = [
-      ...(moveTab(-1) ? [c('move-tab-left', t.cmd.moveTabLeft, kbd('⌃⌘←'), 'split', () => st.moveTabStep(-1))] : []),
-      ...(moveTab(1) ? [c('move-tab-right', t.cmd.moveTabRight, kbd('⌃⌘→'), 'split', () => st.moveTabStep(1))] : [])
+      ...(moveTab(-1) ? [c('move-tab-left', t.cmd.moveTabLeft, kbd('⌃⌘←'), 'split', () => st.moveTabStep('left'))] : []),
+      ...(moveTab(1) ? [c('move-tab-right', t.cmd.moveTabRight, kbd('⌃⌘→'), 'split', () => st.moveTabStep('right'))] : [])
     ];
     const panes = st.split.panes.length > 1 ? [
-      c('focus-next-pane', t.cmd.focusNextPane, kbd('⌘⌥→'), 'splitFocus', st.focusNextPane),
-      c('focus-prev-pane', t.cmd.focusPrevPane, kbd('⌘⌥←'), 'splitFocus', st.focusPrevPane),
+      c('focus-next-pane', t.cmd.focusNextPane, kbd('⌘⌥→'), 'splitFocus', () => st.focusPaneDir('right')),
+      c('focus-prev-pane', t.cmd.focusPrevPane, kbd('⌘⌥←'), 'splitFocus', () => st.focusPaneDir('left')),
       c('close-pane', t.cmd.closePane, '', 'unsplit', () => st.closePane()),
       c('close-other-panes', t.cmd.closeOtherPanes, '', 'unsplit', st.closeOtherPanes),
       c('equalize-panes', t.cmd.equalizePanes, '', 'split', st.equalizePanes)

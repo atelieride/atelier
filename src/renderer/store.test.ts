@@ -1106,11 +1106,11 @@ describe('table tabs: db: keys with their own preview slot', () => {
   test('split: a preview moved to another pane (⌃⌘, a menu, a drop) is kept, as a strip drag keeps it', () => {
     kept('a');
     st().openDbTab(rel('orders'), { preview: true });
-    st().moveTabStep(1);
+    st().moveTabStep('right');
     expect(tabs()).toEqual([[K('a')], [K('orders')]]);
     expect(st().dbPreview).toBeNull();
     st().openDbTab(rel('customers'), { preview: true });
-    st().moveTabSide(K('customers'), -1);
+    st().moveTabSide(K('customers'), 'left');
     expect(st().dbPreview).toBeNull();
     st().openDbTab(rel('items'), { preview: true });
     st().moveTabToPane(K('items'), 1, null);

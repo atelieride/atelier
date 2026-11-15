@@ -100,7 +100,7 @@ const Tab = memo(function Tab({ k, active, front, drop, lifted, leaving, term, s
       aria-description={outsideTip}
       data-tip={wt ?? outsideTip ?? file?.rel ?? db?.tip ?? (term ? nameTip(name, [term.session?.cwd ?? term.cwd, syncTip(term)].filter(Boolean).join('\n')) : k === 'services' ? undefined : nameTip(name))}
       // ⌥-click: Move to Right Pane (from the last pane, a new pane on the right).
-      onClick={(e) => (e.altKey ? st().moveTabSide(k, 1) : st().activate(k))}
+      onClick={(e) => (e.altKey ? st().moveTabSide(k, 'right') : st().activate(k))}
       // Double click on the preview tab keeps it open as a normal tab.
       onDoubleClick={() => keepTabOpen(k)}
       onContextMenu={(e) => st().openMenu(e, tabMenu(k))}
@@ -363,7 +363,7 @@ export const PaneStrip = memo(function PaneStrip({ pane, split, last, onNew }: {
 function PaneTools({ pane, onLeaving }: { pane: number; onLeaving: (on: boolean) => void }) {
   const full = useApp((s) => s.split.panes.length >= MAX_PANES);
   const target = useApp((s) => { const x = unsplitTarget(s.split, pane); return x ? `${x.to}:${x.count}` : ''; });
-  const [to, count] = target.split(':') as ['left' | 'right', string];
+  const [to, count] = target.split(':') as ['left' | 'right' | 'top' | 'bottom', string];
   const tip = t.split.unsplitTip(to ?? 'left', Number(count ?? 0));
   useEffect(() => () => onLeaving(false), [onLeaving]);
   return (

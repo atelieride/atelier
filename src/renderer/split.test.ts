@@ -375,6 +375,12 @@ describe('open to the side', () => {
     const stack = S([P(['t:a']), P(['t:b']), P(['t:c']), P(['t:d'])], 0, C([L, L, L, L]));
     expect(openToSide(stack, [], 't:a', 'f:x', []).panes[1]).toEqual(P(['t:b', 'f:x'], 'f:x'));
   });
+  test('no room for a new pane: into the neighbour, as with four panes; one pane stays as it is', () => {
+    const s = S([P(['t:a']), P(['t:b'])], 0);
+    expect(openToSide(s, [], 't:a', 'f:x', [], false)).toEqual(S([P(['t:a']), P(['t:b', 'f:x'], 'f:x')], 1));
+    const one = single();
+    expect(openToSide(one, ['t:a', 'f:x'], 't:a', 'f:x', [], false)).toBe(one);
+  });
   test('alone in the focused pane: nothing to split off (same object)', () => {
     const s = S([P(['t:a']), P(['t:b'])], 0);
     expect(openToSide(s, [], 't:a', 't:a', [])).toBe(s);

@@ -589,10 +589,10 @@ export function App() {
           case 'md-outline': toggleMarkdownOutline(); break;
           case 'toggle-word-wrap': toggleWordWrap(); break;
           case 'split-right': st.splitRight(); break;
-          case 'focus-next-pane': st.focusNextPane(); break;
-          case 'focus-prev-pane': st.focusPrevPane(); break;
-          case 'move-tab-left': st.moveTabStep(-1); break;
-          case 'move-tab-right': st.moveTabStep(1); break;
+          case 'focus-next-pane': st.focusPaneDir('right'); break;
+          case 'focus-prev-pane': st.focusPaneDir('left'); break;
+          case 'move-tab-left': st.moveTabStep('left'); break;
+          case 'move-tab-right': st.moveTabStep('right'); break;
           case 'close-pane': st.closePane(); break;
           case 'close-other-panes': st.closeOtherPanes(); break;
           case 'move-tab-window': { const k = st.activeKey(); if (k) void st.popOut(k, 'cascade', paneSize()); break; }

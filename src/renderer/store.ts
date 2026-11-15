@@ -58,10 +58,12 @@ import { dropCsvOptions, loadCsvOptions, renameCsvOptions, saveCsvOptions, withO
 import type { CsvOptions } from './csv/types';
 import { dropOverrides, loadOverrides, renameOverrides, saveOverrides, withOverride, type LangOverrides } from './lang-overrides';
 import {
-  flatten, focusDir, focusPane as focusAt, isSplit, lift, moveStep, moveTab as moveToPane, moveToNewPane, openToSide as toSide, paneOf,
+  flatten, focusDir, focusPane as focusAt, isSplit, lift, MAX_PANES, moveTab as moveToPane, moveToNewPane, openToSide as toSide, paneOf,
   placeOpened, reconcile, removeKeys, renameKeys, restoreLayout, savedKeys, serializeLayout, single, splitPane, stripKeys, unsplit, unsplitAll, visibleKeys, type DropZone, type SavedLayout, type Split
 } from './split';
-import { equalized, withSizes, type Side } from './split-tree';
+import { equalized, neighbour, removeLeaf, withSizes, type Side } from './split-tree';
+import { roomToSplit } from './split-layout';
+import { usePaneArea } from './pane-area';
 import { loadLayout as loadSplitLayout, saveLayout as saveSplitLayout } from './layout-store';
 import { adoptTerminals, pruneDrafts, setDialogProbe } from './terminal/drafts';
 import { isWaiting } from '@shared/session-view';
@@ -583,39 +585,48 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
   activeKey(): TabKey | null;
   activate(key: TabKey | null): void;
   /**
-   * Split view with tab groups: 1–3 panes side by side, each with its own tabs and
-   * its tab in front. The focused pane's front is the active tab (activeKey), and `tabOrder` is the panes' tabs left to
-   * right. One pane: the `single()` placeholder, `tabOrder` and the active tab are all there is (today's app).
+   * Split view with tab groups: 1–4 panes side by side or stacked, each with its own tabs
+   * and its tab in front. The focused pane's front is the active tab (activeKey), and `tabOrder` is the panes' tabs in
+   * reading order. One pane: the `single()` placeholder, `tabOrder` and the active tab are all there is (today's app).
    */
   split: Split;
-  /** ⌘\: an empty pane right of the focused one, focused (at three panes: a toast). */
+  /** ⌘\ / ⇧⌘\: an empty pane right of / below the focused one, focused (at four panes, or without room: a toast). */
+  splitPane(side: 'right' | 'bottom'): void;
+  /** Split Right: splitPane('right'). */
   splitRight(): void;
+  /**
+   * Whether a new pane fits on `side` of pane `pane` now: fewer than four panes, and room for it at the workspace's
+   * current size. `key`: the tab that would move there (its pane closes first when it is alone in it); null for an
+   * empty pane.
+   */
+  canSplitHere(key: TabKey | null, pane: number, side: Side): boolean;
   /** Unsplit (the pane ×): pane `i` (the focused one by default) goes, its tabs join the neighbour. */
   closePane(i?: number): void;
   /** Unsplit All: every tab in one strip, in pane order. */
   closeOtherPanes(): void;
   /** A tab into pane `pane` before `before` (null: at the end), in front, focused: a strip drop, a menu. */
   moveTabToPane(key: TabKey, pane: number, before: TabKey | null): void;
-  /** A tab into a new pane on `side` of pane `pane` (an edge drop, Move to New Pane Right); nothing when refused. */
+  /** A tab into a new pane on `side` of pane `pane` (an edge drop, Move to New Pane Right/Below); a toast when refused. */
   moveTabToNewPane(key: TabKey, pane: number, side: Side): void;
-  /** ⌃⌘← / ⌃⌘→: the focused pane's tab in front to the neighbour on that side, or a new pane at the edge. */
-  moveTabStep(dir: 1 | -1): void;
-  /** Move to Left/Right Pane for any tab (its menu, ⌥-click): as moveTabStep, from the tab's own pane. */
-  moveTabSide(key: TabKey, dir: 1 | -1): void;
+  /** ⌃⌘ with an arrow: the focused pane's tab in front to the pane on that side, or a new pane at the edge. */
+  moveTabStep(side: Side): void;
+  /** Move to Left/Right Pane, Pane Above/Below for any tab (its menu, ⌥-click): as moveTabStep, from the tab's own pane. */
+  moveTabSide(key: TabKey, side: Side): void;
   /** The tabs ⌘1…9 and Ctrl+Tab walk: the focused pane's strip; one pane, the whole strip. */
   focusedStrip(): TabKey[];
   focusPane(i: number): void;
-  focusNextPane(): void;
-  focusPrevPane(): void;
+  /** ⌘⌥ with an arrow: the pane on that side (wrapping at the edge). */
+  focusPaneDir(side: Side): void;
   /** Open to the Side: the tab in the pane right of the focused one; a hidden terminal gets its tab back. */
   openToSide(key: TabKey): void;
   /** Open to the Side for a file (opened as a normal tab, never the preview), at `line` when given. */
   openFileToSide(path: string, rel: string, line?: number | null, at?: FileOpening): void;
   /** A tab dropped on a pane's body: into it at the end (middle) or into a new pane on that side (edge). */
   dropTab(key: TabKey, pane: number, zone: DropZone): void;
-  /** Widths of the panes (a divider moved); a list of the wrong length is ignored. */
-  setFractions(fractions: number[]): void;
-  equalizePanes(): void;
+  /** The shares of the layout group at `path` (a divider moved); unusable ones are ignored. */
+  setSizes(path: number[], sizes: number[]): void;
+  /** Equal sizes in the group at `path` (a divider's double-click), or in every group. */
+  equalizePanes(path?: number[]): void;
   /** The tab being dragged from the strip (the panes show where it can land), or null. */
   tabDrag: TabKey | null;
   /** Where the dragged tab's pointer is (client point), null while it is outside the window (tab-drag.ts). */
@@ -1894,11 +1905,27 @@ export const useApp = create<AppState>((set, get) => ({
     else set({ activeTab: key.slice(2) });
   },
   split: single(),
-  splitRight: () => {
+  splitPane: (side) => {
     const st = get();
-    const next = splitPane(st.split, st.tabOrder, st.activeKey(), 'right');
+    const next = splitPane(st.split, st.tabOrder, st.activeKey(), side);
     if (!next) { st.showToast(t.split.max, undefined, 'info'); return; }
+    if (!st.canSplitHere(null, lift(st.split, st.tabOrder, st.activeKey()).focus, side)) { st.showToast(t.split.noRoom, undefined, 'info'); return; }
     applySplit(next);
+  },
+  splitRight: () => get().splitPane('right'),
+  canSplitHere: (key, pane, side) => {
+    const st = get();
+    const s = lift(panesNow(), st.tabOrder, st.activeKey());
+    if (s.panes.length >= MAX_PANES || pane < 0 || pane >= s.panes.length) return false;
+    let { tree } = s;
+    let at = pane;
+    const from = key ? s.panes.findIndex((p) => p.tabs.includes(key)) : -1;
+    // A tab alone in another pane: that pane closes before the new one is made (as moveToNewPane does).
+    if (from >= 0 && from !== pane && s.panes[from]!.tabs.length === 1) {
+      tree = removeLeaf(tree, from).tree;
+      if (from < pane) at -= 1;
+    }
+    return roomToSplit(tree, at, side, usePaneArea.getState().area);
   },
   closePane: (i) => {
     const s = panesNow();
@@ -1920,30 +1947,30 @@ export const useApp = create<AppState>((set, get) => ({
     const st = get();
     if (!st.tabOrder.includes(key)) return;
     const next = moveToNewPane(panesNow(), st.tabOrder, st.activeKey(), key, pane, side, tabRecent);
-    if (next) { applySplit(next); keepMoved(key); }
+    if (!next) return;
+    if (!st.canSplitHere(key, pane, side)) { st.showToast(t.split.noRoom, undefined, 'info'); return; }
+    applySplit(next);
+    keepMoved(key);
   },
-  moveTabStep: (dir) => {
+  moveTabStep: (side) => {
     const st = get();
     const key = st.activeKey();
-    const next = moveStep(panesNow(), st.tabOrder, key, dir === 1 ? 'right' : 'left', tabRecent);
-    if (next) { applySplit(next); if (key) keepMoved(key); }
+    if (key) st.moveTabSide(key, side);
   },
-  moveTabSide: (key, dir) => {
+  moveTabSide: (key, side) => {
     const st = get();
     if (!st.tabOrder.includes(key)) return;
     const s = lift(panesNow(), st.tabOrder, st.activeKey());
     const from = s.panes.findIndex((p) => p.tabs.includes(key));
     if (from < 0) return;
-    const to = from + dir;
-    const next = to >= 0 && to < s.panes.length
-      ? moveToPane(s, key, to, null, tabRecent)
-      : moveToNewPane(s, st.tabOrder, st.activeKey(), key, from, dir === 1 ? 'right' : 'left', tabRecent);
-    if (next) { applySplit(next); keepMoved(key); }
+    const to = neighbour(s.tree, from, side, false);
+    if (to === null) { st.moveTabToNewPane(key, from, side); return; }
+    applySplit(moveToPane(s, key, to, null, tabRecent));
+    keepMoved(key);
   },
   focusedStrip: () => { const st = get(); return stripKeys(st.split, st.tabOrder, st.split.focus); },
   focusPane: (i) => { const s = get().split; const next = focusAt(s, i); if (next !== s) applySplit(next); },
-  focusNextPane: () => { const s = get().split; const next = focusDir(s, 'right'); if (next !== s) applySplit(next); },
-  focusPrevPane: () => { const s = get().split; const next = focusDir(s, 'left'); if (next !== s) applySplit(next); },
+  focusPaneDir: (side) => { const s = get().split; const next = focusDir(s, side); if (next !== s) applySplit(next); },
   openToSide: (key) => {
     if (popped(key)) return;
     enter(key);
@@ -1990,19 +2017,19 @@ export const useApp = create<AppState>((set, get) => ({
       else st.moveTabToPane(key, pane, null);
       return;
     }
-    // An edge: a new pane on that side (refused for a tab alone in that very pane, and at three panes).
+    // An edge: a new pane on that side (refused for a tab alone in that very pane, at four panes, and without room).
     st.moveTabToNewPane(key, pane, zone);
   },
-  setFractions: (fractions) => {
-    const s = get().split;
-    if (!isSplit(s) || fractions.length !== s.panes.length || fractions.some((f) => !Number.isFinite(f) || f <= 0)) return;
-    const tree = withSizes(s.tree, [], fractions);
-    if (tree !== s.tree) set({ split: { ...s, tree } });
-  },
-  equalizePanes: () => {
+  setSizes: (path, sizes) => {
     const s = get().split;
     if (!isSplit(s)) return;
-    const tree = equalized(s.tree);
+    const tree = withSizes(s.tree, path, sizes);
+    if (tree !== s.tree) set({ split: { ...s, tree } });
+  },
+  equalizePanes: (path) => {
+    const s = get().split;
+    if (!isSplit(s)) return;
+    const tree = equalized(s.tree, path);
     if (tree !== s.tree) set({ split: { ...s, tree } });
   },
   tabDrag: null,
@@ -3280,7 +3307,13 @@ function applySplit(next: Split) {
  */
 function sideOf(before: Split, active: TabKey | null, key: TabKey) {
   const st = useApp.getState();
-  const next = toSide(before, st.tabOrder, active, key, tabRecent);
+  const base = lift(before, st.tabOrder, active);
+  // No room at the workspace's current size for a new pane: into a neighbour, as with four panes; with none, it stays
+  // in the focused pane and the toast says why.
+  const canAdd = roomToSplit(base.tree, base.focus, 'right', usePaneArea.getState().area);
+  const next = toSide(before, st.tabOrder, active, key, tabRecent, canAdd);
+  const alone = base.panes.find((p) => p.tabs.includes(key))?.tabs.length === 1;
+  if (!canAdd && !alone && next === before && base.panes.length < MAX_PANES) st.showToast(t.split.noRoom, undefined, 'info');
   if (next !== before) { applySplit(next); return; }
   if (isSplit(st.split)) applySplit(reconcile(st.split, st.tabOrder, st.activeKey(), tabRecent));
 }

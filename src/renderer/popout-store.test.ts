@@ -235,7 +235,7 @@ test('docked at a place: before a strip tab, or in a new pane on the right', () 
 test('docked into a split: before a tab of a pane\'s strip, into a pane\'s middle, or Move Back to the focused pane', () => {
   st().setTerminals(abc());
   st().select('c');
-  st().moveTabStep(1);
+  st().moveTabStep('right');
   expect(st().split.panes.map((p) => p.tabs)).toEqual([['t:a', 't:b'], ['t:c']]);
   st().applyPoppedOut(['f:/p/a.ts', 'f:/p/b.ts', 'f:/p/c.ts']);
   st().applyDock({ key: 'f:/p/a.ts', payload: { kind: 'file', rel: 'a.ts', mode: 'margin' } }, { kind: 'strip', pane: 0, before: 't:b' });
@@ -272,7 +272,7 @@ test('docked while an empty pane is focused — it lands where it was dropped; t
 test('a pane\'s only tab popping out closes that pane (like a close; nothing hidden)', () => {
   st().setTerminals(abc());
   st().select('c');
-  st().moveTabStep(1);
+  st().moveTabStep('right');
   st().applyPoppedOut(['t:c']);
   expect(st().split).toEqual(single());
   expect(st().tabOrder).toEqual(['t:a', 't:b']);

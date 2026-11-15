@@ -289,15 +289,16 @@ export function canMoveStep(s: Split, order: TabKey[], active: PaneKey, side: Si
 
 /**
  * Open to the Side: a key in another pane only takes the focus there (to its front); otherwise it goes to
- * a new pane right of the focused one while there is room, else into the pane on its right (else on its left, below,
- * above). A tab alone in the focused pane has nothing to split off: unchanged.
+ * a new pane right of the focused one while there is room (fewer than four panes, and `canAdd`: the workspace has the space
+ * for it), else into the pane on its right (else on its left, below, above). A tab alone in the focused pane has nothing
+ * to split off: unchanged.
  */
-export function openToSide(s: Split, order: TabKey[], active: PaneKey, key: TabKey, recent: TabKey[]): Split {
+export function openToSide(s: Split, order: TabKey[], active: PaneKey, key: TabKey, recent: TabKey[], canAdd = true): Split {
   const base = lift(s, order, active);
   const at = base.panes.findIndex((p) => p.tabs.includes(key));
   if (at >= 0 && at !== base.focus) return settled(s, { ...base, panes: base.panes.map((p, i) => (i === at ? { ...p, front: key } : p)), focus: at });
   if (at === base.focus && base.panes[at]!.tabs.length === 1) return s;
-  if (base.panes.length < MAX_PANES) {
+  if (base.panes.length < MAX_PANES && canAdd) {
     if (at === base.focus) return moveToNewPane(base, order, active, key, base.focus, 'right', recent) ?? s;
     return withPane(base, base.focus, 'right', { tabs: [key], front: key });
   }

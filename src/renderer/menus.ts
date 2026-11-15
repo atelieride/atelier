@@ -239,8 +239,8 @@ export function tabMenu(key: TabKey): MenuItem[] {
   const at = isSplit(s.split) ? paneOf(s.split, key) : 0;
   const n = s.split.panes.length;
   const moves: MenuItem[] = [
-    ...(at > 0 ? [{ id: 'move-left', label: m.moveLeftPane, hint: kbd('⌃⌘←'), run: () => st().moveTabSide(key, -1) }] : []),
-    ...(at >= 0 && at < n - 1 ? [{ id: 'move-right', label: m.moveRightPane, hint: kbd('⌃⌘→'), run: () => st().moveTabSide(key, 1) }] : []),
+    ...(at > 0 ? [{ id: 'move-left', label: m.moveLeftPane, hint: kbd('⌃⌘←'), run: () => st().moveTabSide(key, 'left') }] : []),
+    ...(at >= 0 && at < n - 1 ? [{ id: 'move-right', label: m.moveRightPane, hint: kbd('⌃⌘→'), run: () => st().moveTabSide(key, 'right') }] : []),
     ...(at >= 0 && canMoveToNewPane(s.split, s.tabOrder, key)
       ? [{ id: 'move-new-right', label: m.moveNewPaneRight, icon: 'split' as const, ...(at === n - 1 ? { hint: kbd('⌃⌘→') } : {}), run: () => st().moveTabToNewPane(key, at, 'right') }]
       : [])

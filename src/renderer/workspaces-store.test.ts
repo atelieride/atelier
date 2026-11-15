@@ -201,7 +201,7 @@ describe('switching', () => {
     st().setTerminals(ALL);
     st().switchWorkspace('B');
     st().openFile('/p/x.ts', 'x.ts');
-    st().moveTabStep(1);
+    st().moveTabStep('right');
     expect(st().split.panes.map((p) => p.tabs)).toEqual([k('t:bill'), k('f:/p/x.ts')]);
     st().setWorkspacesOn(false);
     expect(st().split.panes.map((p) => p.tabs)).toEqual([k('t:bill'), k('f:/p/x.ts', 't:auth', 't:tok')]);

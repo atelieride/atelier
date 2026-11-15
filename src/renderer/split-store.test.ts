@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import type { TerminalInfo } from '@shared/protocol';
 import { useApp } from './store';
 import { flatten, isSplit, single } from './split';
+import { usePaneArea } from './pane-area';
+import { t } from './i18n/en';
+import { sizesAt, type LayoutNode } from './split-tree';
 import type { TabKey } from './tabs-model';
 
 // Split view with tab groups in the store: each pane keeps its own tabs; closing,
@@ -234,7 +237,7 @@ describe('closing and exiting stay in their pane', () => {
     expect(st().activeKey()).toBe('t:b');
     st().focusPane(0);
     st().openFile('/p/y.ts', 'y.ts');
-    st().moveTabStep(1);
+    st().moveTabStep('right');
     expect(tabs()).toEqual([['t:a', 't:c'], ['t:b', 'f:/p/y.ts']]);
     invariant();
   });
@@ -312,31 +315,31 @@ describe('pane commands', () => {
   });
   test('moveTabStep: ⌃⌘→ in one pane splits the tab out; ⌃⌘← brings it back and the emptied pane closes', () => {
     three();
-    st().moveTabStep(1);
+    st().moveTabStep('right');
     expect(tabs()).toEqual([['t:a', 't:b'], ['t:c']]);
     expect(focus()).toBe(1);
     invariant();
-    st().moveTabStep(-1);
+    st().moveTabStep('left');
     expect(st().split).toEqual(single());
     expect(st().tabOrder).toEqual(['t:a', 't:b', 't:c']);
     expect(st().activeKey()).toBe('t:c');
   });
   test('moveTabSide (⌥-click, the tab menu): any tab to the neighbour\'s end, or a new pane at the edge', () => {
     twoPanes();
-    st().moveTabSide('t:a', 1);
+    st().moveTabSide('t:a', 'right');
     expect(tabs()).toEqual([['t:c'], ['t:b', 't:a']]);
     expect(fronts()).toEqual(['t:c', 't:a']);
     expect(focus()).toBe(1);
-    st().moveTabSide('t:a', 1);
+    st().moveTabSide('t:a', 'right');
     expect(tabs()).toEqual([['t:c'], ['t:b'], ['t:a']]);
     expect(focus()).toBe(2);
-    st().moveTabSide('t:c', -1);
+    st().moveTabSide('t:c', 'left');
     expect(tabs()).toEqual([['t:c'], ['t:b'], ['t:a']]);
     invariant();
   });
   test('moveTabStep with nowhere to go does nothing', () => {
     st().setTerminals([term('a', 1)]);
-    st().moveTabStep(1);
+    st().moveTabStep('right');
     expect(st().split).toEqual(single());
     expect(st().tabOrder).toEqual(['t:a']);
   });
@@ -373,11 +376,11 @@ describe('pane commands', () => {
     st().setTerminals([term('a', 1)]);
     st().openFile('/p/x.ts', 'x.ts', null, undefined, { preview: true });
     expect(st().preview).toBe('/p/x.ts');
-    st().moveTabStep(1);
+    st().moveTabStep('right');
     expect(tabs()).toEqual([['t:a'], ['f:/p/x.ts']]);
     expect(st().preview).toBeNull();
     st().openFile('/p/y.ts', 'y.ts', null, undefined, { preview: true });
-    st().moveTabSide('f:/p/y.ts', -1);
+    st().moveTabSide('f:/p/y.ts', 'left');
     expect(st().preview).toBeNull();
     st().openFile('/p/z.ts', 'z.ts', null, undefined, { preview: true });
     st().moveTabToPane('f:/p/z.ts', 1, null);
@@ -459,7 +462,7 @@ describe('keys that walk the strip act on the focused pane\'s strip', () => {
 describe('one pane is today\'s app', () => {
   test('closing a tab picks the neighbour tab as today; the pane commands do nothing', () => {
     three();
-    st().focusNextPane();
+    st().focusPaneDir('right');
     st().closePane();
     st().closeOtherPanes();
     expect(st().split).toEqual(single());
@@ -476,5 +479,103 @@ describe('one pane is today\'s app', () => {
     st().setTerminals([term('a', 1), term('c', 3)]);
     expect(st().split).toEqual(single());
     expect(st().tabOrder).toEqual(['t:a', 't:c']);
+  });
+});
+
+describe('four directions and the room floor', () => {
+  const L: LayoutNode = { kind: 'pane' };
+  const C = (children: LayoutNode[]): LayoutNode => ({ kind: 'group', dir: 'column', children, sizes: children.map(() => 1 / children.length) });
+  const R = (children: LayoutNode[]): LayoutNode => ({ kind: 'group', dir: 'row', children, sizes: children.map(() => 1 / children.length) });
+  beforeEach(() => usePaneArea.setState({ area: null, panes: [] }));
+
+  test('splitPane(bottom) stacks an empty focused pane below; four panes at most, with the toast', () => {
+    three();
+    st().splitPane('bottom');
+    expect(tabs()).toEqual([['t:a', 't:b', 't:c'], []]);
+    expect(st().split.tree).toEqual(C([L, L]));
+    expect(focus()).toBe(1);
+    st().splitPane('right');
+    st().splitPane('bottom');
+    expect(tabs()).toHaveLength(4);
+    st().splitPane('bottom');
+    expect(tabs()).toHaveLength(4);
+    expect(st().toast?.text).toBe('Up to four panes');
+    invariant();
+  });
+  test('a split without room is refused with the no-room toast; without a measured size it splits', () => {
+    twoPanes();
+    usePaneArea.setState({ area: { width: 342, height: 554 } });
+    st().splitPane('right');
+    expect(tabs()).toHaveLength(2);
+    expect(st().toast?.text).toBe('Not enough room: widen the window or hide a panel');
+    expect(st().canSplitHere(null, 1, 'right')).toBe(false);
+    expect(st().canSplitHere(null, 1, 'bottom')).toBe(true);
+    usePaneArea.setState({ area: null });
+    st().splitPane('right');
+    expect(tabs()).toHaveLength(3);
+    invariant();
+  });
+  test('moveTabStep(bottom) at the edge makes a pane below; refused without room', () => {
+    three();
+    usePaneArea.setState({ area: { width: 1000, height: 200 } });
+    st().moveTabStep('bottom');
+    expect(isSplit(st().split)).toBe(false);
+    expect(st().toast?.text).toBe('Not enough room: widen the window or hide a panel');
+    usePaneArea.setState({ area: { width: 1000, height: 800 } });
+    st().moveTabStep('bottom');
+    expect(tabs()).toEqual([['t:a', 't:b'], ['t:c']]);
+    expect(st().split.tree).toEqual(C([L, L]));
+    invariant();
+  });
+  test('moving to a neighbour needs no room', () => {
+    twoPanes();
+    usePaneArea.setState({ area: { width: 300, height: 300 } });
+    st().focusPane(0);
+    st().moveTabStep('right');
+    expect(tabs()).toEqual([['t:a'], ['t:b', 't:c']]);
+    invariant();
+  });
+  test('moveTabSide and moveTabToNewPane take any side', () => {
+    twoPanes();
+    st().moveTabToNewPane('t:c', 1, 'top');
+    expect(st().split.tree).toEqual(R([L, C([L, L])]));
+    expect(tabs()).toEqual([['t:a'], ['t:c'], ['t:b']]);
+    st().moveTabSide('t:b', 'top');
+    expect(tabs()).toEqual([['t:a'], ['t:c', 't:b']]);
+    invariant();
+  });
+  test('the pane ×\'s tooltip names the side its tabs go to', () => {
+    expect(t.split.unsplitTip('top', 2)).toBe('Unsplit — its 2 tabs move to the pane above');
+    expect(t.split.unsplitTip('bottom', 1)).toBe('Unsplit — its tab moves to the pane below');
+    expect(t.split.unsplitTip('left', 1)).toBe('Unsplit — its tab moves to the pane on the left');
+    expect(t.split.unsplitTip('right', 0)).toBe('Unsplit — the empty pane closes');
+  });
+  test('focusPaneDir follows the panes on screen and wraps', () => {
+    twoPanes();
+    st().focusPaneDir('left');
+    expect(focus()).toBe(0);
+    st().focusPaneDir('right');
+    expect(focus()).toBe(1);
+    st().focusPaneDir('right');
+    expect(focus()).toBe(0);
+    invariant();
+  });
+  test('equalizePanes(path) evens one group, equalizePanes() every group; setSizes ignores unusable sizes', () => {
+    twoPanes();
+    st().splitPane('bottom');
+    expect(st().split.tree).toEqual(R([L, C([L, L])]));
+    st().setSizes([1], [0.2, 0.8]);
+    st().setSizes([], [0.7, 0.3]);
+    st().equalizePanes([1]);
+    expect(sizesAt(st().split.tree, [1])).toEqual([0.5, 0.5]);
+    expect(sizesAt(st().split.tree, [])).toEqual([0.7, 0.3]);
+    st().setSizes([1], [0.2, 0.8]);
+    st().equalizePanes();
+    expect(sizesAt(st().split.tree, [])).toEqual([0.5, 0.5]);
+    expect(sizesAt(st().split.tree, [1])).toEqual([0.5, 0.5]);
+    const before = st().split;
+    st().setSizes([], [1]);
+    st().setSizes([9], [0.5, 0.5]);
+    expect(st().split).toBe(before);
   });
 });
