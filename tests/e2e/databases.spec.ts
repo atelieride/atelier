@@ -911,11 +911,16 @@ test('Overview: the tiles; read on show, then every 5 s only while the window is
     await expect.poll(reads).toBe(1);
     await win.clock.runFor(12_000);
     expect(await reads(), 'no polling in a window that isn’t in front').toBe(1);
-    // In front: read at once (the last answer is older than 5 s), then every 5 s.
+    // In front: read at once (the last answer is older than 5 s), then every 5 s after each answer, on the page's clock.
+    // The server logs a read before it answers: the clock moves on only once the page has the answer (the sparkline
+    // takes one more sample in the same step that arms the next read), or the next read would be armed after the jump.
+    const answers = (count: number) => expect(o.locator('.dbo-spark')).toHaveAttribute('aria-label', new RegExp(`the last ${count} samples?$`));
     await front(true);
     await expect.poll(reads).toBe(2);
+    await answers(1);
     await win.clock.runFor(5_100);
     await expect.poll(reads).toBe(3);
+    await answers(2);
     // Blurred: paused.
     await front(false);
     await win.clock.runFor(15_000);
