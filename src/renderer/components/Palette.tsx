@@ -463,9 +463,11 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
       c('close-other-panes', t.cmd.closeOtherPanes, '', 'unsplit', st.closeOtherPanes),
       c('equalize-panes', t.cmd.equalizePanes, '', 'split', () => st.equalizePanes())
     ] : [];
+    // A split is offered only while it fits (four panes at most, room at the window's current size).
+    const canSplit = (side: 'right' | 'bottom') => st.canSplitHere(null, lifted.focus, side);
     const splitCmds = [
-      c('split-right', t.cmd.splitRight, kbd('⌘\\'), 'split', () => st.splitPane('right')),
-      c('split-down', t.cmd.splitDown, kbd('⌘⌥\\'), 'splitDown', () => st.splitPane('bottom')),
+      ...(canSplit('right') ? [c('split-right', t.cmd.splitRight, kbd('⌘\\'), 'split', () => st.splitPane('right'))] : []),
+      ...(canSplit('bottom') ? [c('split-down', t.cmd.splitDown, kbd('⌘⌥\\'), 'splitDown', () => st.splitPane('bottom'))] : []),
       ...tabMoves, ...panes
     ];
     // Tab pop-out windows: the tab in front, in a window of its own.

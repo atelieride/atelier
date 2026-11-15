@@ -4,7 +4,8 @@ import { waitKind } from '@shared/session-view';
 import { shownState, shownStateLabel } from '../selectors';
 import { t } from '../i18n/en';
 import { useApp } from '../store';
-import { paneOf, pickable, pickableKeys } from '../split';
+import { paneOf, paneView, pickable, pickableKeys } from '../split';
+import { useShallow } from 'zustand/react/shallow';
 import { newTerminalIn } from '../launch';
 import { isStarting } from '../starting';
 import { usePointerGate } from '../pointer-hover';
@@ -47,7 +48,7 @@ function PickRow({ k, active, onPick, onHover, id }: { k: TabKey; active: boolea
  */
 function SpacePicker({ index, focused, place }: { index: number; focused: boolean; place: CSSProperties }) {
   const order = useApp((s) => s.tabOrder);
-  const split = useApp((s) => s.split);
+  const split = useApp(useShallow((s) => paneView(s.split)));
   const list = useMemo(() => pickableKeys(order, split), [order, split]);
   const [active, setActive] = useState(0);
   const moved = usePointerGate();
@@ -95,7 +96,7 @@ function SessionsPicker({ index, focused, place }: { index: number; focused: boo
   const terminals = useApp((s) => s.terminals);
   const pins = useApp((s) => s.pins);
   const starting = useApp((s) => s.starting);
-  const split = useApp((s) => s.split);
+  const split = useApp(useShallow((s) => paneView(s.split)));
   const list = useMemo(() => pickable(terminals, pins, split), [terminals, pins, split]);
   const [active, setActive] = useState(0);
   const moved = usePointerGate();

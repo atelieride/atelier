@@ -44,7 +44,8 @@ import { applyOpenPaths } from './open-paths';
 import { runShellCommand } from './shell-command';
 import { openNewMenu } from './menus';
 import { cycle, nth, type TabKey } from './tabs-model';
-import { fronts } from './split';
+import { fronts, paneView } from './split';
+import { useShallow } from 'zustand/react/shallow';
 import { paneBox, roomyPanes } from './pane-place';
 import { usePaneArea } from './pane-area';
 import { PaneLayout } from './components/PaneLayout';
@@ -159,7 +160,7 @@ function focusPaneAt(e: ReactPointerEvent<HTMLDivElement>) {
 
 /**
  * A split-view pane's own pieces: what one pane shows under its strip — a Claude session's
- * session bar (no other pane has a bar; their view takes both rows) — the picker when empty, and its frame (focus and
+ * session bar (no other pane has a bar; their view takes its place too) — the picker when empty, and its frame (focus and
  * waiting glow).
  */
 function PaneChrome({ k, index, focused }: { k: TabKey | null; index: number; focused: boolean }) {
@@ -232,7 +233,8 @@ export function App() {
   const swapSides = useApp((s) => s.settings.swapSidePanels);
   const settingsOpen = useApp((s) => s.settingsOpen);
   const whatsNew = useApp((s) => s.whatsNew);
-  const split = useApp((s) => s.split);
+  // The panes and the focus, not the sizes: a divider drag re-renders none of the views (they are placed by pane).
+  const split = useApp(useShallow((s) => paneView(s.split)));
   const current = terminals.find((x) => x.id === selectedId);
   // A session still starting has its (starting) bar already: the terminal never shrinks when Claude arrives.
   const currentStarting = useApp((s) => !!current && isStarting(current, s.starting));
@@ -242,7 +244,7 @@ export function App() {
   const multi = split.panes.length > 1;
   const panes = multi ? fronts(split) : [];
   const paneOf = (k: TabKey) => panes.indexOf(k);
-  // A pane with a bar (a Claude session's, also while it starts) puts its view under it; any other takes both rows.
+  // A pane with a bar (a Claude session's, also while it starts) puts its view under it; any other takes the bar's place too.
   const startingNow = useApp((s) => s.starting);
   const barred = (k: TabKey | null | undefined) => {
     const term = k?.startsWith('t:') ? terminals.find((x) => x.id === k.slice(2)) : undefined;
@@ -342,7 +344,7 @@ export function App() {
       // An open Ask panel whose terminal is on screen has looked at its thread's latest outcome.
       for (const terminalId of Object.keys(st.askOpen)) st.markAskSeen(terminalId);
     };
-    const off = useApp.subscribe((s, prev) => { if (s.terminals !== prev.terminals || s.selectedId !== prev.selectedId || s.activeTab !== prev.activeTab || s.settingsOpen !== prev.settingsOpen || s.paletteOpen !== prev.paletteOpen || s.whatsNew !== prev.whatsNew || s.notes !== prev.notes || s.tabsRestored !== prev.tabsRestored || s.askOpen !== prev.askOpen || s.askThreads !== prev.askThreads || s.split !== prev.split) check(); });
+    const off = useApp.subscribe((s, prev) => { if (s.terminals !== prev.terminals || s.selectedId !== prev.selectedId || s.activeTab !== prev.activeTab || s.settingsOpen !== prev.settingsOpen || s.paletteOpen !== prev.paletteOpen || s.whatsNew !== prev.whatsNew || s.notes !== prev.notes || s.tabsRestored !== prev.tabsRestored || s.askOpen !== prev.askOpen || s.askThreads !== prev.askThreads || s.split.panes !== prev.split.panes || s.split.focus !== prev.split.focus) check(); });
     window.addEventListener('focus', check);
     return () => { off(); window.removeEventListener('focus', check); };
   }, []);
@@ -688,7 +690,7 @@ export function App() {
             {/* One pane: the session in front's Ask (a split's are in their pane's chrome, after its header). */}
             {!multi && activeTab === 'term' && selectedId && <AskHost key={selectedId} terminalId={selectedId} />}
             {multi && panes.map((k, i) => <PaneChrome key={k ?? `empty-${i}`} k={k} index={i} focused={i === split.focus} />)}
-            <PaneLayout body={workspaceBody} />
+            <PaneLayout />
             <PaneDropLayer />
             {pastedAt && activeTab === 'term' && (!multi || roomy[split.focus] === '1') && <div className={`paste-toast${pasteLeft ? ' is-left' : ''}`} style={cell(split.focus)}><i />{t.pasted}</div>}
             {/* Over the pane of the session the text goes to (the focused pane when that one isn't shown). */}

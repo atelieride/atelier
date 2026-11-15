@@ -31,5 +31,5 @@ test('pill pane: the pane showing the target session; otherwise (not shown, no t
   // A session behind another tab of its pane is not on screen: the focused pane.
   expect(dictationPane({ ...split, focus: 2 }, 'x')).toBe(2);
   expect(dictationPane({ ...split, focus: 2 }, null)).toBe(2);
-  expect(dictationPane({ panes: [{ tabs: [], front: null }], focus: 0, tree: row(1) }, 'b')).toBe(0);
+  expect(dictationPane({ panes: [{ tabs: [], front: null }], focus: 0 }, 'b')).toBe(0);
 });

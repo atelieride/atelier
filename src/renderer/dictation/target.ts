@@ -1,11 +1,11 @@
 import type { TerminalInfo } from '@shared/protocol';
-import { fronts, type Split } from '../split';
+import { fronts, type PaneView } from '../split';
 
 /**
  * Split view: the pane the dictation pill sits over — the one showing the session the text goes to (`target`), else
  * the focused pane (the target is not on screen, or there is none). One pane: that one.
  */
-export function dictationPane(split: Split, target: string | null): number {
+export function dictationPane(split: PaneView, target: string | null): number {
   const at = target ? fronts(split).indexOf(`t:${target}`) : -1;
   return at >= 0 ? at : split.focus;
 }

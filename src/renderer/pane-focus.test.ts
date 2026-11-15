@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { isPaneContent, mayFocusLate, shouldReturnFocus, type FocusFacts } from './pane-focus';
+import { isPaneContent, mayFocusLate, placedPane, shouldReturnFocus, type FocusFacts } from './pane-focus';
 import { useApp } from './store';
 
 // Coming back to the window puts the keyboard back in the pane — only from a control the mouse focused.
@@ -147,4 +147,13 @@ test('a late focus whose open came from what has closed since (the palette): the
   } finally {
     g.document = had;
   }
+});
+
+// Split view: a view's pane is where the body's grid places it (pane i's views start at its line p<i>l).
+test('placedPane reads the pane from a grid placement; anything else is in no pane', () => {
+  expect(placedPane('p0l')).toBe(0);
+  expect(placedPane('p3l')).toBe(3);
+  expect(placedPane('p1r')).toBeNull();
+  expect(placedPane('2')).toBeNull();
+  expect(placedPane('')).toBeNull();
 });

@@ -1,43 +1,57 @@
-import { useLayoutEffect, useState, type RefObject } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { useApp } from '../store';
 import { usePaneArea } from '../pane-area';
 import { gridTemplate, STRIP_PX } from '../pane-place';
 import { layoutPanes, type DividerBox } from '../split-layout';
 import { PaneDivider } from './PaneDivider';
 
+const sameDividers = (a: DividerBox[], b: DividerBox[]) => a.length === b.length && a.every((d, i) => {
+  const e = b[i]!;
+  return d.index === e.index && d.dir === e.dir && d.path.join('/') === e.path.join('/')
+    && d.rect.x === e.rect.x && d.rect.y === e.rect.y && d.rect.w === e.rect.w && d.rect.h === e.rect.h;
+});
+
 /**
  * The split view's geometry, kept in step with the workspace body: whenever the body changes size or the layout tree
  * changes, the panes are laid out again, the body's grid template gets every pane's lines (split only; the views placed
  * on them follow without re-rendering), the measure is published (usePaneArea: room checks, hit tests) and the dividers
  * are drawn on the gaps. A resize is handled in the ResizeObserver's callback, before the frame is painted, so the panes
- * never lag a frame behind the window.
+ * never lag a frame behind the window; one observer for the body's whole life (a divider drag only lays out again).
  */
-export function PaneLayout({ body }: { body: RefObject<HTMLDivElement | null> }) {
+export function PaneLayout() {
   const tree = useApp((s) => s.split.tree);
   const multi = useApp((s) => s.split.panes.length > 1);
   const [dividers, setDividers] = useState<DividerBox[]>([]);
-  useLayoutEffect(() => {
-    const el = body.current;
+  // The body is this marker's parent: its ref is attached before these effects run (the body's own ref is not yet).
+  const marker = useRef<HTMLSpanElement>(null);
+  const latest = useRef({ tree, multi });
+  latest.current = { tree, multi };
+  const apply = useCallback(() => {
+    const el = marker.current?.parentElement;
     if (!el) return;
-    const apply = () => {
-      const w = el.clientWidth;
-      const h = el.clientHeight;
-      const l = layoutPanes(tree, w, h);
-      if (multi) {
-        const g = gridTemplate(l.panes, w, h, STRIP_PX);
-        el.style.setProperty('grid-template-columns', g.columns);
-        el.style.setProperty('grid-template-rows', g.rows);
-      } else {
-        el.style.removeProperty('grid-template-columns');
-        el.style.removeProperty('grid-template-rows');
-      }
-      usePaneArea.getState().set({ width: w, height: h }, l.panes);
-      setDividers(multi ? l.dividers : []);
-    };
-    apply();
+    const { tree: t, multi: split } = latest.current;
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    const l = layoutPanes(t, w, h);
+    if (split) {
+      const g = gridTemplate(l.panes, w, h, STRIP_PX);
+      el.style.setProperty('grid-template-columns', g.columns);
+      el.style.setProperty('grid-template-rows', g.rows);
+    } else {
+      el.style.removeProperty('grid-template-columns');
+      el.style.removeProperty('grid-template-rows');
+    }
+    usePaneArea.getState().set({ width: w, height: h }, l.panes);
+    const next = split ? l.dividers : [];
+    setDividers((cur) => (sameDividers(cur, next) ? cur : next));
+  }, []);
+  useLayoutEffect(apply, [apply, tree, multi]);
+  useLayoutEffect(() => {
+    const el = marker.current?.parentElement;
+    if (!el) return;
     const ro = new ResizeObserver(apply);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [body, tree, multi]);
-  return <>{dividers.map((d) => <PaneDivider key={`${d.path.join('/')}:${d.index}`} box={d} />)}</>;
+  }, [apply]);
+  return <><span ref={marker} hidden />{dividers.map((d) => <PaneDivider key={`${d.path.join('/')}:${d.index}`} box={d} />)}</>;
 }

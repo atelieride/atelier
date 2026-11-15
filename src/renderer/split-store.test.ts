@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import type { TerminalInfo } from '@shared/protocol';
 import { useApp } from './store';
-import { flatten, isSplit, single } from './split';
+import { flatten, isSplit, paneView, single } from './split';
+import { shallow } from 'zustand/shallow';
 import { usePaneArea } from './pane-area';
 import { t } from './i18n/en';
 import { sizesAt, type LayoutNode } from './split-tree';
@@ -559,6 +560,15 @@ describe('four directions and the room floor', () => {
     st().focusPaneDir('right');
     expect(focus()).toBe(0);
     invariant();
+  });
+  test('a divider move or Equal Sizes leaves the pane view as it was (what views are placed by never changes for it)', () => {
+    twoPanes();
+    const before = paneView(st().split);
+    st().setSizes([], [0.7, 0.3]);
+    st().equalizePanes();
+    expect(shallow(paneView(st().split), before)).toBe(true);
+    st().focusPane(0);
+    expect(shallow(paneView(st().split), before)).toBe(false);
   });
   test('equalizePanes(path) evens one group, equalizePanes() every group; setSizes ignores unusable sizes', () => {
     twoPanes();

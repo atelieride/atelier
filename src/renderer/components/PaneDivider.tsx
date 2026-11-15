@@ -8,11 +8,15 @@ import { sizesAt, type LayoutNode } from '../split-tree';
 /** Half the grab area on each side of the 1 px gap. */
 const GRAB = 4;
 
-/** A divider's grab area in the body: 9 px across, centered on its gap, along the whole gap. */
-function grabStyle({ dir, rect }: DividerBox): CSSProperties {
+/**
+ * A divider's grab area in the body: 9 px across its gap, along the whole gap. A vertical one is centered on its gap; a
+ * horizontal one lies above it, so none of it covers the tab strip on top of the pane below (a press on a tab's top
+ * edge picks the tab).
+ */
+export function grabStyle({ dir, rect }: DividerBox): CSSProperties {
   return dir === 'row'
     ? { left: rect.x - GRAB, top: rect.y, width: rect.w + 2 * GRAB, height: rect.h }
-    : { left: rect.x, top: rect.y - GRAB, width: rect.w, height: rect.h + 2 * GRAB };
+    : { left: rect.x, top: rect.y - 2 * GRAB, width: rect.w, height: rect.h + 2 * GRAB };
 }
 
 /**

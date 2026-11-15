@@ -186,6 +186,44 @@ async function dragTabTo(win: Page, name: string, x: number, y: number) {
   await win.mouse.move(x, y, { steps: 8 });
 }
 
+test('a mixed layout comes back after a restart: the same panes, their tabs and their places', async () => {
+  const project = mkdtempSync(join(tmpdir(), 'atl-prj-'));
+  writeFileSync(join(project, 'notes.md'), 'Notes\n');
+  const { env, home } = e2eEnv({ ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl') });
+  let app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env });
+  try {
+    let win = await app.firstWindow();
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1440, 900));
+    await alphaBravo(app, win);
+    const strips = (w: Page) => w.evaluate(() => [...document.querySelectorAll<HTMLElement>('.workspace-body > .pane-strip')]
+      .sort((a, b) => Number(a.dataset.pane) - Number(b.dataset.pane)).map((s) => [...s.querySelectorAll('.tab .tab-name')].map((n) => n.textContent ?? '')));
+    // Bravo on the left; Alpha over notes.md on the right.
+    await menu(app, 'Split Right');
+    await win.locator('.pane-picker .pp-item', { hasText: 'Alpha' }).click();
+    await win.keyboard.press('F1');
+    await win.locator('.palette-input').fill('notes');
+    await win.locator('.palette-item', { hasText: 'notes.md' }).click();
+    await expect.poll(() => strips(win)).toEqual([['Bravo'], ['Alpha', 'notes.md']]);
+    await menu(app, 'Move Tab to Pane Below');
+    await expect.poll(() => strips(win)).toEqual([['Bravo'], ['Alpha'], ['notes.md']]);
+    const before = await geometry(win);
+    // Saved (debounced) before the app closes; atelierd keeps the terminals.
+    await win.waitForTimeout(800);
+    await app.close();
+
+    app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env });
+    win = await app.firstWindow();
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1440, 900));
+    await expect.poll(() => strips(win), { timeout: 15000 }).toEqual([['Bravo'], ['Alpha'], ['notes.md']]);
+    await expect.poll(async () => {
+      const g = await geometry(win);
+      return g.strips.every((s, i) => near(s.x, before.strips[i]!.x) && near(s.y, before.strips[i]!.y) && near(s.w, before.strips[i]!.w));
+    }).toBe(true);
+  } finally {
+    await stop(app, home);
+  }
+});
+
 test('a tab dropped on a pane\'s bottom edge stacks it there; at the minimum window an edge without room only moves the tab', async () => {
   const project = mkdtempSync(join(tmpdir(), 'atl-prj-'));
   const { env, home } = e2eEnv({ ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl') });
@@ -243,6 +281,41 @@ test('a tab dropped on a pane\'s bottom edge stacks it there; at the minimum win
   }
 });
 
+test('the focus moved to a pane whose view takes no keyboard (an image): typing never reaches the terminal of the pane left', async () => {
+  const project = mkdtempSync(join(tmpdir(), 'atl-prj-'));
+  writeFileSync(join(project, 'dot.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64'));
+  const { env, home } = e2eEnv({ ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl') });
+  const app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env });
+  try {
+    const win = await app.firstWindow();
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1440, 900));
+    await win.getByRole('button', { name: 'Open a terminal' }).click();
+    await expect(win.locator('.xterm-rows:visible')).toBeVisible({ timeout: 10000 });
+    await win.locator('.xterm-helper-textarea:visible').first().focus();
+    await win.keyboard.type('echo AL""PHAREADY\n');
+    const alpha = win.locator('.workspace-body > .terminal-slot:visible .xterm-rows').first();
+    await expect.poll(() => alpha.evaluate((el) => el.textContent ?? ''), { timeout: 15000 }).toContain('ALPHAREADY');
+
+    // The image in a new pane on the right; back in the terminal (it has the keyboard); then the focus to the image's pane.
+    await menu(app, 'Split Right');
+    await win.keyboard.press('F1');
+    await win.locator('.palette-input').fill('dot.png');
+    await win.locator('.palette-item', { hasText: 'dot.png' }).click();
+    await expect(win.locator('.pane-strip[data-pane="1"] .tab')).toHaveText([/dot\.png/]);
+    await win.locator('.workspace-body > .terminal-slot:visible').first().click();
+    await expect(win.locator('.pane-strip[data-pane="0"]')).toHaveClass(/is-focused/);
+    await expect.poll(() => win.evaluate(() => !!document.activeElement?.closest('.terminal-slot'))).toBe(true);
+    await menu(app, 'Focus Pane Right');
+    await expect(win.locator('.pane-strip[data-pane="1"]')).toHaveClass(/is-focused/);
+    await expect.poll(() => win.evaluate(() => !!document.activeElement?.closest('.terminal-slot'))).toBe(false);
+    await win.keyboard.type('echo LE""AKED\n');
+    await win.waitForTimeout(300);
+    expect(await alpha.evaluate((el) => el.textContent ?? '')).not.toContain('LEAKED');
+  } finally {
+    await stop(app, home);
+  }
+});
+
 test('View menu: Split Down, focus the pane above and below, move the tab up and down', async () => {
   const project = mkdtempSync(join(tmpdir(), 'atl-prj-'));
   const { env, home } = e2eEnv({ ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl') });
@@ -282,6 +355,14 @@ test('View menu: Split Down, focus the pane above and below, move the tab up and
     await expect.poll(strips).toEqual([['Bravo'], ['Alpha']]);
     g = await geometry(win);
     expect(near(g.strips[0]!.w, g.strips[1]!.w) && g.strips[1]!.y > g.frames[0]!.y).toBe(true);
+
+    // The upper pane's Split button from the keyboard (the lower pane focused): it splits its own pane.
+    expect(await focused()).toBe('1');
+    await win.locator('.pane-strip[data-pane="0"] .pane-split').focus();
+    await win.keyboard.press('Enter');
+    await expect.poll(() => win.locator('.workspace-body > .pane-strip').count()).toBe(3);
+    g = await geometry(win);
+    expect(near(g.strips[1]!.y, g.strips[0]!.y) && g.strips[1]!.x > g.strips[0]!.x).toBe(true);
   } finally {
     await stop(app, home);
   }
@@ -345,6 +426,12 @@ test('responsive: at the minimum window two columns and three stacked panes hold
     await menu(app, 'Split Down');
     await expect(win.locator('.toast')).toContainText('Not enough room');
     await expect(win.locator('.workspace-body > .pane-strip')).toHaveCount(3);
+    // The palette offers only the split that fits: right of the focused pane, not below it.
+    await win.keyboard.press('F1');
+    await win.locator('.palette-input').fill('split');
+    await expect(win.locator('.palette-item', { hasText: 'Split right' })).toHaveCount(1);
+    await expect(win.locator('.palette-item', { hasText: 'Split down' })).toHaveCount(0);
+    await win.keyboard.press('Escape');
     await menu(app, 'Unsplit All');
 
     // Four panes made at a larger size, then the window shrunk to its minimum: squeezed, never overlapping, every ×
@@ -369,6 +456,10 @@ test('responsive: at the minimum window two columns and three stacked panes hold
       const cutAbove = await win.evaluate(() => [...document.querySelectorAll<HTMLElement>('.workspace-body > .pane-picker')]
         .filter((p) => (p.querySelector('.pp-card')?.getBoundingClientRect().top ?? Infinity) < p.getBoundingClientRect().top - 0.5).length);
       expect({ name, cutAbove }).toEqual({ name, cutAbove: 0 });
+      // A strip too narrow for "+" leaves the Changes toggle out too (⇧⌘M and the menu still have it).
+      const crowded = await win.evaluate(() => [...document.querySelectorAll<HTMLElement>('.workspace-body > .pane-strip')]
+        .filter((s) => s.getBoundingClientRect().width <= 190 && s.querySelector('.changes-toggle') && getComputedStyle(s.querySelector('.changes-toggle')!).display !== 'none').length);
+      expect({ name, crowded }).toEqual({ name, crowded: 0 });
       await size(app, win, 1440, 900);
       const after = (await geometry(win)).frames;
       expect(after.every((f, i) => near(f.x, before[i]!.x) && near(f.y, before[i]!.y) && near(f.w, before[i]!.w) && near(f.h, before[i]!.h)), name).toBe(true);

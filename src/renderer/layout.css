@@ -1478,11 +1478,11 @@ button.either:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .workspace-body.is-waiting::before { box-shadow: var(--wait-ring); }
 .workspace-body.is-waiting::after { box-shadow: var(--wait-ring-bright); opacity: 0; animation: atl-wait-ring 2.4s ease-in-out var(--cue-cycles); }
 
-/* Split view: panes side by side under their strips. The views stay children of the body and
-   are only placed in a grid cell (row 1: a Claude session's bar, row 2: its content; any other view takes both rows);
-   the 1 px gap between columns is the divider. A pane's focus shows on its strip's tab and its frame. */
-/* Split: a grid whose lines are every pane's edges and bands, in px from the layout (written on the element by
-   PaneLayout); its 1 px gaps show the line between panes. */
+/* Split view: panes side by side or stacked, each under its own strip. The body is a grid whose lines are every pane's
+   edges and bands, in px from the layout (written on the element by PaneLayout); the views stay children of the body
+   and are only placed between their pane's lines (a Claude session's bar under the strip, the content under it; any
+   other view takes both). Its 1 px gaps show the line between panes. A pane's focus shows on its strip's tab and its
+   frame. */
 .workspace-body.is-split { display: grid; background: var(--line); }
 .is-split > .session-bar { position: relative; min-width: 0; overflow: hidden; }
 /* A pop-out's bar for anything but a session. */
@@ -1537,13 +1537,14 @@ button.either:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 /* A narrow window: the project name goes first, then Move Back keeps only its icon (its name is the tooltip). */
 @container sbar (max-width: 300px) { .popout-bar .popout-project { display: none; } }
 @media (max-width: 620px) { .popout-back span { display: none; } .popout-back { width: 28px; padding: 0; justify-content: center; } }
-/* Between two neighbours of a layout group: a 9 px grab area centered on the 1 px gap, along the whole gap (placed in px
-   by PaneDivider); vertical between side-by-side panes, horizontal between stacked ones. Its line lights up with the
+/* Between two neighbours of a layout group: a 9 px grab area across the 1 px gap, along the whole gap (placed in px by
+   PaneDivider: centered on a vertical one, above a horizontal one, off the lower pane's strip); vertical between
+   side-by-side panes, horizontal between stacked ones. Its line lights up with the
    brand on hover (after a beat, so passing over it doesn't flash), while dragging and with focus. */
 .pane-divider { position: absolute; z-index: 6; cursor: col-resize; outline: none; touch-action: none; }
 .pane-divider[data-dir="column"] { cursor: row-resize; }
 .pane-divider::after { content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: var(--brand); opacity: 0; transition: opacity var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); pointer-events: none; }
-.pane-divider[data-dir="column"]::after { top: 4px; bottom: auto; left: 0; right: 0; width: auto; height: 1px; }
+.pane-divider[data-dir="column"]::after { top: 8px; bottom: auto; left: 0; right: 0; width: auto; height: 1px; }
 .pane-divider:hover::after { opacity: 1; transition-delay: 90ms; }
 .pane-divider.is-dragging::after, .pane-divider:focus-visible::after { opacity: 1; transition-delay: 0ms; box-shadow: 0 0 0 1px var(--edge-violet); }
 /* A tab dragged over the workspace (the strip holds the pointer), or a pop-out dragged back: where
@@ -1612,11 +1613,11 @@ button.either:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .tab-tools .pane-split[aria-disabled] { opacity: .45; cursor: default; }
 .pane-strip .tab-tools .sb-btn.pane-close:hover, .pane-strip .tab-tools .sb-btn.pane-close:focus-visible { background: var(--tint-error-strong); color: var(--error); }
 .pane-strip.has-changes .tab-tools { padding-right: 0; }
-/* A narrow strip keeps its tab in front readable: Split Right gives way first, then "+" (⌘\, the menus and the strip's
-   right-click still have both); the × stays. */
+/* A narrow strip keeps its tab in front readable: Split Right gives way first, then "+" and the Changes toggle (⌘\, ⇧⌘M,
+   the menus and the strip's right-click still have them); the × stays. */
 .pane-strip { container: pstrip / inline-size; }
 @container pstrip (max-width: 220px) { .tab-tools .pane-split, .tab-tools .pane-sep { display: none; } }
-@container pstrip (max-width: 190px) { .pane-strip .tab-new { display: none; } }
+@container pstrip (max-width: 190px) { .pane-strip .tab-new, .pane-strip .changes-toggle { display: none; } }
 /* In front of a pane that isn't focused: the tab's own shape and full-contrast name, a quiet crown, no brand. */
 .tab.is-front { z-index: 1; color: var(--text); border-width: 2px 0 0; padding: 0 8px 0 13px;
   background: linear-gradient(var(--bg-2), var(--bg-2)) padding-box, linear-gradient(var(--line-strong), var(--line-strong)) border-box; }

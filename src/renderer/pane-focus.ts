@@ -3,18 +3,27 @@ import { useApp } from './store';
 import { focusTerminal } from './terminal/focus';
 
 /**
+ * The pane a `.workspace-body` child is placed in, from its grid placement: pane i's views start at its line `p<i>l`
+ * (pane-place.ts); null for anything not placed in a pane.
+ */
+export function placedPane(gridColumnStart: string): number | null {
+  const m = /^p(\d+)l$/.exec(gridColumnStart);
+  return m ? Number(m[1]) : null;
+}
+
+/**
  * After the pane focus moved: an element of another pane that still has the keyboard (the terminal that was focused,
  * when the newly focused pane's view has nothing to focus) gives it up, so typing never reaches a pane that isn't
- * focused. A view's pane is its `.workspace-body` child's grid column; pane controls (`data-pane-keep`: dividers, the
- * Close buttons) keep it.
+ * focused. A view's pane is where its `.workspace-body` child is placed; pane controls (`data-pane-keep`: dividers,
+ * the Close buttons) keep it.
  */
 export function blurStrayFocus(body: HTMLElement, focus: number): void {
   const el = document.activeElement;
   if (!(el instanceof HTMLElement) || !body.contains(el) || el.closest('[data-pane-keep]')) return;
   let child: HTMLElement = el;
   while (child.parentElement && child.parentElement !== body) child = child.parentElement;
-  const col = Number(child.style.gridColumnStart);
-  if (col >= 1 && col - 1 !== focus) el.blur();
+  const pane = placedPane(child.style.gridColumnStart);
+  if (pane !== null && pane !== focus) el.blur();
 }
 
 /** What in a pane header takes a click (or the keyboard) of its own. */
@@ -90,8 +99,8 @@ export function mayFocusLate(openedFrom: Element | null, view: Element | null): 
   if (a === openedFrom || view?.contains(a)) return true;
   return !!openedFrom && !openedFrom.isConnected && !!a.closest('.workspace-body');
 }
-/** A pane's own chrome, not its content: its header, its session bar, the tabs. */
-const PANE_CHROME = '.session-bar, .pane-head, .tabs';
+/** A pane's own chrome, not its content: its header, its session bar, its tab strip (one pane: the bar above). */
+const PANE_CHROME = '.session-bar, .pane-head, .tabs, .pane-strip';
 
 function factsOf(el: Element | null): FocusFacts | null {
   if (!(el instanceof HTMLElement)) return null;

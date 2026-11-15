@@ -308,7 +308,7 @@ export function relink(s: WorkspacesState, from: string, to: string): Workspaces
 export function renameKeys(s: WorkspacesState, fn: (k: TabKey) => TabKey): WorkspacesState {
   let changed = false;
   const map = (k: TabKey) => { const n = fn(k); if (n !== k) changed = true; return n; };
-  // A layout's panes: v1 one key each, v2 `{ tabs, front }`; anything else as it is.
+  // A layout's panes: v1 one key each, v2 and v3 `{ tabs, front }` (v3's tree kept); anything else as it is.
   const entry = (w: Workspace) => ({ ...w, order: w.order.map(map), active: w.active ? map(w.active) : null, layout: mapLayoutKeys(w.layout, map) });
   const list = s.list.map(entry);
   const parked = s.parked ? mapParked(s.parked, entry, (ks) => ks.map(map)) : undefined;

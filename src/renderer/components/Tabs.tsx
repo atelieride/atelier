@@ -397,9 +397,10 @@ function PaneTools({ pane, onLeaving }: { pane: number; onLeaving: (on: boolean)
   const alt = useAltHeld();
   const side = alt ? 'bottom' : 'right';
   const full = useApp((s) => s.split.panes.length >= MAX_PANES);
-  // The room depends on the body's size too: re-checked when it changes.
+  // The room depends on the panes and the body's size: checked again only when one of them changes.
   const area = usePaneArea((a) => a.area);
-  const room = useApp((s) => { void area; return s.canSplitHere(null, pane, side); });
+  const split = useApp((s) => s.split);
+  const room = useMemo(() => useApp.getState().canSplitHere(null, pane, side), [split, area, pane, side]);
   const target = useApp((s) => { const x = unsplitTarget(s.split, pane); return x ? `${x.to}:${x.count}` : ''; });
   const [to, count] = target.split(':') as ['left' | 'right' | 'top' | 'bottom', string];
   const tip = t.split.unsplitTip(to ?? 'left', Number(count ?? 0));
@@ -410,8 +411,12 @@ function PaneTools({ pane, onLeaving }: { pane: number; onLeaving: (on: boolean)
       <button type="button" className="sb-btn icon pane-split" aria-label={alt ? t.split.splitDown : t.split.splitRight} aria-disabled={blocked || undefined}
         data-tip={full ? t.split.max : !room ? t.split.noRoom : t.split.splitHint} data-kbd={blocked ? undefined : kbd(alt ? '⌘⌥\\' : '⌘\\')}
         onClick={(e) => {
+          // Its own pane is split: from the keyboard no press focused it first.
+          const st = useApp.getState();
           const s = e.altKey ? 'bottom' : 'right';
-          if (useApp.getState().canSplitHere(null, pane, s)) useApp.getState().splitPane(s);
+          if (!st.canSplitHere(null, pane, s)) return;
+          if (st.split.focus !== pane) st.focusPane(pane);
+          st.splitPane(s);
         }}>
         <Icon name={alt ? 'splitDown' : 'split'} size={13} stroke={1.8} />
       </button>

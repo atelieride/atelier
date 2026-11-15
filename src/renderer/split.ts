@@ -33,22 +33,30 @@ export function single(): Split {
   return one({ tabs: [], front: null });
 }
 
-export function isSplit(s: Split): boolean {
+/** What the views are placed by: the panes and the focus, without the sizes (a divider move leaves it as it was). */
+export type PaneView = Pick<Split, 'panes' | 'focus'>;
+
+/** The pane view of a split (compare it shallowly: its parts keep their identity while only sizes change). */
+export function paneView(s: Split): PaneView {
+  return { panes: s.panes, focus: s.focus };
+}
+
+export function isSplit(s: Pick<Split, 'panes'>): boolean {
   return s.panes.length > 1;
 }
 
 /** The pane holding `key` in split mode; -1 otherwise (one pane, or a key in no pane). */
-export function paneOf(s: Split, key: TabKey): number {
+export function paneOf(s: Pick<Split, 'panes'>, key: TabKey): number {
   return isSplit(s) ? s.panes.findIndex((p) => p.tabs.includes(key)) : -1;
 }
 
 /** Each pane's tab in front, left to right (split mode; one pane: none, the active key is it). */
-export function fronts(s: Split): PaneKey[] {
+export function fronts(s: Pick<Split, 'panes'>): PaneKey[] {
   return isSplit(s) ? s.panes.map((p) => p.front) : [];
 }
 
 /** The tabs on screen in split mode: every pane's tab in front. */
-export function visibleKeys(s: Split): TabKey[] {
+export function visibleKeys(s: Pick<Split, 'panes'>): TabKey[] {
   return fronts(s).filter((k): k is TabKey => k !== null);
 }
 
@@ -523,13 +531,13 @@ export function restoreLayout(raw: unknown, order: TabKey[], keepEmpty = false):
 }
 
 /** Outside Sessions: the empty pane offers the space's tabs not in front of any pane, in order. */
-export function pickableKeys(order: TabKey[], s: Split): TabKey[] {
+export function pickableKeys(order: TabKey[], s: Pick<Split, 'panes'>): TabKey[] {
   const shown = new Set(visibleKeys(s));
   return order.filter((k) => !shown.has(k)).slice(0, PICKER_MAX);
 }
 
 /** The picker of an empty pane: sessions and terminals not visible in any pane, pinned first (pin order), then the newest. */
-export function pickable(terminals: TerminalInfo[], pins: string[], s: Split): TerminalInfo[] {
+export function pickable(terminals: TerminalInfo[], pins: string[], s: Pick<Split, 'panes'>): TerminalInfo[] {
   const shown = new Set(visibleKeys(s));
   const free = terminals.filter((x) => !shown.has(`t:${x.id}`));
   const pinned = pins.map((id) => free.find((x) => x.id === id)).filter((x): x is TerminalInfo => !!x);
