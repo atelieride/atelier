@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import {
-  canMoveStep, canMoveToNewPane, dropZone, focusDir, focusPane, flatten, fronts, isSplit, lift, moveStep, moveTab, moveToNewPane, openToSide, paneCell, paneOf, pickableKeys, placeOpened,
-  reconcile, removeKeys, renameKeys, single, splitPane, stripKeys, unsplit, unsplitAll, unsplitTarget, visibleKeys, MAX_PANES, type Pane, type Split
+  canMoveStep, canMoveToNewPane, dropZone, focusDir, focusPane, flatten, fronts, isSplit, lift, mapLayoutKeys, mapLayoutPanes, moveStep, moveTab, moveToNewPane, openToSide, paneCell, paneOf,
+  pickableKeys, placeOpened, reconcile, removeKeys, renameKeys, restoreLayout, savedKeys, serializeLayout, single, splitPane, stripKeys, unsplit, unsplitAll, unsplitTarget, visibleKeys,
+  MAX_PANES, type Pane, type Split
 } from './split';
 import { row, sizesAt, type LayoutNode } from './split-tree';
 import type { TabKey } from './tabs-model';
@@ -497,6 +498,63 @@ describe('grid cells', () => {
   });
   test('a pane without a bar (anything but a Claude session) puts its view in both rows', () => {
     expect(paneCell(1, 'full')).toEqual({ gridColumn: '2 / 3', gridRow: '1 / 3' });
+  });
+});
+
+describe('saved layouts', () => {
+  const order = ['t:a', 'f:x', 't:b', 't:c'] as TabKey[];
+  const mixed = (focus = 2) => S([P(['t:a', 'f:x'], 'f:x'), P(['t:b']), P(['t:c'])], focus, R([L, C([L, L], [0.3, 0.7])], [0.6, 0.4]));
+  test('v3 round-trip keeps a mixed layout, its sizes and the focus', () => {
+    const saved = serializeLayout(mixed())!;
+    expect(saved.v).toBe(3);
+    expect(restoreLayout(JSON.parse(JSON.stringify(saved)), order)).toEqual(mixed());
+  });
+  test('a v2 layout from before stacking restores as a row with its widths', () => {
+    const v2 = { v: 2, panes: [{ tabs: ['t:a'], front: 't:a' }, { tabs: ['t:b'], front: 't:b' }], fractions: [0.3, 0.7], focus: 1 };
+    const s = restoreLayout(v2, ['t:a', 't:b'])!;
+    expect(s.panes).toEqual([P(['t:a']), P(['t:b'])]);
+    expect(s.tree).toEqual(R([L, L], [0.3, 0.7]));
+    expect(s.focus).toBe(1);
+  });
+  test('restore drops a pane with no open tab together with its leaf', () => {
+    const s = restoreLayout(serializeLayout(mixed(0)), ['t:a', 'f:x', 't:b'])!;
+    expect(s.panes).toEqual([P(['t:a', 'f:x'], 'f:x'), P(['t:b'])]);
+    expect(s.tree).toEqual(R([L, L], [0.6, 0.4]));
+    expect(s.focus).toBe(0);
+  });
+  test('without keepEmpty an empty pane is left out of what is saved; the focus follows its space', () => {
+    const s = S([P(['t:a']), P(['t:b']), P([], null)], 2, R([L, C([L, L])]));
+    const saved = serializeLayout(s)!;
+    expect(saved.panes).toEqual([{ tabs: ['t:a'], front: 't:a' }, { tabs: ['t:b'], front: 't:b' }]);
+    expect(saved.tree).toEqual(R([L, L]));
+    expect(saved.focus).toBe(1);
+  });
+  test('keepEmpty: a nested empty pane comes back in its place', () => {
+    const s = S([P(['t:a']), P(['t:b']), P([], null)], 2, R([L, C([L, L])]));
+    expect(restoreLayout(serializeLayout(s, true), ['t:a', 't:b'], true)).toEqual(s);
+  });
+  test('mapLayoutPanes emptying a pane: restore drops it and keeps the panes and the tree aligned', () => {
+    const mapped = mapLayoutPanes(serializeLayout(mixed(2)), (p) => (p.tabs.includes('t:b') ? { tabs: [], front: null } : p));
+    const s = restoreLayout(mapped, order)!;
+    // t:b is still open and named by no pane: it joins the focused pane (C).
+    expect(s.panes).toEqual([P(['t:a', 'f:x'], 'f:x'), P(['t:c', 't:b'], 't:c')]);
+    expect(s.tree).toEqual(R([L, L], [0.6, 0.4]));
+    expect(s.focus).toBe(1);
+  });
+  test('a v3 with five panes, a leaf count that differs from its panes, or bad sizes restores as one pane (null)', () => {
+    const p = (k: string) => ({ tabs: [k], front: k });
+    const keys = ['t:a', 't:b', 't:c', 't:d', 't:e'] as TabKey[];
+    expect(restoreLayout({ v: 3, panes: keys.map(p), tree: R([L, L, L, L, L]), focus: 0 }, keys)).toBeNull();
+    expect(restoreLayout({ v: 3, panes: [p('t:a'), p('t:b')], tree: R([L, L, L]), focus: 0 }, keys)).toBeNull();
+    expect(restoreLayout({ v: 3, panes: [p('t:a'), p('t:b')], tree: { kind: 'group', dir: 'row', children: [L, L], sizes: [1, -1] }, focus: 0 }, keys)).toBeNull();
+    expect(restoreLayout({ v: 3, panes: [p('t:a'), p('t:b')], focus: 0 }, keys)).toBeNull();
+  });
+  test('savedKeys and mapLayoutKeys read v3; the tree is kept', () => {
+    const saved = serializeLayout(mixed())!;
+    expect(savedKeys(saved)).toEqual(['t:a', 'f:x', 't:b', 't:c']);
+    const mapped = mapLayoutKeys(saved, (k) => (k === 't:b' ? 't:z' : k)) as typeof saved;
+    expect(mapped.panes[1]).toEqual({ tabs: ['t:z'], front: 't:z' });
+    expect(mapped.tree).toEqual(saved.tree);
   });
 });
 

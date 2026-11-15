@@ -8,7 +8,7 @@
 // (split-tree.ts) says where each pane is; `panes[i]` is its i-th leaf, so pane indices are the reading order.
 import type { TerminalInfo } from '@shared/protocol';
 import { MIN_PANE_PX } from './split-layout';
-import { insertBeside, leaf, neighbour, receiverOf, removeLeaf, row, sizesAt, type LayoutNode, type Side } from './split-tree';
+import { insertBeside, isLayoutNode, leaf, leafCount, neighbour, normalize, receiverOf, removeLeaf, row, type LayoutNode, type Side } from './split-tree';
 import { afterClose, moveTab as moveKey, openTab, type TabKey } from './tabs-model';
 
 /** A pane's tab in front, or null: an empty pane (Split Right's, with the picker). */
@@ -27,8 +27,7 @@ export const MAX_PANES = 4;
 /** How many sessions/terminals the picker of an empty pane offers. */
 export const PICKER_MAX = 8;
 
-const equal = (n: number): number[] => Array.from({ length: n }, () => 1 / n);
-const one = (pane: Pane): Split => ({ panes: [pane], focus: 0, tree: leaf() });
+const one =(pane: Pane): Split => ({ panes: [pane], focus: 0, tree: leaf() });
 
 /** One pane: a placeholder, the store's order and active key are its tabs and its front. */
 export function single(): Split {
@@ -100,13 +99,6 @@ function dropAt(s: Split, drop: (i: number) => boolean): Split {
   }
   if (panes.length === 1) return one(panes[0]!);
   return { panes, focus, tree };
-}
-
-/** Fractions scaled to sum 1; anything unusable (wrong length, not positive, NaN) becomes equal shares. */
-function normalized(fractions: number[], n: number): number[] {
-  if (fractions.length !== n || fractions.some((f) => !Number.isFinite(f) || f <= 0)) return equal(n);
-  const sum = fractions.reduce((a, b) => a + b, 0);
-  return fractions.map((f) => f / sum);
 }
 
 /**
@@ -436,47 +428,37 @@ export function gridColumns(fractions: number[]): string {
 }
 
 /**
- * What is saved per project and per workspace: every pane's tabs (any kind) and front, the widths and the
- * focused pane. Version 1 (v2.1, before tab groups) saved one key per pane: `{ panes: TabKey[], fractions, focus }`.
+ * What is saved per project and per workspace: every pane's tabs (any kind) and front, the layout tree (the panes in
+ * its reading order, with their sizes) and the focused pane. Older versions still restore: version 2 (panes side by
+ * side only) saved `{ v: 2, panes: { tabs, front }[], fractions, focus }`, version 1 (before tab groups) one key per
+ * pane, `{ panes: TabKey[], fractions, focus }`.
  */
-export interface SavedLayout { v: 2; panes: { tabs: TabKey[]; front: PaneKey }[]; fractions: number[]; focus: number }
+export interface SavedLayout { v: 3; panes: { tabs: TabKey[]; front: PaneKey }[]; tree: LayoutNode; focus: number }
 
 /**
- * The layout to save: null for one pane; empty panes are left out (their width goes to the others), fewer than two left:
- * null. keepEmpty: a space's view kept while another space is in front keeps them, as they were.
+ * The layout to save: null for one pane; empty panes are left out (their space goes to their neighbours, as when they
+ * close), fewer than two left: null. keepEmpty: a space's view kept while another space is in front keeps them, as
+ * they were.
  */
 export function serializeLayout(s: Split, keepEmpty = false): SavedLayout | null {
   if (!isSplit(s)) return null;
-  const kept = s.panes.map((p, i) => (p.tabs.length === 0 && !keepEmpty ? -1 : i)).filter((i) => i >= 0);
-  if (kept.length < 2) return null;
-  return {
-    v: 2,
-    panes: kept.map((i) => ({ tabs: [...s.panes[i]!.tabs], front: s.panes[i]!.front })),
-    fractions: normalized(kept.map((i) => (sizesAt(s.tree, []) ?? [])[i] ?? 0), kept.length),
-    focus: survivor(kept, s.focus)
-  };
+  const kept = keepEmpty ? s : dropAt(s, (i) => s.panes[i]!.tabs.length === 0);
+  if (!isSplit(kept)) return null;
+  return { v: 3, panes: kept.panes.map((p) => ({ tabs: [...p.tabs], front: p.front })), tree: kept.tree, focus: kept.focus };
 }
 
-/** The new index of pane `focus` among the `kept` ones (old indices, ascending): itself, else the nearest on its left, else on its right. */
-function survivor(kept: number[], focus: number): number {
-  const at = kept.indexOf(focus);
-  if (at >= 0) return at;
-  const left = kept.filter((i) => i < focus).length;
-  return left > 0 ? left - 1 : 0;
-}
-
-/** Every key a saved layout names, either version (whatever storage returned); nothing for anything else. */
+/** Every key a saved layout names, any version (whatever storage returned); nothing for anything else. */
 export function savedKeys(raw: unknown): TabKey[] {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
   const o = raw as Record<string, unknown>;
   if (!Array.isArray(o.panes)) return [];
-  if (o.v === 2) return o.panes.every(isPaneRecord) ? (o.panes as { tabs: TabKey[] }[]).flatMap((p) => p.tabs) : [];
+  if (o.v === 2 || o.v === 3) return o.panes.every(isPaneRecord) ? (o.panes as { tabs: TabKey[] }[]).flatMap((p) => p.tabs) : [];
   if (o.v === undefined && o.panes.every((k) => typeof k === 'string')) return o.panes as TabKey[];
   return [];
 }
 
 /**
- * A saved layout (whatever storage returned) with its keys mapped: v1 panes (one key each) and v2 panes (`{ tabs,
+ * A saved layout (whatever storage returned) with its keys mapped: v1 panes (one key each) and v2/v3 panes (`{ tabs,
  * front }`); anything else as it is. The same object when it has no panes.
  */
 export function mapLayoutKeys(raw: unknown, fn: (k: TabKey) => TabKey): unknown {
@@ -491,24 +473,32 @@ export function mapLayoutKeys(raw: unknown, fn: (k: TabKey) => TabKey): unknown 
   return { ...o, panes: o.panes.map(pane) };
 }
 
-/** A saved v2 layout with each pane mapped (`front` null when it names none); any other value as it is. */
+/** A saved v2 or v3 layout with each pane mapped (`front` null when it names none; the tree as it is); any other value as it is. */
 export function mapLayoutPanes(raw: unknown, fn: (p: Pane) => Pane): unknown {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
   const o = raw as { v?: unknown; panes?: unknown };
-  if (o.v !== 2 || !Array.isArray(o.panes) || !o.panes.every(isPaneRecord)) return raw;
+  if ((o.v !== 2 && o.v !== 3) || !Array.isArray(o.panes) || !o.panes.every(isPaneRecord)) return raw;
   return { ...o, panes: (o.panes as { tabs: TabKey[]; front?: unknown }[]).map((p) => fn({ tabs: p.tabs, front: typeof p.front === 'string' ? (p.front as TabKey) : null })) };
 }
 
 const isPaneRecord = (p: unknown): p is { tabs: string[]; front?: unknown } =>
   !!p && typeof p === 'object' && !Array.isArray(p) && Array.isArray((p as { tabs?: unknown }).tabs) && (p as { tabs: unknown[] }).tabs.every((k) => typeof k === 'string');
 
+/** Saved widths usable as they are (one per pane, positive, summing to 1); undefined otherwise (equal widths). */
+function savedFractions(raw: unknown, n: number): number[] | undefined {
+  if (!Array.isArray(raw) || raw.length !== n || !raw.every((f) => typeof f === 'number' && Number.isFinite(f) && f > 0)) return undefined;
+  return Math.abs((raw as number[]).reduce((a, b) => a + b, 0) - 1) < 0.01 ? (raw as number[]) : undefined;
+}
+
 /**
  * A saved layout (whatever storage returned) back into panes, against the tabs open now (`order`).
- * Version 2: each open tab named goes to its pane in the saved order (a key named twice stays in the first); open tabs
- * not named join the focused pane; a pane left without tabs is dropped. Version 1: each open terminal key its own pane,
- * every other open tab with the pane that was focused. At most three panes; fewer than two: null (one pane). Widths
- * that don't add up to 1 are equalized; the focus clamps to a surviving pane (left first). keepEmpty (a space's view
- * coming back): a pane saved empty stays — only one emptied by closes meanwhile is dropped.
+ * Version 3: the saved tree, checked (at most four panes, one leaf per saved pane, usable sizes) — else null. Version 2:
+ * its panes side by side, its widths. Each open tab named goes to its pane in the saved order (a key named twice stays
+ * in the first); open tabs not named join the focused pane; a pane left without tabs is dropped with its place in the
+ * tree (its space to its neighbour). Version 1: each open terminal key its own pane, every other open tab with the
+ * pane that was focused. At most four panes; fewer than two: null (one pane). The focus stays on its pane, or follows
+ * its space. keepEmpty (a space's view coming back): a pane saved empty stays — only one emptied by closes meanwhile
+ * is dropped.
  */
 export function restoreLayout(raw: unknown, order: TabKey[], keepEmpty = false): Split | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
@@ -516,40 +506,54 @@ export function restoreLayout(raw: unknown, order: TabKey[], keepEmpty = false):
   if (!Array.isArray(o.panes)) return null;
   const open = new Set(order);
   const seen = new Set<TabKey>();
+  const claim = (k: string): k is TabKey => {
+    if (!open.has(k as TabKey) || seen.has(k as TabKey)) return false;
+    seen.add(k as TabKey);
+    return true;
+  };
   let named: TabKey[][];
-  if (o.v === 2) {
+  let tree: LayoutNode;
+  let savedEmpty: boolean[];
+  const records = o.v === 2 || o.v === 3;
+  if (records) {
     if (!o.panes.every(isPaneRecord)) return null;
-    named = (o.panes as { tabs: string[] }[]).map((p) => p.tabs.filter((k): k is TabKey => {
-      if (!open.has(k as TabKey) || seen.has(k as TabKey)) return false;
-      seen.add(k as TabKey);
-      return true;
-    }));
+    const recs = o.panes as { tabs: string[] }[];
+    if (o.v === 3) {
+      if (!isLayoutNode(o.tree, MAX_PANES) || leafCount(o.tree) !== recs.length) return null;
+      tree = normalize(o.tree);
+    } else tree = row(recs.length, savedFractions(o.fractions, recs.length));
+    named = recs.map((p) => p.tabs.filter(claim));
+    savedEmpty = recs.map((p) => p.tabs.length === 0);
   } else if (o.v === undefined) {
     if (!o.panes.every((k) => typeof k === 'string')) return null;
     const keys = o.panes as string[];
     if (new Set(keys).size !== keys.length) return null;
-    named = keys.map((k) => (k.startsWith('t:') && k.length > 2 && open.has(k as TabKey) ? (seen.add(k as TabKey), [k as TabKey]) : []));
+    named = keys.map((k) => (k.startsWith('t:') && k.length > 2 && claim(k) ? [k as TabKey] : []));
+    tree = row(keys.length, savedFractions(o.fractions, keys.length));
+    savedEmpty = keys.map(() => false);
   } else return null;
-  const fronts = o.v === 2 ? (o.panes as { front?: unknown }[]).map((p) => p.front) : named.map((t) => t[0] ?? null);
-  const fr = Array.isArray(o.fractions) && o.fractions.length === named.length && o.fractions.every((f) => typeof f === 'number' && Number.isFinite(f) && f > 0)
-    ? (o.fractions as number[]) : null;
-  const sane = fr !== null && Math.abs(fr.reduce((a, b) => a + b, 0) - 1) < 0.01;
-  const empty = (i: number) => keepEmpty && o.v === 2 && (o.panes as { tabs: string[] }[])[i]!.tabs.length === 0;
-  const kept = named.map((t, i) => (t.length > 0 || empty(i) ? i : -1)).filter((i) => i >= 0).slice(0, MAX_PANES);
-  if (kept.length < 2) return null;
+  if (named.length < 2) return null;
+  const fronts = records ? (o.panes as { front?: unknown }[]).map((p) => p.front) : named.map((t) => t[0] ?? null);
+  // Panes kept: those with open tabs (and, keepEmpty, those saved empty), the first four of them.
+  let count = 0;
+  const keep = named.map((t, i) => (t.length > 0 || (keepEmpty && records && savedEmpty[i]!)) && ++count <= MAX_PANES);
+  if (count < 2) return null;
   const focusRaw = typeof o.focus === 'number' && Number.isInteger(o.focus) ? Math.min(Math.max(o.focus, 0), named.length - 1) : 0;
-  const focus = survivor(kept, focusRaw);
-  const inKept = new Set(kept.flatMap((i) => named[i]!));
+  const all: Pane[] = named.map((tabs) => ({ tabs, front: null }));
+  const at = new Map(all.map((p, i) => [p, i]));
+  const kept = dropAt({ panes: all, focus: focusRaw, tree }, (i) => !keep[i]);
+  const survivors = kept.panes.map((p) => at.get(p)!);
+  const inKept = new Set(survivors.flatMap((i) => named[i]!));
   const rest = order.filter((k) => !inKept.has(k));
   const sort = byOrder(order);
-  const panes: Pane[] = kept.map((i, j) => {
+  const panes: Pane[] = survivors.map((i, j) => {
     const own = named[i]!;
-    // v1: the focused pane gets the rest in strip order around its terminal; v2: the saved order, the rest after it.
-    const tabs = j !== focus ? own : o.v === 2 ? [...own, ...rest] : [...own, ...rest].sort(sort);
+    // v1: the focused pane gets the rest in strip order around its terminal; v2/v3: the saved order, the rest after it.
+    const tabs = j !== kept.focus ? own : records ? [...own, ...rest] : [...own, ...rest].sort(sort);
     const f = fronts[i];
     return { tabs, front: typeof f === 'string' && own.includes(f as TabKey) ? (f as TabKey) : tabs[0] ?? null };
   });
-  return { panes, focus, tree: row(kept.length, sane ? normalized(kept.map((i) => fr[i]!), kept.length) : undefined) };
+  return { panes, focus: kept.focus, tree: kept.tree };
 }
 
 /** Outside Sessions: the empty pane offers the space's tabs not in front of any pane, in order. */

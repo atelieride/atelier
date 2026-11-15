@@ -3,7 +3,7 @@ import type { TerminalInfo } from '@shared/protocol';
 import type { ProjectInfo } from '@shared/api';
 import { useApp } from './store';
 import { flatten, isSplit, single } from './split';
-import { sizesAt } from './split-tree';
+import { row, sizesAt } from './split-tree';
 
 // Split view with tab groups in the store: divider fractions and the layout saved per project, restored once per
 // window when the saved tabs are back.
@@ -119,7 +119,7 @@ describe('saved layout (store)', () => {
     st().setTerminals([...LIST, term('d', 4)]);
     expect(isSplit(st().split)).toBe(false);
   });
-  test('saved (debounced, v2) on every split change, only after the restore; one pane removes the entry', () => {
+  test('saved (debounced, v3) on every split change, only after the restore; one pane removes the entry', () => {
     vi.useFakeTimers();
     const first = v2([['t:a'], ['t:b']]);
     save('/p', first);
@@ -132,7 +132,7 @@ describe('saved layout (store)', () => {
     vi.advanceTimersByTime(100);
     expect(layouts()['/p']).toEqual(first);
     vi.advanceTimersByTime(300);
-    expect(layouts()['/p']).toEqual({ v: 2, panes: [{ tabs: ['t:a', 't:c'], front: 't:a' }, { tabs: ['t:b'], front: 't:b' }], fractions: [0.25, 0.75], focus: 1 });
+    expect(layouts()['/p']).toEqual({ v: 3, panes: [{ tabs: ['t:a', 't:c'], front: 't:a' }, { tabs: ['t:b'], front: 't:b' }], tree: row(2, [0.25, 0.75]), focus: 1 });
     st().closeOtherPanes();
     vi.advanceTimersByTime(400);
     expect(layouts()['/p']).toBeUndefined();

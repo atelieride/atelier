@@ -1,6 +1,6 @@
 // Split view layout per project: saved in localStorage per project root with the same rules
-// as the pins and hidden tabs. What an entry holds — version 2 (every pane's tabs) or 1 (one key per pane, read for
-// layouts saved before tab groups) — is checked when it is restored (split.ts restoreLayout).
+// as the pins and hidden tabs. What an entry holds — version 3 (every pane's tabs and the layout tree), 2 (panes side by
+// side only) or 1 (one key per pane, from before tab groups) — is checked when it is restored (split.ts restoreLayout).
 import type { SavedLayout } from './split';
 
 const KEY = 'atelier.splitLayout';

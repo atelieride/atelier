@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 import type { TerminalInfo } from '@shared/protocol';
 import { LAYOUT_SAVE_MS, useApp } from './store';
 import { isSplit, savedKeys, single } from './split';
+import { row } from './split-tree';
 import { loadLayout as loadSplitLayout, saveLayout as saveSplitLayout } from './layout-store';
 import type { TabKey } from './tabs-model';
 import { emptyViews } from './spaces';
@@ -437,7 +438,7 @@ describe('a space not in front changes without coming forward', () => {
   });
 
   test('the Sessions layout saved for the project waits for Sessions: a split in Docker meanwhile neither cancels nor replaces it', () => {
-    saveSplitLayout('/p', { v: 2, panes: [{ tabs: k('t:a'), front: 't:a' }, { tabs: k('t:b'), front: 't:b' }], fractions: [0.5, 0.5], focus: 0 });
+    saveSplitLayout('/p', { v: 3, panes: [{ tabs: k('t:a'), front: 't:a' }, { tabs: k('t:b'), front: 't:b' }], tree: row(2), focus: 0 });
     useApp.setState({ layoutRestored: false, tabsRestored: true, daemon: { ...st().daemon, listed: true } });
     st().openDocker(API, undefined, { preview: false });
     st().splitRight();

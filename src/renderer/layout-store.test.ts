@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from 'vitest';
 import { MAX_LAYOUT_PROJECTS, loadLayout, parseLayouts, saveLayout } from './layout-store';
 import type { SavedLayout } from './split';
+import { row } from './split-tree';
 import type { TabKey } from './tabs-model';
 
 const g = globalThis as { localStorage?: unknown };
@@ -11,7 +12,7 @@ const memory = () => {
   g.localStorage = { getItem: (k: string) => saved.get(k) ?? null, setItem: (k: string, v: string) => void saved.set(k, v) };
   return saved;
 };
-const layout = (a: TabKey, b: TabKey, fractions = [0.5, 0.5], focus = 0): SavedLayout => ({ v: 2, panes: [{ tabs: [a], front: a }, { tabs: [b], front: b }], fractions, focus });
+const layout = (a: TabKey, b: TabKey, fractions = [0.5, 0.5], focus = 0): SavedLayout => ({ v: 3, panes: [{ tabs: [a], front: a }, { tabs: [b], front: b }], tree: row(2, fractions), focus });
 const L = layout('t:a', 't:b', [0.4, 0.6], 1);
 
 test('saved per project root under atelier.splitLayout; one project does not touch another', () => {
