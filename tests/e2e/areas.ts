@@ -347,7 +347,8 @@ export const SOURCES: Record<string, Area[]> = {
   'src/renderer/settings-': ['settings', 'terminal'],
   'src/renderer/shell-command.ts': ['files'],
   'src/renderer/shell-env-auto.ts': ['terminal'],
-  'src/renderer/split.ts': ['workspace'],
+  // Split view: split.ts, split-tree.ts, split-layout.ts.
+  'src/renderer/split': ['workspace'],
   'src/renderer/starting.ts': ['sessions'],
   'src/renderer/storage-sync.ts': ['workspace'],
   'src/renderer/tab-': ['workspace'],
