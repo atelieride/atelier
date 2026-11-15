@@ -149,7 +149,7 @@ test('split view: a strip per pane, the picker, typing in the focused pane, focu
     await win.keyboard.type('echo MA""RKONE\n');
     await expect.poll(() => textOf(win, 2)).toContain('MARKONE');
     expect(await textOf(win, 1)).not.toContain('MARKONE');
-    await menu(app, 'Focus Previous Pane');
+    await menu(app, 'Focus Pane Left');
     await expect(strip(win, 0)).toHaveClass(/is-focused/);
     // ⌘⌥→ and ⌘\ pressed inside the terminal (the menu takes them in the app): xterm sends nothing for them.
     await win.keyboard.press('Meta+Alt+ArrowRight');
@@ -159,9 +159,9 @@ test('split view: a strip per pane, the picker, typing in the focused pane, focu
     expect(await textOf(win, 1)).toContain('echo MA""RKTWO');
     expect(await textOf(win, 2)).not.toContain('MARKTWO');
     // Next wraps: from Bravo (left) to Alpha, then back to Bravo.
-    await menu(app, 'Focus Next Pane');
+    await menu(app, 'Focus Pane Right');
     await expect(strip(win, 1)).toHaveClass(/is-focused/);
-    await menu(app, 'Focus Next Pane');
+    await menu(app, 'Focus Pane Right');
     await expect(strip(win, 0)).toHaveClass(/is-focused/);
 
     // A sidebar click on Alpha (in front on the right) moves the focus there: never a second view of it.
@@ -341,7 +341,7 @@ test('split view: closing a file opened from Changes in a pane keeps the split',
     await menu(app, 'Split Right');
     await win.locator('.pane-picker .pp-item').first().click();
     await expect.poll(async () => (await slots(win)).length).toBe(2);
-    await menu(app, 'Focus Previous Pane');
+    await menu(app, 'Focus Pane Left');
 
     const row = win.locator('.changes .change-row', { hasText: 'context.md' });
     await expect(row).toBeVisible({ timeout: 15000 });
@@ -384,7 +384,7 @@ test('tabs move between panes with ⌃⌘←/→ and the strip; a file with unsa
     expect(await strips(win)).toEqual([['Alpha'], ['Bravo']]);
     await expect(strip(win, 1)).toHaveClass(/is-focused/);
     // A file opened in the left pane, edited (not saved).
-    await menu(app, 'Focus Previous Pane');
+    await menu(app, 'Focus Pane Left');
     await win.keyboard.press('F1');
     await win.locator('.palette-input').fill('notes');
     await win.locator('.palette-item', { hasText: 'notes.md' }).click();
@@ -421,14 +421,14 @@ test('tabs move between panes with ⌃⌘←/→ and the strip; a file with unsa
 
     // Review Focus 5: two more files in the right pane, then ⌘W three times there. Its last tab closes it; the left pane
     // takes the focus and the keyboard goes to its view (typing reaches Alpha's terminal).
-    await menu(app, 'Focus Next Pane');
+    await menu(app, 'Focus Pane Right');
     await win.keyboard.press('F1');
     await win.locator('.palette-input').fill('todo');
     await win.locator('.palette-item', { hasText: 'todo.md' }).click();
     await expect.poll(() => strips(win)).toEqual([['Alpha', 'notes.md'], ['Bravo', 'todo.md']]);
-    await menu(app, 'Focus Previous Pane');
+    await menu(app, 'Focus Pane Left');
     await win.locator('.tab', { hasText: 'Alpha' }).click();
-    await menu(app, 'Focus Next Pane');
+    await menu(app, 'Focus Pane Right');
     await menu(app, 'Close Tab');
     await expect.poll(() => strips(win)).toEqual([['Alpha', 'notes.md'], ['Bravo']]);
     await expect(strip(win, 1).locator('.tab.is-active')).toHaveText([/Bravo/]);

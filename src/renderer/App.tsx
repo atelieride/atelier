@@ -587,11 +587,16 @@ export function App() {
           case 'md-split': setActivePreviewView('split'); break;
           case 'md-outline': toggleMarkdownOutline(); break;
           case 'toggle-word-wrap': toggleWordWrap(); break;
-          case 'split-right': st.splitRight(); break;
-          case 'focus-next-pane': st.focusPaneDir('right'); break;
-          case 'focus-prev-pane': st.focusPaneDir('left'); break;
+          case 'split-right': st.splitPane('right'); break;
+          case 'split-down': st.splitPane('bottom'); break;
+          case 'focus-pane-left': st.focusPaneDir('left'); break;
+          case 'focus-pane-right': st.focusPaneDir('right'); break;
+          case 'focus-pane-up': st.focusPaneDir('top'); break;
+          case 'focus-pane-down': st.focusPaneDir('bottom'); break;
           case 'move-tab-left': st.moveTabStep('left'); break;
           case 'move-tab-right': st.moveTabStep('right'); break;
+          case 'move-tab-up': st.moveTabStep('top'); break;
+          case 'move-tab-down': st.moveTabStep('bottom'); break;
           case 'close-pane': st.closePane(); break;
           case 'close-other-panes': st.closeOtherPanes(); break;
           case 'move-tab-window': { const k = st.activeKey(); if (k) void st.popOut(k, 'cascade', paneSize()); break; }

@@ -42,11 +42,15 @@ export function searchKeys(): readonly KeyBinding[] {
   return isMac() ? searchKeymap : withoutShiftModG(searchKeymap);
 }
 
+/** The split view's Split Down and Focus Pane Above / Below (⌘⌥\, ⌘⌥↑, ⌘⌥↓; Ctrl+Alt elsewhere): the menu's. */
+const SPLIT_KEYS = new Set(['Mod-Alt-\\', 'Mod-Alt-ArrowUp', 'Mod-Alt-ArrowDown']);
+
 /**
- * @codemirror/commands' default keymap for this platform. On macOS without Mod-i (select parent syntax): ⌘I is Ask
- * About This Session, and a key the editor handles never reaches the menu (⌘I takes it).
- * Elsewhere Ask is Ctrl+Shift+I, so Ctrl+I keeps selecting the parent syntax. `mac`: the platform to build for.
+ * @codemirror/commands' default keymap for this platform. A key the editor handles never reaches the menu, so the
+ * menu's keys are taken out: on every platform the split view's (Indent Selection and Add Cursor Above / Below lose
+ * those keys); on macOS also Mod-i (select parent syntax), ⌘I being Ask About This Session. Elsewhere Ask is
+ * Ctrl+Shift+I, so Ctrl+I keeps selecting the parent syntax. `mac`: the platform to build for.
  */
 export function defaultKeys(mac = isMac()): readonly KeyBinding[] {
-  return mac ? defaultKeymap.filter((b) => b.key !== 'Mod-i') : defaultKeymap;
+  return defaultKeymap.filter((b) => !SPLIT_KEYS.has(b.key ?? '') && !(mac && b.key === 'Mod-i'));
 }

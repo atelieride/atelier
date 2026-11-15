@@ -22,9 +22,11 @@ export function formatAccelerator(accel: string, platform: Platform = currentPla
  */
 const WINDOWS_OVERRIDES: Record<string, string | null> = {
   'Ctrl+Cmd+N': null,
-  // Move Tab to Left/Right Pane: Ctrl+Win+arrows switch virtual desktops.
+  // Move Tab to Left/Right Pane, Pane Above/Below: Ctrl+Win+arrows switch virtual desktops and snap windows.
   'Ctrl+Cmd+Left': 'Ctrl+Alt+Shift+Left',
   'Ctrl+Cmd+Right': 'Ctrl+Alt+Shift+Right',
+  'Ctrl+Cmd+Up': 'Ctrl+Alt+Shift+Up',
+  'Ctrl+Cmd+Down': 'Ctrl+Alt+Shift+Down',
   'CmdOrCtrl+Shift+3': null,
   'CmdOrCtrl+Shift+W': 'Alt+F4',
   'CmdOrCtrl+Shift+P': 'Ctrl+Shift+P',

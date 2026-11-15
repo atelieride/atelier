@@ -94,7 +94,8 @@ import { WorkspaceGlyph } from './WorkspaceGlyph';
 import { cardOf, wsActivityCard, wsColorVar } from '../workspace-view';
 import { closeWorkspaceInFront, renameWorkspaceInFront, stepWorkspace, wsActivityCommands } from '../workspace-menus';
 import { activitiesOf, workspacesOf, type Dot } from '../workspaces';
-import { canMoveStep } from '../split';
+import { canMoveStep, lift } from '../split';
+import { neighbour, type Side } from '../split-tree';
 
 interface Item {
   key: string; kind: 'session' | 'terminal' | 'file' | 'command' | 'resume' | 'history' | 'line' | 'task' | 'workspace'; label: string; hint: string; color?: string; icon?: IconName; run: () => void;
@@ -442,19 +443,31 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
     ] : [];
     // Split view; the pane commands only while there are panes. Moving the tab in front: while
     // it has somewhere to go (a pane on that side, or room and company for a new one there).
-    const moveTab = (dir: 1 | -1) => canMoveStep(st.split, st.tabOrder, st.activeKey(), dir === 1 ? 'right' : 'left');
+    const lifted = lift(st.split, st.tabOrder, st.activeKey());
+    const moveTab = (side: Side) => canMoveStep(st.split, st.tabOrder, st.activeKey(), side)
+      && (neighbour(lifted.tree, lifted.focus, side, false) !== null || st.canSplitHere(st.activeKey(), lifted.focus, side));
     const tabMoves = [
-      ...(moveTab(-1) ? [c('move-tab-left', t.cmd.moveTabLeft, kbd('⌃⌘←'), 'split', () => st.moveTabStep('left'))] : []),
-      ...(moveTab(1) ? [c('move-tab-right', t.cmd.moveTabRight, kbd('⌃⌘→'), 'split', () => st.moveTabStep('right'))] : [])
+      ...(moveTab('left') ? [c('move-tab-left', t.cmd.moveTabLeft, kbd('⌃⌘←'), 'split', () => st.moveTabStep('left'))] : []),
+      ...(moveTab('right') ? [c('move-tab-right', t.cmd.moveTabRight, kbd('⌃⌘→'), 'split', () => st.moveTabStep('right'))] : []),
+      ...(moveTab('top') ? [c('move-tab-up', t.cmd.moveTabUp, kbd('⌃⌘↑'), 'splitDown', () => st.moveTabStep('top'))] : []),
+      ...(moveTab('bottom') ? [c('move-tab-down', t.cmd.moveTabDown, kbd('⌃⌘↓'), 'splitDown', () => st.moveTabStep('bottom'))] : [])
     ];
+    // Focus: toward the sides that have a pane (at the edge, the farthest one across).
+    const focusTo = (side: Side) => neighbour(st.split.tree, st.split.focus, side, true) !== null;
     const panes = st.split.panes.length > 1 ? [
-      c('focus-next-pane', t.cmd.focusNextPane, kbd('⌘⌥→'), 'splitFocus', () => st.focusPaneDir('right')),
-      c('focus-prev-pane', t.cmd.focusPrevPane, kbd('⌘⌥←'), 'splitFocus', () => st.focusPaneDir('left')),
+      ...(focusTo('left') ? [c('focus-pane-left', t.cmd.focusPaneLeft, kbd('⌘⌥←'), 'splitFocus', () => st.focusPaneDir('left'))] : []),
+      ...(focusTo('right') ? [c('focus-pane-right', t.cmd.focusPaneRight, kbd('⌘⌥→'), 'splitFocus', () => st.focusPaneDir('right'))] : []),
+      ...(focusTo('top') ? [c('focus-pane-up', t.cmd.focusPaneUp, kbd('⌘⌥↑'), 'splitFocus', () => st.focusPaneDir('top'))] : []),
+      ...(focusTo('bottom') ? [c('focus-pane-down', t.cmd.focusPaneDown, kbd('⌘⌥↓'), 'splitFocus', () => st.focusPaneDir('bottom'))] : []),
       c('close-pane', t.cmd.closePane, '', 'unsplit', () => st.closePane()),
       c('close-other-panes', t.cmd.closeOtherPanes, '', 'unsplit', st.closeOtherPanes),
-      c('equalize-panes', t.cmd.equalizePanes, '', 'split', st.equalizePanes)
+      c('equalize-panes', t.cmd.equalizePanes, '', 'split', () => st.equalizePanes())
     ] : [];
-    const splitCmds = [c('split-right', t.cmd.splitRight, kbd('⌘\\'), 'split', st.splitRight), ...tabMoves, ...panes];
+    const splitCmds = [
+      c('split-right', t.cmd.splitRight, kbd('⌘\\'), 'split', () => st.splitPane('right')),
+      c('split-down', t.cmd.splitDown, kbd('⌘⌥\\'), 'splitDown', () => st.splitPane('bottom')),
+      ...tabMoves, ...panes
+    ];
     // Tab pop-out windows: the tab in front, in a window of its own.
     const front = st.activeKey();
     const moveCmds = front ? [

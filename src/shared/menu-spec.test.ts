@@ -26,14 +26,24 @@ test('commands: a few items send the same one on purpose (the palette on ⌘K, F
   expect(palette.map((i) => [i.accelerator, i.visible ?? true])).toEqual([['CmdOrCtrl+K', true], ['F1', true], ['CmdOrCtrl+Shift+P', false]]);
 });
 
-test('View: Move Tab to Left / Right Pane (⌃⌘← / ⌃⌘→) right after the pane focus keys', () => {
+test('View: Split Right and Down, the focus keys in four directions, then the tab moves in four directions', () => {
   const view = MENU_SPEC.find((m) => 'label' in m && m.label === 'View');
   const sub = view && 'submenu' in view ? view.submenu : [];
-  const labels = sub.map((i) => ('label' in i ? i.label : '-'));
-  const at = labels.indexOf('Focus Previous Pane');
-  expect(labels.slice(at, at + 5)).toEqual(['Focus Previous Pane', 'Move Tab to Left Pane', 'Move Tab to Right Pane', 'Unsplit', 'Unsplit All']);
-  expect(sub.find((i) => 'label' in i && i.label === 'Move Tab to Left Pane')).toEqual({ label: 'Move Tab to Left Pane', accelerator: 'Ctrl+Cmd+Left', command: 'move-tab-left' });
-  expect(sub.find((i) => 'label' in i && i.label === 'Move Tab to Right Pane')).toEqual({ label: 'Move Tab to Right Pane', accelerator: 'Ctrl+Cmd+Right', command: 'move-tab-right' });
+  const at = sub.findIndex((i) => 'label' in i && i.label === 'Split Right');
+  expect(sub.slice(at, at + 12)).toEqual([
+    { label: 'Split Right', accelerator: 'CmdOrCtrl+\\', command: 'split-right' },
+    { label: 'Split Down', accelerator: 'CmdOrCtrl+Alt+\\', command: 'split-down' },
+    { label: 'Focus Pane Left', accelerator: 'CmdOrCtrl+Alt+Left', command: 'focus-pane-left' },
+    { label: 'Focus Pane Right', accelerator: 'CmdOrCtrl+Alt+Right', command: 'focus-pane-right' },
+    { label: 'Focus Pane Above', accelerator: 'CmdOrCtrl+Alt+Up', command: 'focus-pane-up' },
+    { label: 'Focus Pane Below', accelerator: 'CmdOrCtrl+Alt+Down', command: 'focus-pane-down' },
+    { label: 'Move Tab to Left Pane', accelerator: 'Ctrl+Cmd+Left', command: 'move-tab-left' },
+    { label: 'Move Tab to Right Pane', accelerator: 'Ctrl+Cmd+Right', command: 'move-tab-right' },
+    { label: 'Move Tab to Pane Above', accelerator: 'Ctrl+Cmd+Up', command: 'move-tab-up' },
+    { label: 'Move Tab to Pane Below', accelerator: 'Ctrl+Cmd+Down', command: 'move-tab-down' },
+    { label: 'Unsplit', command: 'close-pane' },
+    { label: 'Unsplit All', command: 'close-other-panes' }
+  ]);
 });
 
 test('View › Sidebar (⌘B) right after Changes, showing or hiding the sidebar', () => {

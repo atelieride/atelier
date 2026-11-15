@@ -208,8 +208,9 @@ const strings = {
     pin: 'Pin', unpin: 'Unpin', moveUp: 'Move Up', moveDown: 'Move Down', continueOnPhone: 'Continue on Phone', reviewSession: 'Review Session', reviewAll: 'Review All Changes', commentLines: 'Comment on Lines', sendReview: (n: number) => `Send Review (${n})`, copySessionId: 'Copy Session ID', showChanges: 'Show Changes by Session', openTerminalHere: 'Open Terminal Here', reviewWorktree: 'Review Worktree', newSessionHere: 'New Session Here', newTerminalHere: 'New Terminal Here',
     copyPath: 'Copy Path', copyRelPath: 'Copy Relative Path', revealInFiles: 'Reveal in Files', revealInFinder: 'Reveal in Finder', openInFinder: 'Open in Finder', openNamedInFinder: (name: string) => `Open “${name}” in Finder`,
     open: 'Open', openDiff: 'Open Diff', keepOpen: 'Keep Open', toggleFolder: 'Expand / Collapse', mention: 'Mention in Session', mentionLines: 'Mention Lines in Session',
-    openToSide: 'Open to the Side', closePane: 'Unsplit', closeOtherPanes: 'Unsplit All', equalizePanes: 'Equal Widths',
-    moveLeftPane: 'Move to Left Pane', moveRightPane: 'Move to Right Pane', moveNewPaneRight: 'Move to New Pane Right',
+    openToSide: 'Open to the Side', closePane: 'Unsplit', closeOtherPanes: 'Unsplit All', equalizePanes: 'Equal Sizes', splitDown: 'Split Down',
+    moveLeftPane: 'Move to Left Pane', moveRightPane: 'Move to Right Pane', moveUpPane: 'Move to Pane Above', moveDownPane: 'Move to Pane Below',
+    moveNewPaneRight: 'Move to New Pane Right', moveNewPaneDown: 'Move to New Pane Below',
     newSession: 'Claude Session', newClaudeSession: 'New Claude Session', newTerminal: 'Terminal', terminalWithProfile: 'Terminal with Profile', sessionInFolder: 'Session in Folder…', terminalInFolder: 'Terminal in Folder…', resumeSession: 'Resume Session…', newUntitled: 'New File', splitRight: 'Split Right', newFile: 'New File…', newFolder: 'New Folder…', duplicate: 'Duplicate', trash: 'Move to Trash…',
     copy: 'Copy', paste: 'Paste', selectAll: 'Select All', clear: 'Clear', find: 'Find', findReplace: 'Find and Replace', gotoLine: 'Go to Line…', changeLanguage: 'Change Language Mode…'
   },
@@ -1518,8 +1519,9 @@ const strings = {
     newTerminalWith: (profile: string) => `New terminal: ${profile}`, reloadShellEnv: 'Reload shell environment',
     newSessionAs: (account: string) => `New session as ${account}`,
     changeLanguage: 'Change language mode…', changeTheme: 'Change theme…', changeTerminalFont: 'Change terminal font…', wordWrap: 'Toggle word wrap',
-    splitRight: 'Split right', focusNextPane: 'Focus next pane', focusPrevPane: 'Focus previous pane', closePane: 'Unsplit', closeOtherPanes: 'Unsplit all', equalizePanes: 'Equal pane widths',
-    moveTabLeft: 'Move tab to left pane', moveTabRight: 'Move tab to right pane',
+    splitRight: 'Split right', splitDown: 'Split down', focusPaneLeft: 'Focus pane left', focusPaneRight: 'Focus pane right', focusPaneUp: 'Focus pane above', focusPaneDown: 'Focus pane below',
+    closePane: 'Unsplit', closeOtherPanes: 'Unsplit all', equalizePanes: 'Equal pane sizes',
+    moveTabLeft: 'Move tab to left pane', moveTabRight: 'Move tab to right pane', moveTabUp: 'Move tab to pane above', moveTabDown: 'Move tab to pane below',
     openPr: (n: number) => `Open pull request #${n}`, openChecks: (n: number) => `Open checks of #${n}`
   },
   // Split view with tab groups.

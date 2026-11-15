@@ -22,7 +22,8 @@ import { openSessionPanel, panelAvailability } from './session-panel';
 import { restartFromMenu } from './restart-actions';
 import { openContextSheet } from './context-actions';
 import { copyText } from './clipboard';
-import { MAX_PANES, canMoveToNewPane, isSplit, paneOf, stripKeys } from './split';
+import { MAX_PANES, canMoveToNewPane, isSplit, lift, paneOf, stripKeys } from './split';
+import { neighbour, type Side } from './split-tree';
 import { CONNECTOR_ICONS, CONNECTOR_NAMES } from './connectors-view';
 import { fallbackUrl, taskLinkUrl, type TaskLink } from './task-links';
 import { sendInput } from './terminal/drafts';
@@ -234,16 +235,24 @@ export function tabMenu(key: TabKey): MenuItem[] {
     // Docker's and Automations' previews: kept the same way.
     head.push({ id: 'keep-open', label: m.keepOpen, run: () => (key.startsWith('dk:') ? s.keepDockerTab(key) : s.keepAutoTab(key)) }, 'sep');
   }
-  // Split view with tab groups: the tab moves to the pane on either side, or to a new pane
-  // on the right while there is room and it has company in its pane; the last pane's carries ⌃⌘→ (it makes one there).
+  // Split view with tab groups: the tab moves to the pane on any side, or to a new pane on the
+  // right or below while there is room and it has company in its pane; at the edge the new pane carries the move's keys
+  // (they make one there).
   const at = isSplit(s.split) ? paneOf(s.split, key) : 0;
-  const n = s.split.panes.length;
+  const tree = lift(s.split, s.tabOrder, s.activeKey()).tree;
+  const next = (side: Side) => (at >= 0 ? neighbour(tree, at, side, false) : null);
+  const step = (id: string, label: string, keys: string, side: Side): MenuItem[] => (next(side) !== null ? [{ id, label, hint: kbd(keys), run: () => st().moveTabSide(key, side) }] : []);
+  const fresh = (id: string, label: string, keys: string, side: 'right' | 'bottom', icon: 'split' | 'splitDown'): MenuItem[] =>
+    (at >= 0 && canMoveToNewPane(s.split, s.tabOrder, key) && s.canSplitHere(key, at, side)
+      ? [{ id, label, icon, ...(next(side) === null ? { hint: kbd(keys) } : {}), run: () => st().moveTabToNewPane(key, at, side) }]
+      : []);
   const moves: MenuItem[] = [
-    ...(at > 0 ? [{ id: 'move-left', label: m.moveLeftPane, hint: kbd('⌃⌘←'), run: () => st().moveTabSide(key, 'left') }] : []),
-    ...(at >= 0 && at < n - 1 ? [{ id: 'move-right', label: m.moveRightPane, hint: kbd('⌃⌘→'), run: () => st().moveTabSide(key, 'right') }] : []),
-    ...(at >= 0 && canMoveToNewPane(s.split, s.tabOrder, key)
-      ? [{ id: 'move-new-right', label: m.moveNewPaneRight, icon: 'split' as const, ...(at === n - 1 ? { hint: kbd('⌃⌘→') } : {}), run: () => st().moveTabToNewPane(key, at, 'right') }]
-      : [])
+    ...step('move-left', m.moveLeftPane, '⌃⌘←', 'left'),
+    ...step('move-right', m.moveRightPane, '⌃⌘→', 'right'),
+    ...step('move-up', m.moveUpPane, '⌃⌘↑', 'top'),
+    ...step('move-down', m.moveDownPane, '⌃⌘↓', 'bottom'),
+    ...fresh('move-new-right', m.moveNewPaneRight, '⌃⌘→', 'right', 'split'),
+    ...fresh('move-new-down', m.moveNewPaneDown, '⌃⌘↓', 'bottom', 'splitDown')
   ];
   return [
     ...moves,
@@ -385,6 +394,14 @@ function moveItem(key: TabKey, hint?: string): MenuItem {
   return { id: 'move-window', label: t.popout.move, icon: 'window', ...(hint ? { hint } : {}), run: () => void st().popOut(key, 'cascade', paneSize()) };
 }
 
+/** Split Right / Split Down for pane `pane`: disabled, saying why, at four panes or without room for the new pane now. */
+function splitItem(id: string, label: string, icon: 'split' | 'splitDown', keys: string, pane: number, side: 'right' | 'bottom', run: () => void): MenuItem {
+  const s = st();
+  const full = s.split.panes.length >= MAX_PANES;
+  const room = full || s.canSplitHere(null, s.split.panes.length > 1 ? pane : 0, side);
+  return { id, label, icon, hint: kbd(keys), disabled: full || !room, tip: full ? t.split.max : room ? undefined : t.split.noRoom, run };
+}
+
 /**
  * The menu of a split-view pane (its strip's empty part, a session's bar under it): its tab in front's Rename
  * (terminals) and Ask (sessions), the pane commands.
@@ -393,7 +410,6 @@ export function paneMenu(index: number): MenuItem[] {
   const s = st();
   const key = s.split.panes.length > 1 ? s.split.panes[index]?.front ?? null : null;
   const term = key?.startsWith('t:') ? s.terminals.find((x) => x.id === key.slice(2)) : undefined;
-  const full = s.split.panes.length >= MAX_PANES;
   const focusThen = (fn: () => void) => () => { if (st().split.focus !== index) st().focusPane(index); fn(); };
   return [
     // Renamed in its tab, right above (a pane's session bar has no name).
@@ -401,7 +417,8 @@ export function paneMenu(index: number): MenuItem[] {
     // A session's pane: its Ask.
     ...(term?.session ? [askItem(term.id)] : []),
     ...(term ? ['sep' as const] : []),
-    { id: 'split-right', label: m.splitRight, icon: 'split', hint: kbd('⌘\\'), disabled: full, tip: full ? t.split.max : undefined, run: focusThen(() => st().splitRight()) },
+    splitItem('split-right', m.splitRight, 'split', '⌘\\', index, 'right', focusThen(() => st().splitPane('right'))),
+    splitItem('split-down', m.splitDown, 'splitDown', '⌘⌥\\', index, 'bottom', focusThen(() => st().splitPane('bottom'))),
     { id: 'equalize', label: m.equalizePanes, run: () => st().equalizePanes() },
     'sep',
     { id: 'close-pane', label: m.closePane, icon: 'unsplit', run: () => st().closePane(index) },
@@ -676,8 +693,9 @@ export function newMenu(actions: { session: () => void; terminal: () => void }):
     'sep',
     { id: 'new-file', label: m.newUntitled, icon: 'plus', hint: kbd('⌘⌥N'), disabled: !st().project, run: () => st().newUntitled() },
     'sep',
-    // Split view: an empty pane on the right of the focused one (at three panes it says why not).
-    { id: 'split-right', label: m.splitRight, icon: 'split', hint: kbd('⌘\\'), disabled: st().split.panes.length >= MAX_PANES, tip: st().split.panes.length >= MAX_PANES ? t.split.max : undefined, run: () => st().splitRight() }
+    // Split view: an empty pane right of or below the focused one (at four panes, or without room, it says why not).
+    splitItem('split-right', m.splitRight, 'split', '⌘\\', st().split.focus, 'right', () => st().splitPane('right')),
+    splitItem('split-down', m.splitDown, 'splitDown', '⌘⌥\\', st().split.focus, 'bottom', () => st().splitPane('bottom'))
   ];
 }
 

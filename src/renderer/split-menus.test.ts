@@ -35,6 +35,30 @@ function twoPanes() {
   expect(tabs()).toEqual([['t:a', 't:c'], ['t:b']]);
 }
 
+test('stacked: a tab in the top pane offers Move to Pane Below (⌃⌘↓), and Move to New Pane Below with company', () => {
+  twoPanes();
+  const menu = tabMenu('t:a');
+  expect(item(menu, 'move-new-down')).toMatchObject({ label: 'Move to New Pane Below' });
+  item(menu, 'move-new-down')!.run();
+  expect(tabs()).toEqual([['t:c'], ['t:a'], ['t:b']]);
+  const top = tabMenu('t:c');
+  expect(item(top, 'move-down')).toMatchObject({ label: 'Move to Pane Below', hint: '⌃⌘↓' });
+  expect(item(top, 'move-up')).toBeUndefined();
+  expect(item(tabMenu('t:a'), 'move-up')).toMatchObject({ label: 'Move to Pane Above', hint: '⌃⌘↑' });
+  item(top, 'move-down')!.run();
+  expect(tabs()).toEqual([['t:a', 't:c'], ['t:b']]);
+});
+
+test('the pane menu offers Split Right and Split Down', () => {
+  twoPanes();
+  const down = item(paneMenu(1), 'split-down')!;
+  expect(down).toMatchObject({ label: 'Split Down', hint: '⌘⌥\\' });
+  down.run();
+  expect(tabs()).toEqual([['t:a', 't:c'], ['t:b'], []]);
+  expect(st().split.focus).toBe(2);
+  expect(item(paneMenu(0), 'equalize')).toMatchObject({ label: 'Equal Sizes' });
+});
+
 test('a tab in the first of two panes: Move to Right Pane (⌃⌘→) and Move to New Pane Right; no Open to the Side, no Unsplit', () => {
   twoPanes();
   const menu = tabMenu('t:a');
@@ -94,10 +118,10 @@ test('the file tree: Open to the Side on files only', () => {
   expect(tabs()).toEqual([['t:a', 't:b'], ['f:/p/x.md']]);
 });
 
-test('a pane\'s menu (its strip): Split Right, Equal Widths, Unsplit, Unsplit All (a terminal in front adds Rename)', () => {
+test('a pane\'s menu (its strip): Split Right, Split Down, Equal Sizes, Unsplit, Unsplit All (a terminal in front adds Rename)', () => {
   twoPanes();
   const menu = paneMenu(0);
-  expect(ids(menu)).toEqual(['rename', '-', 'split-right', 'equalize', '-', 'close-pane', 'close-other-panes']);
+  expect(ids(menu)).toEqual(['rename', '-', 'split-right', 'split-down', 'equalize', '-', 'close-pane', 'close-other-panes']);
   expect(item(menu, 'close-pane')!.label).toBe('Unsplit');
   expect(item(menu, 'close-other-panes')!.label).toBe('Unsplit All');
   item(menu, 'close-pane')!.run();

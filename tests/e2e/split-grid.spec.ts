@@ -241,3 +241,47 @@ test('a tab dropped on a pane\'s bottom edge stacks it there; at the minimum win
     await stop(app, home);
   }
 });
+
+test('View menu: Split Down, focus the pane above and below, move the tab up and down', async () => {
+  const project = mkdtempSync(join(tmpdir(), 'atl-prj-'));
+  const { env, home } = e2eEnv({ ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl') });
+  const app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env });
+  try {
+    const win = await app.firstWindow();
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1440, 900));
+    await alphaBravo(app, win);
+    const strips = () => win.evaluate(() => [...document.querySelectorAll<HTMLElement>('.workspace-body > .pane-strip')]
+      .sort((a, b) => Number(a.dataset.pane) - Number(b.dataset.pane)).map((s) => [...s.querySelectorAll('.tab .tab-name')].map((n) => n.textContent ?? '')));
+    const focused = () => win.locator('.workspace-body > .pane-strip.is-focused').getAttribute('data-pane');
+
+    // Split Down: an empty pane under Bravo's, focused; Alpha picked into it.
+    await menu(app, 'Split Down');
+    await expect.poll(() => win.locator('.workspace-body > .pane-strip').count()).toBe(2);
+    await win.locator('.pane-picker .pp-item', { hasText: 'Alpha' }).click();
+    await expect.poll(strips).toEqual([['Bravo'], ['Alpha']]);
+    let g = await geometry(win);
+    expect(near(g.strips[0]!.x, g.strips[1]!.x) && g.strips[1]!.y > g.frames[0]!.y).toBe(true);
+    expect(await focused()).toBe('1');
+
+    await menu(app, 'Focus Pane Above');
+    await expect.poll(focused).toBe('0');
+    await menu(app, 'Focus Pane Below');
+    await expect.poll(focused).toBe('1');
+    // At the bottom edge, below wraps to the farthest pane across: the top one.
+    await menu(app, 'Focus Pane Below');
+    await expect.poll(focused).toBe('0');
+    await menu(app, 'Focus Pane Below');
+    await expect.poll(focused).toBe('1');
+
+    // Alpha up into Bravo's pane: the lower pane closes. Down again from the edge: a new pane below.
+    await menu(app, 'Move Tab to Pane Above');
+    await expect(win.locator('.workspace-body.is-split')).toHaveCount(0);
+    await expect(win.locator('.tabs .tab')).toHaveText([/Bravo/, /Alpha/]);
+    await menu(app, 'Move Tab to Pane Below');
+    await expect.poll(strips).toEqual([['Bravo'], ['Alpha']]);
+    g = await geometry(win);
+    expect(near(g.strips[0]!.w, g.strips[1]!.w) && g.strips[1]!.y > g.frames[0]!.y).toBe(true);
+  } finally {
+    await stop(app, home);
+  }
+});

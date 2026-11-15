@@ -155,7 +155,7 @@ describe('⌘I is Ask About This Session', () => {
     expect(defaultKeymap.some((b) => b.key === 'Mod-i')).toBe(true);
     const keys = defaultKeys();
     expect(keys.some((b) => b.key === 'Mod-i')).toBe(false);
-    expect(keys).toHaveLength(defaultKeymap.length - 1);
+    expect(keys).toHaveLength(defaultKeymap.length - 4);
     // CodeMirror reads Mod as Ctrl here (its navigator is Windows'): Ctrl+I stands in for ⌘I.
     const s = EditorState.create({ doc: 'const a = (1 + 2);', extensions: keymap.of(keys) });
     const ctrlI = keydown({ key: 'i', code: 'KeyI', keyCode: 73, ctrlKey: true }).e;
@@ -164,6 +164,19 @@ describe('⌘I is Ask About This Session', () => {
 
   test('Windows: Ask is Ctrl+Shift+I, so Ctrl+I keeps select parent syntax', () => {
     initPlatform('win32');
-    expect(defaultKeys()).toEqual(defaultKeymap);
+    expect(defaultKeys().some((b) => b.key === 'Mod-i')).toBe(true);
+    expect(defaultKeys()).toHaveLength(defaultKeymap.length - 3);
+  });
+});
+
+describe('the split view\'s keys: ⌘⌥\\ splits down, ⌘⌥↑ / ⌘⌥↓ focus the pane above / below', () => {
+  test('on every platform the editors leave them to the menu (no Indent Selection, Add Cursor Above / Below on those keys)', () => {
+    for (const p of ['darwin', 'win32'] as const) {
+      initPlatform(p);
+      expect(defaultKeymap.some((b) => b.key === 'Mod-Alt-ArrowUp')).toBe(true);
+      expect(defaultKeymap.some((b) => b.key === 'Mod-Alt-\\')).toBe(true);
+      const keys = defaultKeys();
+      expect(keys.some((b) => b.key === 'Mod-Alt-ArrowUp' || b.key === 'Mod-Alt-ArrowDown' || b.key === 'Mod-Alt-\\')).toBe(false);
+    }
   });
 });

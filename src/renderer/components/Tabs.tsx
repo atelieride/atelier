@@ -403,7 +403,7 @@ function PaneTools({ pane, onLeaving }: { pane: number; onLeaving: (on: boolean)
   return (
     <span className="tab-tools">
       <button type="button" className="sb-btn icon pane-split" aria-label={alt ? t.split.splitDown : t.split.splitRight} aria-disabled={blocked || undefined}
-        data-tip={full ? t.split.max : !room ? t.split.noRoom : t.split.splitHint} data-kbd={blocked ? undefined : kbd(alt ? '⇧⌘\\' : '⌘\\')}
+        data-tip={full ? t.split.max : !room ? t.split.noRoom : t.split.splitHint} data-kbd={blocked ? undefined : kbd(alt ? '⌘⌥\\' : '⌘\\')}
         onClick={(e) => {
           const s = e.altKey ? 'bottom' : 'right';
           if (useApp.getState().canSplitHere(null, pane, s)) useApp.getState().splitPane(s);

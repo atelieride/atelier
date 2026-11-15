@@ -65,11 +65,11 @@ test('split view: typing never reaches a pane that is not focused; strip clicks 
     await expect(strip(1)).toContainText('Services');
 
     // Keyboard into A through the pane focus (⌘⌥←), then to Services (⌘⌥→): typing must not reach A.
-    await menu(app, 'Focus Previous Pane');
+    await menu(app, 'Focus Pane Left');
     await expect(strip(0)).toHaveClass(/is-focused/);
     await win.keyboard.type('echo MA""RKA\n');
     await expect.poll(() => textOf(win, 1)).toContain('MARKA');
-    await menu(app, 'Focus Next Pane');
+    await menu(app, 'Focus Pane Right');
     await expect(strip(1)).toHaveClass(/is-focused/);
     // minor 7: the focused pane's strip is the current one for assistive tech, the other isn't.
     await expect(strip(1)).toHaveAttribute('aria-current', 'true');
@@ -99,7 +99,7 @@ test('split view: typing never reaches a pane that is not focused; strip clicks 
     await expect.poll(() => textOf(win, 1)).toContain('HEADTWO');
 
     // I-3 (b): [A | B] with B focused; a file dropped from the tree onto A's terminal focuses A, and typing goes on in A.
-    await menu(app, 'Focus Next Pane');
+    await menu(app, 'Focus Pane Right');
     await menu(app, 'New Terminal');
     await expect(win.locator('.workspace-body > .terminal-slot:visible')).toHaveCount(2, { timeout: 10000 });
     await expect(strip(1)).toHaveClass(/is-focused/);

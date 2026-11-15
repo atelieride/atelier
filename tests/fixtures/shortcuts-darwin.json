@@ -456,27 +456,47 @@
       },
       {
         "keys": "⌘\\",
-        "label": "Split right (up to three panes)"
+        "label": "Split right (up to four panes)"
+      },
+      {
+        "keys": "⌘⌥\\",
+        "label": "Split down"
       },
       {
         "keys": "⌘⇧O",
         "label": "Move the tab to a window of its own (in that window: move it back)"
       },
       {
-        "keys": "⌘⌥→",
-        "label": "Focus next pane"
+        "keys": "⌘⌥←",
+        "label": "Focus the pane on the left"
       },
       {
-        "keys": "⌘⌥←",
-        "label": "Focus previous pane"
+        "keys": "⌘⌥→",
+        "label": "Focus the pane on the right"
+      },
+      {
+        "keys": "⌘⌥↑",
+        "label": "Focus the pane above"
+      },
+      {
+        "keys": "⌘⌥↓",
+        "label": "Focus the pane below"
       },
       {
         "keys": "⌃⌘←",
-        "label": "Move the tab to the left pane (from the first pane: a new pane)"
+        "label": "Move the tab to the left pane (at the edge: a new pane)"
       },
       {
         "keys": "⌃⌘→",
-        "label": "Move the tab to the right pane (from the last pane: a new pane)"
+        "label": "Move the tab to the right pane (at the edge: a new pane)"
+      },
+      {
+        "keys": "⌃⌘↑",
+        "label": "Move the tab to the pane above (at the edge: a new pane)"
+      },
+      {
+        "keys": "⌃⌘↓",
+        "label": "Move the tab to the pane below (at the edge: a new pane)"
       },
       {
         "keys": "⇧F10",

@@ -22,7 +22,9 @@ test('the design table', () => {
     // Sidebar: Ctrl+Shift+B, where ⌘B would go, is Databases'.
     ['CmdOrCtrl+B', 'Shift+Alt+B'],
     // Move Tab to Left/Right Pane: Ctrl+Win+arrows switch virtual desktops on Windows.
-    ['Ctrl+Cmd+Left', 'Ctrl+Alt+Shift+Left'], ['Ctrl+Cmd+Right', 'Ctrl+Alt+Shift+Right']
+    ['Ctrl+Cmd+Left', 'Ctrl+Alt+Shift+Left'], ['Ctrl+Cmd+Right', 'Ctrl+Alt+Shift+Right'], ['Ctrl+Cmd+Up', 'Ctrl+Alt+Shift+Up'], ['Ctrl+Cmd+Down', 'Ctrl+Alt+Shift+Down'],
+    // Split Down, and the pane focus keys up and down.
+    ['CmdOrCtrl+Alt+\\', 'Ctrl+Alt+\\'], ['CmdOrCtrl+Alt+Up', 'Ctrl+Alt+Up'], ['CmdOrCtrl+Alt+Down', 'Ctrl+Alt+Down']
   ];
   for (const [mac, win] of table) expect(windowsAccelerator(mac), mac).toBe(win);
 });

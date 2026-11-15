@@ -202,7 +202,7 @@ test('Ask: ⌘I docks the panel beside a narrower terminal and closes it again; 
     // keeps its width, dimmed under it; the header names the session.
     await command(app, 'split-right');
     await expect(win.locator('.workspace-body.is-split')).toBeVisible();
-    await command(app, 'focus-prev-pane');
+    await command(app, 'focus-pane-left');
     await expect(win.locator('.session-bar.is-pane.is-focused')).toBeVisible();
     const half = await widthOf(win, slot);
     await command(app, 'ask-session');
@@ -371,7 +371,7 @@ test('Ask keeps its dock across tabs and splits (the terminal gets one size each
     expect(Math.min(...split)).toBe(split.at(-1));
 
     // One pane again, docked; Move Tab to New Window: Ask opens there for its session and leaves this window.
-    await command(app, 'focus-prev-pane');
+    await command(app, 'focus-pane-left');
     await command(app, 'close-other-panes');
     await expect(win.locator('.workspace-body.is-split')).toHaveCount(0);
     await panel.getByRole('button', { name: 'Show beside the terminal' }).click();

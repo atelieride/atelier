@@ -171,13 +171,19 @@ export const MENU_SPEC: readonly MenuSpecMenu[] = [
     { label: 'Split Preview', command: 'md-split' },
     { label: 'Markdown Outline', command: 'md-outline' },
     sep,
-    // Split view with tab groups: up to three panes side by side, each with its own tabs.
+    // Split view with tab groups: up to four panes, side by side or stacked, each with its own tabs.
     { label: 'Split Right', accelerator: 'CmdOrCtrl+\\', command: 'split-right' },
-    { label: 'Focus Next Pane', accelerator: 'CmdOrCtrl+Alt+Right', command: 'focus-next-pane' },
-    { label: 'Focus Previous Pane', accelerator: 'CmdOrCtrl+Alt+Left', command: 'focus-prev-pane' },
-    // The focused pane's tab in front to the next pane on that side (a new pane from the edge pane).
+    { label: 'Split Down', accelerator: 'CmdOrCtrl+Alt+\\', command: 'split-down' },
+    // The pane on that side of the focused one (at the edge, the farthest one across).
+    { label: 'Focus Pane Left', accelerator: 'CmdOrCtrl+Alt+Left', command: 'focus-pane-left' },
+    { label: 'Focus Pane Right', accelerator: 'CmdOrCtrl+Alt+Right', command: 'focus-pane-right' },
+    { label: 'Focus Pane Above', accelerator: 'CmdOrCtrl+Alt+Up', command: 'focus-pane-up' },
+    { label: 'Focus Pane Below', accelerator: 'CmdOrCtrl+Alt+Down', command: 'focus-pane-down' },
+    // The focused pane's tab in front to the pane on that side (a new pane there from the edge).
     { label: 'Move Tab to Left Pane', accelerator: 'Ctrl+Cmd+Left', command: 'move-tab-left' },
     { label: 'Move Tab to Right Pane', accelerator: 'Ctrl+Cmd+Right', command: 'move-tab-right' },
+    { label: 'Move Tab to Pane Above', accelerator: 'Ctrl+Cmd+Up', command: 'move-tab-up' },
+    { label: 'Move Tab to Pane Below', accelerator: 'Ctrl+Cmd+Down', command: 'move-tab-down' },
     // "Unsplit": the pane goes, its tab stays open (the old "close" wording read as closing the tab).
     { label: 'Unsplit', command: 'close-pane' },
     { label: 'Unsplit All', command: 'close-other-panes' },

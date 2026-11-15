@@ -39,7 +39,14 @@ test('keysOf: macOS symbols', () => {
 });
 
 test('split view: the View menu items and their keys, listed in Settings › Keyboard', () => {
-  for (const [label, acc] of [['Split Right', 'CmdOrCtrl+\\'], ['Focus Next Pane', 'CmdOrCtrl+Alt+Right'], ['Focus Previous Pane', 'CmdOrCtrl+Alt+Left']] as const) {
+  const keyed = [
+    ['Split Right', 'CmdOrCtrl+\\', '⌘\\'], ['Split Down', 'CmdOrCtrl+Alt+\\', '⌘⌥\\'],
+    ['Focus Pane Left', 'CmdOrCtrl+Alt+Left', '⌘⌥←'], ['Focus Pane Right', 'CmdOrCtrl+Alt+Right', '⌘⌥→'],
+    ['Focus Pane Above', 'CmdOrCtrl+Alt+Up', '⌘⌥↑'], ['Focus Pane Below', 'CmdOrCtrl+Alt+Down', '⌘⌥↓'],
+    ['Move Tab to Left Pane', 'Ctrl+Cmd+Left', '⌃⌘←'], ['Move Tab to Right Pane', 'Ctrl+Cmd+Right', '⌃⌘→'],
+    ['Move Tab to Pane Above', 'Ctrl+Cmd+Up', '⌃⌘↑'], ['Move Tab to Pane Below', 'Ctrl+Cmd+Down', '⌃⌘↓']
+  ] as const;
+  for (const [label, acc] of keyed) {
     expect(labels('View')).toContain(label);
     expect(item(label)).toMatchObject({ accelerator: acc });
   }
@@ -48,9 +55,9 @@ test('split view: the View menu items and their keys, listed in Settings › Key
   expect(item('Unsplit All')).toEqual({ label: 'Unsplit All', command: 'close-other-panes' });
   expect(item('Close Pane')).toBeUndefined();
   const listed = SHORTCUTS.flatMap((g) => g.items.map((i) => i.keys));
-  for (const k of ['⌘\\', '⌘⌥→', '⌘⌥←']) expect(listed).toContain(k);
+  for (const [, , k] of keyed) expect(listed).toContain(k);
   // Nothing else in the menu on the same keys.
-  for (const k of ['⌘\\', '⌘⌥→', '⌘⌥←']) expect(accels.filter((a) => keysOf(a) === k)).toHaveLength(1);
+  for (const [, , k] of keyed) expect(accels.filter((a) => keysOf(a) === k)).toHaveLength(1);
 });
 
 test('Comment on Selection is ⌘⌥C: ⌘⇧L stays the editor\'s "select all matches" (no menu item takes it)', () => {

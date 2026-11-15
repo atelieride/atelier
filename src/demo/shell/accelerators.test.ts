@@ -123,7 +123,10 @@ describe('matchBinding', () => {
     expect(cmd(mac, key({ key: 'D', code: 'KeyD', ctrlKey: true, shiftKey: true }))).toBe('view-docker');
     expect(cmd(mac, key({ key: 'R', code: 'KeyR', ctrlKey: true, shiftKey: true }))).toBe('view-redis');
     expect(cmd(mac, key({ key: 'B', code: 'KeyB', ctrlKey: true, shiftKey: true }))).toBe('view-databases');
-    expect(cmd(mac, key({ key: 'ArrowRight', code: 'ArrowRight', metaKey: true, altKey: true }))).toBe('focus-next-pane');
+    expect(cmd(mac, key({ key: 'ArrowRight', code: 'ArrowRight', metaKey: true, altKey: true }))).toBe('focus-pane-right');
+    expect(cmd(mac, key({ key: 'ArrowDown', code: 'ArrowDown', metaKey: true, altKey: true }))).toBe('focus-pane-down');
+    expect(cmd(mac, key({ key: 'ArrowUp', code: 'ArrowUp', metaKey: true, ctrlKey: true }))).toBe('move-tab-up');
+    expect(cmd(mac, key({ key: '«', code: 'Backslash', metaKey: true, altKey: true }))).toBe('split-down');
     expect(cmd(mac, key({ key: 'F5', code: 'F5', altKey: true }))).toBe('next-change');
   });
 
@@ -159,7 +162,7 @@ describe('matchBinding off-Mac: AltGr types characters', () => {
   test('a real Ctrl+Alt accelerator still works off-Mac (the key typed is the binding\'s, or a named key)', () => {
     const cmd = (k: KeyLike) => { const e = matchBinding(other, k, false)?.effect; return e?.kind === 'command' ? e.command : null; };
     expect(cmd(key({ key: 's', code: 'KeyS', ctrlKey: true, altKey: true }))).toBe('save-all');
-    expect(cmd(key({ key: 'ArrowRight', code: 'ArrowRight', ctrlKey: true, altKey: true }))).toBe('focus-next-pane');
+    expect(cmd(key({ key: 'ArrowRight', code: 'ArrowRight', ctrlKey: true, altKey: true }))).toBe('focus-pane-right');
     // A layout of another script types its own letter on the key with Ctrl+Alt (Russian: ы on S): no AltGr, the
     // physical key decides, as for Ctrl+S.
     expect(cmd(key({ key: 'ы', code: 'KeyS', ctrlKey: true, altKey: true }))).toBe('save-all');
