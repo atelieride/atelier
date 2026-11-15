@@ -63,6 +63,11 @@ function leafPaths(n: LayoutNode, at: number[] = []): number[][] {
   return n.kind === 'pane' ? [at] : n.children.flatMap((c, i) => leafPaths(c, [...at, i]));
 }
 
+/** Each pane's path in the tree (child indices from the root), in reading order. */
+export function panePaths(tree: LayoutNode): number[][] {
+  return leafPaths(tree);
+}
+
 function nodeAt(n: LayoutNode, path: readonly number[]): LayoutNode | null {
   let cur: LayoutNode | undefined = n;
   for (const i of path) {
