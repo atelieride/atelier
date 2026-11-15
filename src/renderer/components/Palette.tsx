@@ -442,7 +442,7 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
     ] : [];
     // Split view; the pane commands only while there are panes. Moving the tab in front: while
     // it has somewhere to go (a pane on that side, or room and company for a new one there).
-    const moveTab = (dir: 1 | -1) => canMoveStep(st.split, st.tabOrder, st.activeKey(), dir);
+    const moveTab = (dir: 1 | -1) => canMoveStep(st.split, st.tabOrder, st.activeKey(), dir === 1 ? 'right' : 'left');
     const tabMoves = [
       ...(moveTab(-1) ? [c('move-tab-left', t.cmd.moveTabLeft, kbd('⌃⌘←'), 'split', () => st.moveTabStep(-1))] : []),
       ...(moveTab(1) ? [c('move-tab-right', t.cmd.moveTabRight, kbd('⌃⌘→'), 'split', () => st.moveTabStep(1))] : [])

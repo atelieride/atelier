@@ -45,6 +45,7 @@ import { runShellCommand } from './shell-command';
 import { openNewMenu } from './menus';
 import { cycle, nth, type TabKey } from './tabs-model';
 import { fronts, gridColumns, paneCell } from './split';
+import { sizesAt } from './split-tree';
 import { PaneDivider } from './components/PaneDivider';
 import { PaneDropLayer } from './components/PaneDropLayer';
 import { goToAttention, seenNow } from './attention-nav';
@@ -641,7 +642,7 @@ export function App() {
           {!multi && current && (current.session || currentStarting) && activeTab === 'term' && <SessionBar term={current} />}
           {!multi && current && activeTab === 'term' && <RunStrip term={current} />}
           <div ref={workspaceBody} className={`workspace-body ${multi ? 'is-split' : ''} ${!multi && isWaiting(current?.session) && activeTab === 'term' ? 'is-waiting' : ''}`}
-            style={multi ? { gridTemplateColumns: gridColumns(split.fractions) } : activeTab === 'term' && docked(selectedId ? `t:${selectedId}` : null) ? ASK_INSET : undefined}
+            style={multi ? { gridTemplateColumns: gridColumns(sizesAt(split.tree, []) ?? [1]) } : activeTab === 'term' && docked(selectedId ? `t:${selectedId}` : null) ? ASK_INSET : undefined}
             onPointerDownCapture={multi ? focusPaneAt : undefined}>
             <ErrorBoundary id="terminal" panel={t.crashPanels.terminal} visible={multi ? panes.some((k) => k?.startsWith('t:')) : activeTab === 'term'}>
               {terminals.map((term) => {

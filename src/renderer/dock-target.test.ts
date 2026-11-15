@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'vitest';
 import { useApp } from './store';
 import { single } from './split';
+import { row } from './split-tree';
 import { dockTargetAt, paneSize, tabDropAt } from './dock-target';
 import { DEFAULT_SETTINGS } from '@shared/settings';
 
@@ -37,7 +38,7 @@ test('one pane: the workspace body plus the pop-out\'s 46 px bar, rounded', () =
 });
 
 test('split: the focused pane (plus the bar)', () => {
-  useApp.setState({ tabOrder: ['t:a', 't:b'], split: { panes: [{ tabs: ['t:a'], front: 't:a' }, { tabs: ['t:b'], front: 't:b' }], focus: 1, fractions: [0.5, 0.5] } });
+  useApp.setState({ tabOrder: ['t:a', 't:b'], split: { panes: [{ tabs: ['t:a'], front: 't:a' }, { tabs: ['t:b'], front: 't:b' }], focus: 1, tree: row(2) } });
   expect(useApp.getState().split.panes).toHaveLength(2);
   els['.workspace-body'] = { width: 1200, height: 700 };
   els['.pane-frame[data-pane="1"]'] = { width: 599.5, height: 664 };
@@ -99,7 +100,7 @@ test('over a single pane: its middle shows it there, an edge band opens a pane o
 });
 
 test('split: the pane frame under the pointer, by its data-pane', () => {
-  useApp.setState({ tabOrder: ['t:a', 't:b'], split: { panes: [{ tabs: ['t:a'], front: 't:a' }, { tabs: ['t:b'], front: 't:b' }], focus: 0, fractions: [0.5, 0.5] } });
+  useApp.setState({ tabOrder: ['t:a', 't:b'], split: { panes: [{ tabs: ['t:a'], front: 't:a' }, { tabs: ['t:b'], front: 't:b' }], focus: 0, tree: row(2) } });
   const doc = mainWindow([
     el({ left: 300, top: 80, width: 449, height: 600 }, { pane: '0' }),
     el({ left: 750, top: 80, width: 450, height: 600 }, { pane: '1' })
@@ -112,7 +113,7 @@ test('split: the pane frame under the pointer, by its data-pane', () => {
 });
 
 test('elsewhere in the window (sidebar, header, session bar): the focused pane\'s middle, so it always lands somewhere shown', () => {
-  useApp.setState({ tabOrder: ['t:a', 't:b'], split: { panes: [{ tabs: ['t:a'], front: 't:a' }, { tabs: ['t:b'], front: 't:b' }], focus: 1, fractions: [0.5, 0.5] } });
+  useApp.setState({ tabOrder: ['t:a', 't:b'], split: { panes: [{ tabs: ['t:a'], front: 't:a' }, { tabs: ['t:b'], front: 't:b' }], focus: 1, tree: row(2) } });
   const doc = mainWindow();
   expect(dockTargetAt({ x: 120, y: 400 }, doc)).toEqual({ kind: 'pane', pane: 1, zone: 'middle' });
   expect(dockTargetAt({ x: 700, y: 20 }, doc)).toEqual({ kind: 'pane', pane: 1, zone: 'middle' });
@@ -129,7 +130,7 @@ const splitWindow = () => {
     '.pane-strip': [el({ left: 300, top: 46, width: 449, height: 34 }, { pane: '0' }, { '.tab-strip': [strip0] }), el({ left: 750, top: 46, width: 450, height: 34 }, { pane: '1' }, { '.tab-strip': [strip1] })]
   });
 };
-const twoPanes = () => useApp.setState({ tabOrder: ['t:a', 't:c', 't:b'], split: { panes: [{ tabs: ['t:a', 't:c'], front: 't:a' }, { tabs: ['t:b'], front: 't:b' }], focus: 0, fractions: [0.5, 0.5] } });
+const twoPanes = () => useApp.setState({ tabOrder: ['t:a', 't:c', 't:b'], split: { panes: [{ tabs: ['t:a', 't:c'], front: 't:a' }, { tabs: ['t:b'], front: 't:b' }], focus: 0, tree: row(2) } });
 
 test('split: each pane\'s strip takes the tab before the tab under the pointer, in that pane', () => {
   twoPanes();

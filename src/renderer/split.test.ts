@@ -1,19 +1,23 @@
 import { describe, expect, test } from 'vitest';
 import {
-  canMoveStep, canMoveToNewPane, focusPane, focusStep, flatten, fronts, isSplit, lift, moveStep, moveTab, moveToNewPane, openToSide, paneCell, paneOf, pickableKeys, placeOpened, reconcile,
-  removeKeys, renameKeys, single, splitRight, stripKeys, unsplit, unsplitAll, unsplitTarget, visibleKeys, type Pane, type Split
+  canMoveStep, canMoveToNewPane, dropZone, focusDir, focusPane, flatten, fronts, isSplit, lift, moveStep, moveTab, moveToNewPane, openToSide, paneCell, paneOf, pickableKeys, placeOpened,
+  reconcile, removeKeys, renameKeys, single, splitPane, stripKeys, unsplit, unsplitAll, unsplitTarget, visibleKeys, MAX_PANES, type Pane, type Split
 } from './split';
+import { row, sizesAt, type LayoutNode } from './split-tree';
 import type { TabKey } from './tabs-model';
 
-// Split view with tab groups: each pane owns its tabs and its tab in front.
+// Split view with tab groups: each pane owns its tabs and its tab in front; the layout tree says where each pane is.
 
 const P = (tabs: TabKey[], front: TabKey | null = tabs[0] ?? null): Pane => ({ tabs, front });
-const S = (panes: Pane[], focus = 0, fractions = panes.map(() => 1 / panes.length)): Split => ({ panes, focus, fractions });
-const near = (xs: number[], ys: number[]) => { expect(xs.length).toBe(ys.length); xs.forEach((x, i) => expect(x).toBeCloseTo(ys[i]!, 6)); };
+const S = (panes: Pane[], focus = 0, tree: LayoutNode = row(panes.length)): Split => ({ panes, focus, tree });
+const L: LayoutNode = { kind: 'pane' };
+const R = (children: LayoutNode[], sizes = children.map(() => 1 / children.length)): LayoutNode => ({ kind: 'group', dir: 'row', children, sizes });
+const C = (children: LayoutNode[], sizes = children.map(() => 1 / children.length)): LayoutNode => ({ kind: 'group', dir: 'column', children, sizes });
+const near = (xs: number[] | null, ys: number[]) => { expect(xs).not.toBeNull(); expect(xs!.length).toBe(ys.length); xs!.forEach((x, i) => expect(x).toBeCloseTo(ys[i]!, 6)); };
 
 describe('one pane', () => {
-  test('single(): one placeholder pane, focused, full width; not split', () => {
-    expect(single()).toEqual({ panes: [{ tabs: [], front: null }], focus: 0, fractions: [1] });
+  test('single(): one placeholder pane, focused, full size; not split', () => {
+    expect(single()).toEqual({ panes: [{ tabs: [], front: null }], focus: 0, tree: { kind: 'pane' } });
     expect(isSplit(single())).toBe(false);
     expect(isSplit(S([P(['t:a']), P([])]))).toBe(true);
   });
@@ -77,12 +81,12 @@ describe('closing tabs (removeKeys): a pane goes back to its own previous tab', 
     const s = S([P(['t:a', 'f:x'], 't:a'), P(['t:b'])]);
     expect(removeKeys(s, (k) => k === 'f:x', [])).toEqual(S([P(['t:a'], 't:a'), P(['t:b'])]));
   });
-  test('a pane that loses its last tab closes; the focused one hands the focus left first, then right', () => {
-    const three = S([P(['t:a']), P(['t:b']), P(['t:c'])], 1, [0.5, 0.25, 0.25]);
+  test('a pane that loses its last tab closes, its width to the pane on its left (the first one\'s to the right); the focus follows', () => {
+    const three = S([P(['t:a']), P(['t:b']), P(['t:c'])], 1, row(3, [0.5, 0.25, 0.25]));
     const mid = removeKeys(three, (k) => k === 't:b', []);
     expect(mid.panes).toEqual([P(['t:a']), P(['t:c'])]);
     expect(mid.focus).toBe(0);
-    near(mid.fractions, [2 / 3, 1 / 3]);
+    near(sizesAt(mid.tree, []), [0.75, 0.25]);
     const first = removeKeys({ ...three, focus: 0 }, (k) => k === 't:a', []);
     expect(first.panes).toEqual([P(['t:b']), P(['t:c'])]);
     expect(first.focus).toBe(0);
@@ -156,6 +160,17 @@ describe('reconcile: the store\'s order and active key against the panes', () =>
     const s = S([P(['t:a', 'f:x'], 't:a'), P(['t:b'])], 0);
     expect(reconcile(s, ['t:a', 'f:x', 't:b'], 't:a', [])).toBe(s);
   });
+  test('a terminal exiting empties a nested pane: the group collapses and the focus stays on its pane', () => {
+    const s = S([P(['t:a'], 't:a'), P(['t:b'], 't:b'), P(['t:c'], 't:c')], 0, R([L, C([L, L])]));
+    const next = reconcile(s, ['t:a', 't:b'], 't:a', []);
+    expect(next.tree).toEqual(R([L, L]));
+    expect(next.panes).toEqual([P(['t:a'], 't:a'), P(['t:b'], 't:b')]);
+    expect(next.focus).toBe(0);
+    // The focused pane emptied: the focus follows its space to the pane above it.
+    const mine = reconcile({ ...s, focus: 2 }, ['t:a', 't:b'], 't:b', []);
+    expect(mine.focus).toBe(1);
+    expect(mine.tree).toEqual(R([L, L]));
+  });
   test('a pane with tabs always has one in front — its most recent, else its last', () => {
     const s = S([P(['t:a', 'f:x'], null), P(['t:b'])], 1);
     expect(reconcile(s, ['t:a', 'f:x', 't:b'], 't:b', ['f:x', 't:a', 't:b']).panes[0]).toEqual(P(['t:a', 'f:x'], 't:a'));
@@ -167,16 +182,31 @@ describe('reconcile: the store\'s order and active key against the panes', () =>
   });
 });
 
-describe('split right', () => {
-  test('one pane: its tabs stay left, an empty pane on the right takes the focus; fractions equal', () => {
-    expect(splitRight(single(), ['t:a', 't:b'], 't:b')).toEqual(S([P(['t:a', 't:b'], 't:b'), P([], null)], 1));
+describe('split right and split down', () => {
+  test('one pane: its tabs stay left, an empty pane on the right takes the focus; widths equal', () => {
+    expect(splitPane(single(), ['t:a', 't:b'], 't:b', 'right')).toEqual(S([P(['t:a', 't:b'], 't:b'), P([], null)], 1));
   });
   test('inserted right of the focused pane, not at the end', () => {
     const s = S([P(['t:a']), P(['t:b'])], 0);
-    expect(splitRight(s, [], 't:a')).toEqual(S([P(['t:a']), P([], null), P(['t:b'])], 1));
+    expect(splitPane(s, [], 't:a', 'right')).toEqual(S([P(['t:a']), P([], null), P(['t:b'])], 1));
   });
-  test('at three panes: refused (null)', () => {
-    expect(splitRight(S([P(['t:a']), P(['t:b']), P(['t:c'])]), [], 't:a')).toBeNull();
+  test('MAX_PANES is four; at four panes: refused (null)', () => {
+    expect(MAX_PANES).toBe(4);
+    expect(splitPane(S([P(['t:a']), P(['t:b']), P(['t:c'])]), [], 't:a', 'right')).not.toBeNull();
+    expect(splitPane(S([P(['t:a']), P(['t:b']), P(['t:c']), P(['t:d'])]), [], 't:a', 'bottom')).toBeNull();
+  });
+  test('Split Down stacks an empty pane below the focused one', () => {
+    const s = splitPane(lift(single(), ['t:a', 't:b'], 't:a'), ['t:a', 't:b'], 't:a', 'bottom')!;
+    expect(s.panes).toEqual([P(['t:a', 't:b'], 't:a'), P([], null)]);
+    expect(s.tree).toEqual(C([L, L]));
+    expect(s.focus).toBe(1);
+  });
+  test('Split Right next to a stacked pane wraps only that pane', () => {
+    const s = S([P(['t:a']), P(['t:b'])], 1, C([L, L]));
+    const next = splitPane(s, [], 't:b', 'right')!;
+    expect(next.tree).toEqual(C([L, R([L, L])]));
+    expect(next.panes).toEqual([P(['t:a']), P(['t:b']), P([], null)]);
+    expect(next.focus).toBe(2);
   });
 });
 
@@ -229,47 +259,70 @@ describe('a new pane for a tab', () => {
     const s = S([P(['t:a', 'f:x'], 't:a'), P(['t:b'])], 1);
     expect(moveToNewPane(s, [], null, 't:b', 0, 'left', [])).toEqual(S([P(['t:b'], 't:b'), P(['t:a', 'f:x'], 't:a')], 0));
   });
-  test('refused (null) at three panes and for a tab alone in its own target pane', () => {
-    expect(moveToNewPane(S([P(['t:a', 'f:x']), P(['t:b']), P(['t:c'])]), [], null, 'f:x', 0, 'right', [])).toBeNull();
+  test('refused (null) at four panes and for a tab alone in its own target pane', () => {
+    expect(moveToNewPane(S([P(['t:a', 'f:x']), P(['t:b']), P(['t:c']), P(['t:d'])]), [], null, 'f:x', 0, 'right', [])).toBeNull();
     expect(moveToNewPane(S([P(['t:a']), P(['t:b'])]), [], null, 't:a', 0, 'right', [])).toBeNull();
     expect(moveToNewPane(single(), ['t:a'], 't:a', 't:a', 0, 'right', [])).toBeNull();
+  });
+  test('below or above a pane: stacked with it, the rest of the layout untouched', () => {
+    const s = S([P(['t:a', 'f:x'], 'f:x'), P(['t:b'])], 0);
+    const down = moveToNewPane(s, [], null, 'f:x', 1, 'bottom', ['t:a'])!;
+    expect(down.tree).toEqual(R([L, C([L, L])]));
+    expect(down.panes).toEqual([P(['t:a'], 't:a'), P(['t:b']), P(['f:x'], 'f:x')]);
+    expect(down.focus).toBe(2);
+    const up = moveToNewPane(s, [], null, 'f:x', 0, 'top', ['t:a'])!;
+    expect(up.tree).toEqual(R([C([L, L]), L]));
+    expect(up.panes).toEqual([P(['f:x'], 'f:x'), P(['t:a'], 't:a'), P(['t:b'])]);
+    expect(up.focus).toBe(0);
   });
   test('canMoveToNewPane: room for a pane and not alone in its pane (one pane: the order)', () => {
     expect(canMoveToNewPane(single(), ['t:a', 't:b'], 't:a')).toBe(true);
     expect(canMoveToNewPane(single(), ['t:a'], 't:a')).toBe(false);
     expect(canMoveToNewPane(S([P(['t:a', 'f:x']), P(['t:b'])]), [], 'f:x')).toBe(true);
     expect(canMoveToNewPane(S([P(['t:a', 'f:x']), P(['t:b'])]), [], 't:b')).toBe(false);
-    expect(canMoveToNewPane(S([P(['t:a', 'f:x']), P(['t:b']), P(['t:c'])]), [], 'f:x')).toBe(false);
+    expect(canMoveToNewPane(S([P(['t:a', 'f:x']), P(['t:b']), P(['t:c'])]), [], 'f:x')).toBe(true);
+    expect(canMoveToNewPane(S([P(['t:a', 'f:x']), P(['t:b']), P(['t:c']), P(['t:d'])]), [], 'f:x')).toBe(false);
   });
 });
 
-describe('⌃⌘← / ⌃⌘→ (moveStep): the focused pane\'s tab in front', () => {
+describe('⌃⌘ with an arrow (moveStep): the focused pane\'s tab in front', () => {
   test('to the end of the neighbour, in front there, focused', () => {
     const s = S([P(['t:a', 'f:x'], 'f:x'), P(['t:b'])], 0);
-    expect(moveStep(s, [], 'f:x', 1, ['t:a'])).toEqual(S([P(['t:a'], 't:a'), P(['t:b', 'f:x'], 'f:x')], 1));
+    expect(moveStep(s, [], 'f:x', 'right', ['t:a'])).toEqual(S([P(['t:a'], 't:a'), P(['t:b', 'f:x'], 'f:x')], 1));
   });
   test('from the edge pane with room and company: a new pane on that side (one pane splits the tab out)', () => {
-    expect(moveStep(single(), ['t:a', 't:b'], 't:b', 1, ['t:a'])).toEqual(S([P(['t:a'], 't:a'), P(['t:b'], 't:b')], 1));
-    expect(moveStep(single(), ['t:a', 't:b'], 't:a', -1, ['t:b'])).toEqual(S([P(['t:a'], 't:a'), P(['t:b'], 't:b')], 0));
+    expect(moveStep(single(), ['t:a', 't:b'], 't:b', 'right', ['t:a'])).toEqual(S([P(['t:a'], 't:a'), P(['t:b'], 't:b')], 1));
+    expect(moveStep(single(), ['t:a', 't:b'], 't:a', 'left', ['t:b'])).toEqual(S([P(['t:a'], 't:a'), P(['t:b'], 't:b')], 0));
+    const down = moveStep(single(), ['t:a', 't:b'], 't:b', 'bottom', ['t:a'])!;
+    expect(down.tree).toEqual(C([L, L]));
+    expect(down.panes).toEqual([P(['t:a'], 't:a'), P(['t:b'], 't:b')]);
+  });
+  test('the neighbour below in a grid gets the tab', () => {
+    const s = S([P(['t:a', 'f:x'], 'f:x'), P(['t:b']), P(['t:c']), P(['t:d'])], 0, R([C([L, L]), C([L, L])]));
+    const next = moveStep(s, [], 'f:x', 'bottom', ['t:a'])!;
+    expect(next.panes[0]).toEqual(P(['t:a'], 't:a'));
+    expect(next.panes[1]).toEqual(P(['t:b', 'f:x'], 'f:x'));
+    expect(next.focus).toBe(1);
+    expect(next.tree).toBe(s.tree);
   });
   test('back again: the last tab of a pane joins its neighbour and the pane closes', () => {
     const s = S([P(['t:a'], 't:a'), P(['t:b'], 't:b')], 1);
-    expect(moveStep(s, [], 't:b', -1, [])).toEqual(S([P(['t:a', 't:b'], 't:b')]));
+    expect(moveStep(s, [], 't:b', 'left', [])).toEqual(S([P(['t:a', 't:b'], 't:b')]));
   });
-  test('nothing to do (null): alone at the edge, three panes at the edge, an empty focused pane', () => {
-    expect(moveStep(single(), ['t:a'], 't:a', 1, [])).toBeNull();
-    expect(moveStep(S([P(['t:a']), P(['t:b']), P(['t:c', 'f:x'], 'f:x')], 2), [], 'f:x', 1, [])).toBeNull();
-    expect(moveStep(S([P(['t:a']), P([], null)], 1), [], null, -1, [])).toBeNull();
+  test('nothing to do (null): alone at the edge, four panes at the edge, an empty focused pane', () => {
+    expect(moveStep(single(), ['t:a'], 't:a', 'right', [])).toBeNull();
+    expect(moveStep(S([P(['t:a']), P(['t:b']), P(['t:c']), P(['t:d', 'f:x'], 'f:x')], 3), [], 'f:x', 'right', [])).toBeNull();
+    expect(moveStep(S([P(['t:a']), P([], null)], 1), [], null, 'left', [])).toBeNull();
   });
 });
 
-describe('canMoveStep: the palette offers ⌃⌘←/→ only when they act', () => {
+describe('canMoveStep: the palette offers ⌃⌘ moves only when they act', () => {
   test('a neighbour, or room and company at the edge; never from an empty focused pane', () => {
-    expect(canMoveStep(single(), ['t:a', 't:b'], 't:b', 1)).toBe(true);
-    expect(canMoveStep(single(), ['t:a'], 't:a', 1)).toBe(false);
-    expect(canMoveStep(S([P(['t:a']), P(['t:b'])], 0), [], 't:a', 1)).toBe(true);
-    expect(canMoveStep(S([P(['t:a']), P([], null)], 1), [], null, -1)).toBe(false);
-    expect(canMoveStep(S([P(['t:a']), P([], null)], 1), [], null, 1)).toBe(false);
+    expect(canMoveStep(single(), ['t:a', 't:b'], 't:b', 'right')).toBe(true);
+    expect(canMoveStep(single(), ['t:a'], 't:a', 'right')).toBe(false);
+    expect(canMoveStep(S([P(['t:a']), P(['t:b'])], 0), [], 't:a', 'right')).toBe(true);
+    expect(canMoveStep(S([P(['t:a']), P([], null)], 1), [], null, 'left')).toBe(false);
+    expect(canMoveStep(S([P(['t:a']), P([], null)], 1), [], null, 'right')).toBe(false);
   });
 });
 
@@ -314,10 +367,12 @@ describe('open to the side', () => {
     const s = S([P(['t:a', 'f:x'], 'f:x'), P(['t:b'])], 0);
     expect(openToSide(s, [], 'f:x', 'f:x', ['t:a'])).toEqual(S([P(['t:a'], 't:a'), P(['f:x'], 'f:x'), P(['t:b'])], 1));
   });
-  test('three panes: into the right neighbour (from the last pane, the left one)', () => {
-    const s = S([P(['t:a']), P(['t:b']), P(['t:c'])], 1);
+  test('four panes: into the right neighbour (from the last pane, the left one; stacked, the one below)', () => {
+    const s = S([P(['t:a']), P(['t:b']), P(['t:c']), P(['t:d'])], 1);
     expect(openToSide(s, [], 't:b', 'f:x', []).panes[2]).toEqual(P(['t:c', 'f:x'], 'f:x'));
-    expect(openToSide({ ...s, focus: 2 }, [], 't:c', 'f:x', []).panes[1]).toEqual(P(['t:b', 'f:x'], 'f:x'));
+    expect(openToSide({ ...s, focus: 3 }, [], 't:d', 'f:x', []).panes[2]).toEqual(P(['t:c', 'f:x'], 'f:x'));
+    const stack = S([P(['t:a']), P(['t:b']), P(['t:c']), P(['t:d'])], 0, C([L, L, L, L]));
+    expect(openToSide(stack, [], 't:a', 'f:x', []).panes[1]).toEqual(P(['t:b', 'f:x'], 'f:x'));
   });
   test('alone in the focused pane: nothing to split off (same object)', () => {
     const s = S([P(['t:a']), P(['t:b'])], 0);
@@ -336,11 +391,26 @@ describe('unsplit (the pane ×) and Unsplit All', () => {
     expect(unsplit(two, 0)).toEqual(S([P(['t:a', 'f:x', 't:b', 'f:y'], 'f:y')]));
   });
   test('three panes: the middle one merges left; widths add up', () => {
-    const s = S([P(['t:a']), P(['t:b']), P(['t:c'])], 1, [0.5, 0.25, 0.25]);
+    const s = S([P(['t:a']), P(['t:b']), P(['t:c'])], 1, row(3, [0.5, 0.25, 0.25]));
     const next = unsplit(s, 1);
     expect(next.panes).toEqual([P(['t:a', 't:b'], 't:a'), P(['t:c'])]);
     expect(next.focus).toBe(0);
-    near(next.fractions, [0.75, 0.25]);
+    near(sizesAt(next.tree, []), [0.75, 0.25]);
+  });
+  test('in a nested layout: the tabs join the pane that takes the space, its side decides the order', () => {
+    // A on the left, B over C on the right: A's tabs go to B (the right column's pane sharing the longest edge).
+    const s = S([P(['t:a', 'f:x'], 't:a'), P(['t:b'], 't:b'), P(['t:c'], 't:c')], 0, R([L, C([L, L], [0.6, 0.4])]));
+    expect(unsplitTarget(s, 0)).toEqual({ to: 'right', count: 2 });
+    const next = unsplit(s, 0);
+    expect(next.panes).toEqual([P(['t:a', 'f:x', 't:b'], 't:b'), P(['t:c'], 't:c')]);
+    expect(next.tree).toEqual(C([L, L], [0.6, 0.4]));
+    expect(next.focus).toBe(0);
+    // C's tabs go up into B, after B's.
+    expect(unsplitTarget(s, 2)).toEqual({ to: 'top', count: 1 });
+    const up = unsplit(s, 2);
+    expect(up.panes).toEqual([P(['t:a', 'f:x'], 't:a'), P(['t:b', 't:c'], 't:b')]);
+    expect(up.tree).toEqual(R([L, L]));
+    expect(up.focus).toBe(1);
   });
   test('an empty pane just closes; an empty receiving pane takes the front of the one that leaves', () => {
     expect(unsplit(S([P(['t:a']), P([], null)], 1), 1)).toEqual(S([P(['t:a'])]));
@@ -371,12 +441,44 @@ describe('focus keys', () => {
     expect(focusPane(s, -1)).toBe(s);
     expect(focusPane(s, 0)).toBe(s);
   });
-  test('next / previous wrap around; one pane: nothing moves', () => {
+  test('right / left wrap around a row; one pane: nothing moves', () => {
     const t = S([P(['t:a']), P(['t:b']), P(['t:c'])], 2);
-    expect(focusStep(t, 1).focus).toBe(0);
-    expect(focusStep(t, -1).focus).toBe(1);
+    expect(focusDir(t, 'right').focus).toBe(0);
+    expect(focusDir(t, 'left').focus).toBe(1);
     const one = single();
-    expect(focusStep(one, 1)).toBe(one);
+    expect(focusDir(one, 'right')).toBe(one);
+  });
+  test('directional in a grid: below, beside, and wrapping within the span', () => {
+    const g = S([P(['t:a']), P(['t:b']), P(['t:c']), P(['t:d'])], 0, R([C([L, L]), C([L, L])]));
+    expect(focusDir(g, 'bottom').focus).toBe(1);
+    expect(focusDir(g, 'right').focus).toBe(2);
+    expect(focusDir(g, 'top').focus).toBe(1);
+    expect(focusDir({ ...g, focus: 3 }, 'left').focus).toBe(1);
+  });
+});
+
+describe('drop zones', () => {
+  const pane = { left: 100, top: 50, width: 800, height: 600 };
+  test('left, right, top and bottom bands; the middle elsewhere', () => {
+    expect(dropZone(pane, { x: 120, y: 350 }, 2)).toBe('left');
+    expect(dropZone(pane, { x: 880, y: 350 }, 2)).toBe('right');
+    expect(dropZone(pane, { x: 500, y: 60 }, 2)).toBe('top');
+    expect(dropZone(pane, { x: 500, y: 640 }, 2)).toBe('bottom');
+    expect(dropZone(pane, { x: 500, y: 350 }, 2)).toBe('middle');
+  });
+  test('in a corner, the edge the point is relatively nearer to wins', () => {
+    // Bands: 192 px wide (24% of 800), 144 px tall (24% of 600). 20 px from the left is nearer (in band terms) than 100 px from the top.
+    expect(dropZone(pane, { x: 120, y: 150 }, 2)).toBe('left');
+    expect(dropZone(pane, { x: 250, y: 60 }, 2)).toBe('top');
+  });
+  test('bands are at least 48 px and at most a third of the pane', () => {
+    const small = { left: 0, top: 0, width: 120, height: 90 };
+    expect(dropZone(small, { x: 39, y: 45 }, 1)).toBe('left');
+    expect(dropZone(small, { x: 60, y: 29 }, 1)).toBe('top');
+    expect(dropZone(small, { x: 60, y: 45 }, 1)).toBe('middle');
+  });
+  test('at four panes: only the middle', () => {
+    expect(dropZone(pane, { x: 120, y: 350 }, 4)).toBe('middle');
   });
 });
 

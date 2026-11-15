@@ -3,6 +3,7 @@ import type { TerminalInfo } from '@shared/protocol';
 import type { ProjectInfo } from '@shared/api';
 import { useApp } from './store';
 import { flatten, isSplit, single } from './split';
+import { sizesAt } from './split-tree';
 
 // Split view with tab groups in the store: divider fractions and the layout saved per project, restored once per
 // window when the saved tabs are back.
@@ -45,11 +46,11 @@ describe('dividers (store)', () => {
     st().setTerminals(LIST);
     st().openToSide('t:a');
     st().setFractions([0.7, 0.3]);
-    expect(st().split.fractions).toEqual([0.7, 0.3]);
+    expect(sizesAt(st().split.tree, [])).toEqual([0.7, 0.3]);
     st().equalizePanes();
-    expect(st().split.fractions).toEqual([0.5, 0.5]);
+    expect(sizesAt(st().split.tree, [])).toEqual([0.5, 0.5]);
     st().setFractions([1]);
-    expect(st().split.fractions).toEqual([0.5, 0.5]);
+    expect(sizesAt(st().split.tree, [])).toEqual([0.5, 0.5]);
   });
 });
 
@@ -75,7 +76,7 @@ describe('saved layout (store)', () => {
     st().setProject(project());
     st().setTerminals(LIST);
     expect(tabs()).toEqual([['t:a', 't:c'], ['t:b']]);
-    expect(st().split.fractions).toEqual([0.3, 0.7]);
+    expect(sizesAt(st().split.tree, [])).toEqual([0.3, 0.7]);
     expect(st().selectedId).toBe('a');
     invariant();
   });

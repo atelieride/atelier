@@ -58,9 +58,10 @@ import { dropCsvOptions, loadCsvOptions, renameCsvOptions, saveCsvOptions, withO
 import type { CsvOptions } from './csv/types';
 import { dropOverrides, loadOverrides, renameOverrides, saveOverrides, withOverride, type LangOverrides } from './lang-overrides';
 import {
-  flatten, focusPane as focusAt, focusStep, isSplit, lift, moveStep, moveTab as moveToPane, moveToNewPane, openToSide as toSide, paneOf,
-  placeOpened, reconcile, removeKeys, renameKeys, restoreLayout, savedKeys, serializeLayout, single, splitRight as addPane, stripKeys, unsplit, unsplitAll, visibleKeys, type DropZone, type SavedLayout, type Split
+  flatten, focusDir, focusPane as focusAt, isSplit, lift, moveStep, moveTab as moveToPane, moveToNewPane, openToSide as toSide, paneOf,
+  placeOpened, reconcile, removeKeys, renameKeys, restoreLayout, savedKeys, serializeLayout, single, splitPane, stripKeys, unsplit, unsplitAll, visibleKeys, type DropZone, type SavedLayout, type Split
 } from './split';
+import { equalized, withSizes, type Side } from './split-tree';
 import { loadLayout as loadSplitLayout, saveLayout as saveSplitLayout } from './layout-store';
 import { adoptTerminals, pruneDrafts, setDialogProbe } from './terminal/drafts';
 import { isWaiting } from '@shared/session-view';
@@ -596,7 +597,7 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
   /** A tab into pane `pane` before `before` (null: at the end), in front, focused: a strip drop, a menu. */
   moveTabToPane(key: TabKey, pane: number, before: TabKey | null): void;
   /** A tab into a new pane on `side` of pane `pane` (an edge drop, Move to New Pane Right); nothing when refused. */
-  moveTabToNewPane(key: TabKey, pane: number, side: 'left' | 'right'): void;
+  moveTabToNewPane(key: TabKey, pane: number, side: Side): void;
   /** ⌃⌘← / ⌃⌘→: the focused pane's tab in front to the neighbour on that side, or a new pane at the edge. */
   moveTabStep(dir: 1 | -1): void;
   /** Move to Left/Right Pane for any tab (its menu, ⌥-click): as moveTabStep, from the tab's own pane. */
@@ -1895,7 +1896,7 @@ export const useApp = create<AppState>((set, get) => ({
   split: single(),
   splitRight: () => {
     const st = get();
-    const next = addPane(st.split, st.tabOrder, st.activeKey());
+    const next = splitPane(st.split, st.tabOrder, st.activeKey(), 'right');
     if (!next) { st.showToast(t.split.max, undefined, 'info'); return; }
     applySplit(next);
   },
@@ -1924,7 +1925,7 @@ export const useApp = create<AppState>((set, get) => ({
   moveTabStep: (dir) => {
     const st = get();
     const key = st.activeKey();
-    const next = moveStep(panesNow(), st.tabOrder, key, dir, tabRecent);
+    const next = moveStep(panesNow(), st.tabOrder, key, dir === 1 ? 'right' : 'left', tabRecent);
     if (next) { applySplit(next); if (key) keepMoved(key); }
   },
   moveTabSide: (key, dir) => {
@@ -1941,8 +1942,8 @@ export const useApp = create<AppState>((set, get) => ({
   },
   focusedStrip: () => { const st = get(); return stripKeys(st.split, st.tabOrder, st.split.focus); },
   focusPane: (i) => { const s = get().split; const next = focusAt(s, i); if (next !== s) applySplit(next); },
-  focusNextPane: () => { const s = get().split; const next = focusStep(s, 1); if (next !== s) applySplit(next); },
-  focusPrevPane: () => { const s = get().split; const next = focusStep(s, -1); if (next !== s) applySplit(next); },
+  focusNextPane: () => { const s = get().split; const next = focusDir(s, 'right'); if (next !== s) applySplit(next); },
+  focusPrevPane: () => { const s = get().split; const next = focusDir(s, 'left'); if (next !== s) applySplit(next); },
   openToSide: (key) => {
     if (popped(key)) return;
     enter(key);
@@ -1995,11 +1996,14 @@ export const useApp = create<AppState>((set, get) => ({
   setFractions: (fractions) => {
     const s = get().split;
     if (!isSplit(s) || fractions.length !== s.panes.length || fractions.some((f) => !Number.isFinite(f) || f <= 0)) return;
-    set({ split: { ...s, fractions } });
+    const tree = withSizes(s.tree, [], fractions);
+    if (tree !== s.tree) set({ split: { ...s, tree } });
   },
   equalizePanes: () => {
     const s = get().split;
-    if (isSplit(s)) set({ split: { ...s, fractions: s.panes.map(() => 1 / s.panes.length) } });
+    if (!isSplit(s)) return;
+    const tree = equalized(s.tree);
+    if (tree !== s.tree) set({ split: { ...s, tree } });
   },
   tabDrag: null,
   setTabDrag: (tabDrag) => { if (get().tabDrag !== tabDrag) set({ tabDrag, ...(tabDrag ? {} : { tabDragAt: null, tabDragTarget: null }) }); },

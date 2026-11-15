@@ -60,8 +60,8 @@ test('a tab in the last pane: Move to Left Pane (⌃⌘←); Move to New Pane Ri
   expect(tabs()).toEqual([['t:a', 't:c'], ['f:/p/x.ts'], ['t:b']]);
   // Alone in its pane: nothing new to make.
   expect(item(tabMenu('t:b'), 'move-new-right')).toBeUndefined();
-  // Three panes: no room.
-  expect(item(tabMenu('t:a'), 'move-new-right')).toBeUndefined();
+  // Three panes: room for a fourth.
+  expect(item(tabMenu('t:a'), 'move-new-right')).toBeDefined();
   item(tabMenu('t:b'), 'move-left')!.run();
   expect(tabs()).toEqual([['t:a', 't:c'], ['f:/p/x.ts', 't:b']]);
 });
@@ -135,11 +135,12 @@ test('Close All from a pane\'s tab closes that strip, and the emptied pane with 
   expect(st().tabOrder).toEqual(['t:a', 't:c']);
 });
 
-test('at three panes Split Right is disabled and says why', () => {
+test('at four panes Split Right is disabled and says why', () => {
   st().splitRight();
   st().splitRight();
-  expect(st().split.panes).toHaveLength(3);
+  st().splitRight();
+  expect(st().split.panes).toHaveLength(4);
   const split = item(paneMenu(0), 'split-right')!;
   expect(split.disabled).toBe(true);
-  expect(split.tip).toBe('Up to three panes side by side');
+  expect(split.tip).toBe('Up to four panes');
 });

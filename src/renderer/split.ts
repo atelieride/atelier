@@ -1,11 +1,14 @@
-// Split view with tab groups: 1 to 3 panes side by side, each with
-// its own tabs and its tab in front. Pure functions.
+// Split view with tab groups: 1 to 4 panes, side by side or stacked, each with its own tabs and its tab in front. Pure
+// functions.
 //
 // One pane is today's app: the store keeps the `single()` placeholder and its strip order (`tabOrder`) and active key
 // say everything. A function that turns one pane into several first `lift`s that order into a real pane. In split mode
 // the store's order is always `flatten(split)`, and `reconcile` brings the panes in line with whatever the rest of the
-// store did to the order and the active key (a tab opened, closed, a terminal exited, a key activated).
+// store did to the order and the active key (a tab opened, closed, a terminal exited, a key activated). The layout tree
+// (split-tree.ts) says where each pane is; `panes[i]` is its i-th leaf, so pane indices are the reading order.
 import type { TerminalInfo } from '@shared/protocol';
+import { MIN_PANE_PX } from './split-layout';
+import { insertBeside, leaf, neighbour, receiverOf, removeLeaf, row, sizesAt, type LayoutNode, type Side } from './split-tree';
 import { afterClose, moveTab as moveKey, openTab, type TabKey } from './tabs-model';
 
 /** A pane's tab in front, or null: an empty pane (Split Right's, with the picker). */
@@ -16,16 +19,16 @@ export interface Split {
   panes: Pane[];
   /** Index of the focused pane: its front is the store's active tab. */
   focus: number;
-  /** Width of each pane as a fraction of the workspace (sum 1). */
-  fractions: number[];
+  /** Where each pane is: pane i is the tree's i-th leaf in reading order. */
+  tree: LayoutNode;
 }
 
-export const MAX_PANES = 3;
+export const MAX_PANES = 4;
 /** How many sessions/terminals the picker of an empty pane offers. */
 export const PICKER_MAX = 8;
 
 const equal = (n: number): number[] => Array.from({ length: n }, () => 1 / n);
-const one = (pane: Pane): Split => ({ panes: [pane], focus: 0, fractions: [1] });
+const one = (pane: Pane): Split => ({ panes: [pane], focus: 0, tree: leaf() });
 
 /** One pane: a placeholder, the store's order and active key are its tabs and its front. */
 export function single(): Split {
@@ -73,29 +76,30 @@ export function lift(s: Split, order: TabKey[], active: PaneKey): Split {
 const samePane = (a: Pane, b: Pane) => a.front === b.front && a.tabs.length === b.tabs.length && a.tabs.every((k, i) => k === b.tabs[i]);
 /** `next` if anything differs from `s`, else `s` itself (callers compare by identity). */
 function settled(s: Split, next: Split): Split {
-  const same = s.focus === next.focus && s.panes.length === next.panes.length && s.panes.every((p, i) => samePane(p, next.panes[i]!))
-    && s.fractions.every((f, i) => f === next.fractions[i]);
+  const same = s.focus === next.focus && s.tree === next.tree && s.panes.length === next.panes.length && s.panes.every((p, i) => samePane(p, next.panes[i]!));
   return same ? s : next;
 }
 
 /**
- * Drops the panes `drop` says (by index): the focused pane survives if it can, otherwise the focus goes to the nearest
- * surviving pane on its left, then on its right. The panes left keep their proportions. None left: one empty pane.
+ * Drops the panes `drop` says (by index), each giving its space to the pane `removeLeaf` names (its neighbour in its
+ * group); the focus stays on its pane, or follows its space to that pane when the focused one goes. None left: one
+ * empty pane.
  */
 function dropAt(s: Split, drop: (i: number) => boolean): Split {
-  const keep = s.panes.map((_, i) => !drop(i));
-  if (keep.every(Boolean)) return s;
-  const panes = s.panes.filter((_, i) => keep[i]);
-  if (panes.length === 0) return one({ tabs: [], front: null });
-  if (panes.length === 1) return one(panes[0]!);
-  let target = s.focus;
-  if (!keep[target]) {
-    target = -1;
-    for (let i = s.focus - 1; i >= 0 && target < 0; i--) if (keep[i]) target = i;
-    for (let i = s.focus + 1; i < s.panes.length && target < 0; i++) if (keep[i]) target = i;
+  const gone = s.panes.map((_, i) => i).filter(drop);
+  if (gone.length === 0) return s;
+  if (gone.length === s.panes.length) return one({ tabs: [], front: null });
+  let { tree, focus } = s;
+  const panes = [...s.panes];
+  for (const i of gone.reverse()) {
+    const r = removeLeaf(tree, i);
+    tree = r.tree;
+    panes.splice(i, 1);
+    if (i === focus) focus = r.receiver ?? 0;
+    else if (i < focus) focus -= 1;
   }
-  const focus = keep.slice(0, target).filter(Boolean).length;
-  return { panes, focus, fractions: normalized(s.fractions.filter((_, i) => keep[i]), panes.length) };
+  if (panes.length === 1) return one(panes[0]!);
+  return { panes, focus, tree };
 }
 
 /** Fractions scaled to sum 1; anything unusable (wrong length, not positive, NaN) becomes equal shares. */
@@ -131,7 +135,7 @@ function byOrder(order: TabKey[]): (a: TabKey, b: TabKey) => number {
   return (a, b) => (at.get(a) ?? Infinity) - (at.get(b) ?? Infinity);
 }
 
-/** The nearest pane with tabs to `i`, left first; `i` itself when none has any. */
+/** The nearest pane with tabs to `i` in reading order, before it first; `i` itself when none has any. */
 function nearestWithTabs(panes: Pane[], i: number): number {
   for (let d = 1; d < panes.length; d++) {
     for (const j of [i - d, i + d]) if (panes[j] && panes[j]!.tabs.length > 0) return j;
@@ -191,19 +195,26 @@ export function focusPane(s: Split, i: number): Split {
   return { ...s, focus: i };
 }
 
-/** ⌘⌥→ / ⌘⌥←: the next / previous pane, wrapping around. */
-export function focusStep(s: Split, dir: 1 | -1): Split {
+/** ⌘⌥ with an arrow: the pane on that side; at the edge, the farthest pane across (wrapping). One pane: unchanged. */
+export function focusDir(s: Split, side: Side): Split {
   if (!isSplit(s)) return s;
-  return { ...s, focus: (s.focus + dir + s.panes.length) % s.panes.length };
+  const to = neighbour(s.tree, s.focus, side, true);
+  return to === null ? s : focusPane(s, to);
 }
 
-/** ⌘\: an empty pane right of the focused one, focused; null at MAX_PANES (the caller says why). */
-export function splitRight(s: Split, order: TabKey[], active: PaneKey): Split | null {
+/** `pane` added on `side` of pane `at` (the layout tree's insertion rule), focused. */
+function withPane(s: Split, at: number, side: Side, pane: Pane): Split {
+  const { tree, index } = insertBeside(s.tree, at, side);
+  const panes = [...s.panes];
+  panes.splice(index, 0, pane);
+  return { panes, focus: index, tree };
+}
+
+/** Split Right (⌘\) / Split Down (⇧⌘\): an empty pane on that side of the focused one, focused; null at MAX_PANES (the caller says why). */
+export function splitPane(s: Split, order: TabKey[], active: PaneKey, side: 'right' | 'bottom'): Split | null {
   const base = lift(s, order, active);
   if (base.panes.length >= MAX_PANES) return null;
-  const at = base.focus + 1;
-  const panes = [...base.panes.slice(0, at), { tabs: [], front: null }, ...base.panes.slice(at)];
-  return { panes, focus: at, fractions: equal(panes.length) };
+  return withPane(base, base.focus, side, { tabs: [], front: null });
 }
 
 /** A pane without `key` (it moved away): it shows its own previous tab, or nothing once emptied. */
@@ -245,80 +256,82 @@ export function canMoveToNewPane(s: Split, order: TabKey[], key: TabKey): boolea
 }
 
 /**
- * A new pane on `side` of pane `at`, holding only `key`, focused, widths equal (an edge drop, Move to New Pane Right,
- * ⌃⌘ at the edge). Null at MAX_PANES, and for a tab alone in pane `at` (it would only move its own pane). Another
- * pane's only tab: its old pane closes.
+ * A new pane on `side` of pane `at`, holding only `key`, focused (an edge drop, Move to New Pane Right/Below, ⌃⌘ with an
+ * arrow at the edge); the group it joins gets equal shares. Null at MAX_PANES, and for a tab alone in pane `at` (it
+ * would only move its own pane). Another pane's only tab: that pane closes first, so the new one shares the space
+ * evenly with what is left.
  */
-export function moveToNewPane(s: Split, order: TabKey[], active: PaneKey, key: TabKey, at: number, side: 'left' | 'right', recent: TabKey[]): Split | null {
+export function moveToNewPane(s: Split, order: TabKey[], active: PaneKey, key: TabKey, at: number, side: Side, recent: TabKey[]): Split | null {
   const base = lift(s, order, active);
   if (base.panes.length >= MAX_PANES) return null;
   const from = base.panes.findIndex((p) => p.tabs.includes(key));
   if (from < 0 || at < 0 || at >= base.panes.length) return null;
-  if (from === at && base.panes[from]!.tabs.length === 1) return null;
-  const ins = side === 'left' ? at : at + 1;
-  const panes = base.panes.map((p, i) => (i === from ? without(p, key, recent) : p));
-  panes.splice(ins, 0, { tabs: [key], front: key });
-  const src = from >= ins ? from + 1 : from;
-  const emptied = panes[src]!.tabs.length === 0;
-  return dropAt({ panes, focus: ins, fractions: equal(panes.length) }, (i) => emptied && i === src);
+  const alone = base.panes[from]!.tabs.length === 1;
+  if (from === at && alone) return null;
+  const pane: Pane = { tabs: [key], front: key };
+  if (alone) {
+    const { tree, receiver } = removeLeaf(base.tree, from);
+    const rest = base.panes.filter((_, i) => i !== from);
+    return withPane({ panes: rest, focus: receiver ?? 0, tree }, from < at ? at - 1 : at, side, pane);
+  }
+  return withPane({ ...base, panes: base.panes.map((p, i) => (i === from ? without(p, key, recent) : p)) }, at, side, pane);
 }
 
 /**
- * ⌃⌘← / ⌃⌘→: the focused pane's tab in front to the end of the neighbour on that side; from the edge pane,
- * a new pane there (room and company permitting). Null when nothing can happen.
+ * ⌃⌘ with an arrow: the focused pane's tab in front to the end of the pane on that side; with none there,
+ * a new pane on that side (room and company permitting). Null when nothing can happen.
  */
-export function moveStep(s: Split, order: TabKey[], active: PaneKey, dir: 1 | -1, recent: TabKey[]): Split | null {
+export function moveStep(s: Split, order: TabKey[], active: PaneKey, side: Side, recent: TabKey[]): Split | null {
   const base = lift(s, order, active);
   const key = base.panes[base.focus]!.front;
   if (!key) return null;
-  const to = base.focus + dir;
-  if (to >= 0 && to < base.panes.length) return moveTab(base, key, to, null, recent);
-  return moveToNewPane(base, order, active, key, base.focus, dir === 1 ? 'right' : 'left', recent);
+  const to = neighbour(base.tree, base.focus, side, false);
+  if (to !== null) return moveTab(base, key, to, null, recent);
+  return moveToNewPane(base, order, active, key, base.focus, side, recent);
 }
 
-/** ⌃⌘← / ⌃⌘→ would do something (the palette offers them only then). */
-export function canMoveStep(s: Split, order: TabKey[], active: PaneKey, dir: 1 | -1): boolean {
-  return moveStep(s, order, active, dir, []) !== null;
+/** ⌃⌘ with an arrow would do something (the palette offers it only then). */
+export function canMoveStep(s: Split, order: TabKey[], active: PaneKey, side: Side): boolean {
+  return moveStep(s, order, active, side, []) !== null;
 }
 
 /**
  * Open to the Side: a key in another pane only takes the focus there (to its front); otherwise it goes to
- * the pane right of the focused one — a new one while there is room, else the right neighbour (from the last pane, the
- * left one). A tab alone in the focused pane has nothing to split off: unchanged.
+ * a new pane right of the focused one while there is room, else into the pane on its right (else on its left, below,
+ * above). A tab alone in the focused pane has nothing to split off: unchanged.
  */
 export function openToSide(s: Split, order: TabKey[], active: PaneKey, key: TabKey, recent: TabKey[]): Split {
   const base = lift(s, order, active);
   const at = base.panes.findIndex((p) => p.tabs.includes(key));
   if (at >= 0 && at !== base.focus) return settled(s, { ...base, panes: base.panes.map((p, i) => (i === at ? { ...p, front: key } : p)), focus: at });
   if (at === base.focus && base.panes[at]!.tabs.length === 1) return s;
-  const n = base.panes.length;
-  if (n < MAX_PANES) {
+  if (base.panes.length < MAX_PANES) {
     if (at === base.focus) return moveToNewPane(base, order, active, key, base.focus, 'right', recent) ?? s;
-    const ins = base.focus + 1;
-    const panes = [...base.panes.slice(0, ins), { tabs: [key], front: key }, ...base.panes.slice(ins)];
-    return { panes, focus: ins, fractions: equal(panes.length) };
+    return withPane(base, base.focus, 'right', { tabs: [key], front: key });
   }
-  const target = base.focus < n - 1 ? base.focus + 1 : base.focus - 1;
+  const sides: Side[] = ['right', 'left', 'bottom', 'top'];
+  const target = sides.map((d) => neighbour(base.tree, base.focus, d, false)).find((x): x is number => x !== null);
+  if (target === undefined) return s;
   if (at === base.focus) return moveTab(base, key, target, null, recent);
   return { ...base, panes: base.panes.map((p, i) => (i === target ? { tabs: [...p.tabs, key], front: key } : p)), focus: target };
 }
 
 /**
- * The pane × — Unsplit: pane `i` goes and its tabs join the neighbour (left; the first pane's, right),
- * keeping the left-to-right order. The neighbour's front stays in front (an empty one takes the leaving pane's) and it
- * takes the focus; its width grows by the leaving pane's. Nothing closes.
+ * The pane × — Unsplit: pane `i` goes and its tabs join the pane that takes its space (its neighbour in its group,
+ * left or above first), after that pane's tabs when it is left of or above it, before them otherwise. That pane's front
+ * stays in front (an empty one takes the leaving pane's) and it takes the focus. Nothing closes.
  */
 export function unsplit(s: Split, i: number): Split {
   if (!isSplit(s) || i < 0 || i >= s.panes.length) return s;
-  const to = i > 0 ? i - 1 : 1;
+  const r = receiverOf(s.tree, i)!;
   const p = s.panes[i]!;
-  const q = s.panes[to]!;
-  const tabs = to < i ? [...q.tabs, ...p.tabs] : [...p.tabs, ...q.tabs];
+  const q = s.panes[r.pane]!;
+  const tabs = r.to === 'left' || r.to === 'top' ? [...q.tabs, ...p.tabs] : [...p.tabs, ...q.tabs];
   const merged: Pane = { tabs, front: q.front ?? p.front ?? tabs[0] ?? null };
-  const panes = s.panes.map((x, j) => (j === to ? merged : x)).filter((_, j) => j !== i);
+  const { tree, receiver } = removeLeaf(s.tree, i);
+  const panes = s.panes.map((x, j) => (j === r.pane ? merged : x)).filter((_, j) => j !== i);
   if (panes.length === 1) return one(panes[0]!);
-  const fractions = s.fractions.map((f, j) => (j === to ? f + s.fractions[i]! : f)).filter((_, j) => j !== i);
-  return { panes, focus: to < i ? to : to - 1, fractions: normalized(fractions, panes.length) };
+  return { panes, focus: receiver ?? 0, tree };
 }
 
 /** Unsplit All: one pane, every tab in pane order; the focused pane's front stays in front. */
@@ -329,9 +342,10 @@ export function unsplitAll(s: Split): Split {
 }
 
 /** Where pane `i`'s × sends its tabs and how many (its tooltip and the tabs it lights); null with one pane. */
-export function unsplitTarget(s: Split, i: number): { to: 'left' | 'right'; count: number } | null {
+export function unsplitTarget(s: Split, i: number): { to: Side; count: number } | null {
   if (!isSplit(s) || i < 0 || i >= s.panes.length) return null;
-  return { to: i > 0 ? 'left' : 'right', count: s.panes[i]!.tabs.length };
+  const r = receiverOf(s.tree, i);
+  return r ? { to: r.to, count: s.panes[i]!.tabs.length } : null;
 }
 
 /**
@@ -372,25 +386,33 @@ export function renameKeys(s: Split, rename: (key: TabKey) => TabKey): Split {
   return changed ? { ...s, panes } : s;
 }
 
-/** Where a dragged tab lands over a pane: its left/right edge band (a new pane on that side) or its middle (into it). */
-export type DropZone = 'left' | 'middle' | 'right';
-/** Edge bands: 24% of the pane's width, at least 48 px. */
+/** Where a dragged tab lands over a pane: an edge band (a new pane on that side) or its middle (into it). */
+export type DropZone = Side | 'middle';
+/** Edge bands: 24% of the pane's width (left/right) or height (top/bottom), at least 48 px, at most a third. */
 export const EDGE_BAND = 0.24;
 export const EDGE_MIN_PX = 48;
 
-/** The zone under `x` in a pane (screen coordinates); with three panes there is no room for another: always the middle. */
-export function dropZone(pane: { left: number; width: number }, x: number, paneCount: number): DropZone {
+/**
+ * The zone under point `p` in a pane (screen coordinates). In a corner where two bands meet, the edge the point is
+ * relatively nearer to (its distance over that band's size) wins. With four panes there is no room for another: always
+ * the middle.
+ */
+export function dropZone(pane: { left: number; top: number; width: number; height: number }, p: { x: number; y: number }, paneCount: number): DropZone {
   if (paneCount >= MAX_PANES) return 'middle';
-  const band = Math.min(Math.max(pane.width * EDGE_BAND, EDGE_MIN_PX), pane.width / 3);
-  if (x < pane.left + band) return 'left';
-  if (x > pane.left + pane.width - band) return 'right';
-  return 'middle';
+  const band = (size: number) => Math.min(Math.max(size * EDGE_BAND, EDGE_MIN_PX), size / 3);
+  const bw = band(pane.width);
+  const bh = band(pane.height);
+  const near: [Side, number][] = [
+    ['left', (p.x - pane.left) / bw],
+    ['right', (pane.left + pane.width - p.x) / bw],
+    ['top', (p.y - pane.top) / bh],
+    ['bottom', (pane.top + pane.height - p.y) / bh]
+  ];
+  const [side, d] = near.reduce((a, b) => (b[1] < a[1] ? b : a));
+  return d < 1 ? side : 'middle';
 }
 
-/** Panes never get narrower than this when the workspace has room for all of them (otherwise: equal shares). */
-export const MIN_PANE_PX = 240;
-/** Arrow keys on a focused divider move it by this much. */
-export const DIVIDER_STEP_PX = 24;
+export { DIVIDER_STEP_PX, MIN_PANE_PX } from './split-layout';
 
 /**
  * Divider `i` (between panes i and i+1) dragged by `dx` px in a workspace whose panes add up to `width` px: only those
@@ -430,7 +452,7 @@ export function serializeLayout(s: Split, keepEmpty = false): SavedLayout | null
   return {
     v: 2,
     panes: kept.map((i) => ({ tabs: [...s.panes[i]!.tabs], front: s.panes[i]!.front })),
-    fractions: normalized(kept.map((i) => s.fractions[i]!), kept.length),
+    fractions: normalized(kept.map((i) => (sizesAt(s.tree, []) ?? [])[i] ?? 0), kept.length),
     focus: survivor(kept, s.focus)
   };
 }
@@ -527,7 +549,7 @@ export function restoreLayout(raw: unknown, order: TabKey[], keepEmpty = false):
     const f = fronts[i];
     return { tabs, front: typeof f === 'string' && own.includes(f as TabKey) ? (f as TabKey) : tabs[0] ?? null };
   });
-  return { panes, focus, fractions: sane ? normalized(kept.map((i) => fr[i]!), kept.length) : equal(kept.length) };
+  return { panes, focus, tree: row(kept.length, sane ? normalized(kept.map((i) => fr[i]!), kept.length) : undefined) };
 }
 
 /** Outside Sessions: the empty pane offers the space's tabs not in front of any pane, in order. */

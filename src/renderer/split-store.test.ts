@@ -293,11 +293,13 @@ describe('preview tabs (one per window, replaced only in the focused pane)', () 
 });
 
 describe('pane commands', () => {
-  test('a fourth pane is refused with a toast', () => {
+  test('a fifth pane is refused with a toast', () => {
     triple(2);
     st().splitRight();
-    expect(st().split.panes).toHaveLength(3);
-    expect(st().toast?.text).toBe('Up to three panes side by side');
+    expect(st().split.panes).toHaveLength(4);
+    st().splitRight();
+    expect(st().split.panes).toHaveLength(4);
+    expect(st().toast?.text).toBe('Up to four panes');
   });
   test('moveTabToPane: to the end of that pane, in front, focused; the source shows its previous tab', () => {
     twoPanes();

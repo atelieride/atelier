@@ -4,6 +4,7 @@ import type { TerminalInfo } from '@shared/protocol';
 import { useApp } from './store';
 import { deleteSchedule, installScheduleRouting, openScheduleSheet, scheduleBlock, terminalShown, usageOf } from './schedules';
 import { single, type Split } from './split';
+import { row } from './split-tree';
 
 const p = (o: Partial<ScheduledPrompt> = {}): ScheduledPrompt => ({
   id: 'p1', terminalId: 't1', sessionId: 's1', projectRoot: '/w', title: 'api', text: 'x', at: 0, ifBusy: 'wait', createdAt: 0,
@@ -34,7 +35,7 @@ afterEach(() => { delete g.window; });
 
 test('terminalShown: the selected terminal tab, or a split pane', () => {
   const s = { activeTab: 'term', selectedId: 't1', split: single() };
-  const two = (b: Split['panes'][number]): Split => ({ panes: [{ tabs: ['f:/w/a.ts'], front: 'f:/w/a.ts' }, b], focus: 0, fractions: [0.5, 0.5] });
+  const two = (b: Split['panes'][number]): Split => ({ panes: [{ tabs: ['f:/w/a.ts'], front: 'f:/w/a.ts' }, b], focus: 0, tree: row(2) });
   expect(terminalShown(s, 't1')).toBe(true);
   expect(terminalShown({ ...s, activeTab: '/w/a.ts' }, 't1')).toBe(false);
   expect(terminalShown({ ...s, split: two({ tabs: ['t:t1'], front: 't:t1' }) }, 't1')).toBe(true);

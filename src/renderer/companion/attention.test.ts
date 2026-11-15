@@ -4,6 +4,7 @@ import type { SessionInfo, UsageEntry } from '@shared/session';
 import type { ClaudeAccounts } from '@shared/claude-accounts';
 import type { Thread, ThreadItem } from '@shared/companion/types';
 import { newThread } from '@shared/companion/thread';
+import { row } from '../split-tree';
 import { initPlatform, resetPlatformForTests } from '@shared/platform';
 import {
   ASK_AT_GRACE_MS, activeLimit, askAccount, askAtDelay, askHint, askMarked, helpDecideQuestion, limitBody, limitTitle, limitedBy, needsYou, otherAccount,
@@ -177,11 +178,11 @@ describe('where a terminal is (Ask is hosted by its pane)', () => {
     expect(livesElsewhere({ poppedOut: [], popout: { key: 't:b' } }, 'a')).toBe(true);
   });
   test('shownIn: the terminal in front, or every pane of a split; none behind another tab', () => {
-    const one = { split: { panes: [{ tabs: [], front: null }], focus: 0, fractions: [1] }, activeTab: 'term', selectedId: 'a', activeKey: () => 't:a' };
+    const one = { split: { panes: [{ tabs: [], front: null }], focus: 0, tree: row(1) }, activeTab: 'term', selectedId: 'a', activeKey: () => 't:a' };
     expect([...shownIn(one as unknown as Parameters<typeof shownIn>[0])]).toEqual(['a']);
     expect([...shownIn({ ...one, activeTab: 'file', activeKey: () => 'f:/x' } as unknown as Parameters<typeof shownIn>[0])]).toEqual([]);
     // Every pane's tab in front; a terminal behind another tab of its pane is not shown.
-    const two = { split: { panes: [{ tabs: ['t:a', 't:c'], front: 't:a' }, { tabs: ['t:b'], front: 't:b' }], focus: 1, fractions: [0.5, 0.5] }, activeTab: 'term', selectedId: 'b', activeKey: () => 't:b' };
+    const two = { split: { panes: [{ tabs: ['t:a', 't:c'], front: 't:a' }, { tabs: ['t:b'], front: 't:b' }], focus: 1, tree: row(2) }, activeTab: 'term', selectedId: 'b', activeKey: () => 't:b' };
     expect([...shownIn(two as unknown as Parameters<typeof shownIn>[0])].sort()).toEqual(['a', 'b']);
   });
 });

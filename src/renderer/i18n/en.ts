@@ -1524,7 +1524,7 @@ const strings = {
   },
   // Split view with tab groups.
   split: {
-    max: 'Up to three panes side by side',
+    max: 'Up to four panes',
     /** The pane ×'s tooltip: where its tabs go; an empty pane just closes. */
     unsplitTip: (to: 'left' | 'right', count: number) => (count === 0 ? 'Unsplit — the empty pane closes' : `Unsplit — ${count === 1 ? 'its tab moves' : `its ${count} tabs move`} to the ${to} pane`),
     /** The picker's hint on a session or terminal that sits in another pane's strip. */

@@ -134,7 +134,7 @@ function targetAt(p: Point, doc: Document, fallback: boolean): DockTarget | null
     // Between two frames (their 1 px gap): the nearest.
     const dist = (r: DOMRect) => (p.x < r.left ? r.left - p.x : p.x >= r.right ? p.x - r.right : 0);
     const hit = rects.reduce((a, b) => (dist(b.rect) < dist(a.rect) ? b : a));
-    return { kind: 'pane', pane: hit.pane, zone: dropZone({ left: hit.rect.left, width: hit.rect.width }, p.x, st.split.panes.length) };
+    return { kind: 'pane', pane: hit.pane, zone: dropZone({ left: hit.rect.left, top: hit.rect.top, width: hit.rect.width, height: hit.rect.height }, p, st.split.panes.length) };
   }
   return fallback ? { kind: 'pane', pane: st.split.focus, zone: 'middle' } : null;
 }

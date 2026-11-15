@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { t } from '../i18n/en';
 import { useApp } from '../store';
 import { DIVIDER_STEP_PX, dragDivider } from '../split';
+import { sizesAt } from '../split-tree';
 
 /** The panes' widths as shown (the grid may hold a pane at its 240 px minimum) and their total, from their frames. */
 function shown(el: HTMLElement): { fractions: number[]; width: number } | null {
@@ -19,7 +20,7 @@ function shown(el: HTMLElement): { fractions: number[]; width: number } | null {
  * terminals refit through their own ResizeObserver).
  */
 export function PaneDivider({ index, style }: { index: number; style: CSSProperties }) {
-  const pos = useApp((s) => Math.round(s.split.fractions.slice(0, index + 1).reduce((a, b) => a + b, 0) * 100));
+  const pos = useApp((s) => Math.round((sizesAt(s.split.tree, []) ?? [1]).slice(0, index + 1).reduce((a, b) => a + b, 0) * 100));
   const [dragging, setDragging] = useState(false);
   const start = useRef<{ x: number; fractions: number[]; width: number } | null>(null);
   const frame = useRef(0);

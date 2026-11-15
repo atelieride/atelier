@@ -30,6 +30,10 @@ import { isExternal, outsideDir } from '../external';
 import { dockTargetAt } from '../dock-target';
 import { pressTab, sameSpot } from '../tab-drag';
 import { MAX_PANES, gridColumns, stripKeys, unsplitTarget } from '../split';
+import { sizesAt } from '../split-tree';
+
+/** One pane's widths, while a split has no row at its root. */
+const WHOLE = [1];
 import { isProjectKey } from '../workspaces';
 import { kbd } from '../kbd';
 import { wsChangeCount } from '../workspace-view';
@@ -143,7 +147,7 @@ const Tab = memo(function Tab({ k, active, front, drop, lifted, leaving, term, s
  */
 export function Tabs({ onNew }: { onNew: (anchor: HTMLElement) => void }) {
   const count = useApp((s) => s.split.panes.length);
-  const fractions = useApp((s) => s.split.fractions);
+  const fractions = useApp((s) => sizesAt(s.split.tree, []) ?? WHOLE);
   // A stable "+" handler: the memoized strips never re-render for a divider drag (only the grid's columns change).
   const newRef = useRef(onNew);
   newRef.current = onNew;
