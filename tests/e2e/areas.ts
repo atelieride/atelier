@@ -570,6 +570,7 @@ export const SOURCES: Record<string, Area[]> = {
   'src/main/tmux/': ['background'],
   'src/main/update': ['updates'],
   'src/main/work-hub.ts': ['background'],
+  'src/main/artifact-hub.ts': ['background'],
   // Shared
   'src/shared/attribution.ts': ['changes'],
   // Same-name repositories told apart in Changes.

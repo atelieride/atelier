@@ -4,6 +4,7 @@ import type { Attribution } from './attribution';
 import type { ToolCallWindow } from './tool-calls';
 import type { BackgroundWork } from './background';
 import type { RecentItem } from './background-recent';
+import type { SessionArtifact } from './artifacts';
 import type { NameSync } from './session-name';
 import { isCleanAbsPath } from './clean-path';
 import { pathStyle } from './platform';
@@ -54,6 +55,8 @@ export interface TerminalInfo {
   work?: BackgroundWork;
   /** Background items that ended in this app run, newest first; main-side only. */
   recent?: RecentItem[];
+  /** The Artifacts the session published, newest first, read by main from its transcript; absent when none. */
+  artifacts?: SessionArtifact[];
   /**
    * Session name sync (capability 'names'): 'pending' = a name given in Atelier that Claude gets with the session's next
    * prompt (or start); 'kept' = Claude didn't take it, it stays an Atelier-only name. Absent otherwise.
