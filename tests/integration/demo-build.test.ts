@@ -20,7 +20,8 @@ import { SENSITIVE, SHOTS_ONLY, findBanned } from '../support/banned-strings';
 // +2 KB for the sidebar's own row order: the order model, the rows' reorder drag and caret, Move Up / Move Down.
 // +4 KB for splits in both directions: the layout tree and its pixel layout, a strip per pane, dividers both ways,
 // the commands in four directions and their strings.
-const BUDGET = 914 * 1024;
+// +1 KB for a session's artifacts: the background chip's count, the popover's Artifacts section, its menu and strings.
+const BUDGET = 915 * 1024;
 const SHARED = resolve('src/shared');
 const INSTALL = resolve('src/demo/install.ts');
 
