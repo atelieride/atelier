@@ -79,7 +79,8 @@ export class ArtifactHub {
         if (old.state !== s.state) { old.state = s.state; void this.read(old); }
         continue;
       }
-      if (old) { changed ||= this.drop(old); }
+      // `drop` must run for each one: `changed ||= this.drop(…)` would skip it once something changed.
+      if (old && this.drop(old)) changed = true;
       const f: Followed = {
         terminalId: t.id, sessionId: s.sessionId, cwd, configDir: t.configDir, state: s.state,
         ino: null, offset: 0, decoder: new TextDecoder(), log: new ArtifactLog(), list: [], timers: new Set()
@@ -87,7 +88,7 @@ export class ArtifactHub {
       this.followed.set(t.id, f);
       void this.read(f);
     }
-    for (const f of [...this.followed.values()]) if (!live.has(f.terminalId)) changed ||= this.drop(f);
+    for (const f of [...this.followed.values()]) if (!live.has(f.terminalId) && this.drop(f)) changed = true;
     if (changed) this.onChange();
   }
 

@@ -5,7 +5,7 @@ import { ArtifactHub, attachArtifacts, RETRY_MS } from './artifact-hub';
 import type { HubFs } from './background-hub';
 import type { TerminalInfo } from '@shared/protocol';
 import type { SessionState } from '@shared/session';
-import type { ToolCallWindow } from '@shared/tool-calls';
+import { applyToolCallHook, type ToolCallWindow } from '@shared/tool-calls';
 import { encodeProjectPath } from '@shared/history';
 
 const SID = '89fcf8ea-a6ad-4f29-a390-922953c50a6c';
@@ -181,6 +181,30 @@ describe('ArtifactHub', () => {
     expect(changes).toHaveBeenCalledTimes(1);
   });
 
+  test('several terminals with artifacts leave in one list: each is dropped, its retries cancelled, one change', async () => {
+    const { hub, changes, write, reads } = setup();
+    write(path('/w/proj', SID), publish('a1', FIRST, 'One') + call('late', { action: 'publish', title: 'Late' }));
+    write(path('/w/proj', SID2), publish('b1', SECOND, 'Two'));
+    hub.terminals([term({ id: 't1' }), term({ id: 't2', sid: SID2 })]);
+    await settle();
+    // A call of t1 still waiting for its result: its retries are pending when the terminals leave.
+    hub.toolCalls([window('late')]);
+    await settle();
+    expect(titles(hub, 't1', SID)).toEqual(['One']);
+    expect(titles(hub, 't2', SID2)).toEqual(['Two']);
+    changes.mockClear();
+    hub.terminals([]);
+    expect(hub.artifacts('t1', SID)).toBeUndefined();
+    expect(hub.artifacts('t2', SID2)).toBeUndefined();
+    expect(changes).toHaveBeenCalledTimes(1);
+    const n = reads.length;
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(reads).toHaveLength(n);
+    // A list that brings nothing new changes nothing more.
+    hub.terminals([]);
+    expect(changes).toHaveBeenCalledTimes(1);
+  });
+
   test('a session of another Claude account: read from that account\'s projects, only when its owner is the app\'s user', async () => {
     const other = '/home/.claude-work';
     const { hub, write, owners, reads } = setup();
@@ -260,6 +284,16 @@ describe('ArtifactHub', () => {
     hub.terminals([term({ state: 'done' })]);
     await settle();
     expect(titles(hub)).toEqual(['One']);
+  });
+});
+
+describe('what the hub relies on in atelierd', () => {
+  test('an Artifact call gets a tool-call window that its PostToolUse closes (the hub\'s prompt read; without it, only state changes)', () => {
+    const pre = { hook_event_name: 'PreToolUse', session_id: SID, tool_name: 'Artifact', tool_use_id: 'a1', tool_input: { action: 'publish', title: 'One' } };
+    const open = applyToolCallHook([], 't1', pre, 1);
+    expect(open).toMatchObject([{ id: 'a1', terminalId: 't1', sessionId: SID, agent: 'main', tool: 'Artifact', end: null }]);
+    const closed = applyToolCallHook(open, 't1', { ...pre, hook_event_name: 'PostToolUse', tool_response: { url: FIRST } }, 2);
+    expect(closed).toMatchObject([{ id: 'a1', tool: 'Artifact', end: 2 }]);
   });
 });
 
