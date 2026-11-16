@@ -101,6 +101,22 @@ export function backgroundSummary(term: Pick<TerminalInfo, 'work' | 'recent'>, e
   return running || scheduled ? t.bg.summary(running, scheduled) : null;
 }
 
+/** A row of the popover's Artifacts section: a page the session published, opened in the browser. */
+export interface ArtifactRow { id: string; url: string; label: string; sub: string; elapsed: string }
+
+/** The session's artifacts as main listed them (newest first): the link without its scheme, the time since the last publish. */
+export function artifactRows(term: Pick<TerminalInfo, 'artifacts'>, now: number): ArtifactRow[] {
+  return (term.artifacts ?? []).map((a) => ({
+    id: a.url, url: a.url, label: a.title, sub: a.url.replace(/^https:\/\//, ''), elapsed: a.at > 0 ? formatElapsed(now - a.at) : ''
+  }));
+}
+
+/** The popover's heading: the Background summary, then "N artifacts" (the inspector tab lists no artifacts: not its). */
+export function popoverSummary(term: Pick<TerminalInfo, 'work' | 'recent' | 'artifacts'>, exited: { has(id: string): boolean } = NONE): string | null {
+  const n = term.artifacts?.length ?? 0;
+  return [backgroundSummary(term, exited), n ? t.work.artifacts(n) : null].filter(Boolean).join(' · ') || null;
+}
+
 /** The items of a terminal whose followed output already carries an exit code (from the store's feeds): id → code. */
 export function exitedIds(feeds: Readonly<Record<string, { exit: number | null }>>, terminalId: string): Map<string, number> {
   const prefix = `${terminalId}:`;

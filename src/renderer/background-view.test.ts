@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { t } from './i18n/en';
 import { loopRowId } from '@shared/loop';
-import { backgroundSections, backgroundSummary, bgChipOpen, commandOf, exitedIds, firstItemId, formatElapsed, inspectorTarget, isFollowable } from './background-view';
+import { artifactRows, backgroundSections, backgroundSummary, bgChipOpen, commandOf, exitedIds, firstItemId, formatElapsed, inspectorTarget, isFollowable, popoverSummary } from './background-view';
 
 describe('bgChipOpen', () => {
   const pop = { terminalId: 't1', anchor: { left: 0, top: 0, right: 1, bottom: 1 }, side: 'right' as const, section: 'all' as const };
@@ -130,5 +130,26 @@ describe('isFollowable', () => {
     expect(isFollowable({ id: 'a1', kind: 'agent' })).toBe(true);
     expect(isFollowable({ id: 'cron:c1', kind: 'other', display: 'x' })).toBe(false);
     expect(isFollowable({ id: 'subagent-a1', kind: 'agent' })).toBe(false);
+  });
+});
+
+describe('the session\'s artifacts in the popover', () => {
+  const A = { url: 'https://claude.ai/artifact/Rt6uY8iOp2aSd4fGh6jKl8', title: 'Pari · giro UX 1', at: NOW - 4 * 60_000 };
+  const B = { url: 'https://claude.ai/artifact/Kq3vT8xYzW2mNpR5sLd9Fa', title: 'Concept board', at: NOW - 2 * 3600_000 };
+  test('artifactRows: in main\'s order (newest first), the link without its scheme, how long since the last publish', () => {
+    expect(artifactRows({ artifacts: [A, B] }, NOW)).toEqual([
+      { id: A.url, url: A.url, label: 'Pari · giro UX 1', sub: 'claude.ai/artifact/Rt6uY8iOp2aSd4fGh6jKl8', elapsed: formatElapsed(4 * 60_000) },
+      { id: B.url, url: B.url, label: 'Concept board', sub: 'claude.ai/artifact/Kq3vT8xYzW2mNpR5sLd9Fa', elapsed: formatElapsed(2 * 3600_000) }
+    ]);
+    expect(artifactRows({}, NOW)).toEqual([]);
+    // A publish time unknown (0): no elapsed time rather than "56 years".
+    expect(artifactRows({ artifacts: [{ ...A, at: 0 }] }, NOW)[0]!.elapsed).toBe('');
+  });
+  test('popoverSummary: the Background summary, then the artifacts; the inspector\'s summary leaves them out', () => {
+    const busy = term([entry('a', 'agent'), entry('b', 'shell')], { artifacts: [A, B] });
+    expect(popoverSummary(busy)).toBe('2 running · 2 artifacts');
+    expect(popoverSummary(term([], { artifacts: [A] }))).toBe('1 artifact');
+    expect(popoverSummary(term([]))).toBeNull();
+    expect(backgroundSummary(busy)).toBe('2 running');
   });
 });

@@ -2474,6 +2474,10 @@ button.nsf-opt[aria-disabled="true"]:active { filter: none; }
 .bgp-row:hover, .bgp-row:focus-visible { background: var(--bg-hover); outline: none; }
 .bgp-row:active { background: var(--tint-working); }
 .bgp-row:focus-visible { box-shadow: inset 0 0 0 1px var(--edge-violet); }
+/* An Artifact the session published: violet like its chip mark; the browser mark shows where the row leads on hover. */
+.bgp-icon.k-artifact { color: var(--violet); }
+.bgp-ext { flex: none; align-self: center; color: var(--text-4); opacity: 0; transition: opacity var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.bgp-row:hover .bgp-ext, .bgp-row:focus-visible .bgp-ext { opacity: 1; color: var(--text-2); }
 .bgp-row.depth-1 { padding-left: 22px; }
 .bgp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .bgp-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
