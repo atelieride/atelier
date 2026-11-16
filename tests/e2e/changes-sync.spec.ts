@@ -135,6 +135,121 @@ test('Source Control\'s icon: a dot while a repository has commits to pull, fetc
   }
 });
 
+test('all clean: a ↓ is a Pull button that lights up under the pointer without moving anything, and pulls', async () => {
+  const p = gitWritesProject(['app', 'lib'], undefined, { remote: true });
+  const app = p.repo('app');
+  const other = otherClone(p.remote('app'));
+  commitIn(other, 'feat: from another clone');
+  commitIn(other, 'fix: from another clone');
+  git(other, 'push', '-q');
+  const { win, panel, stop } = await launchGitApp(p.root);
+  try {
+    const row = repoRow(panel, 'app');
+    // Changes fetches once its repositories settle: the ↓2 comes with that fetch, as a button saying what it does.
+    const pull = row.getByRole('button', { name: 'Pull 2 commits from origin/main' });
+    await expect(pull).toHaveText('↓2', { timeout: 20000 });
+    await expect(row.locator('.sync-counts')).toHaveAttribute('data-tip', '2 to pull from origin/main');
+    // lib, in sync, has nothing to pull: no button anywhere else.
+    await expect(panel.locator('.sync-pull')).toHaveCount(1);
+
+    // It reads as the arrows did, at rest and with only its row under the pointer; under the pointer itself, a pill.
+    // Nothing in the row moves.
+    const CLEAR = 'rgba(0, 0, 0, 0)';
+    const bg = () => pull.evaluate((el) => getComputedStyle(el).backgroundColor);
+    const parts = () => Promise.all(['.clean-name', '.sync-pull', '.clean-branch'].map((s) => box(row.locator(s))));
+    expect(await bg()).toBe(CLEAR);
+    const before = await parts();
+    await pull.hover();
+    await expect.poll(bg).not.toBe(CLEAR);
+    expect(await parts()).toEqual(before);
+    await expect(win.locator('.tooltip')).toHaveText('Pull 2 commits from origin/main');
+    await look(panel, `${SHOTS}/changes-pull-button-hover.png`);
+    // From the ↓ to its row's name: the pill goes.
+    await row.locator('.clean-name').hover();
+    await expect.poll(bg).toBe(CLEAR);
+    await look(panel, `${SHOTS}/changes-pull-row-hover.png`);
+
+    // A click pulls: app is at origin/main, the ↓ goes, the focus goes back to its row.
+    await pull.click();
+    await expect(row.locator('.sync-counts')).toHaveCount(0, { timeout: 15000 });
+    expect(git(app, 'rev-parse', 'HEAD')).toBe(git(app, 'rev-parse', 'origin/main'));
+    await expect(win.locator('.toast')).toContainText('Pulled from');
+    await expect(row).toBeFocused();
+    await look(panel, `${SHOTS}/changes-pull-done.png`);
+  } finally {
+    await stop();
+  }
+});
+
+test('with changes: the ↓ in a header pulls without folding it and keeps the changes, a Clean chip\'s pulls, the header\'s menu has Pull and a pull over the changes offers Stash and Pull', async () => {
+  const p = gitWritesProject(['app', 'lib', 'web'], undefined, { remote: true });
+  const [app, lib, web] = [p.repo('app'), p.repo('lib'), p.repo('web')];
+  // app: a changed file, and a commit to pull that touches another one. lib: clean, a commit to pull.
+  for (const name of ['app', 'lib']) {
+    const other = otherClone(p.remote(name));
+    commitIn(other, `feat: ${name} upstream`);
+    git(other, 'push', '-q');
+    git(p.repo(name), 'fetch', '-q');
+  }
+  write(join(app, 'src', 'app.ts'), 'export const app = 2;\n');
+  // web: a changed file, and a commit to pull that changes the same file.
+  const webOther = otherClone(p.remote('web'));
+  write(join(webOther, 'src', 'app.ts'), 'export const app = 3;\n');
+  git(webOther, 'commit', '-q', '-am', 'feat: web upstream');
+  git(webOther, 'push', '-q');
+  git(web, 'fetch', '-q');
+  write(join(web, 'src', 'app.ts'), 'export const app = 2;\n');
+  const { win, panel, stop } = await launchGitApp(p.root);
+  try {
+    const head = (name: string) => panel.locator('.change-group-head').filter({ has: win.locator('.change-group-title', { hasText: new RegExp(`^${name}$`) }) });
+    const appHead = head('app');
+    const pull = appHead.locator('.sync-pull');
+    await expect(pull).toHaveText('↓1', { timeout: 15000 });
+    await expect(pull).toHaveAttribute('data-tip', 'Pull 1 commit from origin/main');
+    await expect(appHead).toHaveAttribute('aria-expanded', 'true');
+    const rows = panel.locator('.change-group').filter({ has: win.locator('.change-group-title', { hasText: /^app$/ }) }).locator('.change-row');
+    await expect(rows).toHaveCount(1);
+
+    // Under the pointer: a pill, as in the all-clean rows; the header itself shows its own hover only.
+    await pull.hover();
+    await expect.poll(() => pull.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+    await expect(win.locator('.tooltip')).toHaveText('Pull 1 commit from origin/main');
+    await look(panel, `${SHOTS}/changes-pull-head-hover.png`);
+
+    // A click pulls: the group stays open with its changed file, which keeps its change.
+    await pull.click();
+    await expect(appHead.locator('.sync-counts')).toHaveCount(0, { timeout: 15000 });
+    expect(git(app, 'rev-parse', 'HEAD')).toBe(git(app, 'rev-parse', 'origin/main'));
+    await expect(appHead).toHaveAttribute('aria-expanded', 'true');
+    await expect(rows).toHaveCount(1);
+    expect(git(app, 'diff', '--name-only').trim()).toBe('src/app.ts');
+
+    // lib's chip under Clean: a button of its own.
+    const chip = panel.locator('.clean .chip-static').filter({ hasText: 'lib' });
+    const chipPull = chip.getByRole('button', { name: 'Pull 1 commit from origin/main' });
+    await expect(chipPull).toHaveText('↓1');
+    await chipPull.hover();
+    await look(panel, `${SHOTS}/changes-pull-chip-hover.png`);
+    await chipPull.click();
+    await expect(chip.locator('.sync-counts')).toHaveCount(0, { timeout: 15000 });
+    expect(git(lib, 'rev-parse', 'HEAD')).toBe(git(lib, 'rev-parse', 'origin/main'));
+
+    // web, from its header's context menu: the pull would overwrite the change, so nothing moves and Stash and Pull is
+    // offered.
+    const before = git(web, 'rev-parse', 'HEAD');
+    await head('web').click({ button: 'right' });
+    await win.getByRole('menuitem', { name: 'Pull' }).click();
+    const toast = win.locator('.toast', { hasText: 'would be overwritten' });
+    await expect(toast).toBeVisible({ timeout: 15000 });
+    await expect(toast.getByRole('button', { name: 'Stash and Pull' })).toBeVisible();
+    await look(win, `${SHOTS}/changes-pull-stash-offer.png`);
+    expect(git(web, 'rev-parse', 'HEAD')).toBe(before);
+    await expect(head('web').locator('.sync-pull')).toHaveText('↓1');
+  } finally {
+    await stop();
+  }
+});
+
 test('grouped by repository and by session: the head, the Clean chip, the "To sync" strip right above Clean; the heads stay put', async () => {
   const p = gitWritesProject(['app', 'lib'], undefined, { remote: true });
   const [app, lib] = [p.repo('app'), p.repo('lib')];

@@ -1,12 +1,18 @@
-import { expect, test } from 'vitest';
+import { beforeEach, expect, test } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { RepoStatus } from '@shared/git';
+import type { GitOp } from '@shared/git-write';
+import { useApp } from '../store';
 import type { WtView } from '../worktrees';
 import { CleanState } from './CleanState';
 
 // Changes when everything is clean: one quiet line, then a row per
-// repository with its branch, its worktrees under it; no ring, no pills.
+// repository with its branch, its worktrees under it; no ring, no pills. Read-only unless a test turns git actions on:
+// then a ↓ is a Pull button.
+
+const gitActions = (v: 'on' | 'read-only') => useApp.setState({ settings: { ...useApp.getState().settings, gitActions: v } });
+beforeEach(() => { gitActions('read-only'); useApp.setState({ gitOps: {} }); });
 
 const repo = (name: string, o: Partial<RepoStatus> = {}): RepoStatus => ({
   root: `/p/${name}`, name, branch: 'dev', detached: false, ahead: 0, behind: 0, oid: 'a'.repeat(40), changes: [], checkedAt: 0, truncated: 0, ...o
@@ -15,8 +21,11 @@ const wt = (name: string, state: WtView['state'], commits = 0): WtView => ({
   status: repo(name, { root: `/p/web/.claude/worktrees/${name}`, branch: `worktree-${name}`, worktreeOf: '/p/web', merge: commits ? { commits, merged: false, base: 'dev' } : null } as Partial<RepoStatus>),
   name, rows: [], state
 });
-const render = (repos: RepoStatus[], wts: Record<string, WtView[]> = {}, hidden = 0) =>
-  renderToStaticMarkup(createElement(CleanState, { repos, worktreesOf: (root: string) => wts[root] ?? [], hidden }));
+// A server render reads the store's initial state: the state the test set becomes it.
+const render = (repos: RepoStatus[], wts: Record<string, WtView[]> = {}, hidden = 0) => {
+  Object.assign(useApp.getInitialState(), useApp.getState());
+  return renderToStaticMarkup(createElement(CleanState, { repos, worktreesOf: (root: string) => wts[root] ?? [], hidden }));
+};
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
 test('several repositories: "All clean · N repos", then a row each with its branch (detached says so); no ring, no pills', () => {
@@ -98,4 +107,61 @@ test('the arrows are not a control, and read as one label: role img, no tab stop
   expect(counts).toContain('role="img"');
   expect(counts).not.toMatch(/tabindex|role="button"/i);
   expect(html).not.toContain('<button');
+});
+
+// Git actions on: the ↓ pulls, as Source Control's Pull does; the ↑ stays a label.
+
+const running = (root: string, op: GitOp) =>
+  useApp.setState({ gitOps: { a: { id: 'a', root, op, phase: 'running', startedAt: 0, output: '' } } });
+
+test('git actions on: a ↓ is a Pull button saying what it pulls from where; the row reads the same; ↑ alone stays a label', () => {
+  gitActions('on');
+  const html = render([repo('api', { upstream: 'origin/dev', ahead: 2 }), repo('docs', { branch: 'main', upstream: 'origin/main', behind: 3 })]);
+  expect(text(html)).toBe('All clean · 2 repos api ↑2 dev docs ↓3 main');
+  expect(html.match(/<button[^>]*class="sync-pull[^"]*"/g)).toHaveLength(1);
+  expect(html).toMatch(/<button type="button" class="sync-pull git-sync-behind" data-tip="Pull 3 commits from origin\/main" aria-label="Pull 3 commits from origin\/main">↓3<\/button>/);
+  // The arrows keep their tooltip; with a control inside they are no longer one image.
+  expect(html).toMatch(/<span class="sync-counts mono has-pull" data-tip="3 to pull from origin\/main">/);
+  // api has only commits to push: its arrows stay one label, no button.
+  expect(html).toContain('class="sync-counts mono" role="img" data-tip="2 to push to origin/dev" aria-label="2 to push"');
+});
+
+test('git actions on, both ways: ↓ is the button, ↑ next to it is its own label', () => {
+  gitActions('on');
+  const html = render([repo('api', { upstream: 'origin/dev', ahead: 2, behind: 1 })]);
+  expect(text(html)).toBe('Working tree clean api ↓1 ↑2 dev');
+  expect(html).toMatch(/aria-label="Pull 1 commit from origin\/dev">↓1<\/button><span class="git-sync-ahead" role="img" aria-label="2 to push">↑2<\/span>/);
+  expect(html).toContain('data-tip="1 to pull · 2 to push · origin/dev"');
+});
+
+test('git actions on: a pushed worktree with commits to pull gets the button too', () => {
+  gitActions('on');
+  const pushed = wt('login-flow', 'idle');
+  pushed.status = { ...pushed.status, upstream: 'origin/worktree-login-flow', behind: 2 };
+  const html = render([repo('web')], { '/p/web': [pushed] });
+  expect(html).toContain('aria-label="Pull 2 commits from origin/worktree-login-flow">↓2</button>');
+});
+
+test('read-only: the ↓ stays a label, never a button', () => {
+  const html = render([repo('docs', { branch: 'main', upstream: 'origin/main', behind: 3 })]);
+  expect(html).not.toContain('<button');
+  expect(html).toContain('class="sync-counts mono" role="img" data-tip="3 to pull from origin/main" aria-label="3 to pull"');
+});
+
+test('a pull or a sync running there: a spinner in the arrow\'s place, busy, saying so; another tree is untouched', () => {
+  gitActions('on');
+  for (const op of ['pull', 'sync'] as const) {
+    running('/p/docs', op);
+    const html = render([repo('docs', { branch: 'main', upstream: 'origin/main', behind: 3 }), repo('api', { upstream: 'origin/dev', behind: 1 })]);
+    const label = op === 'pull' ? 'Pulling…' : 'Syncing…';
+    expect(html).toContain(`aria-busy="true" data-tip="${label}" aria-label="${label}"><i class="git-spin" aria-hidden="true"></i>3</button>`);
+    expect(html).toContain('aria-label="Pull 1 commit from origin/dev">↓1</button>');
+  }
+});
+
+test('another op running there (a commit, a push): the button is off and says why', () => {
+  gitActions('on');
+  running('/p/docs', 'commit');
+  const html = render([repo('docs', { branch: 'main', upstream: 'origin/main', behind: 3 })]);
+  expect(html).toContain('aria-disabled="true" data-tip="Pull · Committing…" aria-label="Pull · Committing…">↓3</button>');
 });

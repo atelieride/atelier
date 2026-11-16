@@ -53,7 +53,9 @@ beforeEach(() => {
   useApp.setState({
     project: { root: '/p', name: 'p', realRoot: '/p' }, popout: null, repos: REPOS, attributions: [], terminals: [], ws: null,
     changesGroup: 'repo', changesCollapsed: [], changesExpanded: true, changesScope: 'all', changesMaybeOpen: [],
-    settings: { ...useApp.getState().settings, gitActions: 'read-only' }
+    settings: { ...useApp.getState().settings, gitActions: 'read-only' },
+    // The drawer closed, nothing running: a test that opens it never folds the next one's groups.
+    gitDrawer: { open: false, height: null, unfolded: [], openedFor: null }, gitTarget: null, gitOps: {}
   });
 });
 
@@ -137,4 +139,53 @@ test('Changes asks a view fetch for every readable main repository — shown by 
   const out = html();
   expect(out).not.toContain('>api<');
   expect(asked.keys).toEqual(['/p/api\n/p/docs\n/p/web']);
+});
+
+// Git actions on: every ↓ pulls (Source Control's Pull). In a chip it is a button of its own; in a header — itself a
+// button, that folds its group or opens the comparison — a click target inside it that never does what the header
+// does, as the session avatars are (the header's context menu has Pull for the keyboard).
+
+const on = () => useApp.setState({ settings: { ...useApp.getState().settings, gitActions: 'on' } });
+/** A button opened before the one before it closed. */
+const nested = (s: string) => /<button[^>]*>(?:(?!<\/button>)[\s\S])*?<button/.test(s);
+const merging = { commits: 5, merged: false, base: 'trunk', files: [], truncated: 0 };
+
+test('git actions on, by repository: every ↓ pulls — a dirty repository\'s head, a worktree\'s head and line, the Clean chips — never a button in a button', () => {
+  on();
+  useApp.setState({ repos: [
+    repo('/p/api', 'dev', { behind: 1, ahead: 2, changes: [ch('/p/api', 'a.ts')] }),
+    repo('/p/docs', 'main', { behind: 3 }),
+    repo('/p/web', 'trunk', { changes: [ch('/p/web', 'w.ts')] }),
+    wt('login', 'login', { behind: 2, merge: merging }),
+    wt('idle', 'idle-b', { behind: 4 }),
+    wt('dirty', 'dwt', { behind: 6, changes: [ch('/p/web/.claude/worktrees/dirty', 'd.ts')] })
+  ] });
+  const out = html();
+  expect(nested(out)).toBe(false);
+  expect(count(out, 'class="sync-pull')).toBe(5);
+  // api's head: ↓1 a click target of its own, saying what it pulls; ↑2 stays a label; the branch pill after them.
+  expect(out).toMatch(/change-group-title">api<\/span><span class="sync-counts mono has-pull" data-tip="1 to pull · 2 to push · origin\/dev"><span class="sync-pull git-sync-behind" data-tip="Pull 1 commit from origin\/dev">↓1<\/span><span class="git-sync-ahead"[^>]*>↑2<\/span><\/span><span class="branch mono"/);
+  // The worktrees: in their head and in their "to merge" line, inside the header's button.
+  expect(out).toMatch(/wt-name">dirty<\/span><span class="sync-counts mono has-pull"[^>]*><span class="sync-pull git-sync-behind" data-tip="Pull 6 commits from origin\/dwt">↓6<\/span>/);
+  expect(out).toMatch(/wt-name">login<\/span><span class="sync-counts mono has-pull"[^>]*><span class="sync-pull git-sync-behind" data-tip="Pull 2 commits from origin\/login">↓2<\/span>/);
+  // Clean: docs and the idle worktree, real buttons in their chips.
+  expect(cleanLine(out)).toContain('<button type="button" class="sync-pull git-sync-behind" data-tip="Pull 3 commits from origin/main" aria-label="Pull 3 commits from origin/main">↓3</button>');
+  expect(cleanLine(out)).toContain('aria-label="Pull 4 commits from origin/idle-b">↓4</button>');
+  expect(text(cleanLine(out))).toBe('Clean docs ↓3 idle ↓4');
+});
+
+test('git actions on, by session: the "To sync" chips\' ↓ and the Clean chips\' are buttons', () => {
+  on();
+  useApp.setState({ changesGroup: 'session' });
+  const out = html();
+  expect(nested(out)).toBe(false);
+  expect(strip(out)).toContain('aria-label="Pull 4 commits from origin/idle-b">↓4</button>');
+  expect(cleanLine(out)).toContain('aria-label="Pull 3 commits from origin/main">↓3</button>');
+  expect(count(out, 'class="sync-pull')).toBe(2);
+});
+
+test('Read-only: no ↓ pulls anywhere, in either grouping', () => {
+  expect(html()).not.toContain('sync-pull');
+  useApp.setState({ changesGroup: 'session' });
+  expect(html()).not.toContain('sync-pull');
 });

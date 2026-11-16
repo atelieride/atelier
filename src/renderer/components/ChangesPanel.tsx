@@ -33,7 +33,7 @@ import { idStyle } from '../avatar';
 import { changesInWorkspace } from '../workspace-view';
 import { ChangesFilters } from './ChangesFilters';
 import { CleanState } from './CleanState';
-import { SyncCounts } from './SyncCounts';
+import { PullCounts } from './SyncCounts';
 import { toSyncOf } from '../sync';
 
 /** The drawer's folding as the groups need it: the target, and whether the drawer is open with what was unfolded. */
@@ -263,7 +263,7 @@ function WorktreeGroup({ w, all, repos, compact, fold }: { w: WtView; all: strin
           <button type="button" className="wt-line-main" data-tip={tip} onClick={compare}>
             <span className="wt-glyph"><Icon name="branchOff" size={13} stroke={1.8} /></span>
             <span className="wt-name">{w.name}</span>
-            <SyncCounts status={w.status} />
+            <PullCounts root={w.status.root} status={w.status} inside />
             <WtAvatars here={here} />
             <span className="wt-ahead mono" data-tip={mergeTip ?? undefined}>↑{ahead}<span className="wt-ahead-unit">{t.wt.toMergeUnit}</span></span>
           </button>
@@ -277,7 +277,7 @@ function WorktreeGroup({ w, all, repos, compact, fold }: { w: WtView; all: strin
       onClick={(e) => toggleGroup(id, unfoldable, e.altKey, all)} onContextMenu={menu}>
       <span className="wt-glyph"><Icon name="branchOff" size={13} stroke={1.8} /></span>
       <span className="change-group-title wt-name">{w.name}</span>
-      <SyncCounts status={w.status} />
+      <PullCounts root={w.status.root} status={w.status} inside />
       <WtAvatars here={here} />
       {ahead > 0 && <span className="wt-ahead mono">↑{ahead}</span>}
       <span className="grow" />
@@ -461,11 +461,11 @@ export function ChangesPanel() {
   // A worktree's chip: its name, its sync arrows, then (in Clean) what it has to merge; "To sync" leaves that out.
   const wtChip = (w: WtView, o: { merge: boolean } = { merge: true }) => (
     <span key={w.status.root} className="chip-static mono chip-wt" tabIndex={-1} data-tip={t.wt.headTip(w.status.root, branchLabel(w.status), null)}>
-      <Icon name="branchOff" size={10} stroke={1.9} /><span className="chip-name">{w.name}</span><SyncCounts status={w.status} />
+      <Icon name="branchOff" size={10} stroke={1.9} /><span className="chip-name">{w.name}</span><PullCounts root={w.status.root} status={w.status} />
       {o.merge && w.state === 'merge' ? <span className="chip-wt-ahead">↑{toMerge(w.status)}</span> : null}
     </span>
   );
-  const repoChip = (r: RepoStatus) => <span key={r.root} className="chip-static mono" tabIndex={-1}><span className="chip-name">{r.name}</span><SyncCounts status={r} /></span>;
+  const repoChip = (r: RepoStatus) => <span key={r.root} className="chip-static mono" tabIndex={-1}><span className="chip-name">{r.name}</span><PullCounts root={r.root} status={r} /></span>;
   // By session: the dirty repositories' and the worktrees' arrows, at the bottom so nothing above moves.
   const toSync = group === 'session' && !nothing ? toSyncOf(mains, rows, [...nest.families.flatMap((f) => f.worktrees), ...nest.idle]) : [];
   // A folder of hundreds of repositories: a dozen chips per section, the rest behind "+N more" (sessions' always show).
@@ -533,7 +533,7 @@ export function ChangesPanel() {
               <GroupHead id={g.id} all={allIds} count={g.rows.length} menu={() => repoMenu(g.repo.root, { staging: true })} rows={[...g.rows, ...g.worktrees.flatMap((w) => w.rows)]}
                 git={{ rows: g.rows, label: g.repo.name }} shown={shown}>
                 <span className="change-group-title">{g.repo.name}</span>
-                <SyncCounts status={g.repo} />
+                <PullCounts root={g.repo.root} status={g.repo} inside />
                 <span className="branch mono" data-tip={branchLabel(g.repo)}><Icon name="git" size={11} stroke={1.8} /><span className="pill-text">{branchLabel(g.repo)}</span></span>
               </GroupHead>
               {shown.open && <>
