@@ -110,6 +110,7 @@ import { JiraConnector } from './connectors/jira/jira';
 import { followAuthorize } from './connectors/oauth/follow-auth';
 import { electronTransport } from './connectors/net';
 import { BackgroundHub } from './background-hub';
+import { ArtifactHub } from './artifact-hub';
 import { claudeRoots, realHubFs } from './background-fs';
 import { ConnectorRegistry } from './connectors/registry';
 import { createAutomations } from './automations/wiring';
@@ -294,6 +295,13 @@ if (!app.requestSingleInstanceLock()) {
   });
   hub.useBackgroundHub(backgroundHub);
   app.on('will-quit', () => backgroundHub.dispose());
+  // The Artifacts each session published, from its transcript (read-only): the Background chip and popover list them.
+  const artifactHub = new ArtifactHub({
+    fs: realHubFs, roots: claudeRoots, uid: typeof process.getuid === 'function' ? process.getuid() : null,
+    log: (message) => { appLog.write({ source: 'main:artifacts', message }); }
+  });
+  hub.useArtifactHub(artifactHub);
+  app.on('will-quit', () => artifactHub.dispose());
   // Redis view: local instances only (loopback, sockets); nothing runs with Show Redis = Never.
   // The projects' .env and compose files, cached a few seconds: read for Redis and for Databases.
   const redisFiles = projectFiles();
@@ -378,7 +386,7 @@ if (!app.requestSingleInstanceLock()) {
   client.on('terminals', (list: TerminalInfo[]) => bash.setTerminals(list));
   client.on('attributions', (list: Attribution[]) => bash.setDaemonAttributions(list));
   // Exact attribution: atelierd's tool-call windows; none (null) with an older atelierd.
-  client.on('toolCalls', (list: ToolCallWindow[], full: boolean) => bash.setToolCalls(list, full));
+  client.on('toolCalls', (list: ToolCallWindow[], full: boolean) => { bash.setToolCalls(list, full); artifactHub.toolCalls(list); });
   client.on('status', (s: string) => {
     if (s === 'connected' && !client.hasCapability('toolcalls')) bash.setToolCalls(null);
     else bash.awaitToolCalls(s === 'connected');

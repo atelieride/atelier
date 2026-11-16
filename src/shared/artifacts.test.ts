@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { ArtifactLog, MAX_ARTIFACTS, shortArtifactUrl } from './artifacts';
+import { ArtifactLog, MAX_ARTIFACTS } from './artifacts';
 
 const capture = readFileSync(resolve(__dirname, '../../tests/fixtures/transcripts/artifact-publish.jsonl'), 'utf8');
 const FIRST = 'https://claude.ai/artifact/Kq3vT8xYzW2mNpR5sLd9Fa';
@@ -106,8 +106,4 @@ describe('ArtifactLog', () => {
     log.push(text.slice(5));
     expect(log.list().map((a) => a.title)).toEqual(['B']);
   });
-});
-
-test('shortArtifactUrl drops the scheme', () => {
-  expect(shortArtifactUrl(FIRST)).toBe('claude.ai/artifact/Kq3vT8xYzW2mNpR5sLd9Fa');
 });

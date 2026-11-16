@@ -28,9 +28,6 @@ const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 
 /** What a call asked for, kept until its result arrives. */
 interface Pending { action: string | null; asset: boolean; title: string | null; url: string | null }
 
-/** The page's address without its scheme, as a row shows it. */
-export const shortArtifactUrl = (url: string): string => url.replace(/^https:\/\//, '');
-
 function cleanTitle(raw: string | null): string | null {
   if (!raw) return null;
   const one = raw.replace(INVISIBLE, ' ').replace(/\s+/g, ' ').trim();

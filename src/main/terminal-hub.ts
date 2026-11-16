@@ -12,6 +12,7 @@ import type { WorkScan } from '@shared/background';
 import { WorkTimer, attachWork, type WorkHub } from './work-hub';
 import { RecentBook } from '@shared/background-recent';
 import { probeEndedExits, type BackgroundHub } from './background-hub';
+import { attachArtifacts, type ArtifactHub } from './artifact-hub';
 import { INTERRUPT_KEY_MS, InterruptWatch } from './interrupt-watch';
 import { DoneTracker, FinishQueue, StateTracker, TriggerBanners, TurnClock, longFinishes, WaitingTracker, badgeText, bannerSilent, centerEntries, groupNotes, notesFor, seenWhereViewed, showBanner, waitingCount, type Finish, type Note } from './attention';
 import { devEnv, testMs } from './dev-env';
@@ -65,7 +66,7 @@ export class TerminalHub {
   /** What each window last got, the Dock badge, the usage: an equal value is not sent again. */
   private readonly sent = new LastSent();
   private attachments = new Attachments();
-  /** What windows get: atelierd's list (capabilities applied) with each session's background work attached. */
+  /** What windows get: atelierd's list (capabilities applied) with each session's background work and artifacts attached. */
   private terminals: TerminalInfo[] = [];
   /** atelierd's list, capabilities applied, before the work is attached. */
   private raw: TerminalInfo[] = [];
@@ -73,6 +74,8 @@ export class TerminalHub {
   private work: WorkHub | null = null;
   private scans: Record<string, WorkScan> = {};
   private bg: BackgroundHub | null = null;
+  /** The artifacts each session published, read from its transcript. */
+  private artifactHub: (Pick<ArtifactHub, 'terminals' | 'artifacts'> & { onChange: () => void }) | null = null;
   private recentBook = new RecentBook();
   /** Recomputes the work at the next change only time brings (a cap expiry, a cron fire), waiting at most 24 h. */
   private workTimer = new WorkTimer(() => this.publish(false));
@@ -209,6 +212,7 @@ export class TerminalHub {
       this.raw = this.client.hasCapability('background') ? states : withoutBackground(states);
       for (const id of this.closing) if (!raw.some((x) => x.id === id)) this.closing.delete(id);
       this.work?.update(this.raw);
+      this.artifactHub?.terminals(this.raw);
       void this.mcpList();
       this.publish(true);
       this.listedOnce = true;
@@ -344,6 +348,13 @@ export class TerminalHub {
     bg.terminals(this.terminals);
   }
 
+  /** The sessions' artifacts (index.ts): it gets every list from atelierd, and its changes send the terminals again. */
+  useArtifactHub(hub: Pick<ArtifactHub, 'terminals' | 'artifacts'> & { onChange: () => void }): void {
+    this.artifactHub = hub;
+    hub.onChange = () => this.publish(false);
+    hub.terminals(this.raw);
+  }
+
   /** Settings › "Count background work as Working" changed: the work, the inbox and the trackers follow at once. */
   workSettingsChanged(): void {
     this.publish(false);
@@ -358,10 +369,12 @@ export class TerminalHub {
     const now = Date.now();
     const count = this.settings().countBackgroundWork;
     const attached = attachWork(this.interrupts.apply(this.raw), this.scans, now, count);
-    const { list, ended } = this.recentBook.apply(attached.list, now);
+    const artifacts = this.artifactHub;
+    const withArtifacts = artifacts ? attachArtifacts(attached.list, (id, sid) => artifacts.artifacts(id, sid)) : attached.list;
+    const { list, ended } = this.recentBook.apply(withArtifacts, now);
     const expiry = this.recentBook.nextExpiry();
     const nextChange = expiry === null ? attached.nextChange : attached.nextChange === null ? expiry : Math.min(attached.nextChange, expiry);
-    const workKey = (l: TerminalInfo[]) => JSON.stringify(l.map((t) => [t.id, t.work ?? null, t.recent ?? null]));
+    const workKey = (l: TerminalInfo[]) => JSON.stringify(l.map((t) => [t.id, t.work ?? null, t.recent ?? null, t.artifacts ?? null]));
     const changed = fromDaemon || workKey(list) !== workKey(this.terminals);
     this.terminals = list;
     this.bg?.terminals(list);
