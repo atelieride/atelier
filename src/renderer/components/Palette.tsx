@@ -782,6 +782,9 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
   useEffect(() => { if (q.mode === 'resume') void refreshHistory(); }, [q.mode]);
 
   const flat = sections.flatMap((s) => s.items);
+  // A query changed by a step (back to the list, the account step) lands on the row it set; typed, on the first row. The
+  // field's onChange also sets the first row itself, in the same render as the new rows: an Enter right after typing
+  // must never fall between that render and this effect, on an index the new list doesn't have.
   useEffect(() => { setActive(restoreActive.current ?? 0); restoreActive.current = null; }, [query]);
   useEffect(() => { list.current?.querySelector('.palette-item.is-active')?.scrollIntoView({ block: 'nearest' }); }, [active]);
   // ⌥: Open to the Side when the item has it (sessions, terminals, files, tasks); ⌘ on a task also sends its prompt;
@@ -827,7 +830,7 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
               // clickup: / notion: — the connector's glyph and name.
               ? <span className="palette-mode has-glyph"><Icon name={CONNECTOR_ICONS[q.source]} size={11} stroke={2.2} />{t.tasks.sourceModes[q.source]}</span>
               : q.mode !== 'all' && <span className="palette-mode">{t.paletteModes[q.mode]}</span>}
-          <input ref={input} className="palette-input" placeholder={sending ? (sending.newSession ? t.tasks.pickSession : t.send.pick) : taskStep ? (taskStep.step === 'actions' ? t.tasks.pickAction : taskStep.step === 'account' ? t.tasks.pickAccount : t.tasks.pickSession) : t.search} value={query} onChange={(e) => setQuery(e.target.value)}
+          <input ref={input} className="palette-input" placeholder={sending ? (sending.newSession ? t.tasks.pickSession : t.send.pick) : taskStep ? (taskStep.step === 'actions' ? t.tasks.pickAction : taskStep.step === 'account' ? t.tasks.pickAccount : t.tasks.pickSession) : t.search} value={query} onChange={(e) => { setQuery(e.target.value); setActive(0); }}
             onKeyDown={(e) => {
               if (isImeComposing(e.nativeEvent)) return;
               if (e.key === 'Escape') { if (taskStep) { e.preventDefault(); back(); } else close(); }
