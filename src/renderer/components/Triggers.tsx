@@ -9,7 +9,24 @@ import { Toggle } from './Settings';
 /** Settings › Terminal, scrolled to the triggers (palette "Edit output triggers…", the center's empty state). */
 export function openTriggerSettings(): void {
   useApp.getState().setSettingsOpen('terminal');
-  requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector('.trg-section')?.scrollIntoView({ block: 'start' })));
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const section = document.querySelector<HTMLElement>('.trg-section');
+    if (!section) return;
+    // Rows above still arrive once the pane is open (the checked files main lists, a notice atelierd's state brings or
+    // takes away). The browser's scroll anchoring keeps the triggers in place when they do, but not while an entrance
+    // animation moves the pane: until those end, the triggers are placed again at every frame.
+    let entering = true;
+    const moving = document.getAnimations().filter((a) => a.effect instanceof KeyframeEffect && a.effect.target?.contains(section)
+      && a.effect.getComputedTiming().endTime !== Infinity);
+    const settled = () => { entering = false; };
+    void Promise.all(moving.map((a) => a.finished)).then(settled, settled);
+    const place = () => {
+      if (!section.isConnected) return;
+      section.scrollIntoView({ block: 'start' });
+      if (entering) requestAnimationFrame(place);
+    };
+    place();
+  }));
 }
 
 /**

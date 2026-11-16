@@ -122,6 +122,10 @@ test('Edit output triggers… scrolls the triggers into view below the docked pr
     // answers, and would move them after the scroll.
     await win.getByRole('button', { name: 'Open a terminal' }).click();
     await expect(win.locator('.xterm-rows')).toBeVisible({ timeout: 10000 });
+    // Rows above the triggers still arrive once the pane is open: the checked files main lists, and the notice atelierd's
+    // state brings or takes away. A long entrance makes them land while it runs, when the browser's scroll anchoring
+    // doesn't hold the scroll position (rows that change after it, it does).
+    await win.addStyleTag({ content: '.set-content { animation-duration: 3s !important; }' });
     await win.keyboard.press('F1');
     await win.locator('.palette-input').fill('>Edit output triggers');
     await win.keyboard.press('Enter');
@@ -129,6 +133,8 @@ test('Edit output triggers… scrolls the triggers into view below the docked pr
     await expect(dialog.getByRole('heading', { name: 'Terminal' })).toBeVisible();
     const section = dialog.getByRole('region', { name: 'Triggers' });
     await expect(section.getByRole('switch', { name: 'Trigger pattern 5 enabled' })).toBeAttached();
+    await expect(dialog.locator('.chk-file')).toHaveCount(4);
+    await expect(dialog.locator('.set-notice')).toHaveCount(0);
     const gap = async () => (await section.boundingBox())!.y - (await geometry(win)).dock!.bottom;
     // Scrolled to its start, not clamped at the end of the pane: right below the band, with the FOCUS_ROOM (6 px) and
     // the section's own 8 px scroll margin in between.
