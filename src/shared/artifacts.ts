@@ -63,9 +63,10 @@ export class ArtifactLog {
     return changed;
   }
 
-  /** Newest first. */
+  /** Newest first; published in the same second (the transcript's times are often whole seconds), the later publish first. */
   list(): SessionArtifact[] {
-    return [...this.byUrl.values()].sort((a, b) => b.at - a.at);
+    // byUrl holds them in publish order (each publish moves its page last); the sort is stable.
+    return [...this.byUrl.values()].reverse().sort((a, b) => b.at - a.at);
   }
 
   /** Whether the result of that tool call has been read (main stops waiting for it). */
@@ -123,6 +124,7 @@ export class ArtifactLog {
     if (!url || !ARTIFACT_URL.test(url)) return false;
     const old = this.byUrl.get(url);
     const title = cleanTitle(str(out.title)) ?? cleanTitle(call.title) ?? old?.title ?? url.slice(url.lastIndexOf('/') + 1);
+    this.byUrl.delete(url);
     this.byUrl.set(url, { url, title, at: Number.isFinite(at) ? at : old?.at ?? 0 });
     if (this.byUrl.size > MAX_ARTIFACTS) {
       const oldest = this.list().at(-1)!;

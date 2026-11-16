@@ -37,6 +37,13 @@ describe('ArtifactLog', () => {
     expect(log.list()).toEqual(EXPECTED);
   });
 
+  test('published in the same second: the later publish first', () => {
+    const ts = '2026-11-16T10:00:00.000Z';
+    expect(scan(publish('t1', FIRST, 'A', ts) + publish('t2', SECOND, 'B', ts)).map((a) => a.title)).toEqual(['B', 'A']);
+    // Updated after, in that same second: first again.
+    expect(scan(publish('t1', FIRST, 'A', ts) + publish('t2', SECOND, 'B', ts) + publish('t3', FIRST, 'A', ts)).map((a) => a.title)).toEqual(['A', 'B']);
+  });
+
   test('push says whether the list changed', () => {
     const log = new ArtifactLog();
     expect(log.push(call('t1', { action: 'publish', title: 'A' }))).toBe(false);
