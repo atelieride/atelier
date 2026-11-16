@@ -26,19 +26,20 @@ export function PlanBadge({ session }: { session: SessionInfo }) {
 /**
  * What runs in the background: "1 agent · 2 shells", a thin outline with the working dot, dimmed when only capped
  * shells remain. Three renderings, picked by the row's container
- * queries: in full, the numbers with small glyphs, the total alone; the tooltip always lists everything.
+ * queries: in full, the numbers with small glyphs, the total alone; the tooltip always lists everything. In the session
+ * bar it also counts the Artifacts the session published (never work: no dot when they are all there is).
  */
 export function WorkChip({ term, side }: { term: TerminalInfo; side: 'below' | 'right' }) {
-  const v = workChipView(term, Date.now());
+  const v = workChipView(term, Date.now(), { artifacts: side === 'below' });
   const chip = useBgChip(term.id, side, 'all');
   if (!v) return null;
   return (
     <ChipTag side={side} chip={chip} className={`work-chip${v.counting ? ' is-counting' : ''}${v.idle ? ' is-idle' : ''}${v.long ? ' is-long' : ''}`} tip={`${v.tip}\n${t.bg.chipTip}`}>
-      <i className="work-dot" aria-hidden />
+      {v.dot && <i className="work-dot" aria-hidden />}
       <span className="work-full">{v.full}</span>
       <span className="work-short">
         {v.parts.map(([kind, n]) => (
-          <span key={kind} className="work-part">
+          <span key={kind} className={`work-part k-${kind}`}>
             <Icon name={BG_GLYPH[kind]} size={10} stroke={2} /><span>{n}</span>
           </span>
         ))}

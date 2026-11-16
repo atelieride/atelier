@@ -1,6 +1,7 @@
 // What the work chip and the scheduled chip say: pure, from the work main attached to a terminal.
 import { workCounts, workSummary, workTotal, type BackgroundWork } from '@shared/background';
 import type { BackgroundKind, SessionInfo } from '@shared/session';
+import type { SessionArtifact } from '@shared/artifacts';
 import { agentsInBackground, agentsLabel } from '@shared/session-view';
 import { selfPacedLoop } from '@shared/loop';
 import { t } from './i18n/en';
@@ -13,8 +14,8 @@ const CHIP_ORDER: BackgroundKind[] = ['agent', 'shell', 'monitor', 'other'];
 export interface WorkChipView {
   /** "1 agent · 2 shells" (wide rows, the session bar). */
   full: string;
-  /** Per-kind counts in chip order, for the compact chip (a glyph and a number each). */
-  parts: [BackgroundKind, number][];
+  /** Per-kind counts in chip order, the artifacts last, for the compact chip (a glyph and a number each). */
+  parts: [BackgroundKind | 'artifact', number][];
   /** Everything listed (the narrowest chip). */
   total: number;
   /** The work keeps the session working (the session reads as working). */
@@ -25,22 +26,47 @@ export interface WorkChipView {
   long: boolean;
   /** The heading (the summary), one line per item, and why idle items don't count. */
   tip: string;
+  /** The working dot: there unless the chip holds nothing but artifacts. */
+  dot: boolean;
 }
 
+type WorkPart = Omit<WorkChipView, 'dot'> & { lines: string[] };
+
 /**
- * The work chip of a terminal, or null when nothing runs in the background. Without `work` (an atelierd without the
- * 'background' capability) it falls back to the v2.0 subagent count, so nothing regresses.
+ * The work chip of a terminal, or null when nothing runs in the background and (in the session bar, `artifacts`) the
+ * session published no artifact. Artifacts are listed, never work: they add a count of their own, change neither
+ * `counting` nor `idle`, and a chip of artifacts alone has no working dot.
  */
-export function workChipView(term: { session: SessionInfo | null; work?: BackgroundWork }, now: number): WorkChipView | null {
+export function workChipView(term: { session: SessionInfo | null; work?: BackgroundWork; artifacts?: SessionArtifact[] }, now: number, opts: { artifacts?: boolean } = {}): WorkChipView | null {
   const s = term.session;
   if (!s) return null;
-  const w = term.work;
+  const base = workPart(s, term.work, now);
+  const arts = opts.artifacts ? term.artifacts ?? [] : [];
+  if (arts.length === 0) return base && { ...withoutLines(base), dot: true };
+  const lines = arts.slice(0, TIP_ITEMS).map((a) => t.work.line(t.work.kind.artifact, a.title));
+  if (arts.length > TIP_ITEMS) lines.push(t.work.more(arts.length - TIP_ITEMS));
+  const full = [base?.full, t.work.artifacts(arts.length)].filter(Boolean).join(' · ');
+  const parts: WorkChipView['parts'] = [...(base?.parts ?? []), ['artifact', arts.length]];
+  return {
+    full, parts, total: (base?.total ?? 0) + arts.length, counting: base?.counting ?? false, idle: base?.idle ?? false,
+    long: parts.length >= 3, tip: [full, ...(base?.lines ?? []), ...lines].join('\n'), dot: !!base
+  };
+}
+
+const withoutLines = ({ lines: _lines, ...v }: WorkPart): Omit<WorkChipView, 'dot'> => v;
+
+/**
+ * The background work's part of the chip, or null when nothing is listed. Without `work` (an atelierd without the
+ * 'background' capability) it falls back to the v2.0 subagent count, so nothing regresses.
+ */
+function workPart(s: SessionInfo, w: BackgroundWork | undefined, now: number): WorkPart | null {
   if (!w) {
     const label = agentsLabel(s.subagents);
     if (!label) return null;
     const n = s.subagents ?? 0;
     const background = agentsInBackground(s);
-    return { full: label, parts: [['agent', n]], total: n, counting: background, idle: false, long: false, tip: t.wait.agentsTip(n, background) };
+    const tip = t.wait.agentsTip(n, background);
+    return { full: label, parts: [['agent', n]], total: n, counting: background, idle: false, long: false, tip, lines: [tip] };
   }
   const full = workSummary(w);
   if (!full) return null;
@@ -50,7 +76,7 @@ export function workChipView(term: { session: SessionInfo | null; work?: Backgro
   if (sorted.length > TIP_ITEMS) lines.push(t.work.more(sorted.length - TIP_ITEMS));
   if (idle && w.idleSince !== undefined) lines.push(t.work.idleFor(formatDuration(now - w.idleSince)));
   const parts = workCounts(w);
-  return { full, parts, total: workTotal(w), counting: w.counting, idle, long: parts.length >= 3, tip: [full, ...lines].join('\n') };
+  return { full, parts, total: workTotal(w), counting: w.counting, idle, long: parts.length >= 3, tip: [full, ...lines].join('\n'), lines };
 }
 
 export interface ScheduledView {

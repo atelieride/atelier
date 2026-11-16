@@ -478,6 +478,8 @@ button.foot-item:disabled { cursor: default; }
 .work-short { gap: 5px; }
 .work-part { display: inline-flex; align-items: center; gap: 2px; }
 .work-part svg { flex: none; opacity: .85; }
+/* Artifacts the session published: the brand's violet, so they read apart from the work. */
+.work-part.k-artifact svg { color: var(--violet); opacity: 1; }
 @media (prefers-reduced-motion: no-preference) {
 }
 /* Scheduled wake-ups: neutral, a clock and the next local time. */

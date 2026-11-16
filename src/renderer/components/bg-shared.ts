@@ -2,7 +2,7 @@ import type { BackgroundKind } from '@shared/session';
 import type { IconName } from './Icon';
 
 /** One glyph per kind of background work (agent, shell, monitor, other) and for a scheduled wake-up: chips and popover. */
-export const BG_GLYPH: Record<BackgroundKind | 'cron' | 'loop', IconName> = { agent: 'sparkle', shell: 'terminal', monitor: 'eye', other: 'bolt', cron: 'clock', loop: 'sync' };
+export const BG_GLYPH: Record<BackgroundKind | 'artifact' | 'cron' | 'loop', IconName> = { agent: 'sparkle', shell: 'terminal', monitor: 'eye', other: 'bolt', artifact: 'artifact', cron: 'clock', loop: 'sync' };
 
 // The chip that opened the Background popover: Escape (and a close that leaves the focus inside it) gives it back.
 let opener: HTMLElement | null = null;

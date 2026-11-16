@@ -133,6 +133,8 @@ const paths = {
     </g>
   ),
   externalLink: <path d="M8 4.5H4.5v11h11V12M11 4h5v5M16 4l-7 7" />,
+  // An Artifact (a page Claude published): a framed page with Claude's sparkle inside, filled (a stroked one blurs small).
+  artifact: <><rect x="3.5" y="3.5" width="13" height="13" rx="3" /><path d="M10 6.2l.9 2.2 2.2.9-2.2.9-.9 2.2-.9-2.2-2.2-.9 2.2-.9z" fill="currentColor" stroke="none" /></>,
   // Redis: three stacked rhombuses, stroked — ours, not Redis's mark.
   redis: <><path d="M10 3.2l7 3.4-7 3.4-7-3.4z" /><path d="M3 10.1l7 3.4 7-3.4" /><path d="M3 13.5l7 3.4 7-3.4" /></>,  // A pencil (Edit), a list of rows (queues and jobs), a pulse (the live monitor).
   edit: <><path d="M12.6 4.6l2.8 2.8L7.6 15.2l-3.4.6.6-3.4z" /><path d="M11.2 6l2.8 2.8" /></>,

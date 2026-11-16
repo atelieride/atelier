@@ -246,7 +246,8 @@ const strings = {
   },
   /** Background work and scheduled wake-ups. */
   work: {
-    kind: { agent: 'agent', shell: 'shell', monitor: 'monitor', other: 'task' },
+    kind: { agent: 'agent', shell: 'shell', monitor: 'monitor', other: 'task', artifact: 'artifact' },
+    artifacts: (n: number) => `${n} artifact${n === 1 ? '' : 's'}`,
     line: (kind: string, label: string, counted = true) => `${kind} · ${label}${counted ? '' : ' · not counted'}`,
     more: (n: number) => `+${n} more`,
     idleFor: (duration: string) => `Running for ${duration} · not counted as work`,
