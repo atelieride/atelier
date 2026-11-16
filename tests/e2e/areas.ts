@@ -629,6 +629,7 @@ export const SOURCES: Record<string, Area[]> = {
   'src/shared/terminal-list.ts': ['terminal', 'sessions'],
   'src/shared/tool-calls.ts': ['changes'],
   'src/shared/transcript.ts': ['background'],
+  'src/shared/artifacts.ts': ['background'],
   'src/shared/triggers.ts': ['notifications'],
   'src/shared/update-': ['updates'],
   'src/shared/store-updates.ts': ['updates'],
