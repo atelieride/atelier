@@ -345,6 +345,9 @@ test('a crowded file bar: a new file with a long name never wraps its note or pu
     await expect(bar.locator('.change-nav')).toBeVisible();
     for (const width of [1600, 1300, 1100, 960]) {
       await app.evaluate(({ BrowserWindow }, w) => BrowserWindow.getAllWindows()[0]?.setSize(w, 1000), width);
+      // The page gets the new size a moment later: measured before, the bar is still the last width's (the note shown at
+      // 1300 is hidden at 1100).
+      await expect.poll(() => win.evaluate(() => window.innerWidth)).toBe(width);
       await expect.poll(() => bar.evaluate((el) => {
         const box = el.getBoundingClientRect();
         const pad = parseFloat(getComputedStyle(el).paddingRight);
