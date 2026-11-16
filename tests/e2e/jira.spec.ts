@@ -157,14 +157,13 @@ test('Jira in Settings: connect, choose projects in the picker, Mine | Everyone,
     await win.keyboard.press('Escape');
     await expect(picker).toHaveCount(0);
     await expect(dialog).toBeVisible();
+    // The focus goes back to the button that opened the picker, a frame after it closed: only then is it the test's to move.
+    await expect(details.locator('.nsrc-head .nsrc-add')).toBeFocused();
 
     // Mine | Everyone (arrow keys, as every segmented control): ATL lists everyone's open issues.
     const scope = atl.getByRole('radiogroup', { name: 'Whose issues in ATL' });
-    // Focused once the details settled after the picker closed (a re-render could take the focus back).
-    await expect(async () => {
-      await scope.getByRole('radio', { name: 'Mine' }).focus();
-      await expect(scope.getByRole('radio', { name: 'Mine' })).toBeFocused({ timeout: 200 });
-    }).toPass();
+    await scope.getByRole('radio', { name: 'Mine' }).focus();
+    await expect(scope.getByRole('radio', { name: 'Mine' })).toBeFocused();
     await win.keyboard.press('ArrowRight');
     await expect(scope.getByRole('radio', { name: 'Everyone' })).toHaveAttribute('aria-checked', 'true');
     await expect(atl.locator('.nsrc-sub')).toHaveText('Everyone · 9 open', { timeout: 15000 });
