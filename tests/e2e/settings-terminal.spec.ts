@@ -109,8 +109,11 @@ test('Settings: Esc also closes after a click on text or with the + at its maxim
     await win.getByRole('button', { name: 'Settings' }).click();
     await dialog.getByRole('button', { name: 'Terminal' }).click();
     const plus = dialog.getByRole('button', { name: 'Increase Font size' });
+    // Two presses before main's answer is back count twice: the second doesn't redo the first.
+    await plus.evaluate((el) => { (el as HTMLButtonElement).click(); (el as HTMLButtonElement).click(); });
+    await expect(dialog.getByRole('group', { name: 'Font size' })).toContainText('15 px');
     await plus.focus();
-    for (let i = 0; i < 11; i++) await win.keyboard.press('Enter');
+    for (let i = 0; i < 9; i++) await win.keyboard.press('Enter');
     await expect(dialog.getByRole('group', { name: 'Font size' })).toContainText('24 px');
     await expect(plus).toBeDisabled();
     await win.keyboard.press('Escape');

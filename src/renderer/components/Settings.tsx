@@ -78,8 +78,14 @@ export function Toggle({ label, value, onChange, disabled = false }: { label: st
 export function Stepper({ label, value, min, max, step, format, onChange }: { label: string; value: number; min: number; max: number; step: number; format: (v: number) => string; onChange: (v: number) => void }) {
   const clamp = (v: number) => Math.min(max, Math.max(min, Math.round(v / step) * step));
   const fix = (v: number) => Math.round(v * 100) / 100;
+  // The value last asked for, until main's answer shows it: a press meanwhile steps from it, not from the value still
+  // shown (answers to the earlier presses in between don't count as caught up).
+  const asked = useRef<number | null>(null);
+  useEffect(() => { if (value === asked.current) asked.current = null; }, [value]);
   const bump = (e: React.MouseEvent<HTMLButtonElement>, dir: 1 | -1) => {
-    const next = fix(clamp(value + dir * step));
+    const next = fix(clamp((asked.current ?? value) + dir * step));
+    // Back to the value shown (or a press at the limit): no answer will catch it up.
+    asked.current = next === value ? null : next;
     // At the limit the button gets disabled and would lose focus: hand it over to the other one.
     if (next >= max && dir === 1) (e.currentTarget.parentElement?.firstElementChild as HTMLElement | null)?.focus();
     if (next <= min && dir === -1) (e.currentTarget.parentElement?.lastElementChild as HTMLElement | null)?.focus();
