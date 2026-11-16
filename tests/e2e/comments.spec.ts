@@ -144,6 +144,8 @@ test('comment on review lines → gutter marker and pending chip → Send types 
     await win.keyboard.press('Shift+ArrowDown');
     await menu(app, 'CmdOrCtrl+Alt+C');
     await expect(editor.locator('.lc-box .lc-lines')).toHaveText('Lines 9–10');
+    // The field takes the keyboard just after the box is drawn: an Esc before that would reach the editor.
+    await expect(editor.locator('.lc-box textarea')).toBeFocused();
     await win.keyboard.press('Escape');
     await expect(editor.locator('.lc-box')).toHaveCount(0);
     // Without a selection it says what to do.

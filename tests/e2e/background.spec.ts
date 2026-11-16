@@ -16,7 +16,9 @@ test('in e2e the windows stay hidden and never take focus, yet the UI renders an
     const state = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => ({ visible: w.isVisible(), focused: w.isFocused() })));
     expect(await state()).toEqual([{ visible: false, focused: false }]);
     // No Dock tile: force-quitting a test app from the Dock would kill its process coalition (the user's sessions).
-    expect(await app.evaluate(({ app: a }) => a.dock?.isVisible())).toBe(false);
+    // macOS answers this from its running-application record, which with other apps starting and quitting can read
+    // "visible" for a few milliseconds while nothing in the app touches the Dock: a tile left showing still fails.
+    await expect.poll(() => app.evaluate(({ app: a }) => a.dock?.isVisible())).toBe(false);
     // The page behaves as if visible: animation frames run (xterm renders on them) and the visibility API says so.
     const page = await win.evaluate(() => new Promise<{ visibility: string; frames: number }>((done) => {
       let frames = 0;
