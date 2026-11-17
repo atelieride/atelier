@@ -140,6 +140,8 @@ test('git actions on: a pushed worktree with commits to pull gets the button too
   pushed.status = { ...pushed.status, upstream: 'origin/worktree-login-flow', behind: 2 };
   const html = render([repo('web')], { '/p/web': [pushed] });
   expect(html).toContain('aria-label="Pull 2 commits from origin/worktree-login-flow">↓2</button>');
+  // Its row takes the focus back once the ↓ is gone, as a repository's row does.
+  expect(html).toMatch(/<span class="clean-row is-wt" tabindex="-1"/);
 });
 
 test('read-only: the ↓ stays a label, never a button', () => {

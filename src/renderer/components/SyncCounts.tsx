@@ -55,7 +55,9 @@ export function PullCounts({ root, status, inside = false }: { root: string; sta
   return (
     <span className="sync-counts mono has-pull" data-tip={syncTip(v)}>
       {inside ? (
-        <span className={className} data-tip={label} onClick={(e) => { e.stopPropagation(); if (!op) void startPull(root); }}>{arrow}</span>
+        // Part of the header's own name, read as the label the arrows had ("1 to pull"), never as its glyphs.
+        <span className={className} role="img" data-tip={label} aria-label={t.scm.all.toPull(v.behind)}
+          onClick={(e) => { e.stopPropagation(); if (!op) void startPull(root); }}>{arrow}</span>
       ) : (
         <button type="button" className={className} aria-busy={pulling || undefined} aria-disabled={off ? true : undefined}
           data-tip={label} aria-label={label}

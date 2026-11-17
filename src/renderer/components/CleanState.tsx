@@ -44,7 +44,7 @@ export function CleanState({ repos: all, worktreesOf, hidden = 0, live = new Set
           <span className="clean-branch mono"><Icon name="git" size={10} stroke={1.8} /><span className="clean-branch-text">{r.detached ? t.detached : r.branch ?? '—'}</span></span>
         </span>,
         ...worktreesOf(r.root).map((w) => (
-          <span key={w.status.root} className="clean-row is-wt" data-tip={t.wt.headTip(w.status.root, branchLabel(w.status), null)}>
+          <span key={w.status.root} className="clean-row is-wt" tabIndex={-1} data-tip={t.wt.headTip(w.status.root, branchLabel(w.status), null)}>
             <Icon name="branchOff" size={11} stroke={1.9} />
             <span className="clean-name mono">{w.name}</span>
             <PullCounts root={w.status.root} status={w.status} />

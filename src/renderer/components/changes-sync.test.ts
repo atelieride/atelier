@@ -163,11 +163,12 @@ test('git actions on, by repository: every ↓ pulls — a dirty repository\'s h
   const out = html();
   expect(nested(out)).toBe(false);
   expect(count(out, 'class="sync-pull')).toBe(5);
-  // api's head: ↓1 a click target of its own, saying what it pulls; ↑2 stays a label; the branch pill after them.
-  expect(out).toMatch(/change-group-title">api<\/span><span class="sync-counts mono has-pull" data-tip="1 to pull · 2 to push · origin\/dev"><span class="sync-pull git-sync-behind" data-tip="Pull 1 commit from origin\/dev">↓1<\/span><span class="git-sync-ahead"[^>]*>↑2<\/span><\/span><span class="branch mono"/);
+  // api's head: ↓1 a click target of its own, saying what it pulls; read as a label inside the header's name, as ↑2 is;
+  // the branch pill after them.
+  expect(out).toMatch(/change-group-title">api<\/span><span class="sync-counts mono has-pull" data-tip="1 to pull · 2 to push · origin\/dev"><span class="sync-pull git-sync-behind" role="img" data-tip="Pull 1 commit from origin\/dev" aria-label="1 to pull">↓1<\/span><span class="git-sync-ahead"[^>]*>↑2<\/span><\/span><span class="branch mono"/);
   // The worktrees: in their head and in their "to merge" line, inside the header's button.
-  expect(out).toMatch(/wt-name">dirty<\/span><span class="sync-counts mono has-pull"[^>]*><span class="sync-pull git-sync-behind" data-tip="Pull 6 commits from origin\/dwt">↓6<\/span>/);
-  expect(out).toMatch(/wt-name">login<\/span><span class="sync-counts mono has-pull"[^>]*><span class="sync-pull git-sync-behind" data-tip="Pull 2 commits from origin\/login">↓2<\/span>/);
+  expect(out).toMatch(/wt-name">dirty<\/span><span class="sync-counts mono has-pull"[^>]*><span class="sync-pull git-sync-behind" role="img" data-tip="Pull 6 commits from origin\/dwt" aria-label="6 to pull">↓6<\/span>/);
+  expect(out).toMatch(/wt-name">login<\/span><span class="sync-counts mono has-pull"[^>]*><span class="sync-pull git-sync-behind" role="img" data-tip="Pull 2 commits from origin\/login" aria-label="2 to pull">↓2<\/span>/);
   // Clean: docs and the idle worktree, real buttons in their chips.
   expect(cleanLine(out)).toContain('<button type="button" class="sync-pull git-sync-behind" data-tip="Pull 3 commits from origin/main" aria-label="Pull 3 commits from origin/main">↓3</button>');
   expect(cleanLine(out)).toContain('aria-label="Pull 4 commits from origin/idle-b">↓4</button>');
