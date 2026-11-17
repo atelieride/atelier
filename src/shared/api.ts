@@ -350,6 +350,8 @@ export const IPC = {
   scmFetch: 'scm:fetch',
   scmFetchAll: 'scm:fetch-all',
   scmFetchStates: 'scm:fetch-states',
+  scmHide: 'scm:hide',
+  scmUnhide: 'scm:unhide',
   /*
    * Git writes. The preload sends one object per call, exactly these keys (`?`: present only
    * when set), for main's strict schemas. root: a listed working tree; rels: paths relative to it, or 'all'.
@@ -709,6 +711,13 @@ export interface AtelierApi {
     fetchAll(): Promise<FetchOutcome[]>;
     /** The project's repositories' fetch states (running, last outcome). */
     fetchStates(): Promise<ScmFetchState[]>;
+    /**
+     * Hides one of repos()'s entries from Atelier in this project (not the project's root, not a linked worktree): its
+     * folder is no longer scanned, read or watched, nor the repositories inside it. Answers the project's hidden paths.
+     */
+    hide(root: string): Promise<string[]>;
+    /** Shows a hidden repository again (`rel`: its path inside the project, from search().hidden). */
+    unhide(rel: string): Promise<string[]>;
   };
   attributions(): Promise<Attribution[]>;
   /**

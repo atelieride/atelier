@@ -142,6 +142,18 @@ posixTest('before git has listed them, the working trees are read from the files
   }
 });
 
+// POSIX: git prints C:/ worktree paths on Windows.
+posixTest('a linked worktree inside a folder the user hid is left out, before git has listed them and after', async () => {
+  const root = project();
+  const parked = join(root, 'vendor', 'mirror');
+  git(root, 'worktree', 'add', '-q', '-b', 'parked', join(parked, 'wt'));
+  const vad = join(root, '.claude', 'worktrees', 'vad');
+  git(root, 'worktree', 'add', '-q', '-b', 'worktree-vad', vad);
+  expect(quickTrees(root, [root]).map((t) => t.root)).toEqual([root, vad, join(parked, 'wt')]);
+  expect(quickTrees(root, [root], [parked]).map((t) => t.root)).toEqual([root, vad]);
+  expect((await listWorkingTrees(root, [root], [], { hidden: [parked] })).map((t) => t.root)).toEqual([root, vad]);
+});
+
 test('relists asked meanwhile: a full bulk one and a live one for b ask about everything, b alone as live', () => {
   const plan = relistPlan(new Set(['/p/b']), 'all');
   expect(plan.stale).toBe('all');

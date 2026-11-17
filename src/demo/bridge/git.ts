@@ -80,7 +80,7 @@ export function createScm(ctx: DemoContext): AtelierApi['scm'] {
 
   return {
     repos: () => resolved([entry()]),
-    search: () => resolved({ capped: false, searching: false, maxFolders: 20_000 }),
+    search: () => resolved({ capped: false, searching: false, maxFolders: 20_000, hidden: [] }),
     refs: () => resolved(refs()),
     log: (_root, scope, skip, count, filter) => resolved(history.log(scope, skip, count, filter)),
     locate: (_root, scope, oid) => resolved(history.locate(scope, oid)),
@@ -98,6 +98,9 @@ export function createScm(ctx: DemoContext): AtelierApi['scm'] {
       return run();
     },
     fetchAll: async (): Promise<FetchOutcome[]> => { const a = await run(); return a.outcome ? [a.outcome] : []; },
-    fetchStates: () => resolved([state])
+    fetchStates: () => resolved([state]),
+    // The demo's one repository is the project's root: nothing to hide.
+    hide: () => resolved([]),
+    unhide: () => resolved([])
   };
 }

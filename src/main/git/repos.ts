@@ -5,7 +5,7 @@ import { parseWorktrees } from '@shared/git-history';
 import type { ScmWorktree } from '@shared/scm';
 import { runGit } from './exec';
 import { gitReadLimiter, type ReadLevel } from './read-limiter';
-import { isBelow } from '@shared/paths';
+import { isBelow, isInside } from '@shared/paths';
 
 /** Folders one scan reads at most: a few hundred milliseconds on a slow disk, far above what a usual depth needs. */
 export const REPO_SEARCH_MAX_FOLDERS = 20_000;
@@ -43,24 +43,50 @@ export interface RepoSearchResult {
 }
 
 /**
+ * The git common dirs of the repositories the user hid (real paths of their folders), read from the files git keeps:
+ * the working trees sharing one are hidden with it. Folders gone, or no longer repositories, have none.
+ */
+export function hiddenCommons(hidden: readonly string[]): Set<string> {
+  const out = new Set<string>();
+  for (const h of hidden) {
+    const gitDir = gitDirOfTree(h);
+    if (gitDir) out.add(commonOfGitDir(gitDir));
+  }
+  return out;
+}
+
+/** The hidden folders of a project as real paths, from their paths inside its real root. */
+export const hiddenPaths = (realRoot: string, rels: readonly string[]): string[] => rels.map((rel) => join(realRoot, ...rel.split('/')));
+
+/**
  * The repos of a project: the root if it is one, then every repo in its subfolders down to `depth` levels (the root is
  * level 0), inside other repos too. Hidden folders and node_modules are skipped; folders a .gitignore ignores are not
  * (repos cloned inside another one are usually ignored by it). Level by level, so the shallow repos are known first
  * when the scan reaches `maxFolders` folders read and stops. Real paths, like those of git and attributions (a
  * symlinked folder yields its target), each repo once, in the order of the folders they were found in.
+ *
+ * `hidden`: the repositories the user hid, by path inside the real root. Their folders are never read (nor added), a
+ * repo reached through a symlink into one is left out too, and so is every working tree that shares a hidden one's
+ * object store (a linked worktree of it elsewhere in the project).
  */
-export async function discoverRepos(root: string, o: { depth: number; maxFolders?: number }): Promise<RepoSearchResult> {
+export async function discoverRepos(root: string, o: { depth: number; maxFolders?: number; hidden?: readonly string[] }): Promise<RepoSearchResult> {
   const max = o.maxFolders ?? REPO_SEARCH_MAX_FOLDERS;
   const start = toOut(await realpath(root));
+  const hidden = hiddenPaths(start, o.hidden ?? []);
+  const commons = hidden.length ? hiddenCommons(hidden) : new Set<string>();
+  const isHidden = (p: string) => hidden.some((h) => isInside(h, p));
   /** Where each repo was found (its path under the root, as segments) and its real path. */
   const found: { at: string[]; real: string }[] = [];
   const seen = new Set<string>();
-  const add = async (at: string[], dir: string) => {
+  /** False for a hidden repository: neither kept nor walked into. */
+  const add = async (at: string[], dir: string): Promise<boolean> => {
     let real: string;
-    try { real = toOut(await realpath(dir)); } catch { return; /* gone meanwhile */ }
-    if (seen.has(real)) return;
+    try { real = toOut(await realpath(dir)); } catch { return true; /* gone meanwhile */ }
+    if (isHidden(real) || (commons.size > 0 && commons.has(treeCommon(real)))) return false;
+    if (seen.has(real)) return true;
     seen.add(real);
     found.push({ at, real });
+    return true;
   };
   if (await isRepo(start)) await add([], start);
   let level: string[][] = [[]];
@@ -72,10 +98,13 @@ export async function discoverRepos(root: string, o: { depth: number; maxFolders
       const wanted = level.slice(i, i + READ_AT_ONCE);
       const batch = wanted.slice(0, Math.max(0, max - read));
       read += batch.length;
-      const children = (await Promise.all(batch.map(async (at) => (await subfolders(join(start, ...at))).map((n) => [...at, n])))).flat();
+      // A hidden folder is dropped before anything reads it.
+      const children = (await Promise.all(batch.map(async (at) => (await subfolders(join(start, ...at))).map((n) => [...at, n])))).flat()
+        .filter((at) => !isHidden(join(start, ...at)));
       const repos = await Promise.all(children.map((at) => isRepo(join(start, ...at))));
-      for (const [k, at] of children.entries()) if (repos[k]) await add(at, join(start, ...at));
-      next.push(...children);
+      const walk = new Set(children);
+      for (const [k, at] of children.entries()) if (repos[k] && !(await add(at, join(start, ...at)))) walk.delete(at);
+      next.push(...children.filter((at) => walk.has(at)));
       if (batch.length < wanted.length) { capped = true; break; }
     }
     level = next;
@@ -119,6 +148,9 @@ export function gitDirOfTree(root: string): string | null {
   }
 }
 
+/** A working tree's git common dir, read from the files git keeps (no git process). */
+export const treeCommon = (root: string): string => commonOfGitDir(gitDirOfTree(root) ?? join(root, '.git'));
+
 /** The common dir of a git dir: what its `commondir` file names (a linked worktree's), else the git dir itself. */
 function commonOfGitDir(gitDir: string): string {
   try { return real(resolve(gitDir, readFileSync(join(gitDir, 'commondir'), 'utf8').trim())); } catch { return gitDir; }
@@ -130,9 +162,10 @@ const real = (p: string) => { try { return toOut(realpathSync(p)); } catch { ret
  * The project's working trees before git has listed them, read from the files git keeps (no git process: Source
  * Control shows them at once while a big folder's first listing runs): each discovered repo, a linked one tied to its
  * discovered main checkout, then each main checkout's linked worktrees inside the project that discovery missed
- * (hidden folders), from `<common>/worktrees/<name>/gitdir`. Gone or outside ones are left out, as git's listing does.
+ * (hidden folders), from `<common>/worktrees/<name>/gitdir`. Gone or outside ones are left out, as git's listing does,
+ * and so are those inside a folder the user hid (`hidden`: real paths).
  */
-export function quickTrees(projectRoot: string, discovered: readonly string[]): WorkingTree[] {
+export function quickTrees(projectRoot: string, discovered: readonly string[], hidden: readonly string[] = []): WorkingTree[] {
   const known = new Set(discovered);
   const trees = discovered.map((root) => {
     const gitDir = gitDirOfTree(root);
@@ -146,7 +179,7 @@ export function quickTrees(projectRoot: string, discovered: readonly string[]): 
     if (t.gitDir !== t.common) continue;
     let names: string[];
     try { names = readdirSync(join(t.common, 'worktrees')); } catch { continue; }
-    const hidden: WorkingTree[] = [];
+    const missed: WorkingTree[] = [];
     for (const name of names) {
       const admin = join(t.common, 'worktrees', name);
       let dotGit: string;
@@ -154,10 +187,10 @@ export function quickTrees(projectRoot: string, discovered: readonly string[]): 
       const root = dirname(resolve(admin, dotGit));
       if (!existsSync(root)) continue;
       const wt = real(root);
-      if (known.has(wt) || !isBelow(projectRoot, wt)) continue;
-      hidden.push({ root: wt, common: t.common, gitDir: real(admin), worktreeOf: t.root, hidden: true });
+      if (known.has(wt) || !isBelow(projectRoot, wt) || hidden.some((h) => isInside(h, wt))) continue;
+      missed.push({ root: wt, common: t.common, gitDir: real(admin), worktreeOf: t.root, hidden: true });
     }
-    out.push(...hidden.sort((a, b) => (a.root < b.root ? -1 : 1)));
+    out.push(...missed.sort((a, b) => (a.root < b.root ? -1 : 1)));
   }
   return out;
 }
@@ -178,13 +211,14 @@ export interface RepoList { common: string; wts: ScmWorktree[] | null }
  * The discovered repos, each followed by its linked worktrees inside the project that discovery missed (hidden
  * folders), by path. A discovered repo that is a linked worktree of another one gets its `worktreeOf`. Worktrees
  * outside the project, prunable (folder gone) or bare are left out. When git can't list a repo's worktrees (a timeout
- * under load), the ones `previous` had for it stay.
+ * under load), the ones `previous` had for it stay. Linked worktrees inside a folder the user hid (`o.hidden`: real
+ * paths) are left out.
  *
  * `lists` keeps git's answers between calls: only the repos in `stale`, and those it has no answer for, are asked again
  * (a commit in one repository of hundreds asks about that one). Git is asked through the shared limiter at `level`.
  */
 export async function listWorkingTrees(projectRoot: string, discovered: string[], previous: readonly WorkingTree[] = [],
-  o: { lists?: Map<string, RepoList>; stale?: ReadonlySet<string> | 'all'; level?: ReadLevel | ((repo: string) => ReadLevel) } = {}): Promise<WorkingTree[]> {
+  o: { lists?: Map<string, RepoList>; stale?: ReadonlySet<string> | 'all'; level?: ReadLevel | ((repo: string) => ReadLevel); hidden?: readonly string[] } = {}): Promise<WorkingTree[]> {
   const known = new Set(discovered);
   const linked = new Map<string, string>();
   const stale = o.stale ?? 'all';
@@ -229,9 +263,11 @@ export async function listWorkingTrees(projectRoot: string, discovered: string[]
     return { r, common, hidden: hidden.sort() };
   });
   const out: WorkingTree[] = [];
+  // A linked worktree inside a folder the user hid stays out, as the repositories in there do.
+  const parked = (p: string) => (o.hidden ?? []).some((h) => isInside(h, p));
   for (const { r, common, hidden } of adopted) {
     out.push({ root: r, common, gitDir: gitDirOfTree(r), worktreeOf: linked.get(r) ?? null, hidden: false });
-    for (const p of hidden) out.push({ root: p, common, gitDir: gitDirOfTree(p), worktreeOf: r, hidden: true });
+    for (const p of hidden) if (!parked(p)) out.push({ root: p, common, gitDir: gitDirOfTree(p), worktreeOf: r, hidden: true });
   }
   return out;
 }

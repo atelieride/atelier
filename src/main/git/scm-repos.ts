@@ -15,7 +15,8 @@ export function scmEntries(root: string, trees: readonly WorkingTree[]): ScmRepo
     let nestedIn: string | null = null;
     if (!w.worktreeOf) for (const t of trees) if (t.root !== w.root && isBelow(t.root, w.root) && (!nestedIn || t.root.length > nestedIn.length)) nestedIn = t.root;
     // A visible linked worktree is a repo of its own in the switcher; only the ones discovery missed show their owner.
-    return { root: w.root, rel, name: rel ? basename(w.root) : basename(root), worktreeOf: w.hidden ? w.worktreeOf : null, nestedIn, common: w.common, status: null };
+    const linked = w.gitDir !== null && w.gitDir !== w.common;
+    return { root: w.root, rel, name: rel ? basename(w.root) : basename(root), worktreeOf: w.hidden ? w.worktreeOf : null, nestedIn, common: w.common, status: null, ...(linked ? { linked: true as const } : {}) };
   });
 }
 

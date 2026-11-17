@@ -133,13 +133,19 @@ export interface ScmRepoEntry {
   /** Absolute git common dir: events name it. */
   common: string;
   status: ScmRepoStatus | null;
+  /** A linked worktree (its git dir is not its common dir): never hidden on its own, it shares its repository's store. */
+  linked?: true;
 }
 
 /** Refs, a HEAD or a fetch changed in a repository (its git common dir). Worktrees' statuses come with Changes' own. */
 export interface ScmEvent { common: string; what: 'refs' | 'head' | 'fetch' }
 
 /** How the project's folder scan for repositories went: still running, or stopped after `maxFolders` folders read. */
-export interface RepoSearch { capped: boolean; searching: boolean; maxFolders: number }
+export interface RepoSearch {
+  capped: boolean; searching: boolean; maxFolders: number;
+  /** The repositories the user hid in this project, by path inside it ('/'-separated), sorted. */
+  hidden: string[];
+}
 
 /** How a fetch ended. */
 export type FetchOutcome = 'ok' | 'auth' | 'busy' | 'network' | 'error';
