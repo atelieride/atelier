@@ -16,10 +16,8 @@
   --waiting: #FBBF24; --working: #60A5FA; --done: #34D399; --error: #FB7185;
   /* What paints the waiting state where it isn't text: dots, rings, bars, edges, tints, glows. */
   --waiting-mark: var(--waiting);
-  /* Workspace colors: a workspace's glyph, head and card. */
+  /* Workspace colors: a workspace's glyph, head and card; an activity's glyph and band. */
   --ws-1: #A78BFA; --ws-2: #5EEAD4; --ws-3: #BEF264; --ws-4: #E8A0E8; --ws-5: #818CF8; --ws-6: #FDBA74; --ws-7: #7DD3FC; --ws-8: #FDA4AF;
-  /* An open activity's band in the sidebar: a neutral step from the theme's own text color (every theme inherits it). */
-  --ws-band: color-mix(in srgb, var(--text-3) 6.5%, transparent);
   --glow: 0 0 0 1px color-mix(in srgb, var(--violet-soft) 45%, transparent), 0 8px 24px -6px color-mix(in srgb, var(--pink) 45%, transparent);
   --shadow-float: 0 24px 60px -12px color-mix(in srgb, var(--shade) 70%, transparent), 0 0 0 1px color-mix(in srgb, var(--violet) 8%, transparent);
   /* Header controls and violet tints/edges/glows (bell, notification center, chips). */

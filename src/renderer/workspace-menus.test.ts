@@ -39,10 +39,14 @@ test('the workspace menu: rename, color, new here, move up/down, new, close', ()
   expect(item(workspaceMenu('B'), 'ws-up')!.disabled).toBeFalsy();
 });
 
-test('Color lists the eight colors, the workspace\'s checked; picking one recolors it', () => {
-  const sub = item(workspaceMenu('B'), 'ws-color')!.submenu!;
+test('Color lists the eight colors with their swatches, the workspace\'s checked; picking one recolors it', () => {
+  const color = item(workspaceMenu('B'), 'ws-color')!;
+  expect(color.swatch).toBe('var(--ws-2)');
+  const sub = color.submenu!;
   expect(sub).toHaveLength(8);
-  expect(sub.filter((i) => i !== 'sep' && i.icon === 'check').map((i) => i !== 'sep' && i.id)).toEqual(['ws-color:2']);
+  expect(sub.map((i) => i !== 'sep' && i.swatch)).toEqual([1, 2, 3, 4, 5, 6, 7, 8].map((c) => `var(--ws-${c})`));
+  expect(sub.every((i) => i !== 'sep' && i.radio)).toBe(true);
+  expect(sub.filter((i) => i !== 'sep' && i.checked).map((i) => i !== 'sep' && i.id)).toEqual(['ws-color:2']);
   (sub[5] as Exclude<MenuItem, 'sep'>).run();
   expect(st().ws!.list[1]!.color).toBe(6);
 });

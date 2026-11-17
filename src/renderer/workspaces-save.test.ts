@@ -15,7 +15,7 @@ const memory = () => {
 const S: WorkspacesState = {
   on: true, active: 'A',
   list: [{ id: 'A', name: 'Auth', color: 1, folder: null, order: ['t:a'], active: 't:a', layout: null }],
-  members: { a: 'A' }
+  members: { a: 'A' }, ownColors: true
 };
 
 test('saved per project root under atelier.workspaces; one project does not touch another', () => {

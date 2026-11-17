@@ -56,6 +56,8 @@ describe('turning on', () => {
     expect(s.list[0]).toMatchObject({ id: 'W1', name: 'Workspace 1', color: 1, folder: null, order: k('t:a', 'f:/p/x'), active: 't:a' });
     expect(s.members).toEqual({ a: 'W1', b: 'W1' });
     expect(s.active).toBe('W1');
+    // Its activities will wear colors of their own from the start: reading it never converts them.
+    expect(s.ownColors).toBe(true);
   });
   test('a project view in front is not a workspace tab: the workspace keeps no front', () => {
     expect(initial('W1', k('t:a', 'dk:overview'), 'dk:overview', ['a']).list[0]!.active).toBeNull();

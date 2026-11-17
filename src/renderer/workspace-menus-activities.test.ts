@@ -18,10 +18,10 @@ const WS = (): WorkspacesState => ({
   list: [
     { id: 'A', name: 'Auth', color: 1, folder: null, order: ['t:a'], active: 't:a', layout: null },
     { id: 'B', name: 'Billing', color: 2, folder: null, order: ['t:b'], active: 't:b', layout: null },
-    { id: 'a1', parent: 'A', name: 'SSO', color: 1, folder: null, order: ['t:o'], active: 't:o', layout: null },
-    { id: 'a2', parent: 'A', name: 'Reset', color: 1, folder: null, order: [], active: null, layout: null }
+    { id: 'a1', parent: 'A', name: 'SSO', color: 3, folder: null, order: ['t:o'], active: 't:o', layout: null },
+    { id: 'a2', parent: 'A', name: 'Reset', color: 4, folder: null, order: [], active: null, layout: null }
   ],
-  members: { a: 'A', b: 'B', o: 'a1' }
+  members: { a: 'A', b: 'B', o: 'a1' }, ownColors: true
 });
 const st = () => useApp.getState();
 type Entry = Exclude<MenuItem, 'sep'>;
@@ -67,15 +67,26 @@ test('New Activity… is disabled at twenty, with why; the menu is today\'s with
   expect(item(workspaceMenu('B'), 'ws-new-activity')).toBeUndefined();
 });
 
-test('the activity\'s menu: new here, rename, Move to Workspace ›, close', () => {
+test('the activity\'s menu: new here, rename, Color ›, Move to Workspace ›, close', () => {
   const m = wsActivityMenu('a1');
-  expect(ids(m)).toEqual(['wsa-new-session', 'wsa-new-terminal', '—', 'wsa-rename', 'wsa-move', '—', 'wsa-close']);
+  expect(ids(m)).toEqual(['wsa-new-session', 'wsa-new-terminal', '—', 'wsa-rename', 'wsa-color', 'wsa-move', '—', 'wsa-close']);
   const sub = item(m, 'wsa-move')!.submenu!;
   expect(sub.map((i) => i !== 'sep' && i.label)).toEqual(['Billing']);
   item(m, 'wsa-rename')!.run();
   expect(st().wsRenaming).toBe('a1');
   (sub[0] as Entry).run();
   expect(st().ws!.list.find((w) => w.id === 'a1')!.parent).toBe('B');
+});
+
+test('Color ›: the eight swatches, the activity\'s own checked; picking one recolors it alone', () => {
+  const color = item(wsActivityMenu('a1'), 'wsa-color')!;
+  expect(color.swatch).toBe('var(--ws-3)');
+  const sub = color.submenu!;
+  expect(sub.map((i) => i !== 'sep' && i.swatch)).toEqual([1, 2, 3, 4, 5, 6, 7, 8].map((c) => `var(--ws-${c})`));
+  expect(sub.filter((i) => i !== 'sep' && i.checked).map((i) => i !== 'sep' && i.id)).toEqual(['wsa-color:3']);
+  (sub[6] as Entry).run();
+  const colors = Object.fromEntries(st().ws!.list.map((w) => [w.id, w.color]));
+  expect(colors).toEqual({ A: 1, B: 2, a1: 7, a2: 4 });
 });
 
 test('Close Activity…: an empty one closes at once; one with something in it asks', () => {
@@ -131,6 +142,22 @@ test('View › Activities Inside Workspaces switches the setting for every proje
     toggleWsActivities();
   } finally { g.window = had; }
   expect(patches).toEqual([{ wsActivities: false }, { wsActivities: true }]);
+});
+
+test('the context menu draws a color choice as its swatch, ringed and checked when worn', () => {
+  useApp.setState({ menu: { x: 0, y: 0, items: [
+    { id: 'c1', label: 'Violet', swatch: 'var(--ws-1)', checked: false, radio: true, run: noop },
+    { id: 'c2', label: 'Teal', swatch: 'var(--ws-2)', checked: true, radio: true, run: noop }
+  ] } });
+  Object.assign(useApp.getInitialState(), useApp.getState());
+  const out = renderToStaticMarkup(createElement(ContextMenu));
+  const [violet, teal] = out.split('</button>');
+  expect(violet).toMatch(/class="ctx-swatch" style="--sw:var\(--ws-1\)"/);
+  expect(violet).not.toMatch(/ctx-check/);
+  expect(teal).toMatch(/role="menuitemradio" aria-checked="true"/);
+  expect(teal).toMatch(/class="ctx-swatch is-on" style="--sw:var\(--ws-2\)"/);
+  expect(teal).toMatch(/class="ctx-check"/);
+  useApp.setState({ menu: null });
 });
 
 test('the context menu draws an indented item indented', () => {

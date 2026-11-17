@@ -16,22 +16,24 @@ const act = (id: string, parent: string, name: string, color: number, order: Tab
   ws(id, name, color, order, { parent, ...extra });
 
 /**
- * Auth (A) with activities SSO (a1) and Reset (a2), Billing (B) with Webhooks (b1). The list mixes them as creation
- * leaves it. A's own tabs are in front.
+ * Auth (A) with activities SSO (a1) and Reset (a2), Billing (B) with Webhooks (b1), each in a color of its own. The
+ * list mixes them as creation leaves it. A's own tabs are in front.
  */
 function mixed(): WorkspacesState {
   return {
     on: true, active: 'A',
     list: [
       ws('A', 'Auth', 1, k('t:tok', 'f:/p/session.ts')),
-      act('a1', 'A', 'SSO', 1, k('t:okta', 't:mock', 'f:/p/okta.ts')),
+      act('a1', 'A', 'SSO', 3, k('t:okta', 't:mock', 'f:/p/okta.ts')),
       ws('B', 'Billing', 2, k('t:bill')),
-      act('a2', 'A', 'Reset', 1, k('t:mail')),
-      act('b1', 'B', 'Webhooks', 2, k('t:hook'))
+      act('a2', 'A', 'Reset', 4, k('t:mail')),
+      act('b1', 'B', 'Webhooks', 5, k('t:hook'))
     ],
-    members: { tok: 'A', okta: 'a1', mock: 'a1', bill: 'B', mail: 'a2', hook: 'b1' }
+    members: { tok: 'A', okta: 'a1', mock: 'a1', bill: 'B', mail: 'a2', hook: 'b1' },
+    ownColors: true
   };
 }
+const colorsOf = (s: WorkspacesState) => Object.fromEntries([...s.list, ...(s.parked?.list ?? [])].map((w) => [w.id, w.color]));
 
 describe('lookups', () => {
   test('an activity is an entry with a parent; workspacesOf keeps the others in list order', () => {
@@ -109,18 +111,30 @@ describe('switching places', () => {
 });
 
 describe('creating an activity', () => {
-  test('a new activity: last among its workspace\'s, its color, no folder, nothing inside, folded; the front stays', () => {
+  test('a new activity: last among its workspace\'s, a color of its own, no folder, nothing inside, folded; the front stays', () => {
     const s = createWsActivity(mixed(), 'A', '  Rate limits  ', 'a3')!;
-    expect(s.list.at(-1)).toEqual({ id: 'a3', parent: 'A', name: 'Rate limits', color: 1, folder: null, order: [], active: null, layout: null });
+    expect(s.list.at(-1)).toEqual({ id: 'a3', parent: 'A', name: 'Rate limits', color: 6, folder: null, order: [], active: null, layout: null });
     expect(activitiesOf(s, 'A').map((w) => w.id)).toEqual(['a1', 'a2', 'a3']);
     expect(isOpen(s, 'a3')).toBe(false);
     expect(s.active).toBe('A');
-    expect(createWsActivity(mixed(), 'B', 'x', 'b2')!.list.at(-1)!.color).toBe(2);
   });
-  test('recoloring a workspace recolors its activities', () => {
-    const s = recolor(mixed(), 'A', 6);
-    expect(s.list.filter((w) => w.id === 'A' || w.parent === 'A').map((w) => w.color)).toEqual([6, 6, 6]);
-    expect(s.list.find((w) => w.id === 'b1')!.color).toBe(2);
+  test('its color: one nothing wears yet, searched from just after its workspace\'s, so two workspaces\' activities differ', () => {
+    let s: WorkspacesState = { on: true, active: 'A', list: [ws('A', 'Auth', 1), ws('B', 'Billing', 3)], members: {}, ownColors: true };
+    s = createWsActivity(s, 'A', 'SSO', 'a1')!;
+    s = createWsActivity(s, 'A', 'Reset', 'a2')!;
+    s = createWsActivity(s, 'B', 'Webhooks', 'b1')!;
+    // A (1): 2, then 4 (3 is Billing's); B (3): 5, the first after its own that nothing wears.
+    expect(colorsOf(s)).toEqual({ A: 1, B: 3, a1: 2, a2: 4, b1: 5 });
+  });
+  test('every color worn: one no workspace and no sibling wears, never another workspace\'s', () => {
+    const others = [3, 4, 5, 6, 7, 8].map((c) => act(`b${c}`, 'B', `b${c}`, c));
+    const s: WorkspacesState = { on: true, active: 'A', list: [ws('A', 'Auth', 1), ws('B', 'Billing', 2), ...others], members: {}, ownColors: true };
+    // 2 is Billing's: 3, worn only by an activity of another workspace.
+    expect(createWsActivity(s, 'A', 'SSO', 'a1')!.list.at(-1)!.color).toBe(3);
+  });
+  test('recoloring a workspace leaves its activities\' colors; recoloring an activity changes it alone', () => {
+    expect(colorsOf(recolor(mixed(), 'A', 6))).toEqual({ A: 6, a1: 3, B: 2, a2: 4, b1: 5 });
+    expect(colorsOf(recolor(mixed(), 'a1', 7))).toEqual({ A: 1, a1: 7, B: 2, a2: 4, b1: 5 });
   });
   test('an empty name becomes "New activity"; a long one is cut', () => {
     expect(createWsActivity(mixed(), 'A', '   ', 'a3')!.list.at(-1)!.name).toBe('New activity');
@@ -160,10 +174,10 @@ describe('moving tabs between places', () => {
 });
 
 describe('moving an activity to another workspace', () => {
-  test('it changes workspace with everything in it, takes that workspace\'s color and goes last among its activities', () => {
+  test('it changes workspace with everything in it, keeps its color and goes last among its activities', () => {
     const s = moveWsActivity(mixed(), 'a1', 'B');
     const a1 = s.list.find((w) => w.id === 'a1')!;
-    expect(a1).toMatchObject({ parent: 'B', color: 2, order: k('t:okta', 't:mock', 'f:/p/okta.ts') });
+    expect(a1).toMatchObject({ parent: 'B', color: 3, order: k('t:okta', 't:mock', 'f:/p/okta.ts') });
     expect(activitiesOf(s, 'B').map((w) => w.id)).toEqual(['b1', 'a1']);
     expect(activitiesOf(s, 'A').map((w) => w.id)).toEqual(['a2']);
     expect(s.members).toEqual(mixed().members);
@@ -218,12 +232,13 @@ describe('closing an activity', () => {
 });
 
 describe('closing a workspace that has activities', () => {
-  test('move: its activities go to the target as activities, folded, in its color; its own tabs join the target\'s', () => {
+  test('move: its activities go to the target as activities, folded, in their colors; its own tabs join the target\'s', () => {
     const open = toggleOpen(mixed(), 'a1');
     const s = remove(open, 'A', 'B')!;
     expect(workspacesOf(s).map((w) => w.id)).toEqual(['B']);
     expect(activitiesOf(s, 'B').map((w) => w.id)).toEqual(['b1', 'a1', 'a2']);
-    for (const id of ['a1', 'a2']) expect(s.list.find((w) => w.id === id)).toMatchObject({ parent: 'B', color: 2, open: false });
+    expect(s.list.find((w) => w.id === 'a1')).toMatchObject({ parent: 'B', color: 3, open: false });
+    expect(s.list.find((w) => w.id === 'a2')).toMatchObject({ parent: 'B', color: 4, open: false });
     expect(s.members).toMatchObject({ tok: 'B', okta: 'a1', mail: 'a2' });
     expect(s.list.find((w) => w.id === 'B')!.order).toEqual(k('t:bill', 't:tok'));
   });
@@ -366,12 +381,13 @@ describe('activities kept aside (the setting off) and back', () => {
     let s = parkWsActivities(atSso());
     s = remove(s, 'B', 'A')!;
     const back = unparkWsActivities(s);
-    expect(back.list.find((w) => w.id === 'b1')).toMatchObject({ parent: 'A', color: 1 });
+    expect(back.list.find((w) => w.id === 'b1')).toMatchObject({ parent: 'A', color: 5 });
     expect(back.members.hook).toBe('b1');
   });
-  test('a workspace recolored meanwhile: its activities wear the new color', () => {
+  test('a workspace recolored meanwhile: its activities come back in their own colors', () => {
     const s = recolor(parkWsActivities(atSso()), 'A', 7);
-    expect(entry(unparkWsActivities(s), 'a2').color).toBe(7);
+    expect(entry(unparkWsActivities(s), 'A').color).toBe(7);
+    expect(entry(unparkWsActivities(s), 'a2').color).toBe(4);
   });
   test('nothing parked: the same state', () => {
     const s = mixed();
@@ -453,6 +469,27 @@ describe('reading a saved state with activities', () => {
     expect(bad.list.map((w) => w.id)).toEqual(['A', 'B']);
     expect(bad.parked).toBeUndefined();
     expect(parseWorkspaces({ ...parked, parked: 'junk' })!.list).toHaveLength(2);
+  });
+  test('a state saved while activities wore their workspace\'s color: each still wearing it gets one of its own, once', () => {
+    const old = {
+      on: true, active: 'A', members: {},
+      list: [ws('A', 'Auth', 1), act('a1', 'A', 'SSO', 1), ws('B', 'Billing', 3), act('a2', 'A', 'Reset', 1), act('b1', 'B', 'Webhooks', 3), act('b2', 'B', 'Retry', 6)]
+    };
+    const s = parseWorkspaces(JSON.parse(JSON.stringify(old)))!;
+    // As new ones would get them, in the sidebar's order: A's then B's; b2 already wore its own.
+    expect(colorsOf(s)).toEqual({ A: 1, a1: 2, B: 3, a2: 4, b1: 5, b2: 6 });
+    expect(s.ownColors).toBe(true);
+    // Read again as saved: an activity set to its workspace's color on purpose keeps it.
+    const again = parseWorkspaces(JSON.parse(JSON.stringify(recolor(s, 'a1', 1))))!;
+    expect(again.list.find((w) => w.id === 'a1')!.color).toBe(1);
+  });
+  test('the conversion reaches the activities kept aside, after the others', () => {
+    const old = {
+      on: true, active: 'A', members: {}, list: [ws('A', 'Auth', 1), act('a1', 'A', 'SSO', 1), ws('B', 'Billing', 3)],
+      parked: { list: [act('p1', 'A', 'Parked', 1)], members: {}, joined: {} }
+    };
+    const s = parseWorkspaces(JSON.parse(JSON.stringify(old)))!;
+    expect(colorsOf(s)).toEqual({ A: 1, a1: 2, B: 3, p1: 4 });
   });
   test('a state saved by an older version (no parents) reads as before', () => {
     const old = { on: true, active: 'B', list: [{ id: 'A', name: 'a', order: ['t:x'] }, { id: 'B', name: 'b', order: [] }], members: { x: 'A' } };

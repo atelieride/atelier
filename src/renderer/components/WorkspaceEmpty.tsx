@@ -21,13 +21,11 @@ export function WorkspaceEmpty({ onSession, onTerminal }: { onSession: () => voi
   const next = pinnedFirst(resumablesIn(ws, w.id, resumables, root), pins)[0];
   // Its sessions or terminals still run, with their tabs closed or in windows of their own: not "nothing running".
   const running = inWorkspace(ws, w.id, terminals).length > 0;
-  // An activity wears its workspace's color.
-  const parent = w.parent ? ws.list.find((x) => x.id === w.parent) : undefined;
   return (
     <div className="workspace-empty">
       <div className="ws-empty-card pop">
         {w.parent
-          ? <span className="ws-empty-glyph" style={{ color: wsColorVar(parent?.color ?? w.color) }}><Icon name="wsActivity" size={48} stroke={1.1} /></span>
+          ? <span className="ws-empty-glyph" style={{ color: wsColorVar(w.color) }}><Icon name="wsActivity" size={48} stroke={1.1} /></span>
           : <WorkspaceGlyph color={w.color} size={48} />}
         <h2>{w.parent ? w.name : running ? t.ws.noTabsTitle(w.name) : t.ws.emptyTitle(w.name)}</h2>
         <p>{running ? t.ws.noTabsBody : w.parent ? t.wsAct.emptyBody : next ? t.ws.emptyResume(next.title) : t.ws.emptyBody}</p>
