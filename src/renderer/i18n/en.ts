@@ -246,7 +246,8 @@ const strings = {
   },
   /** Background work and scheduled wake-ups. */
   work: {
-    kind: { agent: 'agent', shell: 'shell', monitor: 'monitor', other: 'task' },
+    kind: { agent: 'agent', shell: 'shell', monitor: 'monitor', other: 'task', artifact: 'artifact' },
+    artifacts: (n: number) => `${n} artifact${n === 1 ? '' : 's'}`,
     line: (kind: string, label: string, counted = true) => `${kind} · ${label}${counted ? '' : ' · not counted'}`,
     more: (n: number) => `+${n} more`,
     idleFor: (duration: string) => `Running for ${duration} · not counted as work`,
@@ -260,7 +261,9 @@ const strings = {
     title: 'Background',
     tab: (session: string) => `Background · ${session}`,
     summary: (running: number, scheduled: number) => [running ? `${running} running` : '', scheduled ? `${scheduled} scheduled` : ''].filter(Boolean).join(' · '),
-    section: { agents: 'Agents', shells: 'Shells', monitors: 'Monitors', other: 'Tasks', scheduled: 'Scheduled', recent: 'Recent' } as Record<string, string>,
+    section: { artifacts: 'Artifacts', agents: 'Agents', shells: 'Shells', monitors: 'Monitors', other: 'Tasks', scheduled: 'Scheduled', recent: 'Recent' } as Record<string, string>,
+    openInBrowser: 'Open in Browser',
+    copyLink: 'Copy Link',
     openInspector: 'Open inspector',
     showBackground: 'Show Background',
     hintMove: 'move',

@@ -189,6 +189,21 @@ sub ev {
     $crons = qq([{"id":"$id","schedule":"$l[1] $l[2] * * *","recurring":false,"prompt":"$prompt"}]);
     send_hook(qq({"hook_event_name":"Stop","session_id":"$sid","session_crons":$crons}));
   }
+  # An Artifact published as Claude Code 2.1.325 does it (tests/fixtures/transcripts/artifact-publish.jsonl): the tool
+  # call's PreToolUse, its call and result lines in the session's transcript (Claude Code's structured toolUseResult
+  # carries the page's url and title), then its PostToolUse. "artifact:<id>:<title>" publishes the page
+  # https://claude.ai/artifact/e2eArtifact<id>; "artifact-delete:<id>" deletes it.
+  elsif ($what =~ /^artifact(-delete)?:(\w+)(?::(.+))?$/) {
+    my ($delete, $id, $name) = ($1, $2, js($3 // ''));
+    my $url = "https://claude.ai/artifact/e2eArtifact$id";
+    my $use = 'ta-' . ($delete ? 'del-' : '') . $id . '-' . time();
+    my $input = $delete ? qq({"action":"delete","url":"$url"}) : qq({"action":"publish","title":"$name"});
+    my $out = $delete ? '{"deleted":true}' : qq({"url":"$url","title":"$name","owned":true,"version":"1"});
+    send_hook(qq({"hook_event_name":"PreToolUse","session_id":"$sid","tool_name":"Artifact","tool_use_id":"$use","tool_input":$input}));
+    append_file(session_file(), qq({"type":"assistant","timestamp":") . stamp() . qq(","message":{"role":"assistant","content":[{"type":"tool_use","id":"$use","name":"Artifact","input":$input}]}}\n));
+    append_file(session_file(), qq({"type":"user","timestamp":") . stamp() . qq(","message":{"role":"user","content":[{"tool_use_id":"$use","type":"tool_result","content":"ok"}]},"toolUseResult":$out}\n));
+    send_hook(qq({"hook_event_name":"PostToolUse","session_id":"$sid","tool_name":"Artifact","tool_use_id":"$use","tool_input":$input,"tool_response":$out}));
+  }
   elsif ($what eq 'loop-stop') {
     append_file(session_file(), qq({"type":"assistant","timestamp":") . stamp() . qq(","message":{"role":"assistant","content":[{"type":"tool_use","id":"tw-stop","name":"ScheduleWakeup","input":{"stop":true}}]}}\n));
     $crons = '[]';

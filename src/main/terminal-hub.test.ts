@@ -48,6 +48,7 @@ import type { DaemonClient } from './daemon-client';
 import { TerminalHub } from './terminal-hub';
 import type { Note } from './attention';
 import { DEFAULT_SETTINGS } from '@shared/settings';
+import type { SessionArtifact } from '@shared/artifacts';
 
 const term = (id: string, projectRoot = '/p'): TerminalInfo => ({
   id, projectRoot, cwd: projectRoot, title: id, name: null, color: '#fff', foreground: 'claude', createdAt: 0, session: null
@@ -821,5 +822,29 @@ describe('a turn interrupted before Claude wrote anything', () => {
     unseen.hub.interruptSession('a');
     await pass(3000);
     expect(unseen.state()).toBe('running');
+  });
+});
+
+describe('the artifacts a session published', () => {
+  test('ride on its terminal; a change from the hub sends the list again, an equal one does not', () => {
+    const { hub, register, client } = setup();
+    const w = wc(1); win(w); register(w);
+    client.emit('status', 'connected');
+    let list: SessionArtifact[] | undefined;
+    const source = { onChange: () => {}, terminals: vi.fn(), artifacts: (id: string, sid: string) => (id === 'a' && sid === 's1' ? list : undefined) };
+    hub.useArtifactHub(source);
+    const a = { ...term('a'), session: { sessionId: 's1', state: 'idle', title: null, activity: null, contextPct: null, unread: false, updatedAt: 0 } } as TerminalInfo;
+    client.emit('terminals', [a, term('b')]);
+    // The hub follows every list atelierd sends.
+    expect(source.terminals).toHaveBeenLastCalledWith([expect.objectContaining({ id: 'a' }), expect.objectContaining({ id: 'b' })]);
+    const sent = () => w.send.mock.calls.filter((c) => c[0] === IPC.evTerminals).map((c) => c[1] as TerminalInfo[]);
+    expect(sent().at(-1)!.find((t) => t.id === 'a')!.artifacts).toBeUndefined();
+    list = [{ url: 'https://claude.ai/artifact/Kq3vT8xYzW2mNpR5sLd9Fa', title: 'Concept board', at: 1 }];
+    source.onChange();
+    expect(sent().at(-1)!.find((t) => t.id === 'a')!.artifacts).toEqual(list);
+    expect('artifacts' in sent().at(-1)!.find((t) => t.id === 'b')!).toBe(false);
+    const n = sent().length;
+    source.onChange();
+    expect(sent()).toHaveLength(n);
   });
 });

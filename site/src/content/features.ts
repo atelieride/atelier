@@ -64,7 +64,7 @@ export const rows: FeatureRowData[] = [
   },
   {
     id: 'background', eyebrow: 'Background', title: 'See what runs in the background.',
-    text: 'Click a session\'s chip to see its agents, shells and monitors. Open one beside the session and watch it live.',
+    text: 'Click a session\'s chip to see its agents, shells and monitors. Open one beside the session and watch it live, or open the Artifacts it published.',
     bullets: ['Live output of background shells and monitors', 'Each subagent\'s steps as it takes them', 'Scheduled wake-ups with a countdown'],
     shot: 'background', corner: false, alt: 'The Background tab of a session: two agents and a test run listed, the test run\'s output arriving live',
     shortcut: '⌘⌥B  Background',

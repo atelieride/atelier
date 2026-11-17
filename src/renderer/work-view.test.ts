@@ -60,10 +60,35 @@ describe('workChipView', () => {
   });
   test('an atelierd without background work: the subagent count the old way', () => {
     expect(workChipView({ session: sess('done', { subagents: 2 }) }, NOW)).toEqual({
-      full: '2 agents', parts: [['agent', 2]], total: 2, counting: true, idle: false, long: false, tip: '2 subagents running in the background'
+      full: '2 agents', parts: [['agent', 2]], total: 2, counting: true, idle: false, long: false, tip: '2 subagents running in the background', dot: true
     });
     expect(workChipView({ session: sess('running', { subagents: 1 }) }, NOW)).toMatchObject({ full: '1 agent', counting: false, tip: '1 subagent running' });
     expect(workChipView({ session: sess('done') }, NOW)).toBeNull();
+  });
+});
+
+describe('workChipView: the session\'s artifacts (session bar only)', () => {
+  const art = (title: string, at = 1) => ({ url: `https://claude.ai/artifact/${title.replace(/\W/g, '').padEnd(8, 'x')}`, title, at });
+  const watchers = work({ monitors: 0, items: [{ kind: 'monitor', label: 'Artifact comments', counted: false }, { kind: 'monitor', label: 'Artifact comments', counted: false }] });
+  test('next to the work: counted in words, a part of their own, in the total and the tooltip', () => {
+    const v = workChipView({ session: sess('done'), work: watchers, artifacts: [art('Pari · giro UX 1', 2), art('Concept board')] }, NOW, { artifacts: true })!;
+    expect(v).toMatchObject({ full: '2 monitors · 2 artifacts', parts: [['monitor', 2], ['artifact', 2]], total: 4, dot: true });
+    expect(v.tip.split('\n').slice(-2)).toEqual(['artifact · Pari · giro UX 1', 'artifact · Concept board']);
+  });
+  test('nothing running, only artifacts: a chip without the working dot, never counting nor dimmed', () => {
+    const v = workChipView({ session: sess('done'), work: work({ counting: false }), artifacts: [art('Concept board')] }, NOW, { artifacts: true })!;
+    expect(v).toMatchObject({ full: '1 artifact', parts: [['artifact', 1]], total: 1, counting: false, idle: false, dot: false });
+    expect(v.tip.split('\n')).toEqual(['1 artifact', 'artifact · Concept board']);
+    // An atelierd without background work at all: the same.
+    expect(workChipView({ session: sess('done'), artifacts: [art('Concept board')] }, NOW, { artifacts: true })).toMatchObject({ full: '1 artifact', dot: false });
+  });
+  test('artifacts never make the work count: counting stays what main computed', () => {
+    const v = workChipView({ session: sess('done'), work: { ...watchers, counting: false }, artifacts: [art('A')] }, NOW, { artifacts: true })!;
+    expect(v.counting).toBe(false);
+  });
+  test('the sidebar row (no artifacts option): as before', () => {
+    expect(workChipView({ session: sess('done'), work: work({ counting: false }), artifacts: [art('A')] }, NOW)).toBeNull();
+    expect(workChipView({ session: sess('done'), work: watchers, artifacts: [art('A')] }, NOW)).toMatchObject({ full: '2 monitors', total: 2, dot: true });
   });
 });
 

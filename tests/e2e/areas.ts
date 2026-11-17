@@ -18,6 +18,7 @@ export const SMOKE = ['essentials.spec.ts', 'window.spec.ts', 'keys.spec.ts', 't
 
 export const SPECS: Record<string, Area[]> = {
   'ask.spec.ts': ['companion', 'sessions'],
+  'artifacts.spec.ts': ['background'],
   'background-inspector.spec.ts': ['background'],
   'background-work.spec.ts': ['background'],
   'background.spec.ts': ['background'],
@@ -570,6 +571,7 @@ export const SOURCES: Record<string, Area[]> = {
   'src/main/tmux/': ['background'],
   'src/main/update': ['updates'],
   'src/main/work-hub.ts': ['background'],
+  'src/main/artifact-hub.ts': ['background'],
   // Shared
   'src/shared/attribution.ts': ['changes'],
   // Same-name repositories told apart in Changes.
@@ -629,6 +631,7 @@ export const SOURCES: Record<string, Area[]> = {
   'src/shared/terminal-list.ts': ['terminal', 'sessions'],
   'src/shared/tool-calls.ts': ['changes'],
   'src/shared/transcript.ts': ['background'],
+  'src/shared/artifacts.ts': ['background'],
   'src/shared/triggers.ts': ['notifications'],
   'src/shared/update-': ['updates'],
   'src/shared/store-updates.ts': ['updates'],
