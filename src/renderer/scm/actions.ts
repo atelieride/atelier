@@ -1,5 +1,6 @@
 // Source Control actions shared by the sidebar, the History tab, the palette and the menus. They open views and copy
-// text; the only one that reaches a repository is fetching, which main runs.
+// text; the only one that reaches a repository is fetching, which main runs. Hiding one only changes what Atelier
+// looks at.
 import type { FetchOutcome, FetchReason, ScmFetchAnswer, ScmFetchState, ScmRef, ScmScope } from '@shared/scm';
 import type { MenuItem } from '../menu-model';
 import { copyText } from '../clipboard';
@@ -8,6 +9,7 @@ import { useApp } from '../store';
 import { repoGitItems } from '../git/menu-items';
 import { branchItems } from '../git/branches';
 import { withScm } from './data';
+import { isInside } from '@shared/paths';
 import { loadScmPrefs } from './prefs';
 import { shortRef } from './view';
 import { kbd } from '../kbd';
@@ -116,8 +118,47 @@ export function repoMenu(root: string, o: { staging?: boolean } = {}): MenuItem[
   return [
     ...(o.staging ? repoGitItems(root) : []),
     { id: 'show-history', label: t.scm.menu.showHistory, icon: 'git', run: () => showHistory('all', root) },
-    ...(mayFetch(root) ? [{ id: 'fetch', label: t.scm.fetch.label, icon: 'fetch' as const, run: () => void fetchRepo(root, 'manual') }] : [])
+    ...(mayFetch(root) ? [{ id: 'fetch', label: t.scm.fetch.label, icon: 'fetch' as const, run: () => void fetchRepo(root, 'manual') }] : []),
+    ...(hideable(root) ? ['sep' as const, { id: 'hide-repo', label: t.scm.hide.menu, icon: 'eye-off' as const, run: () => void hideRepo(root) }] : [])
   ];
+}
+
+/**
+ * Whether a repository can be hidden: one of Source Control's entries inside the project, not its root, not a linked
+ * worktree (it shares its repository's store: hiding it would hide that repository).
+ */
+export function hideable(root: string): boolean {
+  const e = st().scmRepos?.find((x) => x.root === root);
+  return !!e && e.rel !== '' && !e.rel.startsWith('..') && !e.linked && !e.worktreeOf;
+}
+
+/**
+ * Hides a repository from this project: it leaves Source Control at once with the repositories inside it (main sends
+ * Changes the snapshot without them, and the entries follow it), and a toast offers Undo.
+ */
+export async function hideRepo(root: string): Promise<void> {
+  const e = st().scmRepos?.find((x) => x.root === root);
+  if (!e) return;
+  let hidden: string[];
+  try { hidden = await window.atelier.scm.hide(root); } catch { st().showToast(t.scm.hide.failed); return; }
+  const s = st();
+  if (s.scmRepos) s.setScmRepos(s.scmRepos.filter((x) => !isInside(root, x.root)));
+  setHidden(hidden);
+  const rel = e.rel.split(/[\\/]/).join('/');
+  st().showToast(t.scm.hide.done(e.name), { label: t.comments.undo, run: () => void showRepo(rel) }, 'info');
+}
+
+/**
+ * Shows a hidden repository again (Undo, Settings › Source Control): it comes back once main has looked through the
+ * folders again (its statuses bring the entries along).
+ */
+export async function showRepo(rel: string): Promise<void> {
+  try { setHidden(await window.atelier.scm.unhide(rel)); } catch { st().showToast(t.scm.hide.showFailed); }
+}
+
+function setHidden(hidden: string[]): void {
+  const s = st();
+  s.setScmSearch({ ...(s.scmSearch ?? { capped: false, searching: false, maxFolders: 0 }), hidden });
 }
 
 /**

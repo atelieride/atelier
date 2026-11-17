@@ -108,20 +108,32 @@ function OneRepo({ entries, root, refs }: { entries: ScmRepoEntry[] | null; root
   // No repository yet while the first folder scan runs: it says it looks, not that there is none.
   const looking = useApp((s) => lookingForRepos(s.scmSearch));
   const depth = useApp((s) => s.settings.repoSearchDepth);
+  // Every repository hidden: the empty state says so, with the way back.
+  const hidden = useApp((s) => s.scmSearch?.hidden.length ?? 0);
   return (
     <>
       {entries === null && <p className="empty">{t.scm.loading}</p>}
       {entries !== null && entries.length === 0 && looking && <p className="empty">{looking}</p>}
       {entries !== null && entries.length === 0 && !looking && (
-        <div className="scm-empty">
-          <span className="scm-empty-icon"><Icon name="git" size={20} /></span>
-          <p className="scm-empty-title">{t.scm.noRepos}</p>
-          <p className="scm-empty-body">
-            {t.scm.noReposBody(depth)}{' '}
-            <button type="button" className="link-btn" onClick={() => useApp.getState().setSettingsOpen('scm')}>{t.scm.searchDepth}</button>.
-          </p>
-          <button type="button" className="btn-ghost sm" onClick={() => void window.atelier.openFolder()}>{t.scm.openFolder}</button>
-        </div>
+        // Every repository hidden: it says so, and the way back is the main action.
+        hidden > 0 ? (
+          <div className="scm-empty">
+            <span className="scm-empty-icon"><Icon name="eye-off" size={20} /></span>
+            <p className="scm-empty-title">{t.scm.hide.allTitle}</p>
+            <p className="scm-empty-body">{t.scm.hide.count(hidden)}</p>
+            <button type="button" className="btn-ghost sm" onClick={() => useApp.getState().setSettingsOpen('scm')}>{t.scm.hide.manage}</button>
+          </div>
+        ) : (
+          <div className="scm-empty">
+            <span className="scm-empty-icon"><Icon name="git" size={20} /></span>
+            <p className="scm-empty-title">{t.scm.noRepos}</p>
+            <p className="scm-empty-body">
+              {t.scm.noReposBody(depth)}{' '}
+              <button type="button" className="link-btn" onClick={() => useApp.getState().setSettingsOpen('scm')}>{t.scm.searchDepth}</button>.
+            </p>
+            <button type="button" className="btn-ghost sm" onClick={() => void window.atelier.openFolder()}>{t.scm.openFolder}</button>
+          </div>
+        )
       )}
       {entries !== null && entries.length > 0 && <RepoSwitcher />}
       {root && <SyncButton root={root} />}

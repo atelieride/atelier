@@ -82,3 +82,48 @@ test('M7: Git › Fetch on a repository without a remote says so instead of doin
   await tick(); await tick();
   expect(calls).toEqual([['/p', 'manual']]);
 });
+
+import { hideRepo, repoMenu } from './actions';
+import type { ScmRepoEntry } from '@shared/scm';
+
+const entry = (root: string, rel: string, extra: Partial<ScmRepoEntry> = {}): ScmRepoEntry => ({ root, rel, name: rel.split('/').at(-1) || 'p', worktreeOf: null, nestedIn: null, common: `${root}/.git`, status: null, ...extra });
+const ids = (root: string) => repoMenu(root).map((m) => (m === 'sep' ? 'sep' : m.id));
+
+test('Hide This Repository: offered for a repository inside the project, never for its root or a linked worktree', () => {
+  useApp.setState({ scmRepos: [entry('/p', ''), entry('/p/agent/data/repo', 'agent/data/repo'), entry('/p/wt', 'wt', { linked: true }), entry('/p/.claude/worktrees/x', '.claude/worktrees/x', { worktreeOf: '/p' })], scmRefs: {}, repos: [] });
+  expect(ids('/p/agent/data/repo')).toEqual(['show-history', 'sep', 'hide-repo']);
+  expect(ids('/p')).not.toContain('hide-repo');
+  expect(ids('/p/wt')).not.toContain('hide-repo');
+  expect(ids('/p/.claude/worktrees/x')).not.toContain('hide-repo');
+});
+
+test('hiding a repository: gone from Source Control at once with the ones inside it, a toast says so, and Undo shows it again', async () => {
+  const calls: unknown[] = [];
+  g.window = { atelier: { scm: {
+    hide: async (root: string) => { calls.push(['hide', root]); return ['agent/data/repo']; },
+    unhide: async (rel: string) => { calls.push(['unhide', rel]); return []; },
+    repos: async () => [], search: async () => ({ capped: false, searching: false, maxFolders: 20_000, hidden: [] }), fetchStates: async () => []
+  } } };
+  useApp.setState({ toast: null, scmSearch: { capped: false, searching: false, maxFolders: 20_000, hidden: [] }, scmRepo: '/p/agent/data/repo', scmRefs: {}, repos: [],
+    scmRepos: [entry('/p', ''), entry('/p/agent/data/repo', 'agent/data/repo'), entry('/p/agent/data/repo/inner', 'agent/data/repo/inner'), entry('/p/tools', 'tools')] });
+  await hideRepo('/p/agent/data/repo');
+  expect(calls).toEqual([['hide', '/p/agent/data/repo']]);
+  expect(useApp.getState().scmRepos?.map((e) => e.root)).toEqual(['/p', '/p/tools']);
+  // The selection moves off it, as when a repository goes away.
+  expect(useApp.getState().scmRepo).toBe('/p');
+  expect(useApp.getState().scmSearch?.hidden).toEqual(['agent/data/repo']);
+  const toast = useApp.getState().toast!;
+  expect(toast).toMatchObject({ text: 'repo hidden from Atelier', tone: 'info', action: { label: 'Undo' } });
+  toast.action!.run();
+  await tick();
+  expect(calls.at(-1)).toEqual(['unhide', 'agent/data/repo']);
+  expect(useApp.getState().scmSearch?.hidden).toEqual([]);
+});
+
+test('a hide main refuses says so, and nothing leaves Source Control', async () => {
+  g.window = { atelier: { scm: { hide: async () => { throw new Error('no'); } } } };
+  useApp.setState({ toast: null, scmRepos: [entry('/p', ''), entry('/p/a', 'a')], scmRefs: {}, repos: [] });
+  await hideRepo('/p/a');
+  expect(useApp.getState().scmRepos).toHaveLength(2);
+  expect(useApp.getState().toast).toMatchObject({ text: "Couldn't hide this repository" });
+});

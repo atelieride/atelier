@@ -1050,6 +1050,16 @@ const strings = {
       noRemote: 'No remote to fetch from'
     },
     noRepos: 'No git repositories in this project',
+    // Hide This Repository: per project, managed in Settings › Source Control.
+    hide: {
+      menu: 'Hide This Repository',
+      done: (name: string) => `${name} hidden from Atelier`,
+      failed: "Couldn't hide this repository",
+      showFailed: "Couldn't show this repository again",
+      allTitle: 'Every repository here is hidden',
+      count: (n: number) => (n === 1 ? 'Atelier doesn’t look at the 1 repository this project hides.' : `Atelier doesn’t look at the ${n} repositories this project hides.`),
+      manage: 'Hidden Repositories…'
+    },
     noReposBody: (depth: number) => `Open a folder that has one. Atelier looks ${depth} folder ${depth === 1 ? 'level' : 'levels'} down, inside other repositories too: to look deeper, change the`,
     gitMissing: 'Git isn’t installed',
     gitMissingBody: 'Atelier works as an editor without it. Install Git for Windows to see changes, branches and history, then restart Atelier.',
@@ -1507,7 +1517,7 @@ const strings = {
     reviewWorktree: (name: string) => `Review worktree ${name}`,
     compareWorktree: (name: string, base: string) => `Compare worktree ${name} with ${base}`,
     newSession: 'New Claude session', newTerminal: 'New terminal', sessionInFolder: 'New session in folder…', terminalInFolder: 'New terminal in folder…', resume: 'Resume a session…', resumeAll: 'Resume all sessions', resumePinned: 'Resume pinned sessions', toggleChanges: 'Show or hide Changes', toggleSidebar: 'Show or hide the sidebar', toggleChangesFolders: 'Show folders in Changes', revealInFinder: 'Reveal in Finder (terminal: its current folder)', collapseFolders: 'Collapse all folders in Files', findInFile: 'Find in File', findInTerminal: 'Find in Terminal', findReplace: 'Find and Replace', nextChange: 'Next change in the file', prevChange: 'Previous change in the file', swapSidePanels: 'Swap side panels (Changes left, sidebar right)', sessionAvatars: 'Show session avatars', viewSessions: 'Go to Sessions',
-    viewFiles: 'Go to Files', findInFiles: 'Find in Files', nextResult: 'Next Search Result', prevResult: 'Previous Search Result', viewServices: 'Go to Services', viewScm: 'Show Source Control', viewDocker: 'Docker', dockerOverview: 'Docker: Engine Overview', dockerStack: 'Docker: Show Stack Logs', viewRedis: 'Redis', viewDatabases: 'Databases', dbAdd: 'Databases: Add Connection…', dbOverview: 'Databases: Overview', viewAutomations: 'Automations', allAutomations: 'Show All Automations', redisOverview: 'Redis: Overview', redisLive: 'Redis: Live', redisQueues: 'Redis: Queues', showHistory: 'Show History', switchRepo: 'Switch Repository…', refHistory: 'Show History of Branch or Tag…', compareDefault: (base: string) => `Compare Branch with ${base}…`, fetch: 'Fetch', fetchAll: 'Fetch All Repositories', showTerminal: 'Back to terminal', redrawTerminal: 'Redraw terminal', restartDaemon: 'Restart atelierd…',
+    viewFiles: 'Go to Files', findInFiles: 'Find in Files', nextResult: 'Next Search Result', prevResult: 'Previous Search Result', viewServices: 'Go to Services', viewScm: 'Show Source Control', viewDocker: 'Docker', dockerOverview: 'Docker: Engine Overview', dockerStack: 'Docker: Show Stack Logs', viewRedis: 'Redis', viewDatabases: 'Databases', dbAdd: 'Databases: Add Connection…', dbOverview: 'Databases: Overview', viewAutomations: 'Automations', allAutomations: 'Show All Automations', redisOverview: 'Redis: Overview', redisLive: 'Redis: Live', redisQueues: 'Redis: Queues', showHistory: 'Show History', switchRepo: 'Switch Repository…', refHistory: 'Show History of Branch or Tag…', compareDefault: (base: string) => `Compare Branch with ${base}…`, fetch: 'Fetch', fetchAll: 'Fetch All Repositories', hideRepo: 'Hide This Repository', hiddenRepos: 'Hidden Repositories…', showTerminal: 'Back to terminal', redrawTerminal: 'Redraw terminal', restartDaemon: 'Restart atelierd…',
     mdToggle: 'Markdown: Toggle Preview', mdSplit: 'Markdown: Split View', mdSource: 'Markdown: Source', mdOutline: 'Markdown: Outline in Preview',
     jsonToggle: 'JSON: Toggle Tree', jsonSplit: 'JSON: Split View', jsonSource: 'JSON: Source', jsonFoldAll: 'JSON: Fold All', jsonUnfoldAll: 'JSON: Unfold All',
     jsonFoldLevel: (n: number) => `JSON: Fold to Level ${n}`, jsonCopyPath: 'JSON: Copy Path',
@@ -2474,6 +2484,11 @@ const strings = {
     scmPullDotHint: 'A dot on Source Control’s icon while a repository has commits to pull, as of the last fetch.',
     repoSearchDepth: 'Repository search depth',
     repoSearchDepthHint: 'Folder levels below the project searched for git repositories, inside repositories too. Deeper is slower in big folders.',
+    hiddenRepos: (project: string) => `Hidden repositories in ${project}`,
+    hiddenReposHint: 'Atelier doesn’t look inside them, nor at the repositories in their folders: no status, no fetch, nothing in Changes or Source Control. Their files stay in Files.',
+    hiddenReposNone: 'None. To hide one, right-click it in Source Control and choose Hide This Repository.',
+    showRepo: 'Show',
+    showRepoTip: (rel: string) => `Show ${rel} in Source Control again`,
     levels: (n: number) => (n === 1 ? '1 level' : `${n} levels`),
     gitActions: 'Git actions',
     gitActionsHint: 'Read-only: Atelier only shows and fetches, like before. Commit, push and branches stay in your terminal.',
