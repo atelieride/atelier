@@ -85,8 +85,13 @@ async function session(win: Page, name: string) {
 }
 
 const opened = (urls: string) => (existsSync(urls) ? readFileSync(urls, 'utf8').trim().split('\n') : []);
+/** The texts copied, from the test's clipboard log (e2eEnv's ATELIER_TEST_CLIPBOARD_LOG, one JSON value per line). */
+const copied = (home: string) => {
+  const log = join(home, 'test-clipboard.log');
+  return existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean).map((x) => JSON.parse(x) as string) : [];
+};
 
-test('a session\'s artifacts: counted on its chip (never as work), listed first in its popover, opened in the browser', async () => {
+test('a session\'s artifacts: counted on its chip (never as work), listed after the work in its popover and kept in place while it is open, opened in the browser', async () => {
   test.setTimeout(90000);
   const l = await launch();
   const { win } = l;
@@ -109,42 +114,57 @@ test('a session\'s artifacts: counted on its chip (never as work), listed first 
     await events(win, 'Pari', ['artifact:a2:Pari · giro UX 1', 'bg-watch:w1:Artifact comments']);
     await expect(chip.locator('.work-full')).toHaveText('1 monitor · 2 artifacts', { timeout: 10000 });
 
-    // The popover: Artifacts first, newest first, with their links; the focus on the first one.
+    // The popover: the work first, as without artifacts (the focus on its first row); then Artifacts, newest first,
+    // with their links.
     await chip.click();
     const pop = win.getByRole('dialog', { name: 'Background' });
     await expect(pop).toBeVisible();
     await expect(pop.locator('.bgp-summary')).toHaveText('1 running · 2 artifacts');
+    await expect(pop.locator('.bgp-section').nth(0).locator('.bgp-label')).toHaveText('Monitors');
+    await expect(pop.locator('.bgp-section').last()).toHaveAttribute('data-section', 'artifacts');
+    await expect(pop.locator('.bgp-row').first()).toBeFocused();
     const arts = pop.locator('[data-section="artifacts"] .bgp-row');
     await expect(arts).toHaveCount(2);
     await expect(arts.nth(0).locator('.bgp-name')).toHaveText('Pari · giro UX 1');
     await expect(arts.nth(0).locator('.bgp-sub')).toHaveText('claude.ai/artifact/e2eArtifacta2');
     await expect(arts.nth(1).locator('.bgp-name')).toHaveText('Concept board');
-    await expect(arts.nth(0)).toBeFocused();
-    await expect(pop.locator('.bgp-section').nth(1).locator('.bgp-label')).toHaveText('Monitors');
     await still(win);
     await look(win, join(SHOTS, 'popover.png'));
 
-    // Its context menu: Open in Browser and Copy Link (not clicked: tests never touch the clipboard).
+    // Published again while it is open: the rows stay where they are, under the pointer too; a new page comes last.
+    await arts.nth(1).hover();
+    await events(win, 'Pari', ['artifact:a1:Concept board v2', 'artifact:a3:Third']);
+    await expect(arts).toHaveCount(3, { timeout: 10000 });
+    await expect(arts.nth(1).locator('.bgp-name')).toHaveText('Concept board v2');
+    await expect(arts.nth(0).locator('.bgp-name')).toHaveText('Pari · giro UX 1');
+    await expect(arts.nth(2).locator('.bgp-name')).toHaveText('Third');
+
+    // Its context menu: Open in Browser and Copy Link (the copy goes to the test's clipboard log).
     await arts.nth(1).click({ button: 'right' });
     await expect(win.getByRole('menuitem', { name: 'Open in Browser' })).toBeVisible();
-    await expect(win.getByRole('menuitem', { name: 'Copy Link' })).toBeVisible();
+    await win.getByRole('menuitem', { name: 'Copy Link' }).click();
+    await expect.poll(() => copied(l.home)).toEqual([URL_1]);
+    await arts.nth(1).click({ button: 'right' });
     await win.getByRole('menuitem', { name: 'Open in Browser' }).click();
     await expect.poll(() => opened(l.urls)).toEqual([URL_1]);
     await expect(pop).toBeHidden();
 
-    // Enter on a row opens it too, and closes the popover.
+    // Opened again, the newest first; Enter on a row opens it too, and closes the popover.
     await chip.click();
-    await expect(arts.nth(0)).toBeFocused();
+    await expect(arts.nth(0).locator('.bgp-name')).toHaveText('Third');
+    await expect(arts.nth(1).locator('.bgp-name')).toHaveText('Concept board v2');
+    await arts.nth(2).focus();
     await win.keyboard.press('Enter');
     await expect.poll(() => opened(l.urls)).toEqual([URL_1, URL_2]);
     await expect(pop).toBeHidden();
 
     // Deleted by the session: gone from the chip and the popover.
     await events(win, 'Pari', ['artifact-delete:a2']);
-    await expect(chip.locator('.work-full')).toHaveText('1 monitor · 1 artifact', { timeout: 10000 });
+    await expect(chip.locator('.work-full')).toHaveText('1 monitor · 2 artifacts', { timeout: 10000 });
     await chip.click();
-    await expect(arts).toHaveCount(1);
-    await expect(arts.nth(0).locator('.bgp-name')).toHaveText('Concept board');
+    await expect(arts).toHaveCount(2);
+    await expect(arts.nth(0).locator('.bgp-name')).toHaveText('Third');
+    await expect(arts.nth(1).locator('.bgp-name')).toHaveText('Concept board v2');
   } finally {
     await stop(l);
   }

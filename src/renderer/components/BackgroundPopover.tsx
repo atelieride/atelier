@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { artifactRows, backgroundSections, commandOf, exitedIds, exitsKey, inspectorTarget, parseExits, popoverSummary, type ArtifactRow, type BgRow } from '../background-view';
+import { artifactRows, backgroundSections, commandOf, exitedIds, exitsKey, inspectorTarget, keptOrder, parseExits, popoverSummary, type ArtifactRow, type BgRow } from '../background-view';
 import { placePopover } from '../popover-place';
 import { useApp } from '../store';
 import { t } from '../i18n/en';
@@ -20,7 +20,7 @@ function returnFocus() {
 
 /**
  * The Background popover: what a session runs, from its chips. Rows open the
- * Background tab beside the session (⌥: here); the Artifacts the session published, listed first, open in the browser.
+ * Background tab beside the session (⌥: here); the Artifacts the session published, listed after them, open in the browser.
  * Reads only the terminal list: no file is read for it.
  */
 export function BackgroundPopover() {
@@ -46,7 +46,11 @@ export function BackgroundPopover() {
 
   const exited = parseExits(exitedKey);
   const sections = pop && term ? backgroundSections(term, now, exited) : [];
-  const artifacts = pop && term ? artifactRows(term, now) : [];
+  // The artifacts in the order this opening showed them: a page Claude publishes again while it is open moves no row.
+  const shown = useRef<{ pop: typeof pop; ids: string[] }>({ pop: null, ids: [] });
+  if (shown.current.pop !== pop) shown.current = { pop, ids: [] };
+  const artifacts = pop && term ? keptOrder(artifactRows(term, now), shown.current.ids) : [];
+  shown.current.ids = artifacts.map((r) => r.id);
   const rowCount = sections.reduce((n, s) => n + (s.key === 'recent' && !recentOpen ? 0 : s.rows.length), 0) + sections.length + artifacts.length;
 
   // Placement: measured without the previous maxHeight and written straight to the element (visible), so the
@@ -132,29 +136,6 @@ export function BackgroundPopover() {
       </div>
       <div className="bgp-body">
         {sections.length === 0 && artifacts.length === 0 && <div className="bgp-empty">{t.bg.empty}</div>}
-        {artifacts.length > 0 && (
-          <div data-section="artifacts" className="bgp-section">
-            <div className="bgp-label">{t.bg.section.artifacts}</div>
-            {artifacts.map((r) => (
-              <button key={r.id} type="button" className="bgp-row is-artifact" onClick={() => openArtifact(r)}
-                onContextMenu={(e) => useApp.getState().openMenu(e, [
-                  { id: 'open', label: t.bg.openInBrowser, run: () => openArtifact(r) },
-                  { id: 'copy', label: t.bg.copyLink, run: () => void copyText(r.url) }
-                ])}>
-                <span className="bgp-icon k-artifact"><Icon name={BG_GLYPH.artifact} size={14} stroke={1.8} /></span>
-                <span className="bgp-main">
-                  <span className="bgp-line">
-                    <span className="bgp-name">{r.label}</span>
-                    <span className="bgp-grow" />
-                    {r.elapsed && <span className="bgp-time mono">{r.elapsed}</span>}
-                  </span>
-                  <span className="bgp-sub mono">{r.sub}</span>
-                </span>
-                <span className="bgp-ext" aria-hidden="true"><Icon name="externalLink" size={13} stroke={1.8} /></span>
-              </button>
-            ))}
-          </div>
-        )}
         {sections.map((s) => {
           const folded = s.key === 'recent' && !recentOpen;
           return (
@@ -194,6 +175,30 @@ export function BackgroundPopover() {
             </div>
           );
         })}
+        {/* After the work, so its rows and the first one's focus stay as they were; in the order shown while open. */}
+        {artifacts.length > 0 && (
+          <div data-section="artifacts" className="bgp-section">
+            <div className="bgp-label">{t.bg.section.artifacts}</div>
+            {artifacts.map((r) => (
+              <button key={r.id} type="button" className="bgp-row is-artifact" onClick={() => openArtifact(r)}
+                onContextMenu={(e) => useApp.getState().openMenu(e, [
+                  { id: 'open', label: t.bg.openInBrowser, run: () => openArtifact(r) },
+                  { id: 'copy', label: t.bg.copyLink, run: () => void copyText(r.url) }
+                ])}>
+                <span className="bgp-icon k-artifact"><Icon name={BG_GLYPH.artifact} size={14} stroke={1.8} /></span>
+                <span className="bgp-main">
+                  <span className="bgp-line">
+                    <span className="bgp-name">{r.label}</span>
+                    <span className="bgp-grow" />
+                    {r.elapsed && <span className="bgp-time mono">{r.elapsed}</span>}
+                  </span>
+                  <span className="bgp-sub mono">{r.sub}</span>
+                </span>
+                <span className="bgp-ext" aria-hidden="true"><Icon name="externalLink" size={13} stroke={1.8} /></span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <div className="bgp-foot">
         <span><span className="mono">↑↓</span> {t.bg.hintMove}</span><span><span className="mono">↵</span> {t.bg.hintOpen}</span><span><span className="mono">esc</span> {t.bg.hintClose}</span>

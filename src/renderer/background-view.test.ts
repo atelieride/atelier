@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { t } from './i18n/en';
 import { loopRowId } from '@shared/loop';
-import { artifactRows, backgroundSections, backgroundSummary, bgChipOpen, commandOf, exitedIds, firstItemId, formatElapsed, inspectorTarget, isFollowable, popoverSummary } from './background-view';
+import { artifactRows, backgroundSections, backgroundSummary, bgChipOpen, commandOf, exitedIds, firstItemId, formatElapsed, inspectorTarget, isFollowable, keptOrder, popoverSummary } from './background-view';
 
 describe('bgChipOpen', () => {
   const pop = { terminalId: 't1', anchor: { left: 0, top: 0, right: 1, bottom: 1 }, side: 'right' as const, section: 'all' as const };
@@ -144,6 +144,17 @@ describe('the session\'s artifacts in the popover', () => {
     expect(artifactRows({}, NOW)).toEqual([]);
     // A publish time unknown (0): no elapsed time rather than "56 years".
     expect(artifactRows({ artifacts: [{ ...A, at: 0 }] }, NOW)[0]!.elapsed).toBe('');
+  });
+  test('keptOrder: while the popover is open its artifacts stay where they were; a new one comes last, a deleted one goes', () => {
+    const C = { url: 'https://claude.ai/artifact/Zz9yX8wV7uT6sR5qP4oN3m', title: 'Third', at: NOW };
+    const shown = artifactRows({ artifacts: [A, B] }, NOW);
+    // B published again (newest now) and C new: main lists C, B, A; the open popover keeps A, B and adds C.
+    const next = keptOrder(artifactRows({ artifacts: [C, { ...B, title: 'Concept board v2', at: NOW }, A] }, NOW), shown.map((r) => r.id));
+    expect(next.map((r) => r.label)).toEqual(['Pari · giro UX 1', 'Concept board v2', 'Third']);
+    // A deleted: the others keep their order.
+    expect(keptOrder(artifactRows({ artifacts: [C, B] }, NOW), next.map((r) => r.id)).map((r) => r.label)).toEqual(['Concept board', 'Third']);
+    // Nothing shown yet (just opened): main's order.
+    expect(keptOrder(artifactRows({ artifacts: [C, B, A] }, NOW), []).map((r) => r.label)).toEqual(['Third', 'Concept board', 'Pari · giro UX 1']);
   });
   test('popoverSummary: the Background summary, then the artifacts; the inspector\'s summary leaves them out', () => {
     const busy = term([entry('a', 'agent'), entry('b', 'shell')], { artifacts: [A, B] });

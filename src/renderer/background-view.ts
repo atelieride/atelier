@@ -111,6 +111,16 @@ export function artifactRows(term: Pick<TerminalInfo, 'artifacts'>, now: number)
   }));
 }
 
+/**
+ * The artifacts in the order the open popover shows them (`shown`, their ids): a page published again stays where it
+ * is, a new one comes last, a deleted one goes. Rows under the pointer never move while Claude keeps publishing.
+ */
+export function keptOrder(rows: ArtifactRow[], shown: readonly string[]): ArtifactRow[] {
+  const at = new Map(shown.map((id, i) => [id, i]));
+  const kept = rows.filter((r) => at.has(r.id)).sort((a, b) => at.get(a.id)! - at.get(b.id)!);
+  return [...kept, ...rows.filter((r) => !at.has(r.id))];
+}
+
 /** The popover's heading: the Background summary, then "N artifacts" (the inspector tab lists no artifacts: not its). */
 export function popoverSummary(term: Pick<TerminalInfo, 'work' | 'recent' | 'artifacts'>, exited: { has(id: string): boolean } = NONE): string | null {
   const n = term.artifacts?.length ?? 0;
