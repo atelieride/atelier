@@ -264,6 +264,46 @@ describe('ArtifactHub', () => {
     expect(titles(hub)).toEqual(['Kept']);
   });
 
+  test('a transcript without Artifact calls is searched as bytes: none of it is decoded', async () => {
+    // A long session's transcript is mostly tool output and images: the first read must not decode it all on main.
+    const { hub, write } = setup({ chunkBytes: 4096 });
+    const filler = Array.from({ length: 200 }, (_, i) => `${JSON.stringify({ type: i % 2 ? 'assistant' : 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${i}`, content: `è ${'x'.repeat(500)}` }] } })}\n`).join('');
+    write(path(), filler);
+    const decode = vi.spyOn(TextDecoder.prototype, 'decode');
+    const toString = vi.spyOn(Buffer.prototype, 'toString');
+    try {
+      hub.terminals([term()]);
+      await settle();
+      expect(decode).not.toHaveBeenCalled();
+      expect(toString).not.toHaveBeenCalled();
+      // The lines that matter still are: a publish after all that is listed.
+      write(path(), publish('a1', FIRST, 'After the filler'));
+      hub.toolCalls([window('a1')]);
+      await settle();
+      expect(titles(hub)).toEqual(['After the filler']);
+    } finally {
+      decode.mockRestore();
+      toString.mockRestore();
+    }
+  });
+
+  test('a transcript that can\'t be read is logged once for its session, not at every state change', async () => {
+    const { hub, write, fs, log } = setup();
+    write(path(), publish('a1', FIRST, 'One'));
+    write(path('/w/proj', SID2), publish('a2', SECOND, 'Two'));
+    fs.read = async () => { throw new Error('EIO: i/o error, read'); };
+    for (const state of ['running', 'waiting', 'running', 'done'] as const) {
+      hub.terminals([term({ state })]);
+      await settle();
+    }
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0]![0]).toContain('EIO');
+    // A new session in that terminal is another session: its failure is logged too.
+    hub.terminals([term({ sid: SID2 })]);
+    await settle();
+    expect(log).toHaveBeenCalledTimes(2);
+  });
+
   test('a character cut between two reads keeps its title whole', async () => {
     // Reads of 2 bytes cut every 3-byte "—"; the others cut "·" and "è" somewhere too.
     for (const chunkBytes of [2, 3, 5, 7]) {

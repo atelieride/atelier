@@ -59,7 +59,7 @@ export class ArtifactLog {
     const lines = (this.carry.join('') + text.slice(0, nl)).split('\n');
     this.carry = nl + 1 < text.length ? [text.slice(nl + 1)] : [];
     let changed = false;
-    for (const line of lines) if (this.relevant(line) && this.line(line)) changed = true;
+    for (const line of lines) if (this.relevant((s) => line.includes(s)) && this.line(line)) changed = true;
     return changed;
   }
 
@@ -74,15 +74,19 @@ export class ArtifactLog {
     return this.seen.has(toolUseId);
   }
 
-  /** Cheap test before JSON.parse: an Artifact call, or the result of one still pending. */
-  private relevant(line: string): boolean {
-    if (line.includes('"Artifact"')) return true;
-    if (this.pending.size === 0 || !line.includes('"tool_result"')) return false;
-    for (const id of this.pending.keys()) if (line.includes(id)) return true;
+  /**
+   * Cheap test of a whole line before it is decoded and parsed: an Artifact call, or the result of one still pending.
+   * `has` searches the line, its text or its bytes. Asked line by line in order: a call makes its result's line relevant.
+   */
+  relevant(has: (s: string) => boolean): boolean {
+    if (has('"Artifact"')) return true;
+    if (this.pending.size === 0 || !has('"tool_result"')) return false;
+    for (const id of this.pending.keys()) if (has(id)) return true;
     return false;
   }
 
-  private line(line: string): boolean {
+  /** One whole line of the transcript, relevant by the test above. True when the list changed. */
+  line(line: string): boolean {
     let o: unknown;
     try { o = JSON.parse(line); } catch { return false; }
     if (!isObj(o) || !isObj(o.message) || !Array.isArray(o.message.content)) return false;

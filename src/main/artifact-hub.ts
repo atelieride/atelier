@@ -1,6 +1,6 @@
 // src/main/artifact-hub.ts
 import type { TerminalInfo } from '@shared/protocol';
-import type { SessionState } from '@shared/session';
+import { MAIN_AGENT, type SessionState } from '@shared/session';
 import type { ToolCallWindow } from '@shared/tool-calls';
 import { ArtifactLog, type SessionArtifact } from '@shared/artifacts';
 import { isInside, projectsRootOf, sessionTranscriptPath, type ClaudeRoots } from '@shared/background-files';
@@ -35,10 +35,12 @@ interface Followed {
   /** The transcript file being read (its inode) and how far; null before the first read found it. */
   ino: number | null;
   offset: number;
-  decoder: TextDecoder;
+  lines: TranscriptLines;
   log: ArtifactLog;
   list: SessionArtifact[];
   timers: Set<() => void>;
+  /** A failed read was logged: a transcript that can't be read fails again at every state change. */
+  logged: boolean;
 }
 
 const defaultTimer = (fn: () => void, ms: number) => {
@@ -46,6 +48,32 @@ const defaultTimer = (fn: () => void, ms: number) => {
   h.unref?.();
   return () => clearTimeout(h);
 };
+
+/**
+ * A transcript's bytes cut into lines, each searched as bytes and decoded only when the log finds it relevant: a long
+ * session's transcript is mostly tool output and images, and decoding all of it on main took ~0.4–0.8 s per 64 MB. A
+ * line cut between reads waits for its end and is decoded whole, so a character cut between reads stays whole too.
+ */
+export class TranscriptLines {
+  /** The bytes after the last newline: a line still being written (copies: a reader may reuse its buffer). */
+  private carry: Buffer[] = [];
+
+  /** The lines these bytes complete, in order, each fed to the log when relevant. True when its list changed. */
+  push(bytes: Uint8Array, log: Pick<ArtifactLog, 'relevant' | 'line'>): boolean {
+    const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    let changed = false;
+    let start = 0;
+    for (let nl = buf.indexOf(10); nl >= 0; nl = buf.indexOf(10, start)) {
+      const part = buf.subarray(start, nl);
+      const line = this.carry.length > 0 ? Buffer.concat([...this.carry, part]) : part;
+      this.carry = [];
+      start = nl + 1;
+      if (log.relevant((s) => line.includes(s)) && log.line(line.toString('utf8'))) changed = true;
+    }
+    if (start < buf.length) this.carry.push(Buffer.from(buf.subarray(start)));
+    return changed;
+  }
+}
 
 /**
  * The Artifacts each session published, from its transcript. A session is read once when it is first seen (the
@@ -83,7 +111,7 @@ export class ArtifactHub {
       if (old && this.drop(old)) changed = true;
       const f: Followed = {
         terminalId: t.id, sessionId: s.sessionId, cwd, configDir: t.configDir, state: s.state,
-        ino: null, offset: 0, decoder: new TextDecoder(), log: new ArtifactLog(), list: [], timers: new Set()
+        ino: null, offset: 0, lines: new TranscriptLines(), log: new ArtifactLog(), list: [], timers: new Set(), logged: false
       };
       this.followed.set(t.id, f);
       void this.read(f);
@@ -95,7 +123,7 @@ export class ArtifactHub {
   /** atelierd's tool-call windows (null with an older atelierd): each main-agent Artifact call that ended is read for. */
   toolCalls(list: readonly ToolCallWindow[] | null): void {
     for (const c of list ?? []) {
-      if (c.tool !== 'Artifact' || c.end === null || c.agent !== 'main') continue;
+      if (c.tool !== 'Artifact' || c.end === null || c.agent !== MAIN_AGENT) continue;
       const key = `${c.terminalId}\u0000${c.id}`;
       if (this.handled.has(key)) continue;
       this.handled.add(key);
@@ -146,6 +174,8 @@ export class ArtifactHub {
   /** Queued behind any read in progress: one file read at a time for the whole app. */
   private read(f: Followed): Promise<void> {
     const next = this.chain.then(() => this.readNow(f)).catch((e: unknown) => {
+      if (f.logged) return;
+      f.logged = true;
       this.deps.log(`artifacts: ${e instanceof Error ? e.message : String(e)}`);
     });
     this.chain = next;
@@ -163,7 +193,7 @@ export class ArtifactHub {
     if (f.ino !== null && (st.ino !== f.ino || st.size < f.offset)) {
       changed = f.list.length > 0;
       f.log = new ArtifactLog();
-      f.decoder = new TextDecoder();
+      f.lines = new TranscriptLines();
       f.list = [];
       f.ino = null;
     }
@@ -177,8 +207,7 @@ export class ArtifactHub {
       if (!this.current(f)) return;
       if (bytes.length === 0) break;
       f.offset += bytes.length;
-      // `stream`: a character cut between two reads waits for its other bytes.
-      if (f.log.push(f.decoder.decode(bytes, { stream: true }))) changed = true;
+      if (f.lines.push(bytes, f.log)) changed = true;
     }
     if (!changed) return;
     f.list = f.log.list();
