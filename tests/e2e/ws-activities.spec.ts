@@ -278,7 +278,7 @@ const token = (win: Page, name: string) => win.evaluate((n) => {
 const rect = (l: Locator) => l.evaluate((el) => el.getBoundingClientRect().toJSON() as DOMRect);
 const style = (l: Locator, prop: 'color' | 'backgroundColor' | 'boxShadow' | 'animationName') => l.evaluate((el, p) => getComputedStyle(el)[p], prop);
 
-test('activities: each in a color of its own, on an edgeless band apart from the next; Color › with swatches; a session row\'s avatar a quiet 22 px tile', async () => {
+test('activities: each in a color of its own, on an edgeless band apart from the next; Color › with swatches; a session row\'s avatar a 22 px tile, ringed only when it needs you', async () => {
   const { app, win, home } = await launch();
   try {
     await menu(app, 'Toggle Workspaces for This Project');
@@ -302,17 +302,18 @@ test('activities: each in a color of its own, on an edgeless band apart from the
     await sso.locator('.wsa-chev').click();
     await expect(sso).toHaveClass(/is-open/);
 
-    // A session row's avatar: 22 px like a terminal's icon, in the same column; no ring, waiting included. Its tab's
-    // avatar keeps the ring.
+    // A session row's avatar: 22 px like a terminal's icon, in the same column. Waiting, it keeps its amber ring and
+    // cue, as its tab's avatar does: with its tab closed and Group by state off, the sidebar still shows it waits.
     const avatar = sso.locator('.session-row .avatar');
     await expect(avatar).toHaveClass(/av-waiting/, { timeout: 15000 });
     const icon = sso.locator('.term-row .term-icon');
     const [a, i] = [await rect(avatar), await rect(icon)];
     expect([a.width, a.height]).toEqual([22, 22]);
     expect(Math.abs(a.left + a.width / 2 - (i.left + i.width / 2))).toBeLessThanOrEqual(0.5);
-    expect(await style(avatar, 'boxShadow')).toBe('none');
-    expect(await style(avatar, 'animationName')).toBe('none');
-    expect(await style(win.locator('.tab .avatar.av-waiting'), 'boxShadow')).not.toBe('none');
+    const tabAvatar = win.locator('.tab .avatar.av-waiting');
+    expect(await style(tabAvatar, 'boxShadow')).not.toBe('none');
+    expect(await style(avatar, 'boxShadow')).not.toBe('none');
+    expect(await style(avatar, 'animationName')).toBe(await style(tabAvatar, 'animationName'));
 
     // The band: SSO's own color (the first after its workspace's), tinted, no edge; the selected row stops short of its
     // right edge.
@@ -358,6 +359,11 @@ test('activities: each in a color of its own, on an edgeless band apart from the
     await expect(group(win, 'Workspace 1')).toHaveAttribute('style', /--ws-c: var\(--ws-6\)/);
     expect(await style(sso.locator('.wsa-glyph'), 'color')).toBe(await token(win, '--ws-7'));
     expect(await style(reset.locator('.wsa-glyph'), 'color')).toBe(await token(win, '--ws-3'));
+
+    // Answered, the session is done: its row's avatar is a quiet tile, without a ring.
+    await typeInto(win, 'okta-callback', '\r');
+    await expect(avatar).not.toHaveClass(/av-waiting/, { timeout: 15000 });
+    expect(await style(avatar, 'boxShadow')).toBe('none');
   } finally {
     await stop(app, home);
   }

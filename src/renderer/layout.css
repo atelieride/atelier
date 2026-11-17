@@ -343,10 +343,11 @@ button.foot-item:disabled { cursor: default; }
 .avatar, .confirm-av, .sw-avatar, .ref-session, .git-sheet-by { color: var(--avatar-color, color-mix(in srgb, var(--id) var(--id-mix), var(--text))); --ring: var(--avatar-color, color-mix(in srgb, var(--id) var(--id-mix), var(--text))); }
 .avatar { position: relative; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; font-weight: 700; background: color-mix(in srgb, var(--ring) 14%, var(--bg-3)); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--ring) 70%, transparent); }
 .avatar.is-dim { opacity: .55; }
-/* In the sidebar's rows the avatar is a quiet tile the size of a terminal's icon: no ring in any state, so the
-   activity's band and the selected box stay the louder levels (the row's status line and its section say what the
-   session needs; its tab's avatar keeps the ring and the waiting cue). */
-.session-row .avatar, .session-row .avatar:is(.av-waiting, .av-error) { border-radius: 7px; box-shadow: none; animation: none; }
+/* In the sidebar's rows the avatar is a quiet tile the size of a terminal's icon: no identity ring, so the activity's
+   band and the selected box stay the louder levels. A session that needs you keeps its ring (the rules below, same
+   specificity, later): waiting, amber with its cue; failed, rose. With its tab closed and Group by state off, the
+   ring is what the sidebar has left to say so at a glance. */
+.session-row .avatar { border-radius: 7px; box-shadow: none; }
 /* Also over .wt-avatars' separating ring (same specificity, later): a waiting worktree avatar keeps its ring at rest. */
 .avatar.av-waiting, .wt-avatars .avatar.av-waiting { box-shadow: 0 0 0 1.5px var(--ring, var(--waiting-mark)); animation: atl-ring-cue 2.2s ease-in-out var(--cue-cycles); }
 .avatar.av-error { box-shadow: 0 0 0 1.5px var(--error); }
