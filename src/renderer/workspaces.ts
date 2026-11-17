@@ -164,18 +164,28 @@ export function nextColor(list: Workspace[]): number {
 }
 
 /**
+ * A new workspace's color: one nothing wears yet (no workspace, no activity, none kept aside), so it never reads as an
+ * activity's; else one no workspace wears; else round again.
+ */
+export function newWorkspaceColor(s: Pick<WorkspacesState, 'list' | 'parked'>): number {
+  const all = new Set([...s.list, ...(s.parked?.list ?? [])].map((w) => w.color));
+  for (let c = 1; c <= WS_COLORS; c++) if (!all.has(c)) return c;
+  return nextColor(workspacesOf(s));
+}
+
+/**
  * A new activity's color, so it parts from its neighbours: one nothing wears yet; else one no workspace and no sibling
- * wears (it never reads as another workspace's); else one its workspace and siblings don't wear; else round again.
- * The search starts after the workspace's own color.
+ * wears (it never reads as another workspace's); else one its workspace and siblings don't wear; else round again
+ * through the others, never its workspace's own. The search starts after the workspace's own color.
  */
 function activityColor(s: WorkspacesState, ws: Workspace): number {
-  const near = new Set([ws, ...activitiesOf(s, ws.id)].map((w) => w.color));
+  const siblings = activitiesOf(s, ws.id);
+  const near = new Set([ws, ...siblings].map((w) => w.color));
   const heads = new Set(workspacesOf(s).map((w) => w.color));
   const all = new Set(s.list.map((w) => w.color));
   const after = Array.from({ length: WS_COLORS - 1 }, (_, k) => ((ws.color + k) % WS_COLORS) + 1);
   const free = after.find((c) => !all.has(c)) ?? after.find((c) => !near.has(c) && !heads.has(c)) ?? after.find((c) => !near.has(c));
-  if (free) return free;
-  return nextColor([ws, ...activitiesOf(s, ws.id)]);
+  return free ?? after[siblings.length % after.length]!;
 }
 
 /** A new workspace at the end (null: empty name, or the limit reached). The active one doesn't change. */
@@ -183,7 +193,7 @@ export function create(s: WorkspacesState, opts: { name: string; color?: number;
   const name = tidy(opts.name);
   const wss = workspacesOf(s);
   if (!name || wss.length >= MAX_WORKSPACES || s.list.some((w) => w.id === id)) return null;
-  const w: Workspace = { id, name, color: opts.color ? inRange(opts.color) : nextColor(wss), folder: opts.folder ?? null, order: [], active: null, layout: null };
+  const w: Workspace = { id, name, color: opts.color ? inRange(opts.color) : newWorkspaceColor(s), folder: opts.folder ?? null, order: [], active: null, layout: null };
   return { ...s, list: [...s.list, w] };
 }
 
@@ -704,14 +714,15 @@ export function parseWorkspaces(raw: unknown): WorkspacesState | null {
 /**
  * A state saved while every activity wore its workspace's color: each activity still wearing it gets a color of its
  * own, as a new one would (activityColor), in the sidebar's order, those kept aside after the others; one already
- * apart keeps its own.
+ * apart keeps its own. One kept aside always gets one: a workspace recolored meanwhile left it in its former color,
+ * which bringing it back repainted then.
  */
 function withOwnColors(s: WorkspacesState): WorkspacesState {
   const parkedIds = new Set(s.parked?.list.map((a) => a.id));
   let all = [...s.list, ...(s.parked?.list ?? [])];
   for (const w of workspacesOf(s)) {
     for (const a of activitiesOf({ list: all }, w.id)) {
-      if (a.color !== w.color) continue;
+      if (a.color !== w.color && !parkedIds.has(a.id)) continue;
       const c = activityColor({ ...s, list: all.filter((x) => x.id !== a.id) }, w);
       all = all.map((x) => (x.id === a.id ? { ...x, color: c } : x));
     }
