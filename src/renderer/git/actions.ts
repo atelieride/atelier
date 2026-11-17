@@ -30,7 +30,8 @@ function nameOf(root: string): string {
   return st().repos.find((r) => r.root === root)?.name ?? st().scmRepos?.find((e) => e.root === root)?.name ?? root.split('/').pop() ?? root;
 }
 const short = (sha: string) => sha.slice(0, 7);
-const upstreamOf = (root: string) => st().gitFacts[root]?.upstream ?? nameOf(root);
+/** The upstream a pull or sync goes to: Source Control's facts, else Changes' status (a ↓ there pulls before any facts). */
+const upstreamOf = (root: string) => st().gitFacts[root]?.upstream ?? st().repos.find((r) => r.root === root)?.upstream ?? nameOf(root);
 
 /** An IPC call that main refused (a schema, a gone window) answers like a failed op: never a throw. */
 async function call(fn: () => Promise<GitOpResult>): Promise<GitOpResult> {

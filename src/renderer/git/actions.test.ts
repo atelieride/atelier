@@ -520,6 +520,18 @@ describe('push, pull, sync', () => {
     expect(toast()).toMatchObject({ text: 'Pulled from origin/main', tone: 'info' });
   });
 
+  test('pulled from Changes before Source Control read the repository: the toast names the upstream Changes knows', async () => {
+    // Changes' ↓ pulls a repository whose git facts were never read: its status still knows the upstream.
+    useApp.setState({ gitFacts: {}, repos: [{ ...repo('/p/b', 'billing', 'none'), upstream: 'origin/trunk', behind: 1 }] });
+    answers.pull = { outcome: 'ok' };
+    await git.pull('/p/b', { rebase: false });
+    expect(toast()).toMatchObject({ text: 'Pulled from origin/trunk', tone: 'info' });
+    // No upstream known anywhere: the repository's name.
+    useApp.setState({ repos: [repo('/p/b', 'billing', 'none')] });
+    await git.pull('/p/b', { rebase: false });
+    expect(toast()?.text).toBe('Pulled from billing');
+  });
+
   test("dirty with no file list: main's words or a plain sentence, never \"0 files\"", async () => {
     answers.pull = { outcome: 'conflict', dirty: true, message: 'Your local changes would be overwritten: commit or stash them first' };
     await git.pull('/p/a', { rebase: false });

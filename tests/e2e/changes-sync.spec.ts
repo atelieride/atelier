@@ -142,12 +142,13 @@ test('all clean: a ↓ is a Pull button that lights up under the pointer without
   commitIn(other, 'feat: from another clone');
   commitIn(other, 'fix: from another clone');
   git(other, 'push', '-q');
+  git(app, 'fetch', '-q');
   const { win, panel, stop } = await launchGitApp(p.root);
   try {
     const row = repoRow(panel, 'app');
-    // Changes fetches once its repositories settle: the ↓2 comes with that fetch, as a button saying what it does.
+    // The ↓2 (fetched before the launch: no wait on Changes' own fetch), as a button saying what it does.
     const pull = row.getByRole('button', { name: 'Pull 2 commits from origin/main' });
-    await expect(pull).toHaveText('↓2', { timeout: 20000 });
+    await expect(pull).toHaveText('↓2', { timeout: 15000 });
     await expect(row.locator('.sync-counts')).toHaveAttribute('data-tip', '2 to pull from origin/main');
     // lib, in sync, has nothing to pull: no button anywhere else.
     await expect(panel.locator('.sync-pull')).toHaveCount(1);
@@ -173,7 +174,7 @@ test('all clean: a ↓ is a Pull button that lights up under the pointer without
     await pull.click();
     await expect(row.locator('.sync-counts')).toHaveCount(0, { timeout: 15000 });
     expect(git(app, 'rev-parse', 'HEAD')).toBe(git(app, 'rev-parse', 'origin/main'));
-    await expect(win.locator('.toast')).toContainText('Pulled from');
+    await expect(win.locator('.toast')).toContainText('Pulled from origin/main');
     await expect(row).toBeFocused();
     await look(panel, `${SHOTS}/changes-pull-done.png`);
   } finally {
