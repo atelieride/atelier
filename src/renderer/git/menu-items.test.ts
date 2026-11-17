@@ -28,11 +28,11 @@ beforeEach(() => {
   calls = [];
   const ok = (name: string) => async (...a: unknown[]) => { calls.push([name, ...a]); return { outcome: 'ok' }; };
   g.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
-  g.window = { atelier: { git: { stage: ok('stage'), unstage: ok('unstage') } } };
+  g.window = { atelier: { git: { stage: ok('stage'), unstage: ok('unstage'), pull: ok('pull') } } };
   useApp.setState({
     settings: DEFAULT_SETTINGS, project: { root: '/p', name: 'p', realRoot: '/p' }, terminals: [], toast: null, activeTab: 'term',
     repos: [repo('/p/a', [ch('x.ts', 'none'), ch('y.ts', 'all')])], gitSheet: null, commitAll: null, gitDrafts: {},
-    gitDrawer: { open: false, height: null, unfolded: [], openedFor: null }, gitTarget: null, gitLastStaged: null
+    gitDrawer: { open: false, height: null, unfolded: [], openedFor: null }, gitTarget: null, gitLastStaged: null, gitOps: {}, attributions: []
   });
 });
 afterEach(() => { delete g.window; delete g.localStorage; });
@@ -80,6 +80,29 @@ test('a repository: Stage All and Unstage All on the whole repository, Commit…
   item(items, 'git-commit').run();
   expect(useApp.getState().gitDrawer).toMatchObject({ open: true, openedFor: { root: '/p/a' } });
   expect(useApp.getState().gitTarget).toBe('/p/a');
+});
+
+test('a repository with commits to pull: Pull after Commit…, Source Control\'s Pull; off with why while git works there', async () => {
+  useApp.setState({ repos: [{ ...repo('/p/a', [ch('x.ts', 'none')]), upstream: 'origin/main', behind: 2 }] });
+  const items = repoGitItems('/p/a');
+  expect(ids(items)).toEqual(['git-stage-all', 'git-unstage-all', 'git-commit', 'git-pull', 'git-discard-all', '—']);
+  expect(item(items, 'git-pull')).toMatchObject({ label: 'Pull', icon: 'arrowDown' });
+  expect(item(items, 'git-pull').disabled).toBeFalsy();
+  item(items, 'git-pull').run();
+  await tick(); await tick();
+  expect(calls).toEqual([['pull', { root: '/p/a', rebase: false }]]);
+  // Another op running there: off, saying which.
+  useApp.setState({ gitOps: { a: { id: 'a', root: '/p/a', op: 'commit', phase: 'running', startedAt: 0, output: '' } } });
+  expect(item(repoGitItems('/p/a'), 'git-pull')).toMatchObject({ disabled: true, tip: 'Committing…' });
+});
+
+test('a repository with nothing to pull (in sync, only commits to push, no upstream): no Pull', () => {
+  useApp.setState({ repos: [
+    { ...repo('/p/a', [ch('x.ts', 'none')]), upstream: 'origin/main' },
+    { ...repo('/p/b', [ch('x.ts', 'none')]), upstream: 'origin/main', ahead: 3 },
+    { ...repo('/p/c', [ch('x.ts', 'none')]), behind: 2 }
+  ] });
+  for (const root of ['/p/a', '/p/b', '/p/c']) expect(ids(repoGitItems(root)), root).not.toContain('git-pull');
 });
 
 test('a repository: Stage All off when everything listed is staged, Unstage All off when nothing is; a truncated list says so', () => {

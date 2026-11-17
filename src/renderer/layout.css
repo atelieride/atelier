@@ -1164,9 +1164,23 @@ button.either:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .clean-row.is-wt > svg { flex: none; color: var(--worktree); }
 .clean-row.is-wt .clean-name { font-size: 11px; }
 .clean-ahead { flex: none; margin-left: auto; font-size: 10.5px; color: var(--text-2); }
-/* Sync arrows: Source Control's counts, smaller; never shrink, wrap or ellipsize.
-   Display only: no hover, no pointer (the tooltip says what they count). */
+/* Sync arrows: Source Control's counts, smaller; never shrink, wrap or ellipsize. A label (the tooltip says what they
+   count), but for the ↓ with git actions on. */
 .sync-counts { display: inline-flex; gap: 5px; flex: none; font-size: 10.5px; font-weight: 500; white-space: nowrap; }
+/* With git actions on, the ↓ pulls (a button, or a click target inside a header): the arrows' look at rest, its row,
+   chip or header under the pointer included; a pill in the pull colour only under the pointer itself (or with the
+   keyboard focus, or while it pulls). Its padding is taken back by the margin on the left (the ↓ stays where the label
+   was) and by the gap on the right: nothing moves when it lights up. */
+.sync-counts.has-pull { gap: 1px; align-items: center; }
+.sync-pull { display: inline-flex; align-items: center; gap: 2px; margin: -2px 0 -2px -5px; padding: 2px 5px; border-radius: 999px; font: inherit; color: var(--working); transition: background var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+.sync-pull:hover, .sync-pull.is-busy { background: color-mix(in srgb, var(--working) 16%, transparent); box-shadow: inset 0 0 0 1px var(--edge-working); }
+.sync-pull:active { background: color-mix(in srgb, var(--working) 26%, transparent); }
+.sync-pull:focus-visible { outline: none; background: var(--tint-working); box-shadow: var(--focus-ring); }
+.sync-pull.is-off, .sync-pull.is-busy { cursor: default; }
+.sync-pull.is-off { opacity: .5; }
+.sync-pull.is-off:hover { background: none; box-shadow: none; }
+.sync-pull .git-spin { width: 8px; height: 8px; border-width: 1.5px; border-color: var(--edge-working); border-top-color: var(--working); }
+:root[data-motion="reduced"] .sync-pull { transition: none; }
 .changes-foot { padding: 10px 14px; border-top: 1px solid var(--line-soft); font-size: 11px; color: var(--text-4); line-height: 1.45; }
 
 /* Services */

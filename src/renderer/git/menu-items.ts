@@ -3,8 +3,11 @@
 import type { MenuItem } from '../menu-model';
 import { t } from '../i18n/en';
 import { useApp } from '../store';
+import { runningLabel } from '../scm/all-view';
+import { syncOf } from '../sync';
 import { commitWork, stage, unstage } from './actions';
 import { relsOf, stageable, type StageRow } from './staging';
+import { startPull } from './sync';
 
 const st = () => useApp.getState();
 const m = t.git.menu;
@@ -75,9 +78,20 @@ export function repoGitItems(root: string): MenuItem[] {
     { id: 'git-stage-all', label: m.stageAll, icon: 'plus', disabled: more === 0 && !rows.some((r) => canStage(r) && r.stage !== 'all'), ...tip, run: () => void stage(root, 'all') },
     { id: 'git-unstage-all', label: m.unstageAll, disabled: more === 0 && !rows.some((r) => r.stage !== 'none'), ...tip, run: () => void unstage(root, 'all') },
     { id: 'git-commit', label: m.commit, icon: 'commit', run: () => st().openGitDrawer({ root }) },
+    ...pullItems(root, repo),
     { id: 'git-discard-all', label: m.discardAll, icon: 'trash', danger: true, disabled: more === 0 && rows.length === 0, ...tip, run: () => st().setGitSheet({ kind: 'discard', targets: [{ root, rels: 'all' }] }) },
     'sep'
   ];
+}
+
+/**
+ * Pull, while the working tree has commits to pull (its ↓ in Changes): the keyboard's way to the ↓ a header holds.
+ * Source Control's Pull; off, saying why, while another op runs there.
+ */
+function pullItems(root: string, repo: Parameters<typeof syncOf>[0] | undefined): MenuItem[] {
+  if (!repo || !((syncOf(repo)?.behind ?? 0) > 0)) return [];
+  const op = Object.values(st().gitOps).find((o) => o.root === root && o.op !== 'stage' && o.op !== 'unstage')?.op;
+  return [{ id: 'git-pull', label: t.git.sync.pull, icon: 'arrowDown', ...(op ? { disabled: true, tip: runningLabel(op) } : {}), run: () => void startPull(root) }];
 }
 
 /**

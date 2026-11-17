@@ -1,6 +1,7 @@
 // Changes when everything is clean: one quiet line, then each repository as a
 // row — its name flush with the check, its sync arrows right after it, its branch
-// where a group's count ends — and its worktrees under it. Nothing here is a control: no hover.
+// where a group's count ends — and its worktrees under it. The rows are not controls; the one control is a ↓ to pull,
+// a Pull button that lights up only under the pointer itself (PullCounts).
 
 import { useRef, useState } from 'react';
 import type { RepoStatus } from '@shared/git';
@@ -8,7 +9,7 @@ import { t } from '../i18n/en';
 import { CHANGES_CAP, capShown } from '../changes';
 import { branchLabel, toMerge, type WtView } from '../worktrees';
 import { Icon } from './Icon';
-import { SyncCounts } from './SyncCounts';
+import { PullCounts } from './SyncCounts';
 
 /**
  * hidden: changes This workspace hides (other workspaces' sessions made them): the line says so instead of "clean".
@@ -39,14 +40,14 @@ export function CleanState({ repos: all, worktreesOf, hidden = 0, live = new Set
       {repos.map((r) => [
         <span key={r.root} className="clean-row" tabIndex={-1}>
           <span className="clean-name">{r.name}</span>
-          <SyncCounts status={r} />
+          <PullCounts root={r.root} status={r} />
           <span className="clean-branch mono"><Icon name="git" size={10} stroke={1.8} /><span className="clean-branch-text">{r.detached ? t.detached : r.branch ?? '—'}</span></span>
         </span>,
         ...worktreesOf(r.root).map((w) => (
           <span key={w.status.root} className="clean-row is-wt" data-tip={t.wt.headTip(w.status.root, branchLabel(w.status), null)}>
             <Icon name="branchOff" size={11} stroke={1.9} />
             <span className="clean-name mono">{w.name}</span>
-            <SyncCounts status={w.status} />
+            <PullCounts root={w.status.root} status={w.status} />
             {w.state === 'merge' && <span className="clean-ahead mono">{t.wt.toMerge(toMerge(w.status))}</span>}
           </span>
         ))
