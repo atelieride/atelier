@@ -159,14 +159,17 @@ test('activities: on; New Activity… from the "+"; its tabs alone, folded; the 
     await wsChev.click();
     await expect(sso).toBeVisible();
 
-    // Its chevron: the band, no box; its rows at the same left edge as the workspace's own rows.
+    // Its chevron: the band, no box; its rows indented under its head, right of the workspace's own rows, a row's icon
+    // centred under the activity's glyph.
     await sso.locator('.wsa-chev').click();
     await expect(sso).toHaveClass(/is-open/);
     await expect(sso.locator('.wsa-head')).not.toHaveClass(/is-selected/);
     const mockRow = sso.locator('.term-row', { hasText: 'Okta mock' });
     const alphaRow = group(win, 'Workspace 1').locator('.ws-own .term-row', { hasText: 'Alpha' });
     await expect(mockRow).toBeVisible();
-    expect(await left(mockRow)).toBe(await left(alphaRow));
+    expect(await left(mockRow)).toBeGreaterThan(await left(alphaRow));
+    const centre = (l: Locator) => l.evaluate((el) => { const r = el.getBoundingClientRect(); return r.left + r.width / 2; });
+    expect(Math.abs(await centre(mockRow.locator('.term-icon')) - await centre(sso.locator('.wsa-glyph')))).toBeLessThanOrEqual(1);
     expect(await sso.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
     await away(win);
     await look(win.locator('.sidebar'), `${SHOTS}/ws-activities-band.png`);
