@@ -148,6 +148,7 @@ export const SPECS: Record<string, Area[]> = {
   'scm-all.spec.ts': ['scm'],
   // Repositories found deeper and inside others, Files and Source Control following the disk, the depth setting.
   'repo-discovery.spec.ts': ['scm', 'files', 'changes', 'settings'],
+  'hidden-repos.spec.ts': ['scm', 'changes', 'settings'],
   'source-control-fetch.spec.ts': ['scm', 'changes'],
   'source-control.spec.ts': ['scm'],
   'split-focus.spec.ts': ['workspace'],
@@ -512,6 +513,7 @@ export const SOURCES: Record<string, Area[]> = {
   'src/main/ghost-window.ts': ['workspace'],
   'src/main/git-head.ts': ['changes', 'scm'],
   'src/main/git-hub.ts': ['changes', 'scm', 'review'],
+  'src/main/hidden-repos.ts': ['scm', 'changes'],
   'src/main/git-ops.ts': ['changes', 'scm'],
   'src/main/git/': ['changes', 'scm', 'review', 'files'],
   'src/main/github/': ['scm'],
@@ -614,6 +616,7 @@ export const SOURCES: Record<string, Area[]> = {
   'src/shared/readonly-command.ts': ['changes'],
   'src/shared/redis': ['services'],
   'src/shared/scm.ts': ['scm'],
+  'src/shared/hidden-repos.ts': ['scm', 'changes'],
   'src/shared/services.ts': ['background'],
   'src/shared/session-name.ts': ['sessions'],
   'src/shared/session-view.ts': ['sessions'],
