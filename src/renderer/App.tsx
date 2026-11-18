@@ -31,8 +31,7 @@ import { Palette } from './components/Palette';
 import { SessionBar, type PaneSlot } from './components/SessionBar';
 import { PanePicker } from './components/PanePicker';
 import { ContextMenu } from './components/ContextMenu';
-import { openProjectColorMenu } from './project-color-menu';
-import { projectColorOf } from '@shared/project-color';
+import { openProjectColorMenu, windowProjectColor } from './project-color-menu';
 import { BackgroundPopover } from './components/BackgroundPopover';
 import { SchedulePopover } from './components/SchedulePopover';
 import { ScheduleSheet } from './components/ScheduleSheet';
@@ -230,7 +229,7 @@ export function App() {
   const languageSheet = useApp((s) => s.languageSheet);
   const themeSheet = useApp((s) => s.themeSheet);
   // The project's color on <html> (layout.css, [data-project-color]): its chip, a faint tint of the header.
-  const projectColor = useApp((s) => projectColorOf(s.settings, s.project?.root));
+  const projectColor = useApp(windowProjectColor);
   useEffect(() => {
     const root = document.documentElement;
     if (projectColor) root.dataset.projectColor = String(projectColor);

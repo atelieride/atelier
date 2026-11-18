@@ -4,7 +4,7 @@ import { SETTINGS_FIELDS, isDockerEngineSetting, isSettingPath, isSettingText, t
 import { isFontFamily } from '@shared/terminal-font';
 import { normalizeCustom } from '@shared/redis';
 import { isHiddenRel } from '@shared/hidden-repos';
-import { isProjectColors } from '@shared/project-color';
+import { isProjectColors, type ProjectColors } from '@shared/project-color';
 import {
   DB_FILTER_OPS, DERIVED_MAX, FILTER_VALUE_MAX, FILTER_VALUES_MAX, FILTERS_MAX, PATH_INDEX_MAX, PATH_KEY_MAX, PATH_KEYS_MAX, validFilterShape, type DbFilterOp
 } from '@shared/databases-filters';
@@ -478,7 +478,8 @@ const zField = (f: Field): z.ZodType => {
     case 'redisUrls': return z.array(z.string().max(1024).refine((s) => normalizeCustom(s) === s, 'redis instance')).max(f.max).refine((a) => new Set(a).size === a.length, 'duplicate instance');
     case 'claudeAccounts': return claudeAccountsSchema;
     case 'claudeFlags': return claudeFlagsSchema;
-    case 'projectColors': return z.record(z.string(), z.number()).refine(isProjectColors, 'project colors');
+    // Checked as it arrives, not after a record schema: that one drops an own "__proto__" key silently.
+    case 'projectColors': return z.custom<ProjectColors>((v) => isProjectColors(v), 'project colors');
     case 'text': return z.string().refine((v) => isSettingText(v, f.max), 'text');
     case 'fontFamily': return z.string().refine(isFontFamily, 'font family');
     case 'accountChoice': return z.union([z.literal('session'), z.string().regex(ACCOUNT_ID)]);
