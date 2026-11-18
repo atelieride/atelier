@@ -70,10 +70,10 @@ export function ConfirmActions({ confirm, onConfirm, onCancel, small = true, end
   return <div className={`confirm-actions${end ? ' is-end' : ''}`}>{end ? [keep, go] : [go, keep]}</div>;
 }
 
-/** What closing interrupts, the rose line under the question; nothing for an idle Claude (no work is lost). */
+/** What closing interrupts, the rose line under the question; nothing for a quiet idle session (no work is lost). */
 export function stopsLine(stops: CloseStops): string | null {
   if (stops.kind !== 'claude') return t.confirm.processStops(stops.what);
-  return stops.doing === 'idle' ? null : t.confirm.claudeStops[stops.doing];
+  return stops.doing === 'idle' && stops.quiet ? null : t.confirm.claudeStops[stops.doing];
 }
 
 /**

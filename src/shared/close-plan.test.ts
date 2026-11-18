@@ -19,11 +19,28 @@ test('a shell at its prompt closes at once; anything else says what stops', () =
 test('a Claude session: what it is doing, waiting first', () => {
   expect(closeStops(claude(session('running')))).toEqual({ kind: 'claude', doing: 'working' });
   expect(closeStops(claude(session('waiting')))).toEqual({ kind: 'claude', doing: 'waiting' });
-  expect(closeStops(claude(session('done')))).toEqual({ kind: 'claude', doing: 'idle' });
-  expect(closeStops(claude(session('idle')))).toEqual({ kind: 'claude', doing: 'idle' });
-  expect(closeStops(claude(session('error')))).toEqual({ kind: 'claude', doing: 'idle' });
+  expect(closeStops(claude(session('done')))).toEqual({ kind: 'claude', doing: 'idle', quiet: true });
+  expect(closeStops(claude(session('idle')))).toEqual({ kind: 'claude', doing: 'idle', quiet: true });
+  expect(closeStops(claude(session('error')))).toEqual({ kind: 'claude', doing: 'idle', quiet: true });
   // Background work still counting keeps a finished turn working (effectiveState).
-  expect(closeStops({ ...claude(session('done')), work: { counting: true } as TerminalInfo['work'] })).toEqual({ kind: 'claude', doing: 'working' });
+  expect(closeStops({ ...claude(session('done')), work: { ...noWork, counting: true } })).toEqual({ kind: 'claude', doing: 'working' });
+});
+
+const noWork: NonNullable<TerminalInfo['work']> = { counting: false, agents: 0, shells: 0, monitors: 0, other: 0, idle: 0, items: [], crons: [], entries: [], nextChange: null };
+
+// Quiet: closing loses nothing, so the question says nothing about what stops.
+test('an idle session is quiet only when it is known and nothing runs beside it', () => {
+  const idle = claude(session('done'));
+  expect(closeStops({ ...idle, work: noWork })).toEqual({ kind: 'claude', doing: 'idle', quiet: true });
+  // Claude with no session detected yet: what it is doing is unknown.
+  expect(closeStops({ ...shell, foreground: 'claude' })).toEqual({ kind: 'claude', doing: 'idle' });
+  // Background shells, agents or monitors that don't count as work (the setting off, or past the cap): they stop too.
+  const shellItem = { id: 'b1', kind: 'shell' as const, label: 'npm run dev', since: 1, counted: false };
+  expect(closeStops({ ...idle, work: { ...noWork, idle: 1, items: [{ kind: 'shell', label: 'npm run dev', counted: false }], entries: [shellItem] } })).toEqual({ kind: 'claude', doing: 'idle' });
+  // A server the session started (listed, never counted).
+  expect(closeStops({ ...idle, work: { ...noWork, entries: [{ ...shellItem, server: { ports: [5173] } }] } })).toEqual({ kind: 'claude', doing: 'idle' });
+  // Its crons and loops: closing ends them.
+  expect(closeStops({ ...idle, work: { ...noWork, crons: [{ id: 'c1', label: 'check the deploy', schedule: '*/5 * * * *', recurring: true, next: 9 }] } })).toEqual({ kind: 'claude', doing: 'idle' });
 });
 
 // Closing it would stop Claude Code's continuation after the limit.
@@ -31,8 +48,8 @@ test('a session paused at its usage limit stops a continuation; an ended pause o
   const limited = (limitPause?: SessionInfo['limitPause']) => claude({ ...session('error'), errorReason: 'rate_limit', ...(limitPause ? { limitPause } : {}) });
   expect(closeStops(limited({ since: 1, resetsAt: 9 }))).toEqual({ kind: 'claude', doing: 'paused' });
   expect(closeStops(limited({ since: 1, resetsAt: null }))).toEqual({ kind: 'claude', doing: 'paused' });
-  expect(closeStops(limited({ since: 1, resetsAt: 9, over: 'expired' }))).toEqual({ kind: 'claude', doing: 'idle' });
-  expect(closeStops(limited())).toEqual({ kind: 'claude', doing: 'idle' });
+  expect(closeStops(limited({ since: 1, resetsAt: 9, over: 'expired' }))).toEqual({ kind: 'claude', doing: 'idle', quiet: true });
+  expect(closeStops(limited())).toEqual({ kind: 'claude', doing: 'idle', quiet: true });
 });
 
 test('Claude started by hand in a plain terminal (no session yet) is Claude too', () => {
