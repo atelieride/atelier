@@ -367,16 +367,21 @@ posixTest('file index for ⌘K: tracked and untracked non-ignored, in all repos,
   expect(files).toEqual(['app/.gitignore', 'app/a.ts', 'app/new.ts', 'app/old.ts', 'app/to-rename.ts', 'dev.sh']);
 });
 
+// As the machine, with the paths main gets there (canonical C:/… on Windows): a native C:\ root gives '\' in `rel`.
 test('file index: a hidden repository\'s files are left out, also where no repository around it lists files', async () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-idx-hide-')));
-  mkdirSync(join(root, 'vendor', 'mirror'), { recursive: true });
-  repoWithCommit(join(root, 'vendor', 'mirror'));
-  writeFileSync(join(root, 'vendor', 'README.md'), 'x\n');
-  repoWithCommit(join(root, 'app'));
-  const rels = (await buildFileIndex(root, [join(root, 'app')], [join(root, 'vendor', 'mirror')])).map((f) => f.rel);
-  expect(rels).toContain('vendor/README.md');
-  expect(rels).toContain('app/a.ts');
-  expect(rels.filter((r) => r.startsWith('vendor/mirror/'))).toEqual([]);
+  setTestDefaultPlatform(null);
+  try {
+    const root = toCanonical(realpathSync.native(mkdtempSync(join(tmpdir(), 'atl-idx-hide-'))));
+    repoWithCommit(join(root, 'vendor', 'mirror'));
+    writeFileSync(join(root, 'vendor', 'README.md'), 'x\n');
+    repoWithCommit(join(root, 'app'));
+    const rels = (await buildFileIndex(root, [`${root}/app`], [`${root}/vendor/mirror`])).map((f) => f.rel);
+    expect(rels).toContain('vendor/README.md');
+    expect(rels).toContain('app/a.ts');
+    expect(rels.filter((r) => r.startsWith('vendor/mirror/'))).toEqual([]);
+  } finally {
+    setTestDefaultPlatform('darwin');
+  }
 });
 
 test('file index: a repo reached through a symlink to outside the project adds no files (they cannot be opened)', async () => {

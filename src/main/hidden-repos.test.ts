@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, test } from 'vitest';
-import { isWin, posixTest } from '../../tests/support/platform';
+import { isWin, posixTest, useMachinePlatform } from '../../tests/support/platform';
 import { createHiddenRepos } from './hidden-repos';
 
 // The repositories each project hides: ATELIER_HOME/hidden-repos.json, by project root, read back after a restart.
@@ -11,6 +11,8 @@ const homes: string[] = [];
 const home = () => { const h = mkdtempSync(join(tmpdir(), 'atl-hidden-')); homes.push(h); return h; };
 afterEach(() => { for (const h of homes.splice(0)) rmSync(h, { recursive: true, force: true }); });
 const file = (h: string) => join(h, 'hidden-repos.json');
+// The machine's own roots (C:\ on Windows), checked as the app checks them there.
+useMachinePlatform();
 const P = isWin ? 'C:\\projects\\site' : '/projects/site';
 
 test('nothing hidden without a file; what a project hides is kept, sorted, once, and read back by the next start', () => {

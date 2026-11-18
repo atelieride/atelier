@@ -60,18 +60,23 @@ const until = async (ok: () => boolean, ms = 10_000) => {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * The project's git reads from now on; `settle` waits until none has started for a while (what opening the project
- * reads, and the events of the folders the test just made, are over), then forgets them.
+ * The project's git reads from now on; `settle` waits until none is running and none has started for a while (what
+ * opening the project reads, and the events of the folders the test just made, are over), then forgets them. A read
+ * is several git commands in a row (a status, then its HEAD and its diff): one still running counts.
  */
 function gitReads(root: string) {
   const reads: string[] = [];
   let last = Date.now();
+  let running = 0;
   const real = exec.runGit;
   vi.spyOn(exec, 'runGit').mockImplementation((repo, args, ...rest) => {
-    if (isInside(root, repo)) { reads.push(`${repo} ${args[0]}`); last = Date.now(); }
-    return real(repo, args, ...rest);
+    if (!isInside(root, repo)) return real(repo, args, ...rest);
+    reads.push(`${repo} ${args[0]}`);
+    running++;
+    last = Date.now();
+    return real(repo, args, ...rest).finally(() => { running--; last = Date.now(); });
   });
-  const settle = async () => { await until(() => Date.now() - last > 1000, 15_000); reads.splice(0); };
+  const settle = async () => { await until(() => running === 0 && Date.now() - last > 1000, 15_000); reads.splice(0); };
   return { reads, settle };
 }
 
@@ -193,8 +198,11 @@ test('hidden while a scan runs: what that scan found of the hidden store (a link
   const { root, ka, clone, tools } = nestedClone();
   const side = join(root, 'side');
   git(clone, 'worktree', 'add', '-q', '-b', 'side', side);
+  const { reads, settle } = gitReads(root);
   const { h, hidden } = open(root);
   await until(() => shown(h, root, ka) && shown(h, root, tools) && shown(h, root, side));
+  // What opening the project reads is over: a status or a listing that began before the hide may still end after it.
+  await settle();
   // A scan that started before the hide: it answers as if nothing were hidden, once let go.
   const real = repos.discoverRepos;
   let release: () => void = () => {};
@@ -204,15 +212,9 @@ test('hidden while a scan runs: what that scan found of the hidden store (a link
   hidden.push('agent/data/repo');
   h.hiddenChanged(root);
   await until(() => gone(h, root, side) && gone(h, root, clone));
-  const reads: string[] = [];
-  const run = exec.runGit;
-  vi.spyOn(exec, 'runGit').mockImplementation((repo, args, ...rest) => {
-    if (isInside(clone, repo) || isInside(side, repo)) reads.push(`${repo} ${args[0]}`);
-    return run(repo, args, ...rest);
-  });
   release();
   await sleep(1500);
-  expect(reads).toEqual([]);
+  expect(reads.filter((r) => [clone, side].some((dir) => r.startsWith(`${dir} `) || r.startsWith(`${dir}/`)))).toEqual([]);
   expect(gone(h, root, side)).toBe(true);
 });
 
