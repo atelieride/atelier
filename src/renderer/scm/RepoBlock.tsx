@@ -3,7 +3,7 @@
 // header's marks are its actions: ↓ pulls and ↑ pushes where there is something to pull or push, and ⋯ holds the rest
 // (Fetch too). Its parts never change by themselves, under the pointer either: a state only changes what they say, so
 // nothing moves while ops run.
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefCallback } from 'react';
 import { isMod } from '@shared/keys';
 import { Icon } from '../components/Icon';
 import { t } from '../i18n/en';
@@ -62,6 +62,20 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
   const askRef = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
   const block = useRef<HTMLDivElement>(null);
+  const menuBtn = useRef<HTMLButtonElement>(null);
+  // A header count that leaves with the focus (nothing left to pull or push once its op is done, or the button that
+  // runs the op carries the counts now) hands it to ⋯ on the same header, not to the page. Its cleanup runs while the
+  // count is still in the page; the focus is moved once it is gone, and only if nothing else took it meanwhile.
+  const keepFocus = useCallback((el: HTMLButtonElement | null) => {
+    if (!el) return;
+    return () => {
+      if (document.activeElement !== el) return;
+      queueMicrotask(() => {
+        const to = menuBtn.current;
+        if (to?.isConnected && (!document.activeElement || document.activeElement === document.body)) to.focus({ preventScroll: true });
+      });
+    };
+  }, []);
   // What the block needs from main (its remotes, a commit's checks), read once it nears the screen: a folder of hundreds
   // of repositories doesn't read them all at once.
   useEffect(() => {
@@ -140,12 +154,12 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
             // A folded block has no button to say an op runs: its counts say it, a spinner over them (they keep their
             // box and the focus); without counts, the spinner alone.
             busy && !(view.behind || view.ahead) ? <i className="git-spin" role="img" aria-label={busy} data-tip={busy} />
-              : <Counts view={view} busy={busy} act={writes ? { pull: () => void startPull(root), push: () => void push(root), off: { pull: op ? runningLabel(op.op) : can.pull, push: op ? runningLabel(op.op) : can.push } } : undefined} />
+              : <Counts view={view} busy={busy} act={writes ? { pull: () => void startPull(root), push: () => void push(root), off: { pull: op ? runningLabel(op.op) : can.pull, push: op ? runningLabel(op.op) : can.push }, ref: keepFocus } : undefined} />
           )}
           {view.clean && <span className="sw-chip is-clean" role="img" aria-label={a.inSync} data-tip={a.inSync}><Icon name="check" size={11} stroke={2.6} /></span>}
         </span>
         {/* Always there, in its own room: Fetch, Pull and Push, then the repository's menu. */}
-        <button type="button" className="icon-btn ab-menu" aria-label={a.actions(row.name)} data-tip={a.actions(row.name)} aria-haspopup="menu"
+        <button ref={menuBtn} type="button" className="icon-btn ab-menu" aria-label={a.actions(row.name)} data-tip={a.actions(row.name)} aria-haspopup="menu"
           onClick={(e) => menuAt(e.currentTarget, [...syncItems(root, can, writes ? ['fetch', 'pull', 'push'] : ['fetch']), 'sep', ...repoMenu(root)])}><Icon name="more" size={13} /></button>
       </div>
       {!folded && writes && (
@@ -177,7 +191,8 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
   );
 }
 
-type CountActs = { pull: () => void; push: () => void; off: { pull: string | null; push: string | null } };
+/** `ref`: each count button's, stable (see `keepFocus`). */
+type CountActs = { pull: () => void; push: () => void; off: { pull: string | null; push: string | null }; ref: RefCallback<HTMLButtonElement> };
 
 /**
  * ↓ to pull, ↑ to push (nonzero parts only), in the Sync button's colors. With `act` each count is the button that
@@ -193,7 +208,7 @@ function Counts({ view, act, busy = null }: { view: BlockView; act?: CountActs; 
     const label = busy ?? (kind === 'pull' ? a.pullCount(n) : a.pushCount(n));
     const off = busy ?? act.off[kind];
     return (
-      <button type="button" className={`ab-count ${cls}`} aria-label={label} data-tip={off && off !== label ? `${label} · ${off}` : label}
+      <button ref={act.ref} type="button" className={`ab-count ${cls}`} aria-label={label} data-tip={off && off !== label ? `${label} · ${off}` : label}
         aria-disabled={!!off || undefined} aria-busy={busy ? true : undefined} onClick={() => { if (!off) act[kind](); }}>{text}</button>
     );
   };
