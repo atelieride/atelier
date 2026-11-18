@@ -58,6 +58,18 @@ test('a project window wears its color; the chip\'s menu and the command change 
     expect(await css(win, '.project-chip', 'border-top-color')).not.toBe(await token(win, '--line'));
     await look(win, `${SHOTS}/changed.png`, { settle: 300 });
 
+    // The menu belongs to the project's part of the chip: the + (New) beside it has none. Shift+F10 on the focused
+    // project button opens it too.
+    const colorMenu = win.getByRole('menuitem', { name: 'Project Color' });
+    await win.locator('.project-chip .chip-new').click({ button: 'right' });
+    await win.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    await expect(colorMenu).toHaveCount(0);
+    await win.locator('.project-chip .project-reveal').focus();
+    await win.keyboard.press('Shift+F10');
+    await expect(colorMenu).toBeVisible();
+    await win.keyboard.press('Escape');
+    await expect(colorMenu).toHaveCount(0);
+
     // The command (menu bar, palette) opens the same choices under the chip.
     await command(app, 'project-color');
     await expect(win.getByRole('menuitemradio')).toHaveCount(8);

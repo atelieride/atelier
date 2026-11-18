@@ -36,10 +36,10 @@ export function Header({ onNewMenu }: { onNewMenu: (anchor: HTMLElement) => Prom
       {/* macOS: room for the traffic lights; Windows: the window menu (the caption buttons sit over the other end). */}
       {win ? <WindowMenu /> : <div className="traffic-space" />}
       {project ? (
-        <div className="project-chip" onContextMenu={(e) => useApp.getState().openMenu(e, projectChipMenu())}>
-          {/* Click: the project folder in the Finder. Right-click: Project Color ›. */}
+        <div className="project-chip">
+          {/* Click: the project folder in the Finder. Right-click (or Shift+F10 on it): Project Color ›; the + has none. */}
           <button type="button" className="project-reveal" aria-label={t.openInFinder} data-tip={`${t.openInFinder} · ${project.root}`}
-            onClick={() => void window.atelier.revealProject()}>
+            onClick={() => void window.atelier.revealProject()} onContextMenu={(e) => useApp.getState().openMenu(e, projectChipMenu())}>
             <Logo size={18} />
             <span className="project-name">{project.name}</span>
             {/* The room left after the name; too little to read, the path goes (no "/……" stub). */}
