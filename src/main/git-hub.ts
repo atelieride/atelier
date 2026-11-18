@@ -445,6 +445,12 @@ export class GitHub {
     if (out.relist.size) this.relist(p, { stale: this.reposOfCommons(p, out.relist), level: 'live' });
   }
 
+  /** A git dir (resolved to its real path) that is a hidden repository's: a submodule's, in its parent's .git. */
+  private hiddenGitDir(p: Project, gitDir: string): boolean {
+    if (p.hiddenCommons.size === 0) return false;
+    try { return p.hiddenCommons.has(toOut(realpathSync(gitDir))); } catch { return p.hiddenCommons.has(gitDir); }
+  }
+
   /**
    * A path changed in the git dir `gitDir` (a real path; `rel` the path as locate reads it): the working trees it moves
    * get a fresh status — refs and fetches every tree of that common dir, a linked worktree's admin files that worktree,
@@ -591,6 +597,8 @@ export class GitHub {
       // A linked worktree's HEAD, index and refs live in its main repo's .git, a submodule's in .git/modules: a commit
       // inside one changes no file of its folder.
       const gitDir = kind === 'git' ? gitDirOf(rel) : null;
+      // A hidden submodule's git dir, inside its parent's .git: its git at work is no news, not even for the parent.
+      if (gitDir && this.hiddenGitDir(p, join(p.root, gitDir))) continue;
       if (gitDir) this.gitDirChanged(p, join(p.root, gitDir), rel, out);
       const r = repoOf(p.repos, abs);
       if (r) {

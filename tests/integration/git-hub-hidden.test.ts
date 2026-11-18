@@ -160,22 +160,27 @@ test('a file changed in a hidden repository still reaches open editors, and asks
   expect(reads).toEqual([]);
 });
 
-test('git at work in a hidden submodule, whose git dir lives in its parent\'s .git: Source Control hears nothing of it', async () => {
+test('git at work in a hidden submodule, whose git dir lives in its parent\'s .git: Source Control hears nothing of it, the parent\'s status is not read', async () => {
   const root = folder();
   const lib = repoAt(join(folder(), 'lib'));
   const app = repoAt(join(root, 'app'));
   git(app, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', lib, 'vendor/lib');
   git(app, 'commit', '-q', '-m', 'lib');
   const sub = join(app, 'vendor', 'lib');
+  const { reads, settle } = gitReads(root);
   const { h } = open(root, ['app/vendor/lib']);
   const heard: string[] = [];
   h.onScm = (_p, e) => heard.push(e.common);
   await until(() => shown(h, root, app));
-  await sleep(500);
+  await settle();
   expect(h.info(root)?.repos).not.toContain(sub);
+  // A service fetching into its clone (FETCH_HEAD, remote refs in app/.git/modules), then committing there.
+  commit(lib, 'upstream', { 'c.ts': '3\n' });
+  git(sub, 'fetch', '-q', 'origin');
   commit(sub, 'local', { 'b.ts': '2\n' });
   await sleep(1200);
   expect(heard.filter((c) => c.includes(join('modules', 'vendor')))).toEqual([]);
+  expect(reads).toEqual([]);
 });
 
 test('a hidden repository inside a shown one keeps its attributions: the shown one\'s prune leaves its folder alone', async () => {
