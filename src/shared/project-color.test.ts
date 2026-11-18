@@ -71,8 +71,18 @@ test('a window wears its project\'s color; none with the tint off or without a p
   expect(projectColorOf(s, '/work/alpha')).toBe(6);
   expect(projectColorOf({ ...s, projectTint: false }, '/work/alpha')).toBeNull();
   expect(projectColorOf(s, null)).toBeNull();
-  // A project the app never colored (settings not saved yet) still gets its steady color.
-  expect(projectColorOf(s, '/work/other')).toBe(pickProjectColor({}, [], '/work/other'));
+});
+
+test('a project with no saved color wears its folder\'s steady color, whatever the other projects have', () => {
+  const tint = { projectTint: true };
+  for (const root of ['/work/p3', '/work/other', '/srv/app']) {
+    const steady = projectColorOf({ ...tint, projectColors: {} }, root);
+    expect(steady).toBeGreaterThanOrEqual(1);
+    expect(steady).toBeLessThanOrEqual(PROJECT_COLOR_COUNT);
+    for (const c of [1, 2, 3, 4, 5, 6, 7, 8]) expect(projectColorOf({ ...tint, projectColors: { '/work/alpha': c, '/work/beta': c } }, root), `${root} beside ${c}`).toBe(steady);
+    // The same color main picks for it when nothing else tells the colors apart.
+    expect(pickProjectColor({}, [], root)).toBe(steady);
+  }
 });
 
 test('settings: the tint is on by default and damaged colors are dropped', () => {

@@ -27,11 +27,22 @@ export function normalizeProjectColors(raw: unknown): ProjectColors {
   return Object.fromEntries(ok.slice(-PROJECT_COLORS_MAX));
 }
 
-/** A steady number from a folder's path (FNV-1a): where its search for a color starts. */
+/** A steady number from a folder's path (FNV-1a). */
 function hash(s: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
   return h >>> 0;
+}
+
+/** A folder's steady color, from its path alone: worn while it has none saved, and where main's pick starts. */
+function steadyColor(root: string): number {
+  return 1 + (hash(root) % PROJECT_COLOR_COUNT);
+}
+
+/** The color `root` has: its saved one, else its folder's steady color (never what the other projects have). */
+export function projectColorFor(colors: ProjectColors, root: string): number {
+  const mine = colors[root];
+  return isColor(mine) ? mine : steadyColor(root);
 }
 
 /**
@@ -48,7 +59,8 @@ export function pickProjectColor(colors: ProjectColors, open: readonly string[],
   };
   const inOpen = count(open);
   const inAll = count(Object.keys(colors));
-  const start = hash(root) % PROJECT_COLOR_COUNT;
+  // From the steady color on: with nothing to tell the colors apart, the pick is the steady color.
+  const start = steadyColor(root) - 1;
   let best = 0;
   for (let i = 0; i < PROJECT_COLOR_COUNT; i++) {
     const c = 1 + ((start + i) % PROJECT_COLOR_COUNT);
@@ -63,8 +75,8 @@ export function withProjectColor(colors: ProjectColors, root: string, color: num
   return Object.fromEntries([...rest, [root, color] as [string, number]].slice(-PROJECT_COLORS_MAX));
 }
 
-/** The color a window wears: its project's (a steady pick until one is saved); none with the tint off or no project. */
+/** The color a window wears: its project's (the folder's steady color until one is saved); none with the tint off or no project. */
 export function projectColorOf(s: { projectTint: boolean; projectColors: ProjectColors }, root: string | null | undefined): number | null {
   if (!s.projectTint || !root) return null;
-  return pickProjectColor(s.projectColors, [], root);
+  return projectColorFor(s.projectColors, root);
 }

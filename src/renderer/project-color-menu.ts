@@ -1,6 +1,6 @@
 // Project Color: the eight colors a project's window can wear, as menu items — under the project chip's right-click
 // menu, and on their own for the Project Color… command (menu bar, palette).
-import { pickProjectColor, PROJECT_COLOR_COUNT, withProjectColor } from '@shared/project-color';
+import { projectColorFor, PROJECT_COLOR_COUNT, withProjectColor } from '@shared/project-color';
 import { useApp } from './store';
 import { t } from './i18n/en';
 import { wsColorVar } from './workspace-view';
@@ -11,7 +11,7 @@ const st = () => useApp.getState();
 /** The color this window's project has (worn or not: the tint may be off); null without a project. */
 export function currentProjectColor(): number | null {
   const s = st();
-  return s.project ? pickProjectColor(s.settings.projectColors, [], s.project.root) : null;
+  return s.project ? projectColorFor(s.settings.projectColors, s.project.root) : null;
 }
 
 /** The color saved for a project the welcome window lists; null while the tint is off or it has none yet. */
