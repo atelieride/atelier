@@ -89,7 +89,7 @@ import { RedisHub } from './redis/hub';
 import { installRedisIpc } from './redis/ipc';
 import { createPicks } from './redis/picks';
 import { createHiddenRepos } from './hidden-repos';
-import { pickProjectColor, withProjectColor } from '@shared/project-color';
+import { pickProjectColor } from '@shared/project-color';
 import { brewRedisInstalled, clientOriginsOf, dockerIpsOf, dockerRedisSecret, projectFiles } from './redis/main-deps';
 import { DbHub } from './databases/hub';
 import { installDbIpc } from './databases/ipc';
@@ -621,7 +621,7 @@ if (!app.requestSingleInstanceLock()) {
     // A project never colored takes a color the open windows don't wear, kept from then on.
     if (root && settings.get().projectColors[root] === undefined) {
       const colors = settings.get().projectColors;
-      try { settings.set({ projectColors: withProjectColor(colors, root, pickProjectColor(colors, openProjectRoots(windowsView), root)) }); } catch { /* not saved: the window wears the folder's steady pick */ }
+      try { settings.set({ projectColors: { [root]: pickProjectColor(colors, openProjectRoots(windowsView), root) } }); } catch { /* not saved: the window wears the folder's steady pick */ }
     }
     const saved = root ? uiState.windows?.[root] : undefined;
     const place = windowPlace(replacing && !replacing.isDestroyed() ? replacing : null, saved, screen.getAllDisplays().map((d) => d.workArea));

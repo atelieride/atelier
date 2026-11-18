@@ -71,8 +71,17 @@ export function pickProjectColor(colors: ProjectColors, open: readonly string[],
 
 /** The colors with `root` wearing `color`, as the latest; the oldest go past the limit. */
 export function withProjectColor(colors: ProjectColors, root: string, color: number): ProjectColors {
-  const rest = Object.entries(colors).filter(([r]) => r !== root);
-  return Object.fromEntries([...rest, [root, color] as [string, number]].slice(-PROJECT_COLORS_MAX));
+  return mergeProjectColors(colors, { [root]: color });
+}
+
+/**
+ * `colors` with each valid root of `patch` wearing its color, moved to the end as the latest; the others kept in their
+ * order, the oldest going past the limit. A root `patch` leaves out keeps its color.
+ */
+export function mergeProjectColors(colors: ProjectColors, patch: unknown): ProjectColors {
+  const named = normalizeProjectColors(patch);
+  const rest = Object.entries(colors).filter(([r]) => !Object.hasOwn(named, r));
+  return Object.fromEntries([...rest, ...Object.entries(named)].slice(-PROJECT_COLORS_MAX));
 }
 
 /** The color a window wears: its project's (the folder's steady color until one is saved); none with the tint off or no project. */

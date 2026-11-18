@@ -197,6 +197,40 @@ test('applyPatch merges and normalizes', () => {
   expect(s.editorFontSize).toBe(DEFAULT_SETTINGS.editorFontSize);
 });
 
+test('applyPatch: project colors merge into the saved ones, each root it names moved to the end as the latest', () => {
+  const s = { ...DEFAULT_SETTINGS, projectColors: { '/a': 1, '/b': 2 } };
+  const added = applyPatch(s, { projectColors: { '/c': 3 } }).projectColors;
+  expect(added).toEqual({ '/a': 1, '/b': 2, '/c': 3 });
+  const recolored = applyPatch(s, { projectColors: { '/a': 4 } }).projectColors;
+  expect(Object.entries(recolored)).toEqual([['/b', 2], ['/a', 4]]);
+  // Nothing named, nothing changes.
+  expect(applyPatch(s, { projectColors: {} }).projectColors).toEqual(s.projectColors);
+});
+
+test("applyPatch: a window's older copy of the project colors can't drop one saved since", () => {
+  // The window read { /a, /b }; then another window opened /new and main saved its color. The first window recolors /a
+  // from its old copy, as a whole map and as the one root it changes: /new stays either way.
+  const saved = { ...DEFAULT_SETTINGS, projectColors: { '/a': 1, '/b': 2, '/new': 5 } };
+  const stale = { '/a': 1, '/b': 2 };
+  expect(applyPatch(saved, { projectColors: { ...stale, '/a': 4 } }).projectColors).toMatchObject({ '/new': 5, '/a': 4, '/b': 2 });
+  expect(Object.entries(applyPatch(saved, { projectColors: { '/a': 4 } }).projectColors)).toEqual([['/b', 2], ['/new', 5], ['/a', 4]]);
+  // An empty copy (a window whose settings had not arrived yet) loses nothing.
+  expect(applyPatch(saved, { projectColors: { '/c': 7 } }).projectColors).toEqual({ '/a': 1, '/b': 2, '/new': 5, '/c': 7 });
+});
+
+test('applyPatch: past 300 project colors, the ones named longest ago go; one named again stays', () => {
+  const full = Object.fromEntries(Array.from({ length: 300 }, (_, i) => [`/work/p${i}`, 1 + (i % 8)]));
+  let s = { ...DEFAULT_SETTINGS, projectColors: full };
+  // p0, the oldest, is named again (its window opened): it moves to the end, and the next new root drops p1 instead.
+  s = applyPatch(s, { projectColors: { '/work/p0': 1 } });
+  s = applyPatch(s, { projectColors: { '/work/new': 3 } });
+  const roots = Object.keys(s.projectColors);
+  expect(roots).toHaveLength(300);
+  expect(roots.slice(-2)).toEqual(['/work/p0', '/work/new']);
+  expect(s.projectColors['/work/p1']).toBeUndefined();
+  expect(roots[0]).toBe('/work/p2');
+});
+
 test('zoomFactor for the interface size', () => {
   expect(zoomFactor('small')).toBe(0.9);
   expect(zoomFactor('default')).toBe(1);

@@ -133,3 +133,15 @@ test('project colors from a window: absolute roots with a whole color from 1 to 
   expect(() => statSync(file)).toThrow();
   expect(s.set({ projectColors: { '/work/a': 3, '/work/b': 8 } })?.projectColors).toEqual({ '/work/a': 3, '/work/b': 8 });
 });
+
+test('project colors set one root at a time, by main and by windows, all reach the file', () => {
+  const file = join(tmp(), 'p.json');
+  const s = new SettingsStore(file);
+  s.set({ projectColors: { '/work/a': 1 } });
+  s.set({ projectColors: { '/work/b': 2 } });
+  s.set({ projectTint: true, projectColors: { '/work/a': 6 } });
+  expect(JSON.parse(readFileSync(file, 'utf8')).projectColors).toEqual({ '/work/b': 2, '/work/a': 6 });
+  expect(new SettingsStore(file).get().projectColors).toEqual({ '/work/b': 2, '/work/a': 6 });
+  // Reset still forgets them all.
+  expect(s.reset().projectColors).toEqual({});
+});

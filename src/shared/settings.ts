@@ -11,7 +11,7 @@ import { dockerPipeName } from './docker';
 import { pathStyle } from './platform';
 import type { AnswerStyle, CompanionModel } from './companion/types';
 import { THEME_IDS, type TerminalColors, type ThemeId } from './themes';
-import { normalizeProjectColors, type ProjectColors } from './project-color';
+import { mergeProjectColors, normalizeProjectColors, type ProjectColors } from './project-color';
 import { BUNDLED_FONT, isFontFamily } from './terminal-font';
 
 export type InterfaceSize = 'small' | 'default' | 'large' | 'larger';
@@ -63,7 +63,10 @@ export interface Settings {
   theme: ThemeId;
   /** Each project's window wears its color (chip, a faint header tint), to tell windows apart. */
   projectTint: boolean;
-  /** The color (1…8, theme.css `--ws-N`) of each project, by root. */
+  /**
+   * The color (1…8, theme.css `--ws-N`) of each project, by root, the most recently set last. A change names only the
+   * roots it colors and merges into these (applyPatch).
+   */
   projectColors: ProjectColors;
   terminalColors: TerminalColors;
   motion: MotionPref;
@@ -557,7 +560,10 @@ export function normalizeSettings(raw: unknown, ctx: SettingsContext = {}): Sett
 }
 
 export function applyPatch(s: Settings, patch: Partial<Settings>, ctx: SettingsContext = {}): Settings {
-  return normalizeSettings({ ...s, ...patch }, ctx);
+  // Every window and main write project colors, each from its own copy: a change merges into the saved colors rather
+  // than replacing them, so a copy older than the file can't drop a color saved since.
+  const merged = patch.projectColors === undefined ? patch : { ...patch, projectColors: mergeProjectColors(s.projectColors, patch.projectColors) };
+  return normalizeSettings({ ...s, ...merged }, ctx);
 }
 
 /**

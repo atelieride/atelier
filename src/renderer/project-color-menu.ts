@@ -1,6 +1,6 @@
 // Project Color: the eight colors a project's window can wear, as menu items — under the project chip's right-click
 // menu, and on their own for the Project Color… command (menu bar, palette).
-import { projectColorFor, PROJECT_COLOR_COUNT, withProjectColor } from '@shared/project-color';
+import { projectColorFor, PROJECT_COLOR_COUNT } from '@shared/project-color';
 import { useApp } from './store';
 import { t } from './i18n/en';
 import { wsColorVar } from './workspace-view';
@@ -29,7 +29,8 @@ export function projectColorItems(root: string | undefined = st().project?.root)
   const mine = !s.settings.projectTint ? null : root === s.project?.root ? currentProjectColor() : savedProjectColor(s.settings, root);
   return Array.from({ length: PROJECT_COLOR_COUNT }, (_, n) => ({
     id: `project-color:${n + 1}`, label: t.ws.colors[n]!, swatch: wsColorVar(n + 1), checked: mine === n + 1, radio: true as const,
-    run: () => void window.atelier.settings.set({ projectTint: true, projectColors: withProjectColor(st().settings.projectColors, root, n + 1) })
+    // Only this root: the change merges into the saved colors, which may hold more than this window's copy.
+    run: () => void window.atelier.settings.set({ projectTint: true, projectColors: { [root]: n + 1 } })
   }));
 }
 
