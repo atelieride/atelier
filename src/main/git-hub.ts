@@ -268,9 +268,11 @@ export class GitHub {
       p.repos = p.repos.filter((r) => !gone.has(r));
       for (const r of gone) { p.trees.delete(r); p.lists.delete(r); p.status.delete(r); p.merge.delete(r); this.merges.forget(r); this.forgetRepo(r); }
       p.index = undefined;
-      this.broadcast(p, true);
-      this.relist(p, { stale: new Set(), level: 'live' });
     }
+    // Every window hears of it, also when nothing left (a folder shown again that is gone): their hidden lists read
+    // again with their entries.
+    this.broadcast(p, true);
+    if (gone.size) this.relist(p, { stale: new Set(), level: 'live' });
     this.rediscover(p, 'live');
   }
 

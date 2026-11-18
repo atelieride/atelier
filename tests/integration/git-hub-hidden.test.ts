@@ -119,6 +119,16 @@ test('hiding a repository of an open project: it and the repositories inside it 
   expect(scans).toHaveBeenCalled();
 });
 
+test('shown again, a folder that is gone: every window still hears of it (another window\'s hidden list reads again)', async () => {
+  const { root, tools } = nestedClone();
+  const { h, w, hidden } = open(root, ['agent/data/gone']);
+  await until(() => shown(h, root, tools));
+  const before = w.sent.length;
+  hidden.splice(0);
+  h.hiddenChanged(root);
+  expect(w.sent.length).toBe(before + 1);
+});
+
 test('shown again: the repository and the ones inside it come back', async () => {
   const { root, clone, inner, tools } = nestedClone();
   const { h, hidden } = open(root, ['agent/data/repo']);
