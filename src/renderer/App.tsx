@@ -107,6 +107,7 @@ import { RedisSheets, UndoPill } from './redis/RedisSheets';
 import { installStorageSync } from './storage-sync';
 import { setActivePreviewView, toggleMarkdownOutline, togglePreview } from './markdown-commands';
 import { PopoutWindow } from './components/PopoutWindow';
+import { windowTitle } from './window-title';
 import { moveBack } from './popout-actions';
 import { dockTargetAt, paneSize } from './dock-target';
 import { putHandoff } from './editor/handoff';
@@ -269,6 +270,9 @@ export function App() {
   const shownIn = (k: TabKey, single: boolean) => (multi ? paneOf(k) >= 0 : single);
   const focusedIn = (k: TabKey, single: boolean) => (multi ? paneOf(k) === split.focus : single);
   useEffect(() => { noteSelection(selectedId); }, [selectedId]);
+  // The window is named after its selected session (a pop-out names itself after its tab).
+  const selectedTitle = useApp((s) => s.terminals.find((x) => x.id === s.selectedId)?.title ?? '');
+  useEffect(() => { if (!popoutMode) document.title = windowTitle(selectedTitle, project?.name ?? ''); }, [popoutMode, selectedTitle, project?.name]);
   // A Claude config dir seen in a session that no account has: offered once.
   useAccountOffers();
   // The keyboard follows the pane focus: after the views had their say (children's effects run first), whatever kept it
