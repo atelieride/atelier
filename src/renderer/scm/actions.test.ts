@@ -122,6 +122,21 @@ test('hiding a repository: gone from Source Control at once with the ones inside
   expect(useApp.getState().scmSearch?.hidden).toEqual([]);
 });
 
+test('hiding a repository with linked worktrees elsewhere in the project: they leave with it, and the toast says so', async () => {
+  g.window = { atelier: { scm: {
+    hide: async () => ['repo'], unhide: async () => [],
+    repos: async () => [], search: async () => ({ capped: false, searching: false, maxFolders: 20_000, hidden: [] }), fetchStates: async () => []
+  } } };
+  useApp.setState({ toast: null, scmSearch: null, scmRepo: '/p', scmRefs: {}, repos: [],
+    scmRepos: [entry('/p', ''), entry('/p/repo', 'repo', { hideable: true }), entry('/p/repo-fix', 'repo-fix', { common: '/p/repo/.git' }), entry('/p/tools', 'tools')] });
+  await hideRepo('/p/repo');
+  expect(useApp.getState().scmRepos?.map((e) => e.root)).toEqual(['/p', '/p/tools']);
+  expect(useApp.getState().toast).toMatchObject({ text: 'repo and its worktree hidden from Atelier' });
+  useApp.setState({ toast: null, scmRepos: [entry('/p', ''), entry('/p/repo', 'repo', { hideable: true }), entry('/p/a', 'a', { common: '/p/repo/.git' }), entry('/p/b', 'b', { common: '/p/repo/.git' })] });
+  await hideRepo('/p/repo');
+  expect(useApp.getState().toast).toMatchObject({ text: 'repo and its 2 worktrees hidden from Atelier' });
+});
+
 test('a hide main refuses says so, and nothing leaves Source Control', async () => {
   g.window = { atelier: { scm: { hide: async () => { throw new Error('no'); } } } };
   useApp.setState({ toast: null, scmRepos: [entry('/p', ''), entry('/p/a', 'a')], scmRefs: {}, repos: [] });

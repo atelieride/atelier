@@ -1,7 +1,7 @@
 // Source Control actions shared by the sidebar, the History tab, the palette and the menus. They open views and copy
 // text; the only one that reaches a repository is fetching, which main runs. Hiding one only changes what Atelier
 // looks at.
-import type { FetchOutcome, FetchReason, ScmFetchAnswer, ScmFetchState, ScmRef, ScmScope } from '@shared/scm';
+import type { FetchOutcome, FetchReason, ScmFetchAnswer, ScmFetchState, ScmRef, ScmRepoEntry, ScmScope } from '@shared/scm';
 import type { MenuItem } from '../menu-model';
 import { copyText } from '../clipboard';
 import { t } from '../i18n/en';
@@ -141,10 +141,14 @@ export async function hideRepo(root: string): Promise<void> {
   let hidden: string[];
   try { hidden = await window.atelier.scm.hide(root); } catch { st().showToast(t.scm.hide.failed); return; }
   const s = st();
-  if (s.scmRepos) s.setScmRepos(s.scmRepos.filter((x) => !isInside(root, x.root)));
+  // Its linked worktrees elsewhere in the project share its store: they leave with it (main drops them too), and the
+  // toast names them, as a session may be working in one.
+  const leaves = (x: ScmRepoEntry) => isInside(root, x.root) || x.common === e.common;
+  const worktrees = (s.scmRepos ?? []).filter((x) => !isInside(root, x.root) && x.common === e.common).length;
+  if (s.scmRepos) s.setScmRepos(s.scmRepos.filter((x) => !leaves(x)));
   setHidden(hidden);
   const rel = e.rel.split(/[\\/]/).join('/');
-  st().showToast(t.scm.hide.done(e.name), { label: t.comments.undo, run: () => void showRepo(rel) }, 'info');
+  st().showToast(t.scm.hide.done(e.name, worktrees), { label: t.comments.undo, run: () => void showRepo(rel) }, 'info');
 }
 
 /**

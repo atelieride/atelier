@@ -1053,7 +1053,7 @@ const strings = {
     // Hide This Repository: per project, managed in Settings › Source Control.
     hide: {
       menu: 'Hide This Repository',
-      done: (name: string) => `${name} hidden from Atelier`,
+      done: (name: string, worktrees = 0) => `${name}${worktrees === 0 ? '' : worktrees === 1 ? ' and its worktree' : ` and its ${worktrees} worktrees`} hidden from Atelier`,
       failed: "Couldn't hide this repository",
       showFailed: "Couldn't show this repository again",
       allTitle: 'Every repository here is hidden',
