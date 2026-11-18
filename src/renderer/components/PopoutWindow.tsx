@@ -29,6 +29,7 @@ import { Icon } from './Icon';
 import { DictationPill } from '../dictation/DictationPill';
 import { isStarting } from '../starting';
 import { isUntitled } from '../untitled';
+import { windowTitle } from '../window-title';
 import { dragBackEnd, moveBack, pastThreshold } from '../popout-actions';
 import { popoutBarMenu } from '../menus';
 import type { Point } from '@shared/popout';
@@ -66,8 +67,8 @@ export function PopoutWindow() {
   const originSheet = useApp((s) => s.originSheet);
   const refPicker = useApp((s) => s.refPicker !== null);
   const pastedAt = useApp((s) => s.pastedAt);
-  // So Mission Control, the Window menu and ⌘` read it well.
-  useEffect(() => { document.title = title ? `${title} — ${projectName}` : projectName; }, [title, projectName]);
+  // So Mission Control, the Window menu and ⌘` read it well: named as a project window is, after its tab.
+  useEffect(() => { document.title = windowTitle(title, projectName); }, [title, projectName]);
   const session = !!term && (!!term.session || starting);
   // Ask moves with its pane: docked or a sheet inside the pop-out too.
   const askDocked = useApp((s) => !!term && s.askDock[term.id] === 'dock');
