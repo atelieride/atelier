@@ -26,8 +26,9 @@ async function stop(app: ElectronApplication, home: string) {
   try { process.kill((JSON.parse(readFileSync(join(home, 'atelierd.json'), 'utf8')) as { pid: number }).pid, 'SIGTERM'); } catch { /* already stopped */ }
 }
 
+// The saved font: the default until one is chosen (the file exists from the first window on: it holds the project's color).
 const saved = (home: string) => {
-  try { return (JSON.parse(readFileSync(join(home, 'preferences.json'), 'utf8')) as { terminalFontFamily?: string }).terminalFontFamily; } catch { return undefined; }
+  try { return (JSON.parse(readFileSync(join(home, 'preferences.json'), 'utf8')) as { terminalFontFamily?: string }).terminalFontFamily ?? 'JetBrains Mono'; } catch { return 'JetBrains Mono'; }
 };
 const command = (app: ElectronApplication, c: string) => app.evaluate(({ BrowserWindow }, c) => BrowserWindow.getAllWindows()[0]!.webContents.send('ev:command', c), c);
 const termFont = (win: Page) => win.locator('.terminal-slot:visible .xterm-rows').evaluate((el) => getComputedStyle(el).fontFamily);
@@ -61,7 +62,7 @@ test('Settings › Terminal › Font: the list previews on the terminal and in t
     await expect.poll(() => previewFont(win)).toMatch(/^"?Menlo"?,/);
     await expect(win.locator('.term-preview .tp-tag')).toHaveText('Menlo · 13 px');
     await look(win, `${SHOTS}/settings-picker.png`);
-    expect(saved(home)).toBeUndefined();
+    expect(saved(home)).toBe('JetBrains Mono');
 
     // Esc: back to the font in use; the Settings sheet stays open, the button has the focus again.
     await win.keyboard.press('Escape');
@@ -109,7 +110,7 @@ test('Change Terminal Font…: from the palette; the arrows preview on the termi
     await win.keyboard.press('Escape');
     await expect(sheet).toHaveCount(0);
     await expect.poll(() => termFont(win)).toMatch(/^"?JetBrains Mono"?,/);
-    expect(saved(home)).toBeUndefined();
+    expect(saved(home)).toBe('JetBrains Mono');
 
     // Closed another way (View › Change Theme… takes its place): the font in use comes back too.
     await command(app, 'change-terminal-font');

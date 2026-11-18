@@ -358,7 +358,7 @@ test('website screenshots', async () => {
   // The world's two Claude accounts, Personal and Work. Ask's settings spelled out
   // (Settings › Ask): the shot presses Catch me up itself, whatever the default.
   const ask = { askModel: 'sonnet', askAccount: 'session', askCatchUpOnOpen: false, askAnswers: 'short', askKnown: '' };
-  writeFileSync(join(home, 'preferences.json'), JSON.stringify({ dictationEnabled: true, showServices: true, automationsEnabled: true, claudeAccounts: claudeAccountsAt(fakeHome), ...ask }));
+  writeFileSync(join(home, 'preferences.json'), JSON.stringify({ projectTint: false, dictationEnabled: true, showServices: true, automationsEnabled: true, claudeAccounts: claudeAccountsAt(fakeHome), ...ask }));
   // Claude Code's temp and projects roots (e2eEnv's, in the temporary home), where the demo Claude writes its
   // background work's output and transcripts for the Background tab.
   mkdirSync(env.ATELIER_TEST_CLAUDE_TMP!, { recursive: true });

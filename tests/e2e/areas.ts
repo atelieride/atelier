@@ -172,6 +172,7 @@ export const SPECS: Record<string, Area[]> = {
   'video.spec.ts': ['files', 'editor'],
   'wheel.spec.ts': ['terminal'],
   'themes.spec.ts': ['settings', 'workspace', 'terminal'],
+  'project-color.spec.ts': ['settings', 'workspace'],
   'terminal-font.spec.ts': ['settings', 'terminal'],
   'window.spec.ts': ['workspace'],
   'word-wrap.spec.ts': ['editor', 'settings'],
@@ -420,6 +421,7 @@ export const SOURCES: Record<string, Area[]> = {
   'src/renderer/components/FolderSheet.tsx': ['sessions', 'files'],
   'src/renderer/components/Footer.tsx': ['workspace', 'updates', 'dictation', 'databases'],
   'src/renderer/components/Header.tsx': ['workspace'],
+  'src/renderer/project-color-menu.ts': ['settings', 'workspace'],
   'src/renderer/components/MenuBar.tsx': ['workspace'],
   'src/renderer/windows-menu.ts': ['workspace'],
   'src/renderer/features.ts': ['workspace'],
@@ -549,6 +551,7 @@ export const SOURCES: Record<string, Area[]> = {
   // Themes: the tokens resolved for xterm, main's window colors, the theme list and setting.
   'src/shared/theme-resolve.ts': ['terminal', 'editor', 'workspace'],
   'src/shared/themes.ts': ['settings', 'terminal', 'workspace'],
+  'src/shared/project-color.ts': ['settings', 'workspace'],
   'src/shared/themes-docsy.ts': ['settings', 'terminal', 'workspace'],
   'src/main/theme-chrome.ts': ['workspace'],
   // The app icon of Docsy's themes: themes.spec.ts reads its test log.

@@ -10,6 +10,7 @@ import { NotificationCenter } from './NotificationCenter';
 import { WindowMenu } from './MenuBar';
 import { currentPlatform } from '@shared/platform';
 import { kbd } from '../kbd';
+import { projectChipMenu } from '../project-color-menu';
 
 type StoreMenu = ReturnType<typeof useApp.getState>['menu'];
 
@@ -35,8 +36,8 @@ export function Header({ onNewMenu }: { onNewMenu: (anchor: HTMLElement) => Prom
       {/* macOS: room for the traffic lights; Windows: the window menu (the caption buttons sit over the other end). */}
       {win ? <WindowMenu /> : <div className="traffic-space" />}
       {project ? (
-        <div className="project-chip">
-          {/* Click: the project folder in the Finder. */}
+        <div className="project-chip" onContextMenu={(e) => useApp.getState().openMenu(e, projectChipMenu())}>
+          {/* Click: the project folder in the Finder. Right-click: Project Color ›. */}
           <button type="button" className="project-reveal" aria-label={t.openInFinder} data-tip={`${t.openInFinder} · ${project.root}`}
             onClick={() => void window.atelier.revealProject()}>
             <Logo size={18} />

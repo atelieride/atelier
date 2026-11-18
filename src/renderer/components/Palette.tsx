@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { newAutomation, setPaused } from '../automations/actions';
 import { themeOf } from '@shared/themes';
+import { currentProjectColor, openProjectColorMenu } from '../project-color-menu';
 import { fuzzyFilter, textFilter } from '@shared/fuzzy';
 import { t } from '../i18n/en';
 import { currentPlatform } from '@shared/platform';
@@ -507,6 +508,7 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
       c('sidebar', t.cmd.toggleSidebar, kbd('⌘B'), 'sidebar', st.toggleSidebar),
       c('changes-expand', t.cmd.toggleChangesFolders, st.changesExpanded ? t.paletteOn : '', 'expand', () => { st.toggleChangesExpanded(); if (!useApp.getState().showChanges) st.toggleChanges(); }),
       c('change-theme', t.cmd.changeTheme, themeOf(st.settings.theme).name, 'appearance', () => useApp.getState().setThemeSheet(true)),
+      ...(st.project ? [c('project-color', t.cmd.projectColor, st.settings.projectTint ? t.ws.colors[(currentProjectColor() ?? 1) - 1]! : '', 'appearance', () => setTimeout(openProjectColorMenu, 0))] : []),
       c('change-terminal-font', t.cmd.changeTerminalFont, st.settings.terminalFontFamily, 'terminal', () => useApp.getState().setFontSheet(true)),
       c('swap-side-panels', t.cmd.swapSidePanels, st.settings.swapSidePanels ? t.paletteOn : '', 'split', () => void window.atelier.settings.set({ swapSidePanels: !useApp.getState().settings.swapSidePanels })),
       // Session avatars.

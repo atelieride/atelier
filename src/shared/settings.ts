@@ -11,6 +11,7 @@ import { dockerPipeName } from './docker';
 import { pathStyle } from './platform';
 import type { AnswerStyle, CompanionModel } from './companion/types';
 import { THEME_IDS, type TerminalColors, type ThemeId } from './themes';
+import { normalizeProjectColors, type ProjectColors } from './project-color';
 import { BUNDLED_FONT, isFontFamily } from './terminal-font';
 
 export type InterfaceSize = 'small' | 'default' | 'large' | 'larger';
@@ -60,6 +61,10 @@ export const AUTO_FETCH_INTERVAL_MS: Partial<Record<AutoFetch, number>> = { '15m
 export interface Settings {
   interfaceSize: InterfaceSize;
   theme: ThemeId;
+  /** Each project's window wears its color (chip, a faint header tint), to tell windows apart. */
+  projectTint: boolean;
+  /** The color (1…8, theme.css `--ws-N`) of each project, by root. */
+  projectColors: ProjectColors;
   terminalColors: TerminalColors;
   motion: MotionPref;
   /** The terminal's font family: JetBrains Mono or an installed monospaced font. */
@@ -244,6 +249,8 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   interfaceSize: 'default',
   theme: 'aurora',
+  projectTint: true,
+  projectColors: {},
   terminalColors: 'theme',
   motion: 'system',
   terminalFontFamily: BUNDLED_FONT,
@@ -369,7 +376,9 @@ export type Field =
   /** A font family name (isFontFamily). */
   | { kind: 'fontFamily' }
   /** 'session' or a Claude account id. */
-  | { kind: 'accountChoice' };
+  | { kind: 'accountChoice' }
+  /** Each project's color by root (normalizeProjectColors' form). */
+  | { kind: 'projectColors' };
 
 /** The most characters "What I already know" (Settings › Ask) keeps. */
 export const ASK_KNOWN_MAX = 2000;
@@ -394,6 +403,8 @@ export function isSettingPath(v: unknown): v is string {
 export const SETTINGS_FIELDS: { [K in keyof Settings]: Field } = {
   interfaceSize: { kind: 'enum', values: ['small', 'default', 'large', 'larger'] },
   theme: { kind: 'enum', values: THEME_IDS },
+  projectTint: { kind: 'bool' },
+  projectColors: { kind: 'projectColors' },
   terminalColors: { kind: 'enum', values: ['theme', 'dark'] },
   motion: { kind: 'enum', values: ['system', 'reduced'] },
   terminalFontFamily: { kind: 'fontFamily' },
@@ -510,6 +521,7 @@ function valid(f: Field, v: unknown, ctx: SettingsContext): unknown {
     case 'triggers': return normalizeTriggers(v);
     case 'claudeAccounts': return normalizeAccounts(v);
     case 'claudeFlags': return normalizeFlags(v);
+    case 'projectColors': return normalizeProjectColors(v);
     case 'paths': return Array.isArray(v) ? [...new Set(v.filter(isSettingPath))].slice(0, f.max) : undefined;
     case 'path': return v === '' || isSettingPath(v) ? v : undefined;
     case 'dockerEngine': return v === '' || isDockerEngineSetting(v) ? v : undefined;

@@ -4,9 +4,14 @@ import { Logo } from './Logo';
 import { shortPath } from '../usage';
 import { t } from '../i18n/en';
 import { welcomeNext } from '../welcome-nav';
+import { useApp } from '../store';
+import { recentProjectMenu, savedProjectColor } from '../project-color-menu';
+import { wsColorVar } from '../workspace-view';
 
 export function Welcome() {
   const [recent, setRecent] = useState<string[]>([]);
+  // Each recent project in its color (its icon and name); right-click: Project Color ›.
+  const settings = useApp((s) => s.settings);
   useEffect(() => { void window.atelier.recentProjects().then(setRecent).catch(() => {}); }, []);
   // ↑/↓, Home, End walk "Open Folder" and the recent folders; Enter opens the focused one (a button).
   const card = useRef<HTMLDivElement>(null);
@@ -55,10 +60,12 @@ export function Welcome() {
         {recent.length > 0 && (
           <div className="welcome-recent">
             <span className="section-label">{t.recent}</span>
-            {recent.map((p, i) => (
+            {recent.map((p, i) => { const color = savedProjectColor(settings, p); return (
               <div key={p} className="recent-item enter" style={{ animationDelay: `${i * 30}ms` }}>
                 <button
                   type="button" className="recent-row" data-welcome-item aria-keyshortcuts="Delete Backspace"
+                  {...(color ? { 'data-project-color': color, style: { '--proj': wsColorVar(color) } as React.CSSProperties } : {})}
+                  onContextMenu={(e) => useApp.getState().openMenu(e, recentProjectMenu(p))}
                   onClick={() => void window.atelier.openRecent(p)}
                   onKeyDown={(e) => {
                     if (e.altKey || e.ctrlKey || e.shiftKey || (e.key !== 'Delete' && e.key !== 'Backspace')) return;
@@ -81,7 +88,7 @@ export function Welcome() {
                   <Icon name="x" size={12} />
                 </button>
               </div>
-            ))}
+            ); })}
           </div>
         )}
       </div>
