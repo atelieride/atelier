@@ -39,10 +39,18 @@
 .ab-head .ab-count:hover { background: var(--bg-3); box-shadow: inset 0 0 0 1px var(--edge-violet); }
 .ab-count[aria-disabled="true"] { opacity: .5; cursor: default; }
 .ab-head .ab-count[aria-disabled="true"]:hover { background: none; box-shadow: inset 0 0 0 1px var(--line-strong); }
-/* The keyboard's ring wins over every outline above, the pointer on the header or on the count included. */
-.ab-head .ab-count:focus-visible, .ab-head .ab-count[aria-disabled="true"]:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .ab-counts:has(.ab-count) { gap: 12px; }
 .ab-marks > .git-spin { color: var(--violet); }
+/* A folded block's op running: its counts keep their box (and a count its focus), their text cleared and the spinner
+   drawn over them, so the marks keep their width. Transparent, not hidden: a hidden count would drop the focus. */
+.ab-counts.is-busy { position: relative; }
+.ab-counts.is-busy > :not(.git-spin) { color: transparent; }
+.ab-counts.is-busy > .ab-count { opacity: 1; cursor: progress; }
+.ab-head .ab-counts.is-busy > .ab-count { background: none; box-shadow: none; }
+.ab-counts.is-busy > .git-spin { position: absolute; inset: 0; margin: auto; color: var(--violet); pointer-events: none; }
+/* The keyboard's ring wins over every outline above, the pointer on the header or on the count included. */
+.ab-head .ab-count:focus-visible, .ab-head .ab-count[aria-disabled="true"]:focus-visible,
+.ab-head .ab-counts.is-busy > .ab-count:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 /* ⋯, always there in its own room: quiet until the pointer is on the header. */
 .ab-menu { flex-shrink: 0; }
 .ab-head:hover .ab-menu { color: var(--text-3); }

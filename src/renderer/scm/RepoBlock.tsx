@@ -80,6 +80,8 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
   const hasRemote = facts ? facts.remotes.length > 0 : !!status.upstream;
   const can = syncAbility(status, hasRemote);
   const view = blockView({ status, running: op?.op ?? null, hasRemote, commit });
+  // What a folded block's header says while an op runs on it (it has no button to say so).
+  const busy = op && folded ? runningLabel(op.op) : null;
 
   // ✦'s message lands in the draft (subject and body); the field shows its first line.
   useEffect(() => { if (w?.apply != null) { setText(w.apply); messageApplied(); } }, [w?.apply]);
@@ -135,9 +137,10 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
           {view.changes > 0 && <span className="sw-chip is-changes" aria-label={a.changed(view.changes)}>{view.changes}</span>}
           {/* Once: here unless the button (shown) pulls, pushes or syncs and carries them. */}
           {(view.countsOn === 'head' || folded || !writes) && (
-            // A folded block has no button to say an op runs: its counts give way to the spinner.
-            op && folded ? <i className="git-spin" role="img" aria-label={runningLabel(op.op)} data-tip={runningLabel(op.op)} />
-              : <Counts view={view} act={writes ? { pull: () => void startPull(root), push: () => void push(root), off: { pull: op ? runningLabel(op.op) : can.pull, push: op ? runningLabel(op.op) : can.push } } : undefined} />
+            // A folded block has no button to say an op runs: its counts say it, a spinner over them (they keep their
+            // box and the focus); without counts, the spinner alone.
+            busy && !(view.behind || view.ahead) ? <i className="git-spin" role="img" aria-label={busy} data-tip={busy} />
+              : <Counts view={view} busy={busy} act={writes ? { pull: () => void startPull(root), push: () => void push(root), off: { pull: op ? runningLabel(op.op) : can.pull, push: op ? runningLabel(op.op) : can.push } } : undefined} />
           )}
           {view.clean && <span className="sw-chip is-clean" role="img" aria-label={a.inSync} data-tip={a.inSync}><Icon name="check" size={11} stroke={2.6} /></span>}
         </span>
@@ -178,25 +181,27 @@ type CountActs = { pull: () => void; push: () => void; off: { pull: string | nul
 
 /**
  * ↓ to pull, ↑ to push (nonzero parts only), in the Sync button's colors. With `act` each count is the button that
- * does it, off (with why) while it can't run; without, they only say.
+ * does it, off (with why) while it can't run; without, they only say. `busy` (an op running, its words): the counts
+ * say that instead and a spinner covers them, in the same box, so nothing moves and a focused count keeps the focus.
  */
-function Counts({ view, act }: { view: BlockView; act?: CountActs }) {
+function Counts({ view, act, busy = null }: { view: BlockView; act?: CountActs; busy?: string | null }) {
   const a = t.scm.all;
   if (view.behind === 0 && view.ahead === 0) return null;
   const part = (kind: 'pull' | 'push', n: number, text: string) => {
     const cls = kind === 'pull' ? 'git-sync-behind' : 'git-sync-ahead';
-    if (!act) return <span className={cls} aria-label={kind === 'pull' ? a.toPull(n) : a.toPush(n)}>{text}</span>;
-    const label = kind === 'pull' ? a.pullCount(n) : a.pushCount(n);
-    const off = act.off[kind];
+    if (!act) return <span className={cls} aria-label={busy ?? (kind === 'pull' ? a.toPull(n) : a.toPush(n))}>{text}</span>;
+    const label = busy ?? (kind === 'pull' ? a.pullCount(n) : a.pushCount(n));
+    const off = busy ?? act.off[kind];
     return (
-      <button type="button" className={`ab-count ${cls}`} aria-label={label} data-tip={off ? `${label} · ${off}` : label} aria-disabled={!!off || undefined}
-        onClick={() => { if (!off) act[kind](); }}>{text}</button>
+      <button type="button" className={`ab-count ${cls}`} aria-label={label} data-tip={off && off !== label ? `${label} · ${off}` : label}
+        aria-disabled={!!off || undefined} aria-busy={busy ? true : undefined} onClick={() => { if (!off) act[kind](); }}>{text}</button>
     );
   };
   return (
-    <span className="ab-counts mono">
+    <span className={`ab-counts mono ${busy ? 'is-busy' : ''}`}>
       {view.behind > 0 && part('pull', view.behind, `↓${view.behind}`)}
       {view.ahead > 0 && part('push', view.ahead, `↑${view.ahead}`)}
+      {busy && <i className="git-spin" aria-hidden="true" />}
     </span>
   );
 }
