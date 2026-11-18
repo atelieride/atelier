@@ -141,8 +141,9 @@ test('Pull on one block, Sync on another right after: both run on their own, no 
     await expect(block(s.win, 'web').locator('.ab-counts')).toHaveText('↓1', { timeout: 15000 });
     const before = await boxes(s.win);
 
-    await block(s.win, 'billing').locator('.ab-head').hover();
-    await block(s.win, 'billing').getByRole('button', { name: 'Pull', exact: true }).click();
+    // billing through its header's menu, web through its button.
+    await block(s.win, 'billing').getByRole('button', { name: 'Actions for billing' }).click();
+    await s.win.getByRole('menuitem', { name: 'Pull', exact: true }).click();
     await block(s.win, 'web').locator('.ab-main').click();
     await expect(block(s.win, 'billing').locator('.ab-btn')).toHaveClass(/is-running/);
     await expect(block(s.win, 'web').locator('.ab-btn')).toHaveClass(/is-running/);
@@ -304,31 +305,57 @@ test('every sidebar width, 200 to 480 px: nothing spills or wraps, and the quest
   }
 });
 
-test('a long branch shows whole while the actions are hidden; under the pointer it gives way to them, and the name stays put', async () => {
+test('a header never changes under the pointer: the marks stay, a folded block\'s count pulls, ⋯ is always there', async () => {
   const p = project();
   git(join(p.root, 'docs'), 'checkout', '-q', '-b', 'feature/the-whole-branch-name');
-  const s = await launch(p.root);
+  // Git as slow as on a busy PC: the pull lasts long enough for its running state to be seen.
+  const s = await launch(p.root, e2eEnv({ ATELIER_TEST_GIT_WRITE_DELAY_MS: '1200' }));
   try {
     await s.win.getByRole('radio', { name: 'All Repositories' }).click();
     await s.win.evaluate(() => (document.querySelector('.body') as HTMLElement).style.setProperty('--sidebar-w', '360px'));
+    await s.win.getByRole('button', { name: 'Fetch All Repositories' }).click();
     const docs = block(s.win, 'docs');
+    const billing = block(s.win, 'billing');
     const branch = docs.locator('.ab-branch-name');
     await expect(branch).toHaveText('feature/the-whole-branch-name', { timeout: 15000 });
-    // The pointer elsewhere: the marks take only their own room, the branch everything up to them.
+    // Folded, billing's header carries what there is to pull: the count is the button.
+    await billing.getByRole('button', { name: 'Fold billing' }).click();
+    const pull = billing.locator('.ab-head').getByRole('button', { name: 'Pull 1 commit' });
+    await expect(pull).toHaveText('↓1', { timeout: 15000 });
+    const parts = (b: typeof docs) => Promise.all(['.ab-name', '.ab-branch', '.ab-marks'].map((sel) => b.locator(sel).boundingBox()));
+
+    // The pointer elsewhere: the branch shows whole, ⋯ is already there.
     await s.win.locator('.scm-sidebar .sidebar-head .section-label').hover();
-    await expect(docs.locator('.ab-acts')).toHaveCSS('opacity', '0');
     expect(await branch.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
-    const name = await docs.locator('.ab-name').boundingBox();
+    for (const b of [docs, billing]) await expect(b.locator('.ab-head').getByRole('button', { name: /^Actions for/ })).toBeVisible();
+    const [docsAt, billingAt] = [await parts(docs), await parts(billing)];
     await look(s.win.locator('.scm-sidebar'), `${SHOTS}/scm-all-branch.png`, { settle: 200 });
 
-    // Under the pointer: the actions in the marks' place, the branch cut short of them, the name where it was.
+    // Under the pointer: the marks still show, nothing moved, and no action appears that the marks don't already say.
     await docs.locator('.ab-head').hover();
-    await expect(docs.locator('.ab-acts')).toHaveCSS('opacity', '1');
-    const [b, acts] = await Promise.all([docs.locator('.ab-branch').boundingBox(), docs.locator('.ab-acts').boundingBox()]);
-    expect(b!.x + b!.width).toBeLessThanOrEqual(acts!.x);
-    expect(await docs.locator('.ab-name').boundingBox()).toEqual(name);
+    await expect(docs.locator('.ab-marks')).toBeVisible();
+    expect(await parts(docs)).toEqual(docsAt);
+    await expect(docs.locator('.ab-head').getByRole('button', { name: /^(Fetch|Pull|Push)/ })).toHaveCount(0);
+    await billing.locator('.ab-head').hover();
+    await expect(billing.locator('.ab-marks')).toBeVisible();
+    expect(await parts(billing)).toEqual(billingAt);
     await look(s.win.locator('.scm-sidebar'), `${SHOTS}/scm-all-branch-hover.png`, { settle: 200 });
+
+    // ⋯ holds Fetch, Pull and Push.
+    await docs.getByRole('button', { name: 'Actions for docs' }).click();
+    for (const name of ['Fetch', 'Pull', 'Push']) await expect(s.win.getByRole('menuitem', { name, exact: true })).toBeVisible();
+    await s.win.keyboard.press('Escape');
+
+    // The count pulls: in sync after it, the header's parts where they were.
+    await pull.click();
+    // Folded, there is no button to say it runs: the marks do.
+    await expect(billing.locator('.ab-marks').getByRole('img', { name: 'Pulling…' })).toBeVisible();
+    await expect(billing.locator('.sw-chip.is-clean')).toBeVisible({ timeout: 20000 });
+    expect(git(join(p.root, 'billing'), 'log', '-1', '--format=%s').trim()).toBe('feat: pushed meanwhile');
+    expect((await parts(billing))[0]).toEqual(billingAt[0]);
   } finally {
+    // A write still running would ask before quitting: let it end, so a failure above reports itself.
+    await expect(s.win.locator('.ab-marks .git-spin')).toHaveCount(0, { timeout: 20000 }).catch(() => {});
     await s.stop();
   }
 });
