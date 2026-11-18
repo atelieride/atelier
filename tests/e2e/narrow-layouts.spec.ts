@@ -167,8 +167,9 @@ test('after its close question the row still watches its name: ports arriving la
   await expect(win.locator('.confirm-pop.is-side')).toBeVisible();
   await win.keyboard.press('Escape');
   await expect(win.locator('.confirm-pop.is-side')).toHaveCount(0);
-  // The keyboard's focus comes back to the row a frame later (it keeps its form meanwhile); then the user moves on.
-  await expect(r.locator('.row-main')).toBeFocused();
+  // The keyboard's focus comes back to the × that asked a frame later (the row keeps its form meanwhile); then the user
+  // moves on.
+  await expect(r.locator('.row-close')).toBeFocused();
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await away();
   // Only its port chips render (the row itself doesn't): its name must still get its room.

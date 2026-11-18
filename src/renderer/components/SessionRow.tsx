@@ -175,7 +175,8 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
   const rowClick = useRowClick(term.id, onSelect, () => setEditing(true));
   const kept = pinned && !avatars;
   const pinBtn = !shutting && <PinButton id={term.id} pinned={pinned} session kept={kept} />;
-  const closeBtn = !shutting && <button type="button" className="row-close" aria-label={t.closeSession} data-tip={t.closeSession}
+  // It may ask in a bubble beside the row (a dialog), and says when that bubble is open.
+  const closeBtn = !shutting && <button type="button" className="row-close" aria-label={t.closeSession} data-tip={t.closeSession} aria-haspopup="dialog" aria-expanded={closing}
     onClick={(e) => { e.stopPropagation(); closeFromRow(term.id, rowEl.current); }}><Icon name="x" size={13} stroke={1.8} /></button>;
   if (restartAsked && !closing) {
     return (
