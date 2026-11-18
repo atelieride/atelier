@@ -1016,6 +1016,9 @@ const strings = {
       changed: (n: number) => `${n} ${n === 1 ? 'change' : 'changes'}`,
       toPull: (n: number) => `${n} to pull`,
       toPush: (n: number) => `${n} to push`,
+      // A header's count is the button that does it.
+      pullCount: (n: number) => `Pull ${n} ${n === 1 ? 'commit' : 'commits'}`,
+      pushCount: (n: number) => `Push ${n} ${n === 1 ? 'commit' : 'commits'}`,
       unreadable: (error: string) => `Git couldn't read it: ${error}`,
       worktreeTip: 'Linked worktree',
       cancel: 'Cancel',

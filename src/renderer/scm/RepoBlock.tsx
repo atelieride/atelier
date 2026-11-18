@@ -1,7 +1,8 @@
 // One working tree in Source Control's All Repositories view: the
-// header (fold, name, branch, marks; Fetch, Pull, Push and More under the pointer, in the marks' own room), the message
-// field (the draft's first line; a body is kept) and one button. Its parts never change by themselves: a state only
-// changes what they say, so nothing moves while ops run.
+// header (fold, name, branch, marks, ⋯), the message field (the draft's first line; a body is kept) and one button. The
+// header's marks are its actions: ↓ pulls and ↑ pushes where there is something to pull or push, and ⋯ holds the rest
+// (Fetch too). Its parts never change by themselves, under the pointer either: a state only changes what they say, so
+// nothing moves while ops run.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { isMod } from '@shared/keys';
 import { Icon } from '../components/Icon';
@@ -128,22 +129,21 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
           {(branch || status.oid) && (
             <span className="ab-branch mono"><Icon name="git" size={11} stroke={1.8} /><span className="ab-branch-name">{branch ?? status.oid!.slice(0, 7)}</span></span>
           )}
-          <span className="ab-marks">
-            {view.error && <i className="ab-error" role="img" aria-label={a.unreadable(view.error)} data-tip={a.unreadable(view.error)} />}
-            {view.changes > 0 && <span className="sw-chip is-changes" aria-label={a.changed(view.changes)}>{view.changes}</span>}
-            {/* Once: here unless the button (shown) pulls, pushes or syncs and carries them. */}
-            {(view.countsOn === 'head' || folded || !writes) && <Counts view={view} />}
-            {view.clean && <span className="sw-chip is-clean" role="img" aria-label={a.inSync} data-tip={a.inSync}><Icon name="check" size={11} stroke={2.6} /></span>}
-          </span>
         </span>
-        <span className="ab-acts" role="group" aria-label={a.actions(row.name)}>
-          <HeadAction label={t.git.sync.fetch} icon="fetch" off={can.fetch} onClick={() => void fetchRepo(root, 'manual')} />
-          {writes && <HeadAction label={t.git.sync.pull} icon="arrowDown" off={op ? runningLabel(op.op) : can.pull} onClick={() => void startPull(root)} />}
-          {writes && <HeadAction label={t.git.sync.push} icon="arrowUp" off={op ? runningLabel(op.op) : can.push} onClick={() => void push(root)} />}
-          {/* ⋯ holds Fetch, Pull and Push too: a narrow sidebar shows only it. */}
-          <button type="button" className="icon-btn" aria-label={a.actions(row.name)} data-tip={a.actions(row.name)} aria-haspopup="menu"
-            onClick={(e) => menuAt(e.currentTarget, [...syncItems(root, can, writes ? ['fetch', 'pull', 'push'] : ['fetch']), 'sep', ...repoMenu(root)])}><Icon name="more" size={13} /></button>
+        <span className="ab-marks">
+          {view.error && <i className="ab-error" role="img" aria-label={a.unreadable(view.error)} data-tip={a.unreadable(view.error)} />}
+          {view.changes > 0 && <span className="sw-chip is-changes" aria-label={a.changed(view.changes)}>{view.changes}</span>}
+          {/* Once: here unless the button (shown) pulls, pushes or syncs and carries them. */}
+          {(view.countsOn === 'head' || folded || !writes) && (
+            // A folded block has no button to say an op runs: its counts give way to the spinner.
+            op && folded ? <i className="git-spin" role="img" aria-label={runningLabel(op.op)} data-tip={runningLabel(op.op)} />
+              : <Counts view={view} act={writes ? { pull: () => void startPull(root), push: () => void push(root), off: { pull: op ? runningLabel(op.op) : can.pull, push: op ? runningLabel(op.op) : can.push } } : undefined} />
+          )}
+          {view.clean && <span className="sw-chip is-clean" role="img" aria-label={a.inSync} data-tip={a.inSync}><Icon name="check" size={11} stroke={2.6} /></span>}
         </span>
+        {/* Always there, in its own room: Fetch, Pull and Push, then the repository's menu. */}
+        <button type="button" className="icon-btn ab-menu" aria-label={a.actions(row.name)} data-tip={a.actions(row.name)} aria-haspopup="menu"
+          onClick={(e) => menuAt(e.currentTarget, [...syncItems(root, can, writes ? ['fetch', 'pull', 'push'] : ['fetch']), 'sep', ...repoMenu(root)])}><Icon name="more" size={13} /></button>
       </div>
       {!folded && writes && (
         <div className="ab-body">
@@ -174,25 +174,30 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
   );
 }
 
-/** ↓ to pull, ↑ to push (nonzero parts only), in the Sync button's colors. */
-function Counts({ view }: { view: BlockView }) {
+type CountActs = { pull: () => void; push: () => void; off: { pull: string | null; push: string | null } };
+
+/**
+ * ↓ to pull, ↑ to push (nonzero parts only), in the Sync button's colors. With `act` each count is the button that
+ * does it, off (with why) while it can't run; without, they only say.
+ */
+function Counts({ view, act }: { view: BlockView; act?: CountActs }) {
   const a = t.scm.all;
   if (view.behind === 0 && view.ahead === 0) return null;
+  const part = (kind: 'pull' | 'push', n: number, text: string) => {
+    const cls = kind === 'pull' ? 'git-sync-behind' : 'git-sync-ahead';
+    if (!act) return <span className={cls} aria-label={kind === 'pull' ? a.toPull(n) : a.toPush(n)}>{text}</span>;
+    const label = kind === 'pull' ? a.pullCount(n) : a.pushCount(n);
+    const off = act.off[kind];
+    return (
+      <button type="button" className={`ab-count ${cls}`} aria-label={label} data-tip={off ? `${label} · ${off}` : label} aria-disabled={!!off || undefined}
+        onClick={() => { if (!off) act[kind](); }}>{text}</button>
+    );
+  };
   return (
     <span className="ab-counts mono">
-      {view.behind > 0 && <span className="git-sync-behind" aria-label={a.toPull(view.behind)}>↓{view.behind}</span>}
-      {view.ahead > 0 && <span className="git-sync-ahead" aria-label={a.toPush(view.ahead)}>↑{view.ahead}</span>}
+      {view.behind > 0 && part('pull', view.behind, `↓${view.behind}`)}
+      {view.ahead > 0 && part('push', view.ahead, `↑${view.ahead}`)}
     </span>
-  );
-}
-
-/** A header action: off (with why) while it can't run. */
-function HeadAction({ label, icon, off, onClick }: { label: string; icon: 'fetch' | 'arrowDown' | 'arrowUp'; off: string | null; onClick: () => void }) {
-  return (
-    <button type="button" className="icon-btn ab-act-sync" aria-label={label} data-tip={off ? `${label} · ${off}` : label} aria-disabled={!!off || undefined}
-      onClick={() => { if (!off) onClick(); }}>
-      <Icon name={icon} size={13} />
-    </button>
   );
 }
 
