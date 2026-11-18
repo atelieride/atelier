@@ -98,9 +98,3 @@ export function selectAndFocus(from: HTMLElement, id: string) {
     targets.find((el) => el.offsetParent !== null)?.focus();
   });
 }
-
-/** Settings › Reduce motion, or the system's. */
-export function reducedMotion(): boolean {
-  if (document.documentElement.dataset.motion === 'reduced') return true;
-  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}

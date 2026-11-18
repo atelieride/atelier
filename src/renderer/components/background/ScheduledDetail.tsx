@@ -12,7 +12,8 @@ import { clockTime } from '../../work-view';
 import { t } from '../../i18n/en';
 import { Icon } from '../Icon';
 import { useLoopDetail } from './loop-detail-hook';
-import { reducedMotion, selectAndFocus } from './parts';
+import { selectAndFocus } from './parts';
+import { reducedMotion } from '../../motion';
 
 type Cron = NonNullable<TerminalInfo['work']>['crons'][number];
 

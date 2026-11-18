@@ -18,6 +18,12 @@ export const LASTING_MOTION: readonly { selector: string; reason: string }[] = [
   { selector: '.cxu-spin', reason: 'a Context usage analysis in progress' }
 ];
 
+/** Settings › Reduce motion, or the system's. */
+export function reducedMotion(): boolean {
+  if (document.documentElement.dataset.motion === 'reduced') return true;
+  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 /** A key that moves only when `count` rises: a cue keyed on it replays for each arrival, never for a departure. */
 export function nextRisingKey(prev: { count: number; key: number }, count: number): { count: number; key: number } {
   return { count, key: count > prev.count ? prev.key + 1 : prev.key };

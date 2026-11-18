@@ -273,8 +273,9 @@ button.foot-item:disabled { cursor: default; }
 .inbox-head .section-label { color: var(--text-3); font-size: 10px; }
 .inbox-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--tone); }
 .inbox-head.is-idle .inbox-dot { box-shadow: none; }
-.inbox-head:not(:first-child) { border-top: 1px solid var(--line-soft); margin-top: 6px; }
-.inbox-head:first-child { padding-top: 4px; }
+/* The list's first head has no rule above it; a row folding away above it (.row-leaving, gone in a moment) doesn't count. */
+.inbox-head:not(:nth-child(1 of :not(.row-leaving))) { border-top: 1px solid var(--line-soft); margin-top: 6px; }
+.inbox-head:nth-child(1 of :not(.row-leaving)) { padding-top: 4px; }
 .empty { color: var(--text-3); font-size: 12px; padding: 4px 14px; line-height: 1.5; margin: 0; }
 /* Workspaces: every workspace a group, its head quiet — chevron, glyph in its color, name — and,
    open, its rows indented under a guide. No tinted box: the selected row stays the one box. Every
@@ -614,9 +615,8 @@ button.foot-item:disabled { cursor: default; }
 .term-row.is-asking :is(.row-pin, .row-close) { margin-left: 0; }
 .term-row.is-asking .row-pin { margin-right: -8px; }
 :is(.session-row, .term-row).is-asking .row-close { background: var(--tint-error-strong); color: var(--text-error); }
-/* Its terminal gone: the copy that folds away in its place (confirms/RowConfirm.tsx). */
-.row-leaving { min-height: 0 !important; overflow: hidden; pointer-events: none; animation: atl-row-out 320ms var(--ease) both !important; }
-.row-leaving.is-closing { --leave-o: .7; }
+/* Its terminal gone: the copy that folds away in its place (confirms/RowConfirm.tsx), its look held in its own style. */
+.row-leaving { min-height: 0; overflow: hidden; pointer-events: none; animation: atl-row-out calc(var(--t-slow) + var(--t-fast)) var(--ease) both; }
 /* Its close sent (confirms/slice.ts `closing`): faded until atelierd drops it (its content: the row's entrance holds
    the row's own opacity). */
 :is(.session-row, .term-row).is-closing .row-main { opacity: .55; }

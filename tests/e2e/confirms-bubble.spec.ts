@@ -56,9 +56,56 @@ async function centered(): Promise<boolean> {
   return !!b && Math.abs(b.x + b.width / 2 - width / 2) <= 1;
 }
 
+interface Leaving { classes: string; rowish: boolean; duration: string; endHeight: number; afterHeight: number; text: string; marked: string }
+
+/**
+ * Records every copy that folds away as it is added: its classes, whether a row selector finds it or anything in it,
+ * its animation's length, its text; `seek`: the list's height with the copy at its animation's last frame and once it
+ * is gone; `pause`: its animation stopped, as in a window that doesn't render (only the fallback removes it); `hold`:
+ * stopped at its first frame, to be looked at.
+ */
+async function watchLeaving(how: { seek?: boolean; pause?: boolean; hold?: boolean } = {}): Promise<void> {
+  await win.evaluate((o) => {
+    const w = window as unknown as { leaving: Leaving[]; leavingObserver?: MutationObserver; leavingCopies: HTMLElement[] };
+    w.leavingObserver?.disconnect();
+    w.leaving = [];
+    w.leavingCopies = [];
+    const rows = '.session-row, .term-row, [data-term-row], [role="listitem"], .is-selected, .is-asking, [class*="state-"]';
+    w.leavingObserver = new MutationObserver((all) => {
+      for (const m of all) for (const n of m.addedNodes) {
+        if (!(n instanceof HTMLElement) || !n.classList.contains('row-leaving')) continue;
+        const list = n.parentElement!;
+        const rec: Leaving = { classes: n.className, rowish: n.matches(rows) || n.querySelector(rows) !== null, duration: getComputedStyle(n).animationDuration, endHeight: -1, afterHeight: -1, text: n.innerText, marked: `${n.style.backgroundImage} ${n.style.boxShadow}` };
+        const [fold] = n.getAnimations();
+        if (o.pause) fold?.pause();
+        if (o.hold && fold) { fold.pause(); fold.currentTime = 0; }
+        if (o.seek && fold) {
+          fold.pause();
+          fold.currentTime = Number(fold.effect!.getComputedTiming().endTime) - 0.01;
+          rec.endHeight = list.getBoundingClientRect().height;
+          n.remove();
+          rec.afterHeight = list.getBoundingClientRect().height;
+        }
+        w.leavingCopies.push(n);
+        w.leaving.push(rec);
+      }
+    });
+    w.leavingObserver.observe(document.body, { childList: true, subtree: true });
+  }, how);
+}
+const leaving = () => win.evaluate(() => (window as unknown as { leaving: Leaving[] }).leaving);
+
+/** Closes a terminal at its prompt from its row's × (it closes at once) and waits for its row to go. */
+async function closeIdle(row: Locator): Promise<void> {
+  await row.hover();
+  await row.locator('.row-close').click();
+  await expect(row).toHaveCount(0, { timeout: 10000 });
+  await expect(bubble()).toHaveCount(0);
+}
+
 test.beforeAll(async () => {
   const project = mkdtempSync(join(tmpdir(), 'atl-prj-'));
-  const e = e2eEnv();
+  const e = e2eEnv({ ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl') });
   home = e.home;
   app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env: e.env });
   win = await app.firstWindow();
@@ -186,4 +233,95 @@ test('Swap Side Panels: the bubble opens left of the row, never over it, its arr
     await swap(false);
     await expect(win.locator('.body')).not.toHaveClass(/is-swapped/);
   }
+});
+
+test('Reduce motion from the system: a row whose terminal is gone just goes, no copy folds away', async () => {
+  await win.emulateMedia({ reducedMotion: 'reduce' });
+  try {
+    const row = await openTerminal();
+    await watchLeaving();
+    await closeIdle(row);
+    expect(await leaving()).toEqual([]);
+  } finally {
+    await win.emulateMedia({ reducedMotion: 'no-preference' });
+  }
+});
+
+test('the copy that folds away is no row (no row class, no state, no id) and its list’s gap closes with it', async () => {
+  await win.emulateMedia({ reducedMotion: 'no-preference' });
+  const a = await openTerminal();
+  const b = await openTerminal();
+  await watchLeaving({ seek: true });
+  // In the middle of its list, then last in it.
+  await closeIdle(a);
+  await closeIdle(b);
+  const all = await leaving();
+  expect(all).toHaveLength(2);
+  for (const l of all) {
+    expect.soft(Math.abs(l.endHeight - l.afterHeight), `the list at the fold's end: ${l.endHeight} px, then ${l.afterHeight} px`).toBeLessThan(0.5);
+    expect.soft(l.rowish, `a row selector finds the copy: ${l.classes}`).toBe(false);
+  }
+  // A section's head under a leaving copy is its list's first: no rule above it, as once the copy is gone.
+  const head = await win.evaluate(() => {
+    const list = document.createElement('div');
+    list.className = 'list inbox';
+    list.innerHTML = '<div class="row-leaving"></div><div class="inbox-head is-idle"><span class="section-label">Idle</span></div>';
+    document.querySelector('.sidebar')!.append(list);
+    const cs = getComputedStyle(list.children[1]!);
+    const got = { border: cs.borderTopWidth, margin: cs.marginTop, padding: cs.paddingTop };
+    list.remove();
+    return got;
+  });
+  expect(head).toEqual({ border: '0px', margin: '0px', padding: '4px' });
+});
+
+test('the fold lasts what the motion tokens say, and a copy whose fold never runs still goes then', async () => {
+  await win.emulateMedia({ reducedMotion: 'no-preference' });
+  const root = (slow: string, fast: string) => win.evaluate(([s, f]) => {
+    const r = document.documentElement.style;
+    if (s) r.setProperty('--t-slow', s); else r.removeProperty('--t-slow');
+    if (f) r.setProperty('--t-fast', f); else r.removeProperty('--t-fast');
+  }, [slow, fast]);
+  const row = await openTerminal();
+  await root('24ms', '12ms');
+  try {
+    await watchLeaving({ pause: true });
+    await closeIdle(row);
+    await expect.poll(async () => (await leaving()).length).toBe(1);
+    expect((await leaving())[0]!.duration).toBe('0.036s');
+    // Its animation stopped (a window that doesn't render): it goes by itself, in step with the tokens.
+    await expect.poll(() => win.evaluate(() => (window as unknown as { leavingCopies: HTMLElement[] }).leavingCopies.every((c) => !c.isConnected)), { timeout: 400 }).toBe(true);
+  } finally {
+    await root('', '');
+  }
+});
+
+test('a closed session’s row folds away as a copy that looks like it, without being one', async () => {
+  await win.emulateMedia({ reducedMotion: 'no-preference' });
+  await win.locator('.btn-new').click();
+  await win.getByRole('menuitem', { name: 'Claude Session' }).click();
+  await win.keyboard.press('Enter');
+  const session = win.locator('[data-term-row]', { has: win.locator('.session-title') });
+  await expect(session).toHaveClass(/state-waiting/, { timeout: 20000 });
+  const title = (await session.locator('.session-title').textContent())!.trim();
+  const sidebar = win.locator('.body > .sidebar');
+  await win.mouse.move(900, 500);
+  await look(sidebar, join(SHOTS, 'session-row.png'), { settle: 300 });
+  await watchLeaving({ hold: true });
+  await session.hover();
+  await session.locator('.row-close').click();
+  await closeBtn().click();
+  await expect(session).toHaveCount(0, { timeout: 10000 });
+  await expect.poll(async () => (await leaving()).length).toBe(1);
+  const [copy] = await leaving();
+  expect(copy!.rowish, copy!.classes).toBe(false);
+  expect(copy!.text).toContain(title);
+  // The row was the selected one: its copy isn't marked as it (another row is, now).
+  expect(copy!.marked).toBe('none none');
+  // Held at its first frame: the row's own box.
+  const held = (await win.locator('.row-leaving').boundingBox())!;
+  expect(held.height).toBeGreaterThanOrEqual(46);
+  await win.mouse.move(900, 500);
+  await look(sidebar, join(SHOTS, 'session-row-leaving.png'));
+  await win.evaluate(() => (window as unknown as { leavingCopies: HTMLElement[] }).leavingCopies.forEach((c) => c.remove()));
 });
