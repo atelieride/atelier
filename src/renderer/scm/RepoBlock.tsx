@@ -161,9 +161,9 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
           )}
           {view.clean && <span className="sw-chip is-clean" role="img" aria-label={a.inSync} data-tip={a.inSync}><Icon name="check" size={11} stroke={2.6} /></span>}
         </span>
-        {/* Always there, in its own room: Fetch, Pull and Push, then the repository's menu. */}
+        {/* Always there, in its own room: Fetch, Pull and Push, then the repository's menu (without its own Fetch). */}
         <button ref={menuBtn} type="button" className="icon-btn ab-menu" aria-label={a.actions(row.name)} data-tip={a.actions(row.name)} aria-haspopup="menu"
-          onClick={(e) => menuAt(e.currentTarget, [...syncItems(root, canNow, writes ? ['fetch', 'pull', 'push'] : ['fetch']), 'sep', ...repoMenu(root)])}><Icon name="more" size={13} /></button>
+          onClick={(e) => menuAt(e.currentTarget, [...syncItems(root, canNow, writes ? ['fetch', 'pull', 'push'] : ['fetch']), 'sep', ...repoMenu(root).filter((i) => i === 'sep' || i.id !== 'fetch')])}><Icon name="more" size={13} /></button>
       </div>
       {!folded && writes && (
         <div className="ab-body">
