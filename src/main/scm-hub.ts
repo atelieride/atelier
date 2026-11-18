@@ -297,6 +297,8 @@ export class ScmHub {
       const key = keyOf(e);
       const { rel } = scmUnhideSchema.parse(arg);
       if (!this.hidden) throw new Error('no hidden repositories');
+      // A path the project doesn't hide (shown again from another window meanwhile): no folder scan for nothing.
+      if (!this.hidden.list(key).includes(rel)) return this.hidden.list(key);
       const list = this.hidden.remove(key, rel);
       this.git.hiddenChanged(key);
       return list;

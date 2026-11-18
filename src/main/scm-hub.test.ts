@@ -372,6 +372,14 @@ test('scm:hide hides a repository Source Control listed, by its path inside the 
   } finally { h.done(); }
 });
 
+test('scm:unhide of a path the project doesn\'t hide changes nothing: the folders are not looked through again', async () => {
+  const h = hidingHub();
+  try {
+    expect(await h.call('scm:unhide', { rel: 'never/hidden' })).toEqual([]);
+    expect(h.hiddenChanged).not.toHaveBeenCalled();
+  } finally { h.done(); }
+});
+
 test('scm:hide refuses the project root, a linked worktree, a repository outside the project and one it never listed', async () => {
   const h = hidingHub();
   try {
