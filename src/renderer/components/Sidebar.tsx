@@ -17,7 +17,7 @@ import { useDb } from '../databases/store';
 import { DockerPortChips } from '../docker/DockerPorts';
 import { displayCommand, resumablesFor, splitTerminals } from '../selectors';
 import { ResumeRow } from './ResumeRow';
-import { RowCloseConfirm, closeFromRow } from '../confirms/RowConfirm';
+import { closeFromRow, useRowLeave } from '../confirms/RowConfirm';
 import { onEscCancel } from '../confirms/InlineConfirm';
 import { RenameInput } from './RenameInput';
 import { commitRename } from '../names';
@@ -154,7 +154,7 @@ const TERM_FIT: RowFitParts = {
   name: '.term-name',
   // The command, not "Closing…" (also .term-cmd, without .mono: it stays on a compact row).
   chips: '.row-main > :is(.cwd-chip, .profile-chip, .term-cmd.mono), :scope > .port-chips',
-  busy: ':hover, :has(:focus-visible), :has(.row-pin:focus, .row-close:focus), :has(.rename-input), .is-confirming'
+  busy: ':hover, :has(:focus-visible), :has(.row-pin:focus, .row-close:focus), :has(.rename-input), .is-asking'
 };
 
 function TermRow({ term, selected, pinned, popped, onSelect, band }: { term: TerminalInfo; selected: boolean; pinned: boolean; popped: boolean; onSelect: (id: string) => void; band?: Band }) {
@@ -164,28 +164,21 @@ function TermRow({ term, selected, pinned, popped, onSelect, band }: { term: Ter
   const asked = useApp((s) => s.renaming?.id === term.id && s.renaming.at === 'row');
   const editing = editingHere || asked;
   const stop = () => { setEditing(false); if (asked) useApp.getState().setRenaming(null); };
-  // Its close asked here: the row turns into the question.
-  const closing = useApp((s) => (s.closeAsk?.id === term.id && s.closeAsk.at === 'row' ? s.closeAsk : null));
+  // Its close asked here: a bubble beside the row asks (confirms/CloseHost.tsx); the row keeps its form, marked.
+  const closing = useApp((s) => s.closeAsk?.id === term.id && s.closeAsk.at === 'row');
   // Its close sent: "Closing…" until atelierd drops it, and nothing closes it again.
   const shutting = useApp((s) => !!s.closing[term.id]);
   const rowEl = useRef<HTMLDivElement>(null);
   // Its chips give way to its name; hovered or keyboard-focused, pin and close borrow room.
   useRowFit(rowEl, TERM_FIT);
+  // Its terminal gone: the row folds away.
+  useRowLeave(rowEl, term.id);
   // Dragged inside its band (not while closing), and onto another place while workspaces are on.
   const drag = useRowDrag(term.id, shutting ? undefined : band);
   const dragged = useReorder((s) => s.dragging === term.id);
   const caret = useReorder((s) => (s.caret?.id === term.id ? s.caret.edge : null));
   // ⌥-click: Open to the Side; a row of another workspace waits for a possible double-click.
   const rowClick = useRowClick(term.id, onSelect, () => setEditing(true));
-  if (closing) {
-    return (
-      <div ref={rowEl} role="listitem" data-term-row={term.id} className="term-row is-confirming" data-own-esc="" aria-label={t.confirm.closeTitle(term.title)}
-        onKeyDown={onEscCancel(() => useApp.getState().cancelClose())}>
-        <RowCloseConfirm box={rowEl} title={term.title} stops={closing.stops} note={closing.note} session={false}
-          lead={<span className="term-icon"><Icon name="terminal" size={13} stroke={1.8} /></span>} />
-      </div>
-    );
-  }
   const inner = (
     <>
       <span className="term-icon"><Icon name="terminal" size={13} stroke={1.8} />{pinned && <PinBadge />}</span>
@@ -199,7 +192,7 @@ function TermRow({ term, selected, pinned, popped, onSelect, band }: { term: Ter
     </>
   );
   return (
-    <div ref={rowEl} role="listitem" data-term-row={term.id} className={`term-row ${enter} ${selected ? 'is-selected' : ''} ${popped ? 'is-popped' : ''} ${shutting ? 'is-closing' : ''}${dragged ? ' is-dragging' : ''}${caret ? ` is-caret-${caret}` : ''}`} data-tip={nameTip(term.title)}
+    <div ref={rowEl} role="listitem" data-term-row={term.id} className={`term-row ${enter} ${selected ? 'is-selected' : ''} ${popped ? 'is-popped' : ''} ${shutting ? 'is-closing' : ''} ${closing ? 'is-asking' : ''}${dragged ? ' is-dragging' : ''}${caret ? ` is-caret-${caret}` : ''}`} data-tip={nameTip(term.title)}
             {...bandAttr(band)} onContextMenu={(e) => useApp.getState().openMenu(e, sessionRowMenu(term, shutting ? undefined : band))} {...(editing ? {} : drag)}>
             {editing
               // While renaming, the field is not inside a button.

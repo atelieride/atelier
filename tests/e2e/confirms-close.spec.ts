@@ -5,10 +5,10 @@ import { join, resolve } from 'node:path';
 import { e2eEnv } from './env';
 import { look } from './shots';
 
-// In-app confirms: a busy session or terminal asks in its own row or under the
+// In-app confirms: a busy session or terminal asks in a bubble beside its row or under the
 // tab it was asked from; a shell at its prompt closes at once. The session bar has no × (2026-10-26: the row and the
 // menus close a session). No native dialog anywhere.
-test('rows say "Close session" / "Close terminal", tabs "Close tab"; closing asks in the row or under the tab, Esc and Cancel keep it, Close closes; an idle shell closes at once', async () => {
+test('rows say "Close session" / "Close terminal", tabs "Close tab"; closing asks beside the row or under the tab, Esc and Keep keep it, Close closes; an idle shell closes at once', async () => {
   const project = mkdtempSync(join(tmpdir(), 'atl-prj-'));
   const { env, home } = e2eEnv({ ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl') });
   const app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env });
@@ -55,15 +55,38 @@ test('rows say "Close session" / "Close terminal", tabs "Close tab"; closing ask
     await expect(win.locator('.session-bar')).toHaveCount(1);
     await expect(win.locator('.session-bar .sb-close')).toHaveCount(0);
 
-    // The row's ×: the row turns into the question, Cancel focused.
+    // The row's ×: a bubble beside the row asks, Cancel focused. The row keeps its size and Close sits next to the ×.
     await row.hover();
+    const rowBox = (await row.boundingBox())!;
+    const xBox = (await row.locator('.row-close').boundingBox())!;
     await row.locator('.row-close').click();
-    const asking = win.locator('.session-row.is-confirming');
+    const asking = win.locator('.confirm-pop.is-side');
     await expect(asking).toBeVisible();
     await expect(asking).toContainText(`Close ${title}?`);
     await expect(asking).toContainText('Claude is waiting for you: it stops.');
-    await expect(asking).toContainText('Resume it later from');
-    await expect(asking.getByRole('button', { name: /^Cancel/ })).toBeFocused();
+    await expect(asking.locator('.confirm-note')).toHaveText(/^Resume it later with \S+$/);
+    // Its answers: Close, with the trash mark, and Keep (the safe one, focused).
+    await expect(asking.getByRole('button', { name: /^Keep/ })).toBeFocused();
+    await expect(asking.getByRole('button', { name: 'Close', exact: true }).locator('svg')).toBeVisible();
+    await expect(asking.getByRole('button', { name: /Cancel/ })).toHaveCount(0);
+    await expect(row).toHaveClass(/is-asking/);
+    await expect(win.locator('.session-row.is-confirming')).toHaveCount(0);
+    // Once its entrance is over.
+    await expect(async () => {
+      expect((await row.boundingBox())!.height).toBe(rowBox.height);
+      const bubble = (await asking.boundingBox())!;
+      expect(bubble.x).toBeGreaterThanOrEqual(rowBox.x + rowBox.width);
+      const go = (await asking.locator('.btn-danger').boundingBox())!;
+      const middle = go.y + go.height / 2;
+      expect(middle).toBeGreaterThan(rowBox.y);
+      expect(middle).toBeLessThan(rowBox.y + rowBox.height);
+      expect(go.x - (xBox.x + xBox.width)).toBeLessThan(48);
+    }).toPass({ timeout: 3000 });
+    // The × asked: pressed again, it takes the question back.
+    await row.locator('.row-close').click();
+    await expect(asking).toHaveCount(0);
+    await row.locator('.row-close').click();
+    await expect(asking).toBeVisible();
     if (shots) await win.waitForTimeout(500);
     if (shots) await win.screenshot({ path: join(shots, 'confirm-row.png') });
     await win.keyboard.press('Escape');
@@ -71,7 +94,7 @@ test('rows say "Close session" / "Close terminal", tabs "Close tab"; closing ask
     await expect(row.locator('.row-main')).toBeFocused();
     await row.hover();
     await row.locator('.row-close').click();
-    await asking.getByRole('button', { name: /^Cancel/ }).click();
+    await asking.getByRole('button', { name: /^Keep/ }).click();
     await expect(asking).toHaveCount(0);
 
     // A click elsewhere cancels too.
@@ -87,19 +110,28 @@ test('rows say "Close session" / "Close terminal", tabs "Close tab"; closing ask
     const pop = win.locator('.confirm-pop');
     await expect(pop).toBeVisible();
     await expect(pop).toContainText(`Close ${title}?`);
-    await expect(pop.getByRole('button', { name: /^Cancel/ })).toBeFocused();
+    await expect(pop.getByRole('button', { name: /^Keep/ })).toBeFocused();
     if (shots) await win.waitForTimeout(500);
     if (shots) await win.screenshot({ path: join(shots, 'confirm-tab.png') });
-    await pop.getByRole('button', { name: /^Cancel/ }).click();
+    await pop.getByRole('button', { name: /^Keep/ }).click();
     await expect(pop).toHaveCount(0);
 
-    // Close from the tab's popover: the session goes.
+    // Close from the tab's popover: the session goes, its row folding away (a copy that leaves by itself).
+    await win.evaluate(() => {
+      const w = window as unknown as { left: number };
+      w.left = 0;
+      new MutationObserver((all) => {
+        for (const m of all) for (const n of m.addedNodes) if (n instanceof HTMLElement && n.classList.contains('row-leaving')) w.left++;
+      }).observe(document.body, { childList: true, subtree: true });
+    });
     await sessionTab.click({ button: 'right' });
     await win.getByRole('menuitem', { name: 'Close Session…' }).click();
-    await pop.getByRole('button', { name: 'Close Session' }).click();
+    await pop.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(win.locator('.session-row')).toHaveCount(0, { timeout: 10000 });
+    expect(await win.evaluate(() => (window as unknown as { left: number }).left)).toBe(1);
+    await expect(win.locator('.row-leaving')).toHaveCount(0);
 
-    // A plain terminal running a program asks in its row and names the program.
+    // A plain terminal running a program asks beside its row and names the program.
     const termRow = win.locator('.term-row').first();
     await termRow.click();
     await win.locator('.xterm-helper-textarea:visible').focus();
@@ -108,7 +140,7 @@ test('rows say "Close session" / "Close terminal", tabs "Close tab"; closing ask
     await expect(termRow.locator('.term-cmd')).toContainText('sleep', { timeout: 10000 });
     await termRow.hover();
     await termRow.locator('.row-close').click();
-    const termAsking = win.locator('.term-row.is-confirming');
+    const termAsking = win.locator('.confirm-pop.is-side');
     await expect(termAsking).toContainText('sleep stops.');
     if (shots) await win.waitForTimeout(500);
     if (shots) await win.screenshot({ path: join(shots, 'confirm-term.png') });
@@ -122,7 +154,7 @@ test('rows say "Close session" / "Close terminal", tabs "Close tab"; closing ask
     await idle.hover();
     await idle.locator('.row-close').click();
     await expect(win.locator('.term-row')).toHaveCount(0, { timeout: 10000 });
-    await expect(win.locator('.term-row.is-confirming')).toHaveCount(0);
+    await expect(win.locator('.confirm-pop')).toHaveCount(0);
 
     // A shell slow to exit (as Claude is on Windows, seconds): its row says "Closing…" with no ×, nothing closes it
     // again (on Windows a second kill crashed atelierd), and it goes once the shell is gone.
@@ -146,7 +178,7 @@ test('rows say "Close session" / "Close terminal", tabs "Close tab"; closing ask
     await slow.click({ button: 'right' });
     await expect(win.getByRole('menuitem', { name: 'Close Terminal…' })).toHaveAttribute('aria-disabled', 'true');
     await win.keyboard.press('Escape');
-    await expect(win.locator('.term-row.is-confirming')).toHaveCount(0);
+    await expect(win.locator('.confirm-pop')).toHaveCount(0);
     await expect(win.locator('.term-row')).toHaveCount(0, { timeout: 10000 });
 
     expect(await app.evaluate(() => (globalThis as unknown as { nativeAsked: string[] }).nativeAsked)).toEqual([]);

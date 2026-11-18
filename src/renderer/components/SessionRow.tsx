@@ -23,7 +23,7 @@ import { isLimitPaused, isWaiting } from '@shared/session-view';
 import { workChipView } from '../work-view';
 import { lastMessageLine } from '../last-message';
 import { useAgo, useDayTurn } from '../minute';
-import { RowCloseConfirm, closeFromRow } from '../confirms/RowConfirm';
+import { closeFromRow, useRowLeave } from '../confirms/RowConfirm';
 import { onEscCancel } from '../confirms/InlineConfirm';
 import { RestartChip } from './RestartChip';
 import { RowRestartConfirm } from './RowRestartConfirm';
@@ -47,7 +47,7 @@ export function PoppedMarker() {
 const SESSION_FIT: RowFitParts = {
   name: '.session-line > .session-title',
   chips: '.session-line > :is(.cwd-chip, .profile-chip, .account-chip)',
-  busy: ':hover, :has(:focus-visible), :has(.rename-input), .is-confirming'
+  busy: ':hover, :has(:focus-visible), :has(.rename-input), .is-confirming, .is-asking'
 };
 
 function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, section, band }: { term: TerminalInfo; selected: boolean; pinned: boolean; popped?: boolean; onSelect: (id: string) => void; section?: InboxSection; band?: Band }) {
@@ -91,8 +91,8 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
   const second = subtitle !== null || last !== null || hasPorts || scheduled || restartChip || (!!s && (s.permissionMode === 'plan' || workChipView(term, 0) !== null || (term.work?.crons.length ?? 0) > 0));
   // Started by an automation: the avatar's mark.
   const automated = useApp((st) => runOf(st.automations, term.id) !== null);
-  // Its close asked here: the row turns into the question.
-  const closing = useApp((st) => (st.closeAsk?.id === term.id && st.closeAsk.at === 'row' ? st.closeAsk : null));
+  // Its close asked here: a bubble beside the row asks (confirms/CloseHost.tsx); the row keeps its form, marked.
+  const closing = useApp((st) => st.closeAsk?.id === term.id && st.closeAsk.at === 'row');
   // Its restart asked here: the same way.
   const restartAsked = useApp((st) => st.restartAsk?.id === term.id && st.restartAsk.at === 'row');
   // Ask answered while its panel was closed or off screen: a violet mark, until opened.
@@ -165,6 +165,8 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
   }, [hasPorts, pending > 0, askMark, !!closing, restartAsked, avatars, automated, pinned]);
   // The title line's chips give way to the name.
   useRowFit(rowEl, SESSION_FIT);
+  // Its terminal gone: the row folds away.
+  useRowLeave(rowEl, term.id);
   // Dragged inside its band (not while closing), and onto another place while workspaces are on.
   const drag = useRowDrag(term.id, shutting ? undefined : band);
   const dragged = useReorder((st) => st.dragging === term.id);
@@ -183,19 +185,10 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
       </div>
     );
   }
-  if (closing) {
-    return (
-      <div ref={rowEl} role="listitem" data-term-row={term.id} className="session-row is-confirming" data-own-esc=""
-        aria-label={t.confirm.closeTitle(term.title)} onKeyDown={onEscCancel(() => useApp.getState().cancelClose())}>
-        <RowCloseConfirm box={rowEl} title={term.title} stops={closing.stops} note={closing.note} promptAt={closing.promptAt} session={!!s}
-          lead={lead} />
-      </div>
-    );
-  }
   // List item with side-by-side buttons (select, pin, close): never a button inside another. While
   // renaming, the field is not inside a button.
   return (
-    <div ref={rowEl} role="listitem" data-term-row={term.id} className={`session-row ${enter} ${s ? `state-${state}` : 'is-starting'} ${selected ? 'is-selected' : ''} ${s?.unread ? 'is-unread' : ''} ${popped ? 'is-popped' : ''} ${shutting ? 'is-closing' : ''} ${askMark ? 'has-ask' : ''}${avatars ? '' : ' no-avatar'}${dragged ? ' is-dragging' : ''}${caret ? ` is-caret-${caret}` : ''}`}
+    <div ref={rowEl} role="listitem" data-term-row={term.id} className={`session-row ${enter} ${s ? `state-${state}` : 'is-starting'} ${selected ? 'is-selected' : ''} ${s?.unread ? 'is-unread' : ''} ${popped ? 'is-popped' : ''} ${shutting ? 'is-closing' : ''} ${closing ? 'is-asking' : ''} ${askMark ? 'has-ask' : ''}${avatars ? '' : ' no-avatar'}${dragged ? ' is-dragging' : ''}${caret ? ` is-caret-${caret}` : ''}`}
       data-tip={nameTip(term.title)} {...bandAttr(band)} onContextMenu={(e) => useApp.getState().openMenu(e, sessionRowMenu(term, shutting ? undefined : band))} {...(editing ? {} : drag)}>
       {editing
         ? <div className="row-main">{inner}</div>

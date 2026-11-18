@@ -201,7 +201,7 @@ test('the same-file notice: six files show four chips and "+2 more", by name and
     const beta = win.locator('.session-row', { hasText: 'Beta' });
     await beta.hover();
     await beta.locator('.row-close').click();
-    await win.locator('.session-row.is-confirming').getByRole('button', { name: /^Close/ }).click();
+    await win.locator('.confirm-pop.is-side').getByRole('button', { name: /^Close/ }).click();
     await expect(beta).toHaveCount(0);
     await expect(clash.locator('.clash-avatar.is-closed')).toHaveCount(1);
     await expect(clash.getByRole('button', { name: 'Go to Beta' })).toHaveCount(0);
