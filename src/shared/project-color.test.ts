@@ -26,6 +26,14 @@ test('eight projects opened one after the other wear eight different colors', ()
   expect(new Set(Object.values(colors)).size).toBe(PROJECT_COLOR_COUNT);
 });
 
+test('what the open windows wear counts before what the closed projects have', () => {
+  // The only open window wears 5; the closed projects hold every other color twice, so 5 is the rarest overall. A
+  // new window still takes another color: telling apart the windows on screen is what the color is for.
+  const colors: Record<string, number> = { '/x': 5 };
+  for (const c of [1, 2, 3, 4, 6, 7, 8]) { colors[`/closed/${c}a`] = c; colors[`/closed/${c}b`] = c; }
+  for (const root of ['/new', '/work/beta', '/work/gamma']) expect(pickProjectColor(colors, ['/x'], root)).not.toBe(5);
+});
+
 test('among the colors free in the open windows, the one fewest known projects have comes first', () => {
   // Nothing open wears 2…8; closed projects already have 2…7: 8 is the rarest.
   const colors = { '/o': 1, '/a': 2, '/b': 3, '/c': 4, '/d': 5, '/e': 6, '/f': 7 };

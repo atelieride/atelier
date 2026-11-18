@@ -114,3 +114,22 @@ test('absent: the keys the file did not have when Atelier started (a missing fil
   writeFileSync(join(dir, 'new.json'), JSON.stringify({ automationsEnabled: false }));
   expect(new SettingsStore(join(dir, 'new.json')).absent('automationsEnabled')).toBe(false);
 });
+
+test('project colors from a window: absolute roots with a whole color from 1 to 8, at most 300; anything else refused', () => {
+  const file = join(tmp(), 'p.json');
+  const s = new SettingsStore(file);
+  let calls = 0;
+  s.onChange(() => calls++);
+  const many = Object.fromEntries(Array.from({ length: 301 }, (_, i) => [`/work/p${i}`, 1 + (i % 8)]));
+  const bad: unknown[] = [
+    { relative: 2 }, { '/work/a': 0 }, { '/work/a': 9 }, { '/work/a': 1.5 }, { '/work/a': '2' }, { '/work/a': null },
+    'x', 3, null, [1, 2], ['/work/a'],
+    // An own "__proto__" key, as JSON and the IPC's structured clone deliver it.
+    JSON.parse('{"__proto__": 3}'), JSON.parse('{"/work/a": 1, "__proto__": 2}'),
+    many
+  ];
+  for (const b of bad) expect(s.set({ projectColors: b }), JSON.stringify(b)).toBeNull();
+  expect(calls).toBe(0);
+  expect(() => statSync(file)).toThrow();
+  expect(s.set({ projectColors: { '/work/a': 3, '/work/b': 8 } })?.projectColors).toEqual({ '/work/a': 3, '/work/b': 8 });
+});
