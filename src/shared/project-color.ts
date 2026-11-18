@@ -47,7 +47,7 @@ export function projectColorFor(colors: ProjectColors, root: string): number {
 
 /**
  * The color of `root`'s window: the one it has, else the one fewest open windows wear, then the one fewest known
- * projects have, then the folder's own steady pick. `open`: the roots of the windows already open.
+ * projects have, then the folder's own steady color. `open`: the roots of the windows already open.
  */
 export function pickProjectColor(colors: ProjectColors, open: readonly string[], root: string): number {
   const mine = colors[root];
@@ -79,11 +79,6 @@ export function projectColorOnOpen(colors: ProjectColors, open: readonly string[
   if (!isColor(mine)) return { [root]: pickProjectColor(colors, open, root) };
   const roots = Object.keys(colors);
   return roots.length >= PROJECT_COLORS_MAX && roots[roots.length - 1] !== root ? { [root]: mine } : null;
-}
-
-/** The colors with `root` wearing `color`, as the latest; the oldest go past the limit. */
-export function withProjectColor(colors: ProjectColors, root: string, color: number): ProjectColors {
-  return mergeProjectColors(colors, { [root]: color });
 }
 
 /**

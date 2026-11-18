@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { normalizeProjectColors, pickProjectColor, PROJECT_COLOR_COUNT, PROJECT_COLORS_MAX, projectColorOf, projectColorOnOpen, withProjectColor } from './project-color';
+import { mergeProjectColors, normalizeProjectColors, pickProjectColor, PROJECT_COLOR_COUNT, PROJECT_COLORS_MAX, projectColorOf, projectColorOnOpen } from './project-color';
 import { applyPatch, DEFAULT_SETTINGS, normalizeSettings } from './settings';
 
 // A project's color: one of the eight workspace hues, kept by project root, worn by the project's window so several
@@ -20,7 +20,7 @@ test('eight projects opened one after the other wear eight different colors', ()
   const open: string[] = [];
   for (let i = 0; i < PROJECT_COLOR_COUNT; i++) {
     const root = `/work/p${i}`;
-    colors = withProjectColor(colors, root, pickProjectColor(colors, open, root));
+    colors = mergeProjectColors(colors, { [root]: pickProjectColor(colors, open, root) });
     open.push(root);
   }
   expect(new Set(Object.values(colors)).size).toBe(PROJECT_COLOR_COUNT);
@@ -54,7 +54,7 @@ test('the saved colors keep absolute folders with a color from 1 to 8, nothing e
 
 test('past the limit, the projects colored longest ago are forgotten', () => {
   let colors: Record<string, number> = {};
-  for (let i = 0; i < PROJECT_COLORS_MAX + 2; i++) colors = withProjectColor(colors, `/work/p${i}`, 1 + (i % 8));
+  for (let i = 0; i < PROJECT_COLORS_MAX + 2; i++) colors = mergeProjectColors(colors, { [`/work/p${i}`]: 1 + (i % 8) });
   expect(Object.keys(colors).length).toBe(PROJECT_COLORS_MAX);
   expect(colors['/work/p0']).toBeUndefined();
   expect(colors[`/work/p${PROJECT_COLORS_MAX + 1}`]).toBeDefined();
@@ -88,7 +88,7 @@ test('with the colors full, a window opening saves its color again: the projects
 });
 
 test('recoloring a project keeps the others and makes it the latest', () => {
-  const colors = withProjectColor({ '/a': 1, '/b': 2 }, '/a', 4);
+  const colors = mergeProjectColors({ '/a': 1, '/b': 2 }, { '/a': 4 });
   expect(colors).toEqual({ '/b': 2, '/a': 4 });
   expect(Object.keys(colors)).toEqual(['/b', '/a']);
 });
