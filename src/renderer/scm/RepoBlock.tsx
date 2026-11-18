@@ -3,7 +3,7 @@
 // header's marks are its actions: ↓ pulls and ↑ pushes where there is something to pull or push, and ⋯ holds the rest
 // (Fetch too). Its parts never change by themselves, under the pointer either: a state only changes what they say, so
 // nothing moves while ops run.
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefCallback } from 'react';
 import { isMod } from '@shared/keys';
 import { Icon } from '../components/Icon';
 import { t } from '../i18n/en';
@@ -62,6 +62,20 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
   const askRef = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
   const block = useRef<HTMLDivElement>(null);
+  const menuBtn = useRef<HTMLButtonElement>(null);
+  // A header count that leaves with the focus (nothing left to pull or push once its op is done, or the button that
+  // runs the op carries the counts now) hands it to ⋯ on the same header, not to the page. Its cleanup runs while the
+  // count is still in the page; the focus is moved once it is gone, and only if nothing else took it meanwhile.
+  const keepFocus = useCallback((el: HTMLButtonElement | null) => {
+    if (!el) return;
+    return () => {
+      if (document.activeElement !== el) return;
+      queueMicrotask(() => {
+        const to = menuBtn.current;
+        if (to?.isConnected && (!document.activeElement || document.activeElement === document.body)) to.focus({ preventScroll: true });
+      });
+    };
+  }, []);
   // What the block needs from main (its remotes, a commit's checks), read once it nears the screen: a folder of hundreds
   // of repositories doesn't read them all at once.
   useEffect(() => {
@@ -80,6 +94,11 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
   const hasRemote = facts ? facts.remotes.length > 0 : !!status.upstream;
   const can = syncAbility(status, hasRemote);
   const view = blockView({ status, running: op?.op ?? null, hasRemote, commit });
+  const running = op ? runningLabel(op.op) : null;
+  // While an op runs on this working tree, the header's Pull and Push (its counts, ⋯) wait for it, saying what runs.
+  const canNow = running ? { ...can, pull: running, push: running } : can;
+  // What a folded block's header says while an op runs on it (it has no button to say so).
+  const busy = folded ? running : null;
 
   // ✦'s message lands in the draft (subject and body); the field shows its first line.
   useEffect(() => { if (w?.apply != null) { setText(w.apply); messageApplied(); } }, [w?.apply]);
@@ -135,15 +154,16 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
           {view.changes > 0 && <span className="sw-chip is-changes" aria-label={a.changed(view.changes)}>{view.changes}</span>}
           {/* Once: here unless the button (shown) pulls, pushes or syncs and carries them. */}
           {(view.countsOn === 'head' || folded || !writes) && (
-            // A folded block has no button to say an op runs: its counts give way to the spinner.
-            op && folded ? <i className="git-spin" role="img" aria-label={runningLabel(op.op)} data-tip={runningLabel(op.op)} />
-              : <Counts view={view} act={writes ? { pull: () => void startPull(root), push: () => void push(root), off: { pull: op ? runningLabel(op.op) : can.pull, push: op ? runningLabel(op.op) : can.push } } : undefined} />
+            // A folded block has no button to say an op runs: its counts say it, a spinner over them (they keep their
+            // box and the focus); without counts, the spinner alone.
+            busy && !(view.behind || view.ahead) ? <i className="git-spin" role="img" aria-label={busy} data-tip={busy} />
+              : <Counts view={view} busy={busy} act={writes ? { pull: () => void startPull(root), push: () => void push(root), off: { pull: canNow.pull, push: canNow.push }, ref: keepFocus } : undefined} />
           )}
           {view.clean && <span className="sw-chip is-clean" role="img" aria-label={a.inSync} data-tip={a.inSync}><Icon name="check" size={11} stroke={2.6} /></span>}
         </span>
-        {/* Always there, in its own room: Fetch, Pull and Push, then the repository's menu. */}
-        <button type="button" className="icon-btn ab-menu" aria-label={a.actions(row.name)} data-tip={a.actions(row.name)} aria-haspopup="menu"
-          onClick={(e) => menuAt(e.currentTarget, [...syncItems(root, can, writes ? ['fetch', 'pull', 'push'] : ['fetch']), 'sep', ...repoMenu(root)])}><Icon name="more" size={13} /></button>
+        {/* Always there, in its own room: Fetch, Pull and Push, then the repository's menu (without its own Fetch). */}
+        <button ref={menuBtn} type="button" className="icon-btn ab-menu" aria-label={a.actions(row.name)} data-tip={a.actions(row.name)} aria-haspopup="menu"
+          onClick={(e) => menuAt(e.currentTarget, [...syncItems(root, canNow, writes ? ['fetch', 'pull', 'push'] : ['fetch']), 'sep', ...repoMenu(root).filter((i) => i === 'sep' || i.id !== 'fetch')])}><Icon name="more" size={13} /></button>
       </div>
       {!folded && writes && (
         <div className="ab-body">
@@ -174,29 +194,32 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
   );
 }
 
-type CountActs = { pull: () => void; push: () => void; off: { pull: string | null; push: string | null } };
+/** `ref`: each count button's, stable (see `keepFocus`). */
+type CountActs = { pull: () => void; push: () => void; off: { pull: string | null; push: string | null }; ref: RefCallback<HTMLButtonElement> };
 
 /**
  * ↓ to pull, ↑ to push (nonzero parts only), in the Sync button's colors. With `act` each count is the button that
- * does it, off (with why) while it can't run; without, they only say.
+ * does it, off (with why) while it can't run; without, they only say. `busy` (an op running, its words): the counts
+ * say that instead and a spinner covers them, in the same box, so nothing moves and a focused count keeps the focus.
  */
-function Counts({ view, act }: { view: BlockView; act?: CountActs }) {
+function Counts({ view, act, busy = null }: { view: BlockView; act?: CountActs; busy?: string | null }) {
   const a = t.scm.all;
   if (view.behind === 0 && view.ahead === 0) return null;
   const part = (kind: 'pull' | 'push', n: number, text: string) => {
     const cls = kind === 'pull' ? 'git-sync-behind' : 'git-sync-ahead';
-    if (!act) return <span className={cls} aria-label={kind === 'pull' ? a.toPull(n) : a.toPush(n)}>{text}</span>;
-    const label = kind === 'pull' ? a.pullCount(n) : a.pushCount(n);
-    const off = act.off[kind];
+    if (!act) return <span className={cls} aria-label={busy ?? (kind === 'pull' ? a.toPull(n) : a.toPush(n))}>{text}</span>;
+    const label = busy ?? (kind === 'pull' ? a.pullCount(n) : a.pushCount(n));
+    const off = busy ?? act.off[kind];
     return (
-      <button type="button" className={`ab-count ${cls}`} aria-label={label} data-tip={off ? `${label} · ${off}` : label} aria-disabled={!!off || undefined}
-        onClick={() => { if (!off) act[kind](); }}>{text}</button>
+      <button ref={act.ref} type="button" className={`ab-count ${cls}`} aria-label={label} data-tip={off && off !== label ? `${label} · ${off}` : label}
+        aria-disabled={!!off || undefined} aria-busy={busy ? true : undefined} onClick={() => { if (!off) act[kind](); }}>{text}</button>
     );
   };
   return (
-    <span className="ab-counts mono">
+    <span className={`ab-counts mono ${busy ? 'is-busy' : ''}`}>
       {view.behind > 0 && part('pull', view.behind, `↓${view.behind}`)}
       {view.ahead > 0 && part('push', view.ahead, `↑${view.ahead}`)}
+      {busy && <i className="git-spin" aria-hidden="true" />}
     </span>
   );
 }

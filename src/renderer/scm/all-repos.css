@@ -37,11 +37,22 @@
 .ab-count { height: 20px; padding: 0 5px; margin: 0 -5px; border-radius: var(--r-sm); font: inherit; transition: background-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
 .ab-head:hover .ab-count { box-shadow: inset 0 0 0 1px var(--line-strong); }
 .ab-head .ab-count:hover { background: var(--bg-3); box-shadow: inset 0 0 0 1px var(--edge-violet); }
-.ab-count:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .ab-count[aria-disabled="true"] { opacity: .5; cursor: default; }
 .ab-head .ab-count[aria-disabled="true"]:hover { background: none; box-shadow: inset 0 0 0 1px var(--line-strong); }
+/* Off, a press does nothing: it doesn't darken as if it would. */
+.ab-count[aria-disabled="true"]:active { filter: none; }
 .ab-counts:has(.ab-count) { gap: 12px; }
 .ab-marks > .git-spin { color: var(--violet); }
+/* A folded block's op running: its counts keep their box (and a count its focus), their text cleared and the spinner
+   drawn over them, so the marks keep their width. Transparent, not hidden: a hidden count would drop the focus. */
+.ab-counts.is-busy { position: relative; }
+.ab-counts.is-busy > :not(.git-spin) { color: transparent; }
+.ab-counts.is-busy > .ab-count { opacity: 1; cursor: progress; }
+.ab-head .ab-counts.is-busy > .ab-count { background: none; box-shadow: none; }
+.ab-counts.is-busy > .git-spin { position: absolute; inset: 0; margin: auto; color: var(--violet); pointer-events: none; }
+/* The keyboard's ring wins over every outline above, the pointer on the header or on the count included. */
+.ab-head .ab-count:focus-visible, .ab-head .ab-count[aria-disabled="true"]:focus-visible,
+.ab-head .ab-counts.is-busy > .ab-count:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 /* ⋯, always there in its own room: quiet until the pointer is on the header. */
 .ab-menu { flex-shrink: 0; }
 .ab-head:hover .ab-menu { color: var(--text-3); }
@@ -92,6 +103,9 @@
 @container (max-width: 300px) {
   .ab-ask .git-ask-actions { flex-direction: column-reverse; align-items: stretch; }
   .ab-ask .git-ask-actions > button { justify-content: center; }
+  /* A header that carries counts needs the nested note's room for them, ⋯ and the name: the note gives way first, all
+     of it (a one-word note cut to "ne…" would say nothing). The switcher's card still says it. */
+  .ab-head:has(.ab-counts) .ab-note { display: none; }
 }
 /* Narrow: the body under the name, not indented; the branch gives all its room before the name gives any. */
 @container (max-width: 240px) {
