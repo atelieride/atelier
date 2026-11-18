@@ -6,7 +6,7 @@ import { useApp } from '../store';
 import { t } from '../i18n/en';
 import { Icon } from './Icon';
 import { Row } from './Settings';
-import { reducedMotion } from './background/parts';
+import { reducedMotion } from '../motion';
 
 // Settings › Claude › Claude Code compatibility: what Claude Code sent that
 // Atelier doesn't recognize yet, as atelierd noted it. Quiet on purpose: this row is the only place it shows.

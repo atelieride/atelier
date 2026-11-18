@@ -91,7 +91,8 @@ test('rows say "Close session" / "Close terminal", tabs "Close tab"; closing ask
     if (shots) await win.screenshot({ path: join(shots, 'confirm-row.png') });
     await win.keyboard.press('Escape');
     await expect(asking).toHaveCount(0);
-    await expect(row.locator('.row-main')).toBeFocused();
+    // The keyboard is back on the × that asked.
+    await expect(row.locator('.row-close')).toBeFocused();
     await row.hover();
     await row.locator('.row-close').click();
     await asking.getByRole('button', { name: /^Keep/ }).click();

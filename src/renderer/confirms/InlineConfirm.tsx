@@ -70,21 +70,21 @@ export function ConfirmActions({ confirm, onConfirm, onCancel, small = true, end
   return <div className={`confirm-actions${end ? ' is-end' : ''}`}>{end ? [keep, go] : [go, keep]}</div>;
 }
 
-/** What closing interrupts, the rose line under the question; nothing for an idle Claude (no work is lost). */
+/** What closing interrupts, the rose line under the question; nothing for a quiet idle session (no work is lost). */
 export function stopsLine(stops: CloseStops): string | null {
   if (stops.kind !== 'claude') return t.confirm.processStops(stops.what);
-  return stops.doing === 'idle' ? null : t.confirm.claudeStops[stops.doing];
+  return stops.doing === 'idle' && stops.quiet ? null : t.confirm.claudeStops[stops.doing];
 }
 
 /**
  * Where a closed session comes back from: the palette (its shortcut is enough), or — kept —
  * the sidebar's Resume. A scheduled prompt (`promptAt`, the first one) is sent only if the session is back by its time.
  */
-export function ResumeNote({ note, promptAt, now = Date.now() }: { note: CloseNote; promptAt?: number; now?: number }): ReactNode {
-  if (note === 'resume') return <span className="confirm-note">{t.confirm.keptNote}</span>;
+export function ResumeNote({ id, note, promptAt, now = Date.now() }: { id?: string; note: CloseNote; promptAt?: number; now?: number }): ReactNode {
+  if (note === 'resume') return <span id={id} className="confirm-note">{t.confirm.keptNote}</span>;
   if (note === 'resume-scheduled') {
     const due = promptAt === undefined || promptAt <= now;
-    return <span className="confirm-note">{due ? t.confirm.keptNoteScheduledDue : t.confirm.keptNoteScheduled(whenOf(promptAt, now))}</span>;
+    return <span id={id} className="confirm-note">{due ? t.confirm.keptNoteScheduledDue : t.confirm.keptNoteScheduled(whenOf(promptAt, now))}</span>;
   }
-  return <span className="confirm-note">{t.confirm.resumeLater} <span className="confirm-key mono">{kbd('⌘K')}</span></span>;
+  return <span id={id} className="confirm-note">{t.confirm.resumeLater} <span className="confirm-key mono">{kbd('⌘K')}</span></span>;
 }

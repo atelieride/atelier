@@ -130,7 +130,7 @@ describe('Keep closed sessions under Resume', () => {
     const later = { ...prompt('a', 'pending'), id: 'p-a2', at: 9_000 };
     useApp.setState({ terminals: [talked('a', 'done'), talked('b', 'done'), talked('c', 'done')], schedules: [later, { ...prompt('a', 'pending'), at: 5_000 }, prompt('b', 'armed'), prompt('c', 'sent')] });
     useApp.getState().askClose('a', 'tab');
-    expect(useApp.getState().closeAsk).toEqual({ id: 'a', at: 'tab', stops: { kind: 'claude', doing: 'idle' }, note: 'resume-scheduled', promptAt: 5_000 });
+    expect(useApp.getState().closeAsk).toEqual({ id: 'a', at: 'tab', stops: { kind: 'claude', doing: 'idle', quiet: true }, note: 'resume-scheduled', promptAt: 5_000 });
     useApp.getState().askClose('b', 'tab');
     expect(useApp.getState().closeAsk?.note).toBe('resume-scheduled');
     useApp.getState().askClose('c', 'tab');
@@ -141,7 +141,7 @@ describe('Keep closed sessions under Resume', () => {
     keepOn();
     useApp.setState({ terminals: [talked('n', 'idle', null)] });
     useApp.getState().askClose('n', 'row');
-    expect(useApp.getState().closeAsk).toEqual({ id: 'n', at: 'row', stops: { kind: 'claude', doing: 'idle' }, note: 'history' });
+    expect(useApp.getState().closeAsk).toEqual({ id: 'n', at: 'row', stops: { kind: 'claude', doing: 'idle', quiet: true }, note: 'history' });
   });
 
   test('setting off, or an atelierd that can\'t give it back: asked as today', () => {

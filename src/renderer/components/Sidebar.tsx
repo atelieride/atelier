@@ -201,7 +201,8 @@ function TermRow({ term, selected, pinned, popped, onSelect, band }: { term: Ter
             <PortChips id={term.id} compact />
             <DockerPortChips term={term} compact />
             {!shutting && <PinButton id={term.id} pinned={pinned} session={false} />}
-            {!shutting && <button type="button" className="row-close" aria-label={t.closeTerminal} data-tip={t.closeTerminal}
+            {/* It may ask in a bubble beside the row (a dialog), and says when that bubble is open. */}
+            {!shutting && <button type="button" className="row-close" aria-label={t.closeTerminal} data-tip={t.closeTerminal} aria-haspopup="dialog" aria-expanded={closing}
               onClick={(e) => { e.stopPropagation(); closeFromRow(term.id, rowEl.current); }}><Icon name="x" size={13} stroke={1.8} /></button>}
           </div>
   );

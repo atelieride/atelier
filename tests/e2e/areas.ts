@@ -33,6 +33,8 @@ export const SPECS: Record<string, Area[]> = {
   // Any path in the terminal opens read-only: ⌘-hover, ⌘-click, relaunch.
   'outside-path-links.spec.ts': ['terminal', 'files'],
   'confirms-close.spec.ts': ['sessions', 'terminal', 'workspace'],
+  // A row's close bubble: placement, keyboard, the copy that folds away.
+  'confirms-bubble.spec.ts': ['sessions', 'terminal', 'workspace', 'settings'],
   'confirms-files.spec.ts': ['files', 'editor', 'workspace'],
   'confirms-app.spec.ts': ['workspace', 'settings'],
   'comments.spec.ts': ['review', 'editor'],

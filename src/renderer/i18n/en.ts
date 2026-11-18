@@ -892,7 +892,7 @@ const strings = {
   confirm: {
     cancel: 'Cancel', esc: 'esc',
     closeTitle: (title: string) => `Close ${title}?`,
-    claudeStops: { waiting: 'Claude is waiting for you: it stops.', working: 'Claude is working: it stops.', paused: 'Claude Code waits to continue after the usage limit: it stops.' },
+    claudeStops: { waiting: 'Claude is waiting for you: it stops.', working: 'Claude is working: it stops.', idle: 'Claude stops.', paused: 'Claude Code waits to continue after the usage limit: it stops.' },
     processStops: (what: string) => `${what} stops.`,
     resumeLater: 'Resume it later with',
     keptNote: 'It waits under Resume.',

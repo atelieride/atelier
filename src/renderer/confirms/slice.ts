@@ -1,5 +1,6 @@
 // The store's confirms slice, spread into useApp: the questions Atelier asks inside the window
-// instead of the OS's dialogs. Closing a terminal is asked here, in the row or the popover where it was asked.
+// instead of the OS's dialogs. Closing a terminal is asked here, in a bubble beside the row or the popover
+// under what it was asked from.
 import { closeStops, keepsSession, type CloseStops } from '@shared/close-plan';
 import { pendingPrompt } from '@shared/scheduled-prompts';
 import { ASK_ANSWERS, type AskAnswer, type AskMessage } from '@shared/asks';
@@ -7,7 +8,7 @@ import { neverSent } from '@shared/daemon-errors';
 import type { AppState } from '../store';
 import { t } from '../i18n/en';
 
-/** Where a close was asked: the sidebar row (inline), or the element a popover hangs from. */
+/** Where a close was asked: the sidebar row (a bubble beside it), or the element a popover hangs from. */
 export type CloseAt = 'row' | 'tab' | 'popout';
 
 /**
