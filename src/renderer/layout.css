@@ -3216,6 +3216,10 @@ button.dk-tr:hover { background: var(--bg-hover); color: var(--text); }
 .acct-detected .mono { color: var(--worktree-text); }
 /* Settings › Source Control: the project's hidden repositories, one card each with Show. */
 .set-row.hid-repos { flex-direction: column; align-items: stretch; gap: 10px; }
+/* Changes with every repository hidden: the way back reads as a link. */
+.empty.all-hidden .link-btn { font-size: inherit; color: var(--link); transition: color var(--t-fast) var(--ease); }
+/* Focused only from code, once its last Show is done: the keyboard stays in Settings, no ring around the row. */
+.set-row.hid-repos:focus { outline: none; }
 .hid-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .hid-item { display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 12px; border-radius: var(--radius); border: 1px solid var(--line-soft); background: var(--bg-2); color: var(--text-4);
   animation: atl-pop var(--t-med) var(--ease) both; transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); }

@@ -413,6 +413,7 @@ export function ChangesPanel() {
   const rawRepos = useApp((s) => s.repos);
   // No repository yet while the project's first folder scan runs: Changes says it looks.
   const looking = useApp((s) => lookingForRepos(s.scmSearch));
+  const hiddenRepos = useApp((s) => s.scmSearch?.hidden.length ?? 0);
   // The Clean and To sync sections opened past their dozen chips.
   const [moreClean, setMoreClean] = useState(false);
   const [moreSync, setMoreSync] = useState(false);
@@ -519,7 +520,13 @@ export function ChangesPanel() {
       ))}
       <Flashing.Provider value={flashing}>
       <div className="changes-body">
-        {repos.length === 0 && <p className="empty">{looking ?? t.noRepos}</p>}
+        {repos.length === 0 && (looking || hiddenRepos === 0 ? <p className="empty">{looking ?? t.noRepos}</p> : (
+          // Every repository hidden: it says so, with the way back (not "none here", which sends one looking for a folder).
+          <p className="empty all-hidden">
+            {t.scm.hide.allTitle}.{' '}
+            <button type="button" className="link-btn" onClick={() => useApp.getState().setSettingsOpen('scm')}>{t.scm.hide.manage}</button>
+          </p>
+        ))}
         {missing && <GitMissing />}
         {unreadable.map((r) => <RepoTrouble key={r.root} name={r.name} root={r.root} error={r.error!} />)}
         {readable.length > 0 && !missing && nothing && (

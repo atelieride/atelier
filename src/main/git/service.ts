@@ -165,8 +165,10 @@ export async function listRepoFiles(repo: string): Promise<string[] | null> {
   }
 }
 
-/** Index of all project files: repos via ls-files, the rest via a bounded walk (no hidden files or build folders). */
-/** `hidden`: the folders of repositories the user hid (real paths): never walked. */
+/**
+ * Index of all project files: repos via ls-files, the rest via a bounded walk (no hidden files or build folders).
+ * `hidden`: the folders of repositories the user hid (real paths): never walked.
+ */
 export async function buildFileIndex(root: string, repos: string[], hidden: readonly string[] = []): Promise<{ path: string; rel: string }[]> {
   const out: { path: string; rel: string }[] = [];
   const relOf = (p: string) => p.slice(root.length + 1);

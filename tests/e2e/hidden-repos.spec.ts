@@ -114,6 +114,8 @@ test('a hidden repository stays hidden after a relaunch; Settings › Source Con
     await list.getByRole('button', { name: 'Show agent/repo in Source Control again' }).click();
     await expect(list).toHaveCount(0);
     await expect(dialog).toContainText('None. To hide one, right-click it in Source Control and choose Hide This Repository.');
+    // Its button gone, the keyboard stays in Settings (on the row it was in), not back on the page.
+    await expect.poll(() => s.win.evaluate(() => !!document.activeElement?.closest('.hid-repos'))).toBe(true);
     await s.win.keyboard.press('Escape');
     await expect.poll(() => blockNames(s.win), { timeout: 10000 }).toEqual(['agent', 'inner', 'repo', 'tools']);
   } finally {
@@ -121,7 +123,7 @@ test('a hidden repository stays hidden after a relaunch; Settings › Source Con
   }
 });
 
-test('every repository hidden: Source Control says so, and its button opens the hidden list in Settings', async () => {
+test('every repository hidden: Source Control and Changes say so, and their buttons open the hidden list in Settings', async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-hide-')));
   repoAt(join(root, 'solo'));
   const s = await launch(root);
@@ -135,9 +137,19 @@ test('every repository hidden: Source Control says so, and its button opens the 
     await expect(empty).toContainText('Every repository here is hidden');
     await expect(empty).toContainText('Atelier doesn’t look at the 1 repository this project hides.');
     await look(s.win.locator('.sidebar'), `${SHOTS}/hidden-repos-empty.png`, { settle: 300 });
+    // Changes, too: not "No git repositories", which would send the user looking for a folder.
+    const changes = s.win.locator('aside.changes .changes-body');
+    await expect(changes).toContainText('Every repository here is hidden.');
+    await expect(changes).not.toContainText('No git repositories');
+    await look(s.win.locator('aside.changes'), `${SHOTS}/hidden-repos-changes-empty.png`, { settle: 300 });
     await empty.getByRole('button', { name: 'Hidden Repositories…' }).click();
     const dialog = s.win.getByRole('dialog', { name: 'Settings' });
-    await expect(dialog.getByRole('list', { name: `Hidden repositories in ${basename(root)}` }).getByRole('listitem')).toHaveText(['soloShow']);
+    const list = dialog.getByRole('list', { name: `Hidden repositories in ${basename(root)}` });
+    await expect(list.getByRole('listitem')).toHaveText(['soloShow']);
+    await s.win.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await changes.getByRole('button', { name: 'Hidden Repositories…' }).click();
+    await expect(list.getByRole('listitem')).toHaveText(['soloShow']);
   } finally {
     await s.stop();
   }

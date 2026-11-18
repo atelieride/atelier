@@ -465,18 +465,27 @@ function SourceControl({ s }: { s: S }) {
  * The repositories this window's project hides (Hide This Repository), each with Show; the welcome window and pop-outs
  * have no project of their own, so no row. Read again whenever the section opens.
  */
-function HiddenRepos() {
+export function HiddenRepos() {
   const project = useApp((x) => (x.popout ? null : x.project));
   const hidden = useApp((x) => x.scmSearch?.hidden ?? null);
   useEffect(() => { if (project) loadSearch(); }, [project?.root]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!project) return null;
   const list = hidden ?? [];
   const label = t.set.hiddenRepos(project.name);
+  // Its row leaves once main answers: the keyboard goes on to the next row's Show (else the previous one's, else
+  // this row), never back to the page.
+  const show = (rel: string, btn: HTMLButtonElement) => {
+    const li = btn.closest('li');
+    const next = (li?.nextElementSibling ?? li?.previousElementSibling)?.querySelector('button') ?? null;
+    const row = btn.closest<HTMLElement>('.hid-repos');
+    void showRepo(rel).then(() => requestAnimationFrame(() => { if (!btn.isConnected) (next?.isConnected ? next : row)?.focus(); }));
+  };
   return (
-    <div className="set-row hid-repos">
+    <div className="set-row hid-repos" tabIndex={-1}>
       <div className="set-text">
         <span className="set-label">{label}</span>
-        <span className="set-hint">{list.length ? t.set.hiddenReposHint : t.set.hiddenReposNone}</span>
+        {/* Nothing until the list is read: "None" first, then a list, would flicker. */}
+        {hidden !== null && <span className="set-hint">{list.length ? t.set.hiddenReposHint : t.set.hiddenReposNone}</span>}
       </div>
       {list.length > 0 && (
         <ul className="hid-list" aria-label={label}>
@@ -484,7 +493,7 @@ function HiddenRepos() {
             <li key={rel} className="hid-item">
               <Icon name="eye-off" size={13} stroke={1.8} />
               <span className="hid-path mono" data-tip={rel}>{rel}</span>
-              <button type="button" className="btn-ghost sm" aria-label={t.set.showRepoTip(rel)} onClick={() => void showRepo(rel)}>{t.set.showRepo}</button>
+              <button type="button" className="btn-ghost sm" aria-label={t.set.showRepoTip(rel)} onClick={(e) => show(rel, e.currentTarget)}>{t.set.showRepo}</button>
             </li>
           ))}
         </ul>
