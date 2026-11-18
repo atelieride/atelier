@@ -94,8 +94,11 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
   const hasRemote = facts ? facts.remotes.length > 0 : !!status.upstream;
   const can = syncAbility(status, hasRemote);
   const view = blockView({ status, running: op?.op ?? null, hasRemote, commit });
+  const running = op ? runningLabel(op.op) : null;
+  // While an op runs on this working tree, the header's Pull and Push (its counts, ⋯) wait for it, saying what runs.
+  const canNow = running ? { ...can, pull: running, push: running } : can;
   // What a folded block's header says while an op runs on it (it has no button to say so).
-  const busy = op && folded ? runningLabel(op.op) : null;
+  const busy = folded ? running : null;
 
   // ✦'s message lands in the draft (subject and body); the field shows its first line.
   useEffect(() => { if (w?.apply != null) { setText(w.apply); messageApplied(); } }, [w?.apply]);
@@ -154,13 +157,13 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
             // A folded block has no button to say an op runs: its counts say it, a spinner over them (they keep their
             // box and the focus); without counts, the spinner alone.
             busy && !(view.behind || view.ahead) ? <i className="git-spin" role="img" aria-label={busy} data-tip={busy} />
-              : <Counts view={view} busy={busy} act={writes ? { pull: () => void startPull(root), push: () => void push(root), off: { pull: op ? runningLabel(op.op) : can.pull, push: op ? runningLabel(op.op) : can.push }, ref: keepFocus } : undefined} />
+              : <Counts view={view} busy={busy} act={writes ? { pull: () => void startPull(root), push: () => void push(root), off: { pull: canNow.pull, push: canNow.push }, ref: keepFocus } : undefined} />
           )}
           {view.clean && <span className="sw-chip is-clean" role="img" aria-label={a.inSync} data-tip={a.inSync}><Icon name="check" size={11} stroke={2.6} /></span>}
         </span>
         {/* Always there, in its own room: Fetch, Pull and Push, then the repository's menu. */}
         <button ref={menuBtn} type="button" className="icon-btn ab-menu" aria-label={a.actions(row.name)} data-tip={a.actions(row.name)} aria-haspopup="menu"
-          onClick={(e) => menuAt(e.currentTarget, [...syncItems(root, can, writes ? ['fetch', 'pull', 'push'] : ['fetch']), 'sep', ...repoMenu(root)])}><Icon name="more" size={13} /></button>
+          onClick={(e) => menuAt(e.currentTarget, [...syncItems(root, canNow, writes ? ['fetch', 'pull', 'push'] : ['fetch']), 'sep', ...repoMenu(root)])}><Icon name="more" size={13} /></button>
       </div>
       {!folded && writes && (
         <div className="ab-body">
