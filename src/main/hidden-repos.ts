@@ -1,6 +1,6 @@
 // The repositories each project hides from Atelier: ATELIER_HOME/hidden-repos.json, 0600, written atomically.
 // Paths inside the project only, by project root: no file content, nothing about the repositories themselves.
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeFileAtomic } from '../daemon/fsutil';
 import { isAbsPath } from '@shared/paths';
@@ -35,8 +35,8 @@ export function createHiddenRepos(home: string): HiddenRepos {
     return projects;
   };
   // File first, then memory: a failed write changes nothing.
-  const commit = (project: string, rels: string[]): string[] => {
-    const next = { ...load() };
+  const commit = (project: string, rels: string[], base: Record<string, string[]> = load()): string[] => {
+    const next = { ...base };
     if (rels.length) next[project] = rels; else delete next[project];
     writeFileAtomic(file, JSON.stringify({ version: 1, projects: next }, null, 2), 0o600);
     projects = next;
@@ -49,7 +49,12 @@ export function createHiddenRepos(home: string): HiddenRepos {
       const now = load()[project] ?? [];
       if (now.includes(rel)) return [...now];
       if (now.length >= HIDDEN_REPOS_MAX_PER_PROJECT) throw new Error('too many hidden repositories');
-      if (!now.length && Object.keys(load()).length >= HIDDEN_REPOS_MAX_PROJECTS) throw new Error('too many projects with hidden repositories');
+      if (!now.length && Object.keys(load()).length >= HIDDEN_REPOS_MAX_PROJECTS) {
+        // Full: the projects whose folder is gone (moved, deleted) make room; the ones still there keep what they hide.
+        const there = Object.fromEntries(Object.entries(load()).filter(([root]) => existsSync(root)));
+        if (Object.keys(there).length >= HIDDEN_REPOS_MAX_PROJECTS) throw new Error('too many projects with hidden repositories');
+        return commit(project, [rel], there);
+      }
       return commit(project, [...now, rel].sort());
     },
     remove: (project, rel) => {

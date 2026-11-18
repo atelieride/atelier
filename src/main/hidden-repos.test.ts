@@ -72,6 +72,24 @@ test('at most 200 hidden repositories per project', () => {
   expect(s.list(P)).toHaveLength(200);
 });
 
+test('500 projects at most: once full, the projects whose folder is gone make room; the ones still there keep theirs', () => {
+  const h = home();
+  const here = mkdtempSync(join(h, 'here-'));
+  const projects: Record<string, string[]> = { [here]: ['kept'] };
+  for (let i = 1; i < 500; i++) projects[join(h, `gone-${i}`)] = ['x'];
+  writeFileSync(file(h), JSON.stringify({ version: 1, projects }));
+  const s = createHiddenRepos(h);
+  const fresh = mkdtempSync(join(h, 'new-'));
+  expect(s.add(fresh, 'a')).toEqual(['a']);
+  expect(JSON.parse(readFileSync(file(h), 'utf8'))).toEqual({ version: 1, projects: { [here]: ['kept'], [fresh]: ['a'] } });
+  // Full of projects still on disk: refused, nothing written.
+  const all: Record<string, string[]> = {};
+  for (let i = 0; i < 500; i++) all[mkdtempSync(join(h, 'p-'))] = ['x'];
+  writeFileSync(file(h), JSON.stringify({ version: 1, projects: all }));
+  expect(() => createHiddenRepos(h).add(fresh, 'a')).toThrow();
+  expect(Object.keys(JSON.parse(readFileSync(file(h), 'utf8')).projects)).toHaveLength(500);
+});
+
 test('a write that fails changes nothing, and says so', () => {
   const h = home();
   // ATELIER_HOME is a file: the store's file can't be written under it.
