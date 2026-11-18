@@ -1,5 +1,6 @@
-// Every window's in-app confirms that don't live in a row: mounted once per window, the
-// project's, a pop-out's and the welcome one.
+// Every window's in-app confirms that float over the page (a bubble beside a sidebar row, a popover, a
+// centered sheet): mounted once per window, the project's, a pop-out's and the welcome one. The questions
+// that grow inside their own row (a session's Restart, the file tree's Move to Trash) live in that row.
 import { CloseHost } from './CloseHost';
 import { UnsavedHost } from './UnsavedHost';
 import { MainAskHost } from './MainAskHost';
