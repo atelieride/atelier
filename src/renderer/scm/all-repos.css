@@ -103,6 +103,9 @@
 @container (max-width: 300px) {
   .ab-ask .git-ask-actions { flex-direction: column-reverse; align-items: stretch; }
   .ab-ask .git-ask-actions > button { justify-content: center; }
+  /* A header that carries counts needs the nested note's room for them, ⋯ and the name: the note gives way first, all
+     of it (a one-word note cut to "ne…" would say nothing). The switcher's card still says it. */
+  .ab-head:has(.ab-counts) .ab-note { display: none; }
 }
 /* Narrow: the body under the name, not indented; the branch gives all its room before the name gives any. */
 @container (max-width: 240px) {
