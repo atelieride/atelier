@@ -23,7 +23,9 @@ import { SENSITIVE, SHOTS_ONLY, findBanned } from '../support/banned-strings';
 // +1 KB for a session's artifacts: the background chip's count, the popover's Artifacts section, its menu and strings.
 // +1 KB for an activity's own color (its pick and one-time conversion, Color › swatches) and Changes' ↓ that pulls.
 // +1 KB for a project's color: its pick, the chip's Project Color › menu and command, the tint's styles and strings.
-const BUDGET = 917 * 1024;
+// +1 KB for a row's close question as a bubble beside it (its place, arrow, folding row) and a repository's counts
+// that pull and push.
+const BUDGET = 918 * 1024;
 const SHARED = resolve('src/shared');
 const INSTALL = resolve('src/demo/install.ts');
 
