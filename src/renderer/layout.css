@@ -3214,6 +3214,14 @@ button.dk-tr:hover { background: var(--bg-hover); color: var(--text); }
 .acct-detected { --acct: var(--worktree); display: flex; align-items: center; gap: 12px; margin-top: 10px; padding: 10px 12px; border-radius: var(--radius); border: 1px dashed var(--edge-worktree); background: var(--tint-worktree); animation: atl-pop var(--t-med) var(--ease) both; }
 .acct-detected p { flex: 1; min-width: 0; margin: 0; font-size: 12.5px; color: var(--text-2); }
 .acct-detected .mono { color: var(--worktree-text); }
+/* Settings › Source Control: the project's hidden repositories, one card each with Show. */
+.set-row.hid-repos { flex-direction: column; align-items: stretch; gap: 10px; }
+.hid-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.hid-item { display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 12px; border-radius: var(--radius); border: 1px solid var(--line-soft); background: var(--bg-2); color: var(--text-4);
+  animation: atl-pop var(--t-med) var(--ease) both; transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); }
+.hid-item:hover, .hid-item:focus-within { border-color: var(--line); background: var(--bg-3); }
+.hid-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-2); }
+:root[data-motion="reduced"] .hid-item { animation: none; }
 .acct-add { margin-top: 10px; align-self: flex-start; }
 .acct-form { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px 12px; margin-top: 10px; padding: 12px; border-radius: var(--radius); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet); animation: atl-pop var(--t-med) var(--ease) both; }
 .acct-form .set-text-input { width: 100%; }

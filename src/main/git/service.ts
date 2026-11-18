@@ -166,7 +166,8 @@ export async function listRepoFiles(repo: string): Promise<string[] | null> {
 }
 
 /** Index of all project files: repos via ls-files, the rest via a bounded walk (no hidden files or build folders). */
-export async function buildFileIndex(root: string, repos: string[]): Promise<{ path: string; rel: string }[]> {
+/** `hidden`: the folders of repositories the user hid (real paths): never walked. */
+export async function buildFileIndex(root: string, repos: string[], hidden: readonly string[] = []): Promise<{ path: string; rel: string }[]> {
   const out: { path: string; rel: string }[] = [];
   const relOf = (p: string) => p.slice(root.length + 1);
   // Repos git won't read: walked like folders below, so their files can still be found.
@@ -194,6 +195,7 @@ export async function buildFileIndex(root: string, repos: string[]): Promise<{ p
     for (const n of names.sort()) {
       if (n.startsWith('.') || SKIP_DIRS.has(n)) continue;
       const p = join(dir, n);
+      if (hidden.some((h) => isInside(h, p))) continue;
       let st;
       try { st = await stat(p); } catch { continue; }
       // Repos have their own listing; a symlink to a repo is compared by its real path.

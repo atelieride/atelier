@@ -16,10 +16,12 @@ import { aheadBehind, lastFetchAt, locateCommit, readBlob, readCommit, readLog, 
 import { scmEntries } from './git/scm-repos';
 import { quickTrees } from './git/repos';
 import { ScmEvents } from './scm-watch';
-import { noArgsSchema, scmAheadBehindSchema, scmCommitSchema, scmFetchSchema, scmFileSchema, scmLocateSchema, scmLogSchema, scmResolveSchema, scmRootSchema } from './ipc-schemas';
+import { noArgsSchema, scmAheadBehindSchema, scmCommitSchema, scmFetchSchema, scmFileSchema, scmLocateSchema, scmLogSchema, scmResolveSchema, scmRootSchema, scmUnhideSchema } from './ipc-schemas';
+import type { HiddenRepos } from './hidden-repos';
 import { REPO_SEARCH_MAX_FOLDERS } from './git/repos';
 import type { GitHub } from './git-hub';
-import { toOut } from './cpath';
+import { relative, toOut } from './cpath';
+import { isBelow } from '@shared/paths';
 
 /** The root must be one of the entries main listed for the window's project. */
 export function checkRoot(entries: { root: string }[], root: string): boolean {
@@ -102,8 +104,9 @@ export class ScmHub {
   /**
    * @param writes the queue of git writes, shared with GitOps: a fetch waits behind a write on
    *   the same object store.
+   * @param hidden the repositories each project hides (Hide This Repository); none can be hidden without it.
    */
-  constructor(private readonly git: GitHub, fetchDeps: ScmFetchDeps = OFF, readonly writes: WriteQueue = new WriteQueue()) {
+  constructor(private readonly git: GitHub, fetchDeps: ScmFetchDeps = OFF, readonly writes: WriteQueue = new WriteQueue(), private readonly hidden: HiddenRepos | null = null) {
     git.onScm = (key, e, worktree) => this.event(key, e, worktree);
     git.onProjectClosed = (key) => { const p = this.projects.get(key); if (p) this.disposeProject(key, p); };
     this.fetcher = new FetchScheduler({
@@ -145,7 +148,7 @@ export class ScmHub {
   private async sendFetch(st: ScmFetchState): Promise<void> {
     for (const key of this.projects.keys()) {
       const info = this.git.info(key);
-      const commons = (info?.trees ?? (info ? quickTrees(info.root, info.discovered) : [])).map((t) => t.common);
+      const commons = (info?.trees ?? (info ? quickTrees(info.root, info.discovered, info.hiddenAt) : [])).map((t) => t.common);
       if (!commons.includes(st.common)) continue;
       for (const wc of this.git.info(key)?.windows ?? []) if (!wc.isDestroyed()) wc.send(IPC.evScmFetch, st);
     }
@@ -186,7 +189,7 @@ export class ScmHub {
     // A window used Source Control: its fetch states and events go to it from now on.
     this.project(key);
     const withStatus = (list: ScmRepoEntry[]) => list.map((e) => ({ ...e, status: scmStatusOf(info.status.get(e.root)) }));
-    return Promise.resolve(withStatus(scmEntries(info.root, info.trees ?? quickTrees(info.root, info.discovered))));
+    return Promise.resolve(withStatus(scmEntries(info.root, info.trees ?? quickTrees(info.root, info.discovered, info.hiddenAt))));
   }
 
   /**
@@ -276,7 +279,27 @@ export class ScmHub {
       const key = keyOf(e);
       noArgsSchema.parse(arg);
       const i = this.git.info(key);
-      return i ? { capped: i.capped, searching: i.searching, maxFolders: i.maxFolders } : { capped: false, searching: false, maxFolders: REPO_SEARCH_MAX_FOLDERS };
+      const hidden = this.hidden?.list(key) ?? [];
+      return i ? { capped: i.capped, searching: i.searching, maxFolders: i.maxFolders, hidden } : { capped: false, searching: false, maxFolders: REPO_SEARCH_MAX_FOLDERS, hidden };
+    });
+    // Hide This Repository: an entry listed here, inside the project, not its root nor a linked worktree (hiding one
+    // would hide its repository's store). Kept by its path inside the project's real root.
+    handle(IPC.scmHide, async (e, arg) => {
+      const { key, root } = await rooted(e, scmRootSchema.parse(arg).root);
+      const entry = (await this.entriesOf(key)).find((x) => x.root === root)!;
+      const real = this.git.info(key)?.root;
+      if (!this.hidden || !real || entry.rel === '' || entry.linked || entry.worktreeOf || !isBelow(real, root)) throw new Error('this repository cannot be hidden');
+      const list = this.hidden.add(key, relative(real, root).split(/[\\/]/).join('/'));
+      this.git.hiddenChanged(key);
+      return list;
+    });
+    handle(IPC.scmUnhide, async (e, arg) => {
+      const key = keyOf(e);
+      const { rel } = scmUnhideSchema.parse(arg);
+      if (!this.hidden) throw new Error('no hidden repositories');
+      const list = this.hidden.remove(key, rel);
+      this.git.hiddenChanged(key);
+      return list;
     });
     handle(IPC.scmRefs, async (e, arg) => {
       const { key, root } = await rooted(e, scmRootSchema.parse(arg).root);

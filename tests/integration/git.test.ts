@@ -105,6 +105,46 @@ test('repo discovery: past the folder cap the scan stops and says so, shallow re
   expect(await discoverRepos(root, { depth: 3 })).toEqual({ repos: [join(root, 'd29', 'inner', 'deep'), join(root, 'zz')], capped: false });
 });
 
+/**
+ * A clone a service keeps inside another repository (`agent`, which ignores it) with a repository of its own inside, next
+ * to a repository holding a clone that stays shown (`tools/shared`).
+ */
+function nestedClone(): string {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-hide-')));
+  repoWithCommit(join(root, 'agent'));
+  writeFileSync(join(root, 'agent', '.gitignore'), 'data/\n');
+  repoWithCommit(join(root, 'agent', 'data', 'repo'));
+  repoWithCommit(join(root, 'agent', 'data', 'repo', 'inner'));
+  repoWithCommit(join(root, 'tools'));
+  repoWithCommit(join(root, 'tools', 'shared'));
+  return root;
+}
+
+test('repo discovery: a hidden repository is not found, nor the repositories inside it, and its folders are never read', async () => {
+  const root = nestedClone();
+  const hidden = ['agent/data/repo'];
+  expect(await discoverRepos(root, { depth: 4, hidden })).toEqual({ repos: [join(root, 'agent'), join(root, 'tools'), join(root, 'tools', 'shared')], capped: false });
+  // Five folders are read to reach it (the root, agent, tools, agent/data, tools/shared): with five allowed, the
+  // scan only ends uncapped if it never reads the hidden repository's own.
+  expect((await discoverRepos(root, { depth: 4, maxFolders: 5, hidden })).capped).toBe(false);
+  expect((await discoverRepos(root, { depth: 4, maxFolders: 5 })).capped).toBe(true);
+  // A hidden path that is gone, or names no repository, changes nothing else.
+  expect((await discoverRepos(root, { depth: 4, hidden: ['gone/away'] })).repos).toHaveLength(5);
+});
+
+posixTest('repo discovery: a hidden repository reached through a symlink stays hidden, and so do its repositories', async () => {
+  const root = nestedClone();
+  symlinkSync(join(root, 'agent', 'data', 'repo'), join(root, 'mirror'));
+  expect((await discoverRepos(root, { depth: 4, hidden: ['agent/data/repo'] })).repos).toEqual([join(root, 'agent'), join(root, 'tools'), join(root, 'tools', 'shared')]);
+});
+
+posixTest('repo discovery: a linked worktree of a hidden repository, elsewhere in the project, is hidden with it (they share one store)', async () => {
+  const root = nestedClone();
+  git(join(root, 'agent', 'data', 'repo'), 'worktree', 'add', '-q', '-b', 'side', join(root, 'side'));
+  expect((await discoverRepos(root, { depth: 4 })).repos).toContain(join(root, 'side'));
+  expect((await discoverRepos(root, { depth: 4, hidden: ['agent/data/repo'] })).repos).not.toContain(join(root, 'side'));
+});
+
 test('status: modified, added, deleted, renamed, untracked in a new folder, counts', async () => {
   const repo = realpathSync(mkdtempSync(join(tmpdir(), 'atl-repo-')));
   repoWithCommit(repo);
@@ -325,6 +365,23 @@ posixTest('file index for ⌘K: tracked and untracked non-ignored, in all repos,
   writeFileSync(join(root, 'node_modules', 'p', 'i.js'), 'x');
   const files = (await buildFileIndex(root, await found(root, 2))).map((f) => f.rel).sort();
   expect(files).toEqual(['app/.gitignore', 'app/a.ts', 'app/new.ts', 'app/old.ts', 'app/to-rename.ts', 'dev.sh']);
+});
+
+// As the machine, with the paths main gets there (canonical C:/… on Windows): a native C:\ root gives '\' in `rel`.
+test('file index: a hidden repository\'s files are left out, also where no repository around it lists files', async () => {
+  setTestDefaultPlatform(null);
+  try {
+    const root = toCanonical(realpathSync.native(mkdtempSync(join(tmpdir(), 'atl-idx-hide-'))));
+    repoWithCommit(join(root, 'vendor', 'mirror'));
+    writeFileSync(join(root, 'vendor', 'README.md'), 'x\n');
+    repoWithCommit(join(root, 'app'));
+    const rels = (await buildFileIndex(root, [`${root}/app`], [`${root}/vendor/mirror`])).map((f) => f.rel);
+    expect(rels).toContain('vendor/README.md');
+    expect(rels).toContain('app/a.ts');
+    expect(rels.filter((r) => r.startsWith('vendor/mirror/'))).toEqual([]);
+  } finally {
+    setTestDefaultPlatform('darwin');
+  }
 });
 
 test('file index: a repo reached through a symlink to outside the project adds no files (they cannot be opened)', async () => {

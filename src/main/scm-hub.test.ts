@@ -122,10 +122,10 @@ test('scm:search answers how the project\'s folder scan went', async () => {
   const handlers = new Map<string, (e: unknown, a: unknown) => Promise<unknown>>();
   hub.installIpc(() => '/p', () => true, (ch, fn) => { handlers.set(ch, fn as never); });
   const e = { sender: { id: 1, once: () => {} } };
-  expect(await handlers.get('scm:search')!(e, undefined)).toEqual({ capped: true, searching: false, maxFolders: 20_000 });
+  expect(await handlers.get('scm:search')!(e, undefined)).toEqual({ capped: true, searching: false, maxFolders: 20_000, hidden: [] });
   info.capped = false;
   info.searching = true;
-  expect(await handlers.get('scm:search')!(e, undefined)).toEqual({ capped: false, searching: true, maxFolders: 20_000 });
+  expect(await handlers.get('scm:search')!(e, undefined)).toEqual({ capped: false, searching: true, maxFolders: 20_000, hidden: [] });
 });
 
 test('every git call of the scm IPC goes through the window\'s queue: at most two at a time', async () => {
@@ -331,4 +331,61 @@ test('the switcher’s entries are the working trees Changes listed, every time 
   expect(list).not.toHaveBeenCalled();
   hub.dispose();
   list.mockRestore();
+});
+
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { createHiddenRepos } from './hidden-repos';
+import { join } from 'node:path';
+
+/** A project with its root repository, a nested one, a linked worktree and a repository reached outside the root. */
+function hidingHub() {
+  const tree = (root: string, common = `${root}/.git`, gitDir: string | null = common) => ({ root, common, gitDir, worktreeOf: null, hidden: false });
+  const info = {
+    root: '/p', repos: [], discovered: [], status: new Map(), windows: new Set(), capped: false, searching: false, maxFolders: 20_000, hiddenAt: [],
+    trees: [tree('/p'), tree('/p/agent/data/repo'), tree('/p/wt', '/p/.git', '/p/.git/worktrees/wt'), tree('/elsewhere/linked'),
+      // A linked worktree in a hidden folder whose .git file can't be read: no git dir, its owner known.
+      { root: '/p/.claude/worktrees/x', common: '/p/.git', gitDir: null, worktreeOf: '/p', hidden: true }]
+  };
+  const hiddenChanged = vi.fn();
+  const git = { onScm: () => {}, onProjectClosed: () => {}, info: () => info, hiddenChanged };
+  const home = mkdtempSync(join(tmpdir(), 'atl-scm-hide-'));
+  const store = createHiddenRepos(home);
+  const hub = new ScmHub(git as never, undefined, undefined, store);
+  const handlers = new Map<string, (e: unknown, a: unknown) => Promise<unknown>>();
+  hub.installIpc(() => '/p', () => true, (ch, fn) => { handlers.set(ch, fn as never); });
+  const e = { sender: { id: 1, once: () => {} } };
+  const call = (ch: string, a?: unknown) => handlers.get(ch)!(e, a);
+  return { call, store, hiddenChanged, done: () => { hub.dispose(); rmSync(home, { recursive: true, force: true }); } };
+}
+
+test('scm:hide hides a repository Source Control listed, by its path inside the project, and GitHub drops it', async () => {
+  const h = hidingHub();
+  try {
+    expect(await h.call('scm:hide', { root: '/p/agent/data/repo' })).toEqual(['agent/data/repo']);
+    expect(h.store.list('/p')).toEqual(['agent/data/repo']);
+    expect(h.hiddenChanged).toHaveBeenCalledWith('/p');
+    expect(await h.call('scm:search')).toMatchObject({ hidden: ['agent/data/repo'] });
+    expect(await h.call('scm:unhide', { rel: 'agent/data/repo' })).toEqual([]);
+    expect(h.hiddenChanged).toHaveBeenCalledTimes(2);
+    expect(await h.call('scm:search')).toMatchObject({ hidden: [] });
+  } finally { h.done(); }
+});
+
+test('scm:hide refuses the project root, a linked worktree, a repository outside the project and one it never listed', async () => {
+  const h = hidingHub();
+  try {
+    for (const root of ['/p', '/p/wt', '/p/.claude/worktrees/x', '/elsewhere/linked', '/p/unknown']) await expect(h.call('scm:hide', { root })).rejects.toThrow();
+    await expect(h.call('scm:unhide', { rel: '../up' })).rejects.toThrow();
+    expect(h.store.list('/p')).toEqual([]);
+    expect(h.hiddenChanged).not.toHaveBeenCalled();
+  } finally { h.done(); }
+});
+
+test('the switcher\'s entries say which ones are linked worktrees (never hidden on their own)', async () => {
+  const h = hidingHub();
+  try {
+    const entries = await h.call('scm:repos') as ScmRepoEntry[];
+    expect(entries.filter((x) => x.linked).map((x) => x.root)).toEqual(['/p/wt']);
+  } finally { h.done(); }
 });

@@ -42,6 +42,8 @@ import { ThemePicker } from './ThemePicker';
 import { FontPicker } from './FontPicker';
 import { useInstalledFonts } from '../terminal/installed-fonts';
 import { fontMissing } from '@shared/terminal-font';
+import { loadSearch } from '../scm/data';
+import { showRepo } from '../scm/actions';
 
 /**
  * macOS: the zsh environment capture, the aliases it brings and Option as Meta. Windows has none of them (GUI apps inherit
@@ -442,16 +444,52 @@ function Redis({ s }: { s: S }) {
   );
 }
 
-/** Source Control: when Atelier fetches on its own, its icon's dot for commits to pull, and how deep it looks for repositories. */
+/**
+ * Source Control: when Atelier fetches on its own, its icon's dot for commits to pull, how deep it looks for
+ * repositories and the ones this project hides.
+ */
 function SourceControl({ s }: { s: S }) {
   return (
     <>
       <Row label={t.set.autoFetch} hint={t.set.autoFetchHint}><Segmented label={t.set.autoFetch} value={s.autoFetch} options={opts(t.set.autoFetches)} onChange={(v) => set({ autoFetch: v })} /></Row>
       <Row label={t.set.scmPullDot} hint={t.set.scmPullDotHint}><Toggle label={t.set.scmPullDot} value={s.scmPullDot} onChange={(v) => set({ scmPullDot: v })} /></Row>
       <Row label={t.set.repoSearchDepth} hint={t.set.repoSearchDepthHint}><Stepper label={t.set.repoSearchDepth} value={s.repoSearchDepth} min={1} max={5} step={1} format={t.set.levels} onChange={(v) => set({ repoSearchDepth: v })} /></Row>
+      <HiddenRepos />
       <GitWrites s={s} />
       <p className="set-note">{t.set.scmNote}</p>
     </>
+  );
+}
+
+/**
+ * The repositories this window's project hides (Hide This Repository), each with Show; the welcome window and pop-outs
+ * have no project of their own, so no row. Read again whenever the section opens.
+ */
+function HiddenRepos() {
+  const project = useApp((x) => (x.popout ? null : x.project));
+  const hidden = useApp((x) => x.scmSearch?.hidden ?? null);
+  useEffect(() => { if (project) loadSearch(); }, [project?.root]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!project) return null;
+  const list = hidden ?? [];
+  const label = t.set.hiddenRepos(project.name);
+  return (
+    <div className="set-row hid-repos">
+      <div className="set-text">
+        <span className="set-label">{label}</span>
+        <span className="set-hint">{list.length ? t.set.hiddenReposHint : t.set.hiddenReposNone}</span>
+      </div>
+      {list.length > 0 && (
+        <ul className="hid-list" aria-label={label}>
+          {list.map((rel) => (
+            <li key={rel} className="hid-item">
+              <Icon name="eye-off" size={13} stroke={1.8} />
+              <span className="hid-path mono" data-tip={rel}>{rel}</span>
+              <button type="button" className="btn-ghost sm" aria-label={t.set.showRepoTip(rel)} onClick={() => void showRepo(rel)}>{t.set.showRepo}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

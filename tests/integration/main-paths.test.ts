@@ -23,7 +23,7 @@ const NODE_PATH = new Set([
   // git's own files and sockets, read in place; a repo root checked, never built.
   'src/main/git/history.ts', 'src/main/git/repo-facts.ts', 'src/main/git/trace2.ts', 'src/main/git/fetch.ts',
   // Endpoints and their config.
-  'src/main/docker/detect.ts', 'src/main/redis/client.ts', 'src/main/redis/main-deps.ts', 'src/main/redis/picks.ts', 'src/main/databases/store.ts',
+  'src/main/docker/detect.ts', 'src/main/redis/client.ts', 'src/main/redis/main-deps.ts', 'src/main/redis/picks.ts', 'src/main/databases/store.ts', 'src/main/hidden-repos.ts',
   // The clipboard image: its path is typed into a terminal, in the OS's own form.
   'src/main/clipboard-image.ts', 'src/main/clipboard-ipc.ts',
   // Names only (basename).

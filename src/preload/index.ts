@@ -149,7 +149,9 @@ const api: AtelierApi = {
     status: (root) => ipcRenderer.invoke(IPC.scmStatus, { root }),
     fetchRepo: (root, reason) => ipcRenderer.invoke(IPC.scmFetch, { root, reason }),
     fetchAll: () => ipcRenderer.invoke(IPC.scmFetchAll),
-    fetchStates: () => ipcRenderer.invoke(IPC.scmFetchStates)
+    fetchStates: () => ipcRenderer.invoke(IPC.scmFetchStates),
+    hide: (root) => ipcRenderer.invoke(IPC.scmHide, { root }),
+    unhide: (rel) => ipcRenderer.invoke(IPC.scmUnhide, { rel })
   },
   attributions: () => ipcRenderer.invoke(IPC.attributions),
   resolveAttributions: (paths, terminalId) => ipcRenderer.invoke(IPC.attributionsResolve, { paths, terminalId }),

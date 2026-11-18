@@ -10,7 +10,7 @@ import { shouldPrune } from '@shared/attribution';
 import type { MergeInfo, RepoCompare, RepoStatus } from '@shared/git';
 import type { ScmEvent } from '@shared/scm';
 import { headTarget } from './git-head';
-import { REPO_SEARCH_MAX_FOLDERS, discoverRepos, listWorkingTrees, relistPlan, type RepoList, type WorkingTree } from './git/repos';
+import { REPO_SEARCH_MAX_FOLDERS, discoverRepos, hiddenCommons, hiddenPaths, listWorkingTrees, relistPlan, treeCommon, type RepoList, type WorkingTree } from './git/repos';
 import { StatusScheduler, buildFileIndex, readHeadContent, readRepoStatus } from './git/service';
 import { gitReadLimiter, type ReadLevel } from './git/read-limiter';
 import { testMs } from './dev-env';
@@ -23,6 +23,7 @@ import { KeepSet } from './git/keep-set';
 import { filesReadSchema, gitBaseSchema } from './ipc-schemas';
 import type { DaemonClient } from './daemon-client';
 import { isBelow, isInside } from '@shared/paths';
+import { underHidden } from '@shared/hidden-repos';
 
 /** The debouncer's key for "events were dropped": no path is ever this (a NUL can't be in a file name). */
 const RESCAN = '\0rescan';
@@ -71,7 +72,12 @@ interface Project {
    * Common dirs outside the project, watched on their own: the project is (or holds) a linked worktree of a repository
    * elsewhere, whose refs, HEAD and index live there (a commit or a push changes no file of the project).
    */
-  outside: Map<string, { watcher: FSWatcher; debounce: Debouncer }>
+  outside: Map<string, { watcher: FSWatcher; debounce: Debouncer }>;
+  /**
+   * The repositories the user hid, by path inside the root; the same as real paths; their git common dirs. Never
+   * scanned, listed, read or watched: their events are dropped, but for files changed in there (open editors).
+   */
+  hidden: string[]; hiddenAt: string[]; hiddenCommons: Set<string>
 }
 
 /**
@@ -119,10 +125,13 @@ export class GitHub {
   /** How many folder levels below a project repositories are looked for, and how many folders one scan reads at most. */
   private readonly depth: () => number;
   private readonly maxFolders: () => number;
+  /** The repositories a project hides (its key), by path inside its real root. */
+  private readonly hiddenOf: (key: string) => readonly string[];
 
-  constructor(private readonly client: DaemonClient, o: { depth?: () => number; maxFolders?: () => number } = {}) {
+  constructor(private readonly client: DaemonClient, o: { depth?: () => number; maxFolders?: () => number; hidden?: (key: string) => readonly string[] } = {}) {
     this.depth = o.depth ?? (() => DEFAULT_SETTINGS.repoSearchDepth);
     this.maxFolders = o.maxFolders ?? (() => REPO_SEARCH_MAX_FOLDERS);
+    this.hiddenOf = o.hidden ?? (() => []);
     this.scheduler.onResult((st) => {
       // Files that became clean lose their attribution, but only once HEAD moved (commit, checkout): a brief clean
       // state with the same HEAD (stash, stash pop, reset) must not wipe them. An incomplete status (error,
@@ -148,8 +157,9 @@ export class GitHub {
         p.status.set(st.root, st);
         this.broadcast(p, force);
         this.refreshMerge(p, st);
-        // Not for nested repos (they have their own status) and not for what was written after the read started.
-        const exclude = p.repos.filter((r) => r !== st.root && isBelow(st.root, r));
+        // Not for nested repos (they have their own status) and not for what was written after the read started. Nor
+        // for hidden ones inside it: what was attributed there stays, for when they are shown again.
+        const exclude = [...p.repos, ...p.hiddenAt].filter((r) => r !== st.root && isBelow(st.root, r));
         for (const r of exclude) nested.add(r);
         if (!prune) continue;
         const dirty = KeepSet.withKept(st.changes.map((c) => c.path), keep);
@@ -177,8 +187,10 @@ export class GitHub {
         key: root, root: real, discovered: [], repos: [], trees: new Map(), merge: new Map(), relisting: null, relistAgain: false, listed: false,
         relistLive: new Set(), relistBulk: new Set(), lists: new Map(), discovering: null, discoverAgain: null, discoveredAt: 0, capped: false,
         rescanTimer: null, renamed: new Set(),
-        status: new Map(), watcher: null, windows: new Set(), debounce: new Debouncer(300, (keys, last) => this.onChanges(proj, keys, last), 1500), outside: new Map()
+        status: new Map(), watcher: null, windows: new Set(), debounce: new Debouncer(300, (keys, last) => this.onChanges(proj, keys, last), 1500), outside: new Map(),
+        hidden: [], hiddenAt: [], hiddenCommons: new Set()
       };
+      this.readHidden(proj);
       try {
         // Ignored paths (node_modules, .git objects) are dropped right away: during an npm install there are thousands.
         // A `.git` itself (a clone's first entry, a submodule's or a worktree's .git file) still counts: repositories
@@ -187,6 +199,8 @@ export class GitHub {
         proj.watcher = watch(real, { recursive: true }, (ev, file) => {
           if (!file) { proj.debounce.add(RESCAN); return; }
           const rel = String(file);
+          // Inside a hidden repository only files count (an open editor hears of them): its git at work is no news.
+          if (underHidden(rel, proj.hidden) && classifyChange(real, rel) !== 'file') return;
           if (classifyChange(real, rel) !== 'ignore' || DOT_GIT.test(rel)) {
             if (ev === 'rename') proj.renamed.add(rel);
             proj.debounce.add(rel);
@@ -211,13 +225,53 @@ export class GitHub {
    * A project's real root, its working trees and discovered repos, their last statuses and its windows (Source Control
    * builds on them), and how the folder scan went: still running, or stopped at its folder cap.
    */
-  info(root: string): { root: string; repos: string[]; discovered: string[]; status: ReadonlyMap<string, RepoStatus>; windows: ReadonlySet<WebContents>; trees?: readonly WorkingTree[]; capped: boolean; searching: boolean; maxFolders: number } | null {
+  info(root: string): { root: string; repos: string[]; discovered: string[]; status: ReadonlyMap<string, RepoStatus>; windows: ReadonlySet<WebContents>; trees?: readonly WorkingTree[]; capped: boolean; searching: boolean; maxFolders: number; hiddenAt: readonly string[] } | null {
     const p = this.projects.get(root);
-    // The working trees once listed: Source Control's switcher shows the same ones as Changes.
+    // The working trees once listed: Source Control's switcher shows the same ones as Changes. `hiddenAt`: the folders
+    // the user hid, as real paths (the working trees read before git lists them leave those out too).
     return p ? {
       root: p.root, repos: p.repos, discovered: p.discovered, status: p.status, windows: p.windows, ...(p.listed && p.trees.size ? { trees: [...p.trees.values()] } : {}),
-      capped: p.capped, searching: p.discovering !== null, maxFolders: this.maxFolders()
+      capped: p.capped, searching: p.discovering !== null, maxFolders: this.maxFolders(), hiddenAt: p.hiddenAt
     } : null;
+  }
+
+  /** The project's hidden repositories, read again from the store (with their common dirs, from the files git keeps). */
+  private readHidden(p: Project): void {
+    p.hidden = [...this.hiddenOf(p.key)];
+    p.hiddenAt = hiddenPaths(p.root, p.hidden);
+    p.hiddenCommons = hiddenCommons(p.hiddenAt);
+  }
+
+  /**
+   * A working tree the user hid: inside a hidden folder, or sharing a hidden repository's object store (`common` when
+   * known, else the last listing's, else read from the files git keeps: a scan that started before the hide may bring
+   * a working tree no listing knows).
+   */
+  private isHidden(p: Project, root: string, common?: string): boolean {
+    if (p.hiddenAt.some((h) => isInside(h, root))) return true;
+    if (p.hiddenCommons.size === 0) return false;
+    return p.hiddenCommons.has(common ?? p.trees.get(root)?.common ?? p.lists.get(root)?.common ?? treeCommon(root));
+  }
+
+  /**
+   * The project's hidden repositories changed (hidden or shown again). The ones hidden leave at once, with every
+   * working tree inside or sharing them: the windows get the snapshot without them before anything is read again.
+   * Then the folders are looked through again (what was shown again comes back).
+   */
+  hiddenChanged(key: string): void {
+    const p = this.projects.get(key);
+    if (!p) return;
+    this.readHidden(p);
+    const gone = new Set([...p.repos, ...p.discovered].filter((r) => this.isHidden(p, r)));
+    if (gone.size) {
+      p.discovered = p.discovered.filter((r) => !gone.has(r));
+      p.repos = p.repos.filter((r) => !gone.has(r));
+      for (const r of gone) { p.trees.delete(r); p.lists.delete(r); p.status.delete(r); p.merge.delete(r); this.merges.forget(r); this.forgetRepo(r); }
+      p.index = undefined;
+      this.broadcast(p, true);
+      this.relist(p, { stale: new Set(), level: 'live' });
+    }
+    this.rediscover(p, 'live');
   }
 
   /** The search depth changed: every open project looks for its repositories again (what it adds read as bulk). */
@@ -250,8 +304,11 @@ export class GitHub {
   private rediscover(p: Project, level: ReadLevel = 'live'): void {
     if (p.discovering) { p.discoverAgain = p.discoverAgain === 'live' || level === 'live' ? 'live' : 'bulk'; return; }
     const first = p.discoveredAt === 0;
-    p.discovering = discoverRepos(p.root, { depth: this.depth(), maxFolders: this.maxFolders() }).then(({ repos, capped }) => {
+    this.readHidden(p);
+    p.discovering = discoverRepos(p.root, { depth: this.depth(), maxFolders: this.maxFolders(), hidden: p.hidden }).then(({ repos: found, capped }) => {
       if (this.projects.get(p.key) !== p) return;
+      // Hidden while the scan ran: left out all the same.
+      const repos = found.filter((r) => !this.isHidden(p, r));
       p.discoveredAt = Date.now();
       const cappedNow = p.capped !== capped;
       p.capped = capped;
@@ -301,8 +358,10 @@ export class GitHub {
     const { stale, level } = relistPlan(p.relistLive, p.relistBulk);
     p.relistLive = new Set();
     p.relistBulk = new Set();
-    p.relisting = listWorkingTrees(p.root, p.discovered, [...p.trees.values()], { lists: p.lists, stale, level }).then((trees) => {
+    p.relisting = listWorkingTrees(p.root, p.discovered, [...p.trees.values()], { lists: p.lists, stale, level, hidden: p.hiddenAt }).then((listed) => {
       if (this.projects.get(p.key) !== p) return;
+      // Hidden while git listed them: left out all the same.
+      const trees = listed.filter((t) => !this.isHidden(p, t.root, t.common));
       const before = new Set(p.repos);
       const first = !p.listed;
       p.listed = true;
@@ -398,6 +457,8 @@ export class GitHub {
     if (!at || insideKind(at.inside) === 'ignore') return;
     let dir = gitDir;
     try { dir = toOut(realpathSync(gitDir)); } catch { /* gone meanwhile */ }
+    // A hidden repository whose git dir lives elsewhere (a submodule's, in its parent's .git): nothing to hear.
+    if (p.hiddenCommons.has(dir)) return;
     if (worktreeListChange(rel)) out.relist.add(dir);
     const scope = gitChangeScope(rel);
     const trees = [...p.trees.values()].filter((t) => t.common === dir);
@@ -477,6 +538,7 @@ export class GitHub {
   /** A file touched by Claude (hook): update its repo right away, without waiting for the watcher. */
   touched(path: string): void {
     for (const p of this.projects.values()) {
+      if (p.hiddenAt.some((h) => isInside(h, path))) continue;
       const r = repoOf(p.repos, path);
       if (r) this.scheduler.request(r);
     }
@@ -516,6 +578,11 @@ export class GitHub {
       isDir: (rel: string) => { try { return statSync(join(p.root, rel)).isDirectory(); } catch { return false; } }
     };
     for (const rel of rels) {
+      // Inside a hidden repository: a file for the open editors and the search, nothing for git.
+      if (underHidden(rel, p.hidden)) {
+        if (classifyChange(p.root, rel) === 'file') { files.push(join(p.root, rel)); plainFile = true; }
+        continue;
+      }
       // A repository cloned, renamed, moved or deleted: the folders are looked through again.
       if (!rescan && !dropped && needsRediscovery(rel, known, depth, probe, renamed.has(rel))) rescan = true;
       const kind = classifyChange(p.root, rel);
@@ -583,7 +650,7 @@ export class GitHub {
       const p = proj(e);
       if (!p) return [];
       // The discovered repos only: a linked worktree's files are copies of its repo's (⌘K would list each twice).
-      if (!p.index || Date.now() - p.index.at > 15000) p.index = { at: Date.now(), files: buildFileIndex(p.root, p.discovered) };
+      if (!p.index || Date.now() - p.index.at > 15000) p.index = { at: Date.now(), files: buildFileIndex(p.root, p.discovered, p.hiddenAt) };
       return p.index.files;
     });
     ipcMain.handle(IPC.gitStatus, (e) => {

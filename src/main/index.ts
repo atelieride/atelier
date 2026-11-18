@@ -88,6 +88,7 @@ import { installDockerIpc } from './docker/ipc';
 import { RedisHub } from './redis/hub';
 import { installRedisIpc } from './redis/ipc';
 import { createPicks } from './redis/picks';
+import { createHiddenRepos } from './hidden-repos';
 import { brewRedisInstalled, clientOriginsOf, dockerIpsOf, dockerRedisSecret, projectFiles } from './redis/main-deps';
 import { DbHub } from './databases/hub';
 import { installDbIpc } from './databases/ipc';
@@ -223,7 +224,9 @@ if (!app.requestSingleInstanceLock()) {
   hub.onResumed = (oldId, info) => homes.resumed(oldId, info);
   // e2e: a folder cap a test reaches with a handful of folders.
   const searchCap = testMs('ATELIER_TEST_REPO_SEARCH_MAX_FOLDERS');
-  const gitHub = new GitHub(client, { depth: () => settings.get().repoSearchDepth, ...(searchCap ? { maxFolders: () => searchCap } : {}) });
+  // Repositories each project hides (Source Control › Hide This Repository): never scanned, read or watched.
+  const hiddenRepos = createHiddenRepos(paths.home);
+  const gitHub = new GitHub(client, { depth: () => settings.get().repoSearchDepth, hidden: (key) => hiddenRepos.list(key), ...(searchCap ? { maxFolders: () => searchCap } : {}) });
   // A window coming to the front: repositories cloned or moved while no event said so are looked for again.
   app.on('browser-window-focus', (_e, w) => { const root = windowProjects.get(w.webContents.id); if (root) gitHub.focused(root); });
   // Fetch: view and manual fetches from the renderer, periodic ones per the setting, for open projects.
@@ -231,7 +234,7 @@ if (!app.requestSingleInstanceLock()) {
     setting: () => settings.get().autoFetch,
     online: () => isOnline(),
     projects: () => [...new Set([...windowProjects.values()].filter((r): r is string => !!r))]
-  });
+  }, undefined, hiddenRepos);
   scmHub.startFetching();
   app.on('will-quit', () => scmHub.dispose());
   // tmux at full pace only while Atelier is focused; a focus lists at once. Not at all until

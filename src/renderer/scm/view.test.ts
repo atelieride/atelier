@@ -20,8 +20,8 @@ test('repoLabel: folder and name; the root by its name; a hidden worktree as "ow
 });
 
 test('lookingForRepos: while the first scan runs, "no repositories" would be wrong; after it, nothing to say', () => {
-  expect(lookingForRepos({ capped: false, searching: true, maxFolders: 20_000 })).toBe('Looking for repositories…');
-  expect(lookingForRepos({ capped: false, searching: false, maxFolders: 20_000 })).toBeNull();
+  expect(lookingForRepos({ capped: false, searching: true, maxFolders: 20_000, hidden: [] })).toBe('Looking for repositories…');
+  expect(lookingForRepos({ capped: false, searching: false, maxFolders: 20_000, hidden: [] })).toBeNull();
   expect(lookingForRepos(null)).toBeNull();
 });
 

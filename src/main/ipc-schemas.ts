@@ -3,6 +3,7 @@ import { ITEM_ID } from '@shared/background-files';
 import { SETTINGS_FIELDS, isDockerEngineSetting, isSettingPath, isSettingText, type Field } from '@shared/settings';
 import { isFontFamily } from '@shared/terminal-font';
 import { normalizeCustom } from '@shared/redis';
+import { isHiddenRel } from '@shared/hidden-repos';
 import {
   DB_FILTER_OPS, DERIVED_MAX, FILTER_VALUE_MAX, FILTER_VALUES_MAX, FILTERS_MAX, PATH_INDEX_MAX, PATH_KEY_MAX, PATH_KEYS_MAX, validFilterShape, type DbFilterOp
 } from '@shared/databases-filters';
@@ -132,6 +133,8 @@ export const scmScopeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('compare'), base: revSchema, head: revSchema }).strict()
 ]);
 export const scmRootSchema = z.object({ root: abs }).strict();
+/** Source Control › Hide This Repository: shown again by its path inside the project. */
+export const scmUnhideSchema = z.object({ rel: z.string().max(1024).refine(isHiddenRel) }).strict();
 /** git:facts — `view`: asked by a view of many repositories, which waits for a read slot. */
 export const gitFactsSchema = z.object({ root: abs, view: z.literal(true).optional() }).strict();
 /** A listed root and why; the argv itself is fixed in git/fetch.ts. */

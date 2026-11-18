@@ -22,7 +22,8 @@ const WRITE_API = /\b(writeFile(Sync)?|rename(Sync)?|mkdir(Sync)?|copyFile(Sync)
 //   ATELIER_HOME/connectors/<id>.bin (connectors/secret-store: connector token encrypted with safeStorage,
 //   0600, atomic, deleted on Disconnect), ATELIER_HOME/tabs.json (tabs-store: each project's tab paths and order across
 //   restarts; 0600, atomic, at most 50 projects), ATELIER_HOME/redis.json (redis/picks: the Redis
-//   instance each project picked, endpoint keys only, 0600, atomic), ATELIER_HOME/databases.json (databases/store: saved
+//   instance each project picked, endpoint keys only, 0600, atomic), ATELIER_HOME/hidden-repos.json (hidden-repos: the
+//   repositories each project hides, paths inside the project only, 0600, atomic), ATELIER_HOME/databases.json (databases/store: saved
 //   database connections and each project's pick, no passwords, 0600, atomic, at most 64 connections), ATELIER_HOME/runtime (runtime-copy, Windows only:
 //   atelierd's copy of the app folder per daemon fingerprint, made in a .tmp-<pid> folder then renamed; copies no daemon
 //   runs from are moved aside, then removed)
@@ -45,7 +46,7 @@ const WRITE_API = /\b(writeFile(Sync)?|rename(Sync)?|mkdir(Sync)?|copyFile(Sync)
 // - app-icon-exec.ts: ATELIER_HOME/app-icon.json only: per installed bundle, the custom icon
 //   Atelier left there and its print, 0600, atomic, removed with the last one. The icon itself is written by osascript
 //   (NSWorkspace.setIcon) on the installed bundle only: see no-child-process.test.ts
-const ALLOWED = new Set(['fs/write.ts', 'clipboard-image.ts', 'index.ts', 'daemon-launcher.ts', 'projects.ts', 'settings-store.ts', 'updates-ipc.ts', 'dictation/model.ts', 'bash-attributions.ts', 'app-log.ts', 'auto-update.ts', 'connectors/secret-store.ts', 'tabs-store.ts', 'shell-command-exec.ts', 'redis/picks.ts', 'databases/store.ts', 'git/trace2.ts', 'runtime-copy.ts', 'automations/guard.ts', 'automations/store.ts', 'automations/launcher.ts',
+const ALLOWED = new Set(['fs/write.ts', 'clipboard-image.ts', 'index.ts', 'daemon-launcher.ts', 'projects.ts', 'settings-store.ts', 'updates-ipc.ts', 'dictation/model.ts', 'bash-attributions.ts', 'app-log.ts', 'auto-update.ts', 'connectors/secret-store.ts', 'tabs-store.ts', 'shell-command-exec.ts', 'redis/picks.ts', 'hidden-repos.ts', 'databases/store.ts', 'git/trace2.ts', 'runtime-copy.ts', 'automations/guard.ts', 'automations/store.ts', 'automations/launcher.ts',
   // ATELIER_HOME/companion only: thread.json, rules.md, chat.md, facts.md, 0700/0600, atomic; whole session dir removed by retention
   'companion/store.ts', 'app-icon-exec.ts']);
 
@@ -61,6 +62,13 @@ test('the Redis picks write only ATELIER_HOME/redis.json, atomically, 0600', () 
   const src = readFileSync(join(mainDir, 'redis/picks.ts'), 'utf8');
   expect([...src.matchAll(/join\([^)]*\)/g)].map((m) => m[0])).toEqual(["join(home, 'redis.json')"]);
   expect([...src.matchAll(/\b(writeFile(Sync)?|appendFile(Sync)?|writeFileAtomic)\s*\(/g)].map((m) => m[0])).toEqual(['writeFileAtomic(']);
+  expect(src).toContain('0o600');
+});
+
+test('the hidden repositories write only ATELIER_HOME/hidden-repos.json, atomically, 0600', () => {
+  const src = readFileSync(join(mainDir, 'hidden-repos.ts'), 'utf8');
+  expect([...src.matchAll(/join\([^)]*\)/g)].map((m) => m[0])).toEqual(["join(home, 'hidden-repos.json')"]);
+  expect([...src.matchAll(/\b(writeFile(Sync)?|appendFile(Sync)?|writeFileAtomic|rename(Sync)?|rm(Sync)?|unlink(Sync)?)\s*\(/g)].map((m) => m[0])).toEqual(['writeFileAtomic(']);
   expect(src).toContain('0o600');
 });
 

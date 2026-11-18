@@ -5,7 +5,7 @@ import { fuzzyFilter, textFilter } from '@shared/fuzzy';
 import { t } from '../i18n/en';
 import { currentPlatform } from '@shared/platform';
 import { trayCopy } from '../tray-copy';
-import { defaultRef, fetchAll, fetchSelected, mayFetch, showHistory } from '../scm/actions';
+import { defaultRef, fetchAll, fetchSelected, hideRepo, hideable, mayFetch, showHistory } from '../scm/actions';
 import { withScm } from '../scm/data';
 import { viewCommand } from '../scm/all-view';
 import { lastUndo } from '../git/actions';
@@ -275,6 +275,9 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
   const canFetch = useApp((s) => Object.values(s.scmRefs).some((r) => r.hasRemote) || s.repos.some((r) => !!r.upstream) || !!s.scmRepos?.some((e) => !!e.status?.upstream));
   // "Fetch" acts on the selected repository: only when that one has a remote.
   const canFetchSelected = useApp((s) => !!s.scmRepo && mayFetch(s.scmRepo));
+  // Hide This Repository acts on the selected one; Hidden Repositories… shows while the project hides any.
+  const canHideSelected = useApp((s) => !!s.scmRepo && hideable(s.scmRepo));
+  const hiddenCount = useApp((s) => s.scmSearch?.hidden.length ?? 0);
   // The Git menu's commands: what they act on and whether they show, as strings and flags so the
   // list only rebuilds when one changes; the focused session's sure files for "Commit <session>'s Work…".
   const gitWrites = useApp((s) => s.settings.gitActions === 'on');
@@ -551,8 +554,11 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
         ...(canFetch ? [
           ...(canFetchSelected ? [c('scm-fetch', t.cmd.fetch, '', 'fetch', fetchSelected)] : []),
           c('scm-fetch-all', t.cmd.fetchAll, '', 'fetch', () => void fetchAll())
-        ] : [])
+        ] : []),
+        ...(canHideSelected ? [c('scm-hide', t.cmd.hideRepo, '', 'eye-off', () => { const r = useApp.getState().scmRepo; if (r) void hideRepo(r); })] : [])
       ] : []),
+      // Every repository may be hidden: no repository left, the way back stays.
+      ...(hiddenCount > 0 ? [c('scm-hidden', t.cmd.hiddenRepos, '', 'eye-off', () => st.setSettingsOpen('scm'))] : []),
       ...gitCmds.map((g) => c(g.key, g.label, g.hint, g.icon, () => runPaletteGit(g))),
       c('attention', t.cmd.nextAttention, kbd('⌘J'), 'bell', goToAttention),
       c('settings', t.cmd.openSettings, kbd('⌘,'), 'settings', () => st.setSettingsOpen('appearance')),
@@ -669,7 +675,7 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
       // Send to session: sessions with comments waiting; when the prompt isn't free the hint says why.
       ...terminals.filter((x) => x.session && pendingFor(x.id) > 0).map((x) => c(`send-${x.id}`, t.comments.sendTo(x.title), sendReason(x.id) ?? t.comments.pending(pendingFor(x.id)), 'send', () => sendReview(x.id)))
     ];
-  }, [onNewSession, onNewTerminal, selected, pinned, profiles, accounts, shells, grouped, terminals, comments, activeFile, activeTab, langOverrides, prs, panesOpen, connectors, hasRepos, scmDefault, canFetch, canFetchSelected, worktreeKey, dockerCmds, redisCmds, dbCmds, gitCmds, shelfItems, scmViewCmd?.key]);
+  }, [onNewSession, onNewTerminal, selected, pinned, profiles, accounts, shells, grouped, terminals, comments, activeFile, activeTab, langOverrides, prs, panesOpen, connectors, hasRepos, scmDefault, canFetch, canFetchSelected, canHideSelected, hiddenCount, worktreeKey, dockerCmds, redisCmds, dbCmds, gitCmds, shelfItems, scmViewCmd?.key]);
 
   const wsOn = useApp((s) => !!s.ws?.on && !s.popout);
   const q = parseQuery(query, { workspaces: wsOn });
