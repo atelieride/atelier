@@ -161,12 +161,12 @@ test('after its close question the row still watches its name: ports arriving la
   const r = row('Terminal 1');
   await away();
   await expect(r).not.toHaveAttribute('data-tight');
-  // Asked and cancelled: the row's content, its name included, is new.
+  // Asked and cancelled.
   await r.hover();
   await r.getByRole('button', { name: 'Close Terminal' }).click();
-  await expect(win.locator('.term-row.is-confirming')).toBeVisible();
+  await expect(win.locator('.confirm-pop.is-side')).toBeVisible();
   await win.keyboard.press('Escape');
-  await expect(win.locator('.term-row.is-confirming')).toHaveCount(0);
+  await expect(win.locator('.confirm-pop.is-side')).toHaveCount(0);
   // The keyboard's focus comes back to the row a frame later (it keeps its form meanwhile); then the user moves on.
   await expect(r.locator('.row-main')).toBeFocused();
   await win.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -195,15 +195,15 @@ test('the second line: one rendering of the work chip, PLAN as P, the waiting re
   expect(await shownWidth(auth.locator('.session-activity'))).toBeGreaterThanOrEqual(50);
 });
 
-test('a row’s close question fits a 200 px sidebar: no label leaves its button, nothing overlaps', async () => {
+test('a row’s close question beside a 200 px sidebar: no label leaves its button, nothing overlaps', async () => {
   await sidebarByKeys(win, 200);
   for (const [name, button] of [['Email campaign', 'Close Session'], ['Terminal 1', 'Close Terminal']] as const) {
     const r = row(name);
     await r.hover();
     await r.getByRole('button', { name: button }).click();
-    const ask = win.locator('.is-confirming');
+    const ask = win.locator('.confirm-pop.is-side');
     await expect(ask).toBeVisible();
-    expect(await collisions(ask, 'button, .confirm-note, .confirm-stops, .session-title, .avatar, .term-icon'), name).toEqual([]);
+    expect(await collisions(ask, 'button, .confirm-note, .confirm-stops, b'), name).toEqual([]);
     for (const b of await ask.locator('button').all()) {
       expect(await b.evaluate((el) => el.scrollWidth <= el.clientWidth + 0.5), `${name}: "${await b.innerText()}" spills`).toBe(true);
     }
@@ -345,7 +345,7 @@ test('a closing terminal says so on a crowded row', async () => {
   const r = row('Terminal 1');
   await r.hover();
   await r.getByRole('button', { name: 'Close Terminal' }).click();
-  await win.locator('.term-row.is-confirming').getByRole('button', { name: 'Close', exact: true }).click();
+  await win.locator('.confirm-pop.is-side').getByRole('button', { name: 'Close', exact: true }).click();
   await expect(r.locator('.term-cmd')).toHaveText('Closing…');
   await away();
   await expect(r.locator('.term-cmd')).toBeVisible();

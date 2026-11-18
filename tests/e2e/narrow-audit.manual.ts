@@ -84,14 +84,14 @@ test('narrow layouts audit', async () => {
       const row = win.locator('.session-row', { hasText: 'Email campaign' });
       await row.hover();
       await row.getByRole('button', { name: 'Close Session' }).click();
-      await expect(win.locator('.session-row.is-confirming')).toBeVisible();
+      await expect(win.locator('.confirm-pop.is-side')).toBeVisible();
       await win.waitForTimeout(100);
       await shot(`confirm-session-${w}`);
       await win.keyboard.press('Escape');
       const term = win.locator('.term-row', { hasText: 'Terminal 1' });
       await term.hover();
       await term.getByRole('button', { name: 'Close Terminal' }).click();
-      await expect(win.locator('.term-row.is-confirming')).toBeVisible();
+      await expect(win.locator('.confirm-pop.is-side')).toBeVisible();
       await win.waitForTimeout(100);
       await shot(`confirm-term-${w}`);
       await win.keyboard.press('Escape');

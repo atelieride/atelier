@@ -450,17 +450,17 @@ test.describe('the real demo', () => {
   });
 
   // In-app confirms: the app's own question, played by the real renderer.
-  test('closing a session asks in its row: Esc keeps it, Close closes it; nothing native, nothing in the console', async ({ page }) => {
+  test('closing a session asks beside its row: Esc keeps it, Close closes it; nothing native, nothing in the console', async ({ page }) => {
     await watch(page);
     await openFromHero(page);
     const session = row(page, 'onboarding-copy');
     await session.hover();
     await session.locator('.row-close').click();
-    const asking = app(page).locator('.session-row.is-confirming');
+    const asking = app(page).locator('.confirm-pop.is-side');
     await expect(asking).toContainText('Close onboarding-copy?');
-    await expect(asking).toContainText('Resume it later from');
+    await expect(asking).toContainText('Resume it later with');
     await mkdir(SHOTS, { recursive: true });
-    await page.waitForTimeout(400); // the row's unfold
+    await page.waitForTimeout(400); // the bubble's entrance
     await page.screenshot({ path: join(SHOTS, 'close-confirm.png') });
     await page.keyboard.press('Escape');
     await expect(asking).toHaveCount(0);

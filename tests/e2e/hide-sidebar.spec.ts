@@ -92,7 +92,7 @@ test('hidden under the keyboard or a row\'s question: the keyboard goes to the t
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 800));
     const sidebar = win.locator('.body > .sidebar');
     const focused = () => win.evaluate(() => document.activeElement?.className ?? '');
-    // A terminal running a program: closing it asks in its row.
+    // A terminal running a program: closing it asks beside its row.
     await win.getByRole('button', { name: 'Open a terminal' }).click();
     const row = win.locator('.term-row').first();
     await expect(row).toBeVisible({ timeout: 10000 });
@@ -102,17 +102,17 @@ test('hidden under the keyboard or a row\'s question: the keyboard goes to the t
     await expect(row.locator('.term-cmd')).toContainText('sleep', { timeout: 10000 });
     await row.hover();
     await row.locator('.row-close').click();
-    const asking = win.locator('.term-row.is-confirming');
+    const asking = win.locator('.confirm-pop.is-side');
     await expect(asking).toContainText('sleep stops.');
 
-    // Hidden: the question moves to a popover; shown again, back in its row.
+    // Hidden: the question moves to a centered popover; shown again, back beside its row.
     await command(app, 'toggle-sidebar');
     await expect(sidebar).toHaveCount(0);
-    await expect(win.locator('.confirm-pop')).toContainText('sleep stops.');
+    await expect(win.locator('.confirm-pop.is-centered')).toContainText('sleep stops.');
     await command(app, 'toggle-sidebar');
     await expect(asking).toContainText('sleep stops.');
-    await expect(win.locator('.confirm-pop')).toHaveCount(0);
-    await asking.getByRole('button', { name: 'Cancel' }).click();
+    await expect(win.locator('.confirm-pop.is-centered')).toHaveCount(0);
+    await asking.getByRole('button', { name: 'Keep' }).click();
     await expect(asking).toHaveCount(0);
 
     // The keyboard in the sidebar (a button of its head) or on its edge: hidden, it lands in the terminal in front.

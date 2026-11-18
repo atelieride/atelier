@@ -61,9 +61,10 @@ test('off (the default): closing an idle session asks as before and ends it — 
   try {
     await doneSession(win, 'Alfa');
     await closeFromRow(win, 'Alfa');
-    const asking = win.locator('.session-row.is-confirming');
-    await expect(asking.locator('.confirm-stops')).toHaveText('Claude stops.');
-    await expect(asking.locator('.confirm-note')).toContainText('Resume a session…');
+    const asking = win.locator('.confirm-pop.is-side');
+    // Idle: nothing is lost, so no warning line; only where it comes back from.
+    await expect(asking.locator('.confirm-stops')).toHaveCount(0);
+    await expect(asking.locator('.confirm-note')).toHaveText(/^Resume it later with \S+$/);
     await asking.locator('.btn-danger').click();
     await expect(sessionRow(win, 'Alfa')).toHaveCount(0, { timeout: 10000 });
     // atelierd sends the resumables before the list without the terminal: had it kept one, it would be there by now.
@@ -102,7 +103,7 @@ test('on: an idle session closes at once and waits under Resume with its pin; a 
     await sessionRow(win, 'Beta').click({ button: 'right' });
     await win.getByRole('menuitem', { name: 'Pin', exact: true }).click();
     await closeFromRow(win, 'Beta');
-    await expect(win.locator('.session-row.is-confirming')).toHaveCount(0);
+    await expect(win.locator('.confirm-pop.is-side')).toHaveCount(0);
     await expect(resumeRow(win, 'Beta')).toBeVisible({ timeout: 10000 });
     await expect(sessionRow(win, 'Beta')).toHaveCount(0);
     await expect(resumeRow(win, 'Beta').locator('.av-pin')).toBeVisible();
@@ -113,7 +114,7 @@ test('on: an idle session closes at once and waits under Resume with its pin; a 
     await api(win).type('Gamma', 'hold\r');
     await expect.poll(() => api(win).state('Gamma'), { timeout: 10000 }).toBe('running');
     await closeFromRow(win, 'Gamma');
-    const asking = win.locator('.session-row.is-confirming');
+    const asking = win.locator('.confirm-pop.is-side');
     await expect(asking.locator('.confirm-stops')).toHaveText('Claude is working: it stops.');
     await expect(asking.locator('.confirm-note')).toHaveText('It waits under Resume.');
     await win.mouse.move(0, 0);

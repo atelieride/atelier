@@ -569,7 +569,7 @@ button.foot-item:disabled { cursor: default; }
 .term-row:is(:hover, :has(:focus-visible), :has(.row-pin:focus, .row-close:focus)) .row-pin { width: 22px; opacity: 1; pointer-events: auto; }
 /* A terminal's Pin and Close take no room until they show (as a session's do): its chips reach the row's end. Each
    negative margin cancels the row's gap before the button. */
-.term-row:not(.is-confirming) :is(.row-pin, .row-close) { width: 0; margin-left: -10px; margin-right: 0; overflow: hidden; }
+.term-row :is(.row-pin, .row-close) { width: 0; margin-left: -10px; margin-right: 0; overflow: hidden; }
 .term-row:is(:hover, :has(:focus-visible), :has(.row-pin:focus, .row-close:focus)) :is(.row-pin, .row-close) { width: 22px; margin-left: 0; }
 .term-row:is(:hover, :has(:focus-visible), :has(.row-pin:focus, .row-close:focus)) .row-pin { margin-right: -8px; }
 .row-pin:hover { background: var(--bg-3); color: var(--text); }
@@ -589,6 +589,16 @@ button.foot-item:disabled { cursor: default; }
 .term-row.is-selected .term-icon { color: var(--text); background: color-mix(in srgb, var(--violet) 22%, transparent); }
 .term-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .term-row.is-selected .term-name { color: var(--text); font-weight: 500; }
+/* Its close being asked in the bubble beside it: the row keeps its size, in rose, its buttons shown (the pointer is on
+   the bubble, so nothing moves when it leaves the row) and its × held down. */
+:is(.session-row, .term-row).is-asking { background: var(--tint-error); box-shadow: inset 0 0 0 1px var(--edge-error-soft); }
+.session-row.is-asking :is(.row-pin, .row-close), .term-row.is-asking .row-pin { width: 22px; opacity: 1; pointer-events: auto; }
+.term-row.is-asking :is(.row-pin, .row-close) { width: 22px; margin-left: 0; }
+.term-row.is-asking .row-pin { margin-right: -8px; }
+:is(.session-row, .term-row).is-asking .row-close { background: var(--tint-error-strong); color: var(--text-error); }
+/* Its terminal gone: the copy that folds away in its place (confirms/RowConfirm.tsx). */
+.row-leaving { min-height: 0 !important; overflow: hidden; pointer-events: none; animation: atl-row-out 320ms var(--ease) both !important; }
+.row-leaving.is-closing { --leave-o: .7; }
 /* Its close sent (confirms/slice.ts `closing`): faded until atelierd drops it (its content: the row's entrance holds
    the row's own opacity). */
 :is(.session-row, .term-row).is-closing .row-main { opacity: .55; }
@@ -3701,20 +3711,16 @@ button.rd-jrow:hover { background: var(--bg-hover); }
 .confirm-stops { font-size: 11.5px; color: var(--text-error); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .confirm-note { font-size: 11px; line-height: 1.45; color: var(--text-3); }
 .confirm-note .confirm-key { margin-left: 0; color: var(--text-3); }
-.session-row.is-confirming, .term-row.is-confirming { flex-direction: column; align-items: stretch; gap: 0; height: auto; cursor: default; overflow: hidden;
+.session-row.is-confirming { flex-direction: column; align-items: stretch; gap: 0; height: auto; cursor: default; overflow: hidden;
   background: var(--tint-error-strong); box-shadow: inset 0 0 0 1px var(--edge-error);
   animation: atl-unfold var(--t-slow) var(--ease) both; }
-.term-row.is-confirming { padding: 6px 8px; }
 .row-confirm-head { display: flex; align-items: center; gap: 10px; min-height: 32px; min-width: 0; }
 .row-confirm-head .session-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .row-confirm-body { display: flex; flex-direction: column; gap: 8px; padding: 8px 0 2px 40px; animation: atl-fade var(--t-med) var(--ease) 60ms both; }
-.term-row .row-confirm-body { padding-left: 30px; }
 /* A narrow sidebar: the note and the answers take the row's whole width; narrower, Cancel's
    esc hint goes (Esc still answers), so neither label leaves its button. */
 @container srow (max-width: 260px) { .row-confirm-body { padding-left: 0; } }
-@container trow (max-width: 260px) { .term-row .row-confirm-body { padding-left: 0; } }
 @container srow (max-width: 230px) { .row-confirm-body .confirm-actions .confirm-key { display: none; } }
-@container trow (max-width: 230px) { .row-confirm-body .confirm-actions .confirm-key { display: none; } }
 /* The confirms' sheets (main's questions, unsaved files) on the top layer: they take the focus, so no sheet, modal or
    popover may cover them (tests/integration/confirms-on-top.test.ts). */
 .palette-backdrop:has(> .confirm-sheet) { z-index: 500; }
@@ -3723,6 +3729,11 @@ button.rd-jrow:hover { background: var(--bg-hover); }
   animation: atl-drop var(--t-med) var(--ease) both; transform-origin: top center; }
 .confirm-pop::before { content: ''; position: absolute; top: -6px; left: calc(var(--arrow, 50%) - 6px); width: 12px; height: 12px; transform: rotate(45deg);
   background: var(--bg-float-strong); box-shadow: -1px -1px 0 0 var(--line-strong); }
+/* Beside a sidebar row: a bubble, its arrow on the row, the danger answer level with the row (ConfirmPopover's side). */
+.confirm-pop.is-side { width: 264px; padding: 12px; gap: 10px; box-shadow: var(--shadow-float), inset 0 0 0 1px var(--edge-error-soft);
+  animation-name: atl-bubble; transform-origin: left var(--arrow, 50%); }
+.confirm-pop.is-side::before { top: calc(var(--arrow, 50%) - 6px); left: -6px; box-shadow: -1px 1px 0 0 var(--edge-error-soft); }
+.confirm-pop.is-side .confirm-actions > button { height: 30px; }
 .confirm-pop.is-centered { left: 50%; top: 72px; margin-left: -150px; }
 .confirm-pop.is-centered::before { display: none; }
 .confirm-pop-text { display: flex; flex-direction: column; gap: 4px; }

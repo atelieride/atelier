@@ -10,8 +10,8 @@ import { ResumeNote } from './InlineConfirm';
 const NOW = new Date(2026, 9, 25, 12, 48).getTime();
 const text = (props: Parameters<typeof ResumeNote>[0]) => renderToStaticMarkup(createElement(ResumeNote, props)).replace(/<[^>]+>/g, '');
 
-test('not kept: the palette, as before', () => {
-  expect(text({ note: 'history' })).toBe('Resume it later from ⌘K › Resume a session…');
+test('not kept: the palette’s shortcut', () => {
+  expect(text({ note: 'history' })).toBe('Resume it later with ⌘K');
 });
 
 test('kept: it waits under Resume', () => {
