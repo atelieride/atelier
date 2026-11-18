@@ -1,6 +1,6 @@
 // A project's color: one of the eight workspace hues (theme.css `--ws-1…8`), kept by project root in the settings and
-// worn by the project's window (its chip, a faint tint of the header) so that several windows side by
-// side tell apart at a glance. Pure.
+// worn by the project's window (its chip, a faint tint of the header) so that several windows side by side can be
+// told apart at a glance. Pure.
 import { isAbsPath } from './paths';
 
 export const PROJECT_COLOR_COUNT = 8;

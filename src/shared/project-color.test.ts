@@ -3,7 +3,7 @@ import { normalizeProjectColors, pickProjectColor, PROJECT_COLOR_COUNT, PROJECT_
 import { applyPatch, DEFAULT_SETTINGS, normalizeSettings } from './settings';
 
 // A project's color: one of the eight workspace hues, kept by project root, worn by the project's window so several
-// windows side by side tell apart at a glance.
+// windows side by side can be told apart at a glance.
 
 test('a project keeps the color it has', () => {
   expect(pickProjectColor({ '/work/alpha': 5 }, ['/work/beta'], '/work/alpha')).toBe(5);

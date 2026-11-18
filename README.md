@@ -39,8 +39,8 @@ the session that made it, and an editor, terminals and Git right beside them.
   context untouched.
 - **Everything side by side.** Sessions, terminals and files are tabs: split into up to four panes, side by side or
   stacked, open anything from the command palette, keep separate lines of work in workspaces, and in activities inside
-  them, each with tabs of their own. Each project's window wears a color of its own, so several windows tell apart
-  at a glance.
+  them, each with tabs of their own. Each project's window wears a color of its own, so windows can be told apart at
+  a glance.
 - **Prompts and tasks that start themselves.** Schedule a prompt for later, for instance when your usage limit resets,
   or let ClickUp, Notion and Jira tasks start sessions in worktrees of their own.
 - **Your stack next to Claude.** Read your Docker logs, browse Redis keys and queues and Postgres tables, and send what
