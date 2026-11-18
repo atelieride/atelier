@@ -31,6 +31,8 @@ import { Palette } from './components/Palette';
 import { SessionBar, type PaneSlot } from './components/SessionBar';
 import { PanePicker } from './components/PanePicker';
 import { ContextMenu } from './components/ContextMenu';
+import { openProjectColorMenu } from './project-color-menu';
+import { projectColorOf } from '@shared/project-color';
 import { BackgroundPopover } from './components/BackgroundPopover';
 import { SchedulePopover } from './components/SchedulePopover';
 import { ScheduleSheet } from './components/ScheduleSheet';
@@ -227,6 +229,13 @@ export function App() {
   const saveAsPath = useApp((s) => s.saveAs?.path ?? null);
   const languageSheet = useApp((s) => s.languageSheet);
   const themeSheet = useApp((s) => s.themeSheet);
+  // The project's color on <html> (layout.css, [data-project-color]): its chip, a faint tint of the header.
+  const projectColor = useApp((s) => projectColorOf(s.settings, s.project?.root));
+  useEffect(() => {
+    const root = document.documentElement;
+    if (projectColor) root.dataset.projectColor = String(projectColor);
+    else delete root.dataset.projectColor;
+  }, [projectColor]);
   const fontSheet = useApp((s) => s.fontSheet);
   const contextSheet = useApp((s) => s.contextSheet);
   const originSheet = useApp((s) => s.originSheet);
@@ -571,6 +580,7 @@ export function App() {
           case 'toggle-sidebar': st.toggleSidebar(); break;
           case 'swap-side-panels': void window.atelier.settings.set({ swapSidePanels: !st.settings.swapSidePanels }); break;
           case 'change-theme': st.setThemeSheet(true); break;
+          case 'project-color': openProjectColorMenu(); break;
           case 'change-terminal-font': st.setFontSheet(true); break;
           case 'open-palette': st.setPaletteOpen(true); break;
           case 'next-attention': goToAttention(); break;
@@ -641,7 +651,7 @@ export function App() {
   if (!projectLoaded) return null;
   // The Welcome window may be the first after an update: it takes What's new from main, so it shows it too.
   // Windows: the title bar after the screen (its buttons win over the screen's drag region), its drop-downs the context menu.
-  if (!project) return <><Welcome />{windowsFrame && <><TitleBar floating /><ContextMenu /></>}{whatsNew && <Suspense fallback={null}><WhatsNew since={whatsNew.since} /></Suspense>}<DropPill /><Toast /><Confirms /></>;
+  if (!project) return <><Welcome />{windowsFrame && <TitleBar floating />}<ContextMenu />{whatsNew && <Suspense fallback={null}><WhatsNew since={whatsNew.since} /></Suspense>}<DropPill /><Toast /><Confirms /></>;
   if (popoutMode) return <PopoutWindow />;
 
   return (

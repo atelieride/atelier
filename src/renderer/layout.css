@@ -39,6 +39,21 @@
 .project-open { display: inline-flex; color: var(--text-4); opacity: 0; margin-left: -2px; transition: opacity var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
 .project-reveal:hover .project-open, .project-reveal:focus-visible .project-open { opacity: 1; color: var(--link); }
 .project-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; }
+/* Project color: the hue this window's project wears (one of the workspace colors), so that several windows tell
+   apart at a glance — quietly: the project chip takes it, and the header a faint tint of it. No lines, and the theme
+   keeps everything else. Off (Settings › Appearance), <html> has no data-project-color and nothing here applies. */
+:root[data-project-color="1"] { --proj: var(--ws-1); }
+:root[data-project-color="2"] { --proj: var(--ws-2); }
+:root[data-project-color="3"] { --proj: var(--ws-3); }
+:root[data-project-color="4"] { --proj: var(--ws-4); }
+:root[data-project-color="5"] { --proj: var(--ws-5); }
+:root[data-project-color="6"] { --proj: var(--ws-6); }
+:root[data-project-color="7"] { --proj: var(--ws-7); }
+:root[data-project-color="8"] { --proj: var(--ws-8); }
+:root[data-project-color] .header { background: color-mix(in srgb, var(--proj) 5%, transparent); }
+:root[data-project-color] .project-chip { border-color: color-mix(in srgb, var(--proj) 45%, var(--line)); background: color-mix(in srgb, var(--proj) 12%, var(--bg-control)); }
+:root[data-project-color] .project-chip:has(button.project-reveal:hover) { border-color: color-mix(in srgb, var(--proj) 70%, var(--line)); background: color-mix(in srgb, var(--proj) 18%, var(--bg-control)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--proj) 18%, transparent); }
+:root[data-project-color] .project-name { color: color-mix(in srgb, var(--proj) 35%, var(--text)); }
 /* New, the chip's + (mockup "B"): a brand segment with a light seam on its left. */
 .chip-new { width: 32px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--brand); color: var(--on-brand); box-shadow: inset 1px 0 0 var(--on-brand-seam); transition: box-shadow var(--t-fast) var(--ease); }
 .chip-new:hover { box-shadow: inset 1px 0 0 var(--on-brand-seam), inset 0 0 0 99px var(--on-brand-lift); }
@@ -173,6 +188,9 @@ button.foot-item:disabled { cursor: default; }
 .recent-forget:hover { background: var(--bg-3); color: var(--text); }
 .recent-forget:active { background: var(--tint-error-strong); color: var(--error); }
 .recent-name { font-weight: 600; color: var(--text-2); }
+/* A recent project in its color: the folder's icon, and a trace of it in the name. */
+.recent-row[data-project-color] > svg { color: var(--proj); }
+.recent-row[data-project-color] .recent-name { color: color-mix(in srgb, var(--proj) 35%, var(--text)); }
 .recent-path { flex: 1; min-width: 0; text-align: right; font-size: 11px; color: var(--text-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Notification center: bell in the header and its popover. */

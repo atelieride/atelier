@@ -148,6 +148,8 @@ export const MENU_SPEC: readonly MenuSpecMenu[] = [
     { label: 'Sidebar', accelerator: 'CmdOrCtrl+B', command: 'toggle-sidebar' },
     { label: 'Swap Side Panels', command: 'swap-side-panels' },
     { label: 'Change Theme…', command: 'change-theme' },
+    // The color this window's project wears (chip, a faint header tint): the eight choices under the chip.
+    { label: 'Project Color…', command: 'project-color' },
     { label: 'Change Terminal Font…', command: 'change-terminal-font' },
     { label: 'Group Sessions by State', command: 'toggle-group-by-state' },
     // Workspaces: on or off for this window's project, as in Settings › Appearance;

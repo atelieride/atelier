@@ -97,8 +97,8 @@ describe('settings', () => {
     expect(await api.settings.get()).toEqual(next);
   });
 
-  test("starts from the defaults with dictation, Services and Automations on and the world's two Claude accounts (the screenshots' setup)", async () => {
-    expect(await make().api.settings.get()).toEqual({ ...DEFAULT_SETTINGS, dictationEnabled: true, showServices: true, automationsEnabled: true, claudeAccounts: claudeAccountsAt(DEMO_HOME) });
+  test("starts from the defaults with dictation, Services and Automations on, no project tint (one window, in the brand's colors) and the world's two Claude accounts (the screenshots' setup)", async () => {
+    expect(await make().api.settings.get()).toEqual({ ...DEFAULT_SETTINGS, projectTint: false, dictationEnabled: true, showServices: true, automationsEnabled: true, claudeAccounts: claudeAccountsAt(DEMO_HOME) });
   });
 
   test("Claude's dirs: the default account's under the fictional home", async () => {

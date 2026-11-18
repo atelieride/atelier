@@ -136,6 +136,7 @@ export function Appearance({ s }: { s: S }) {
           <Segmented label={t.set.terminalColors} value={s.terminalColors} options={opts(t.set.terminalColorOpts)} onChange={(v) => set({ terminalColors: v })} />
         </Row>
       )}
+      <Row label={t.set.projectTint} hint={t.set.projectTintHint}><Toggle label={t.set.projectTint} value={s.projectTint} onChange={(v) => set({ projectTint: v })} /></Row>
       <Row label={t.set.interfaceSize} hint={t.set.interfaceSizeHint}><Segmented label={t.set.interfaceSize} value={s.interfaceSize} options={opts(t.set.sizes)} onChange={(v) => set({ interfaceSize: v })} /></Row>
       {/* Session avatars: off, titles get the room. */}
       <Row label={t.set.sessionAvatars} hint={t.set.sessionAvatarsHint}><Toggle label={t.set.sessionAvatars} value={s.sessionAvatars} onChange={(v) => set({ sessionAvatars: v })} /></Row>

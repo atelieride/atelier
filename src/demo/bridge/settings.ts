@@ -8,9 +8,9 @@ import { resolved, type DemoContext } from './context';
 /**
  * The demo's starting settings: the defaults with dictation on, as the screenshots run (the mic in the session bar);
  * pressing it says dictation runs on the Mac. Services and Automations on (off by default in the app since 2026-11-02),
- * so visitors see them. The world's two Claude accounts, Personal and Work (world/accounts.ts).
+ * so visitors see them. No project tint: the demo's one window stays in the brand's colors. The world's two Claude accounts, Personal and Work (world/accounts.ts).
  */
-export const DEMO_SETTINGS: Settings = { ...DEFAULT_SETTINGS, dictationEnabled: true, showServices: true, automationsEnabled: true, claudeAccounts: claudeAccountsAt(DEMO_HOME) };
+export const DEMO_SETTINGS: Settings = { ...DEFAULT_SETTINGS, projectTint: false, dictationEnabled: true, showServices: true, automationsEnabled: true, claudeAccounts: claudeAccountsAt(DEMO_HOME) };
 
 export function createSettings(ctx: DemoContext): AtelierApi['settings'] {
   const change = (next: Settings): Settings => {
