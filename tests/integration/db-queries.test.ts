@@ -400,12 +400,14 @@ describe('estimates and counts', () => {
   });
 
   test("a table never analyzed (no statistics): the planner's estimate, even without filters", async () => {
-    await server.exec('create table never_analyzed (id int8); insert into never_analyzed select pg_catalog.generate_series(1, 40);');
+    // Left empty: rows would reach the statistics' live count whenever the server next flushes it, and the catalog
+    // would then answer with that count instead of "unknown".
+    await server.exec('create table never_analyzed (id int8)');
     await fresh();
     const e = await q.estimate(ref('never_analyzed'), []);
     expect(shapes()).toEqual(['cat.columns', 'estimate']);
     expect(e).toBe(await plan('explain (format json) select 1 from never_analyzed'));
-    expect((await q.structure(ref('never_analyzed'))).stats.estimate).toBeNull(); // reltuples -1: unknown
+    expect((await q.structure(ref('never_analyzed'))).stats.estimate).toBeNull(); // reltuples -1, no live rows: unknown
   });
 
   test('count: count(*) with the filters', async () => {
