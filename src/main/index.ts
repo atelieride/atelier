@@ -89,7 +89,7 @@ import { RedisHub } from './redis/hub';
 import { installRedisIpc } from './redis/ipc';
 import { createPicks } from './redis/picks';
 import { createHiddenRepos } from './hidden-repos';
-import { pickProjectColor } from '@shared/project-color';
+import { projectColorOnOpen } from '@shared/project-color';
 import { brewRedisInstalled, clientOriginsOf, dockerIpsOf, dockerRedisSecret, projectFiles } from './redis/main-deps';
 import { DbHub } from './databases/hub';
 import { installDbIpc } from './databases/ipc';
@@ -616,13 +616,14 @@ if (!app.requestSingleInstanceLock()) {
     // One window per folder: if the project is already open, that window is brought to the front.
     const existing = root ? projectWindow(root) : null;
     if (existing) { revealWindow(existing); return existing; }
+    // A project never colored takes a color the open windows don't wear, kept from then on; with the colors full, one
+    // already colored is saved again as the latest, so the limit forgets projects not opened for longest.
+    const colorSave = root ? projectColorOnOpen(settings.get().projectColors, openProjectRoots(windowsView), root) : null;
+    if (colorSave) {
+      try { settings.set({ projectColors: colorSave }); } catch { /* not saved: the window wears the color it had, else the folder's steady one */ }
+    }
     // Where the project's window was last time (on a display still there), else centered.
     // The welcome window's own place is its normal bounds: a maximized one's overhang the screen (by 8 px on Windows).
-    // A project never colored takes a color the open windows don't wear, kept from then on.
-    if (root && settings.get().projectColors[root] === undefined) {
-      const colors = settings.get().projectColors;
-      try { settings.set({ projectColors: { [root]: pickProjectColor(colors, openProjectRoots(windowsView), root) } }); } catch { /* not saved: the window wears the folder's steady pick */ }
-    }
     const saved = root ? uiState.windows?.[root] : undefined;
     const place = windowPlace(replacing && !replacing.isDestroyed() ? replacing : null, saved, screen.getAllDisplays().map((d) => d.workArea));
     const win: BrowserWindow = createProjectWindow(root, zoomFactor(settings.get().interfaceSize), place, {

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
-import { normalizeProjectColors, pickProjectColor, PROJECT_COLOR_COUNT, PROJECT_COLORS_MAX, projectColorOf, withProjectColor } from './project-color';
-import { DEFAULT_SETTINGS, normalizeSettings } from './settings';
+import { normalizeProjectColors, pickProjectColor, PROJECT_COLOR_COUNT, PROJECT_COLORS_MAX, projectColorOf, projectColorOnOpen, withProjectColor } from './project-color';
+import { applyPatch, DEFAULT_SETTINGS, normalizeSettings } from './settings';
 
 // A project's color: one of the eight workspace hues, kept by project root, worn by the project's window so several
 // windows side by side tell apart at a glance.
@@ -58,6 +58,33 @@ test('past the limit, the projects colored longest ago are forgotten', () => {
   expect(Object.keys(colors).length).toBe(PROJECT_COLORS_MAX);
   expect(colors['/work/p0']).toBeUndefined();
   expect(colors[`/work/p${PROJECT_COLORS_MAX + 1}`]).toBeDefined();
+});
+
+test('a window opening saves a color for a project that has none, and nothing for one that has it while there is room', () => {
+  const colors = { '/work/a': 1, '/work/b': 2 };
+  expect(projectColorOnOpen(colors, ['/work/a'], '/work/new')).toEqual({ '/work/new': pickProjectColor(colors, ['/work/a'], '/work/new') });
+  expect(projectColorOnOpen(colors, [], '/work/a')).toBeNull();
+});
+
+test('with the colors full, a window opening saves its color again: the projects in use stay, the ones unopened longest go', () => {
+  const full = Object.fromEntries(Array.from({ length: PROJECT_COLORS_MAX }, (_, i) => [`/work/p${i}`, 1 + (i % 8)]));
+  // p0 was colored first but is opened now: its color is saved again, as the latest.
+  expect(projectColorOnOpen(full, [], '/work/p0')).toEqual({ '/work/p0': 1 });
+  // Already the latest: no write.
+  expect(projectColorOnOpen(full, [], `/work/p${PROJECT_COLORS_MAX - 1}`)).toBeNull();
+  // Opened over time, the projects in use outlive the ones not opened since: p0 and p5 stay, p1 and p2 go.
+  let s = { ...DEFAULT_SETTINGS, projectColors: full };
+  for (const root of ['/work/p0', '/work/p5', '/work/new1', '/work/new2']) {
+    const save = projectColorOnOpen(s.projectColors, [], root);
+    if (save) s = applyPatch(s, { projectColors: save });
+  }
+  const roots = Object.keys(s.projectColors);
+  expect(roots).toHaveLength(PROJECT_COLORS_MAX);
+  expect(roots.slice(-4)).toEqual(['/work/p0', '/work/p5', '/work/new1', '/work/new2']);
+  expect(s.projectColors['/work/p0']).toBe(1);
+  expect(s.projectColors['/work/p5']).toBe(6);
+  expect(s.projectColors['/work/p1']).toBeUndefined();
+  expect(s.projectColors['/work/p2']).toBeUndefined();
 });
 
 test('recoloring a project keeps the others and makes it the latest', () => {

@@ -4,7 +4,7 @@
 import { isAbsPath } from './paths';
 
 export const PROJECT_COLOR_COUNT = 8;
-/** The most projects whose color is remembered; past it, the ones colored longest ago go. */
+/** The most projects whose color is remembered; past it, the ones colored or opened longest ago go. */
 export const PROJECT_COLORS_MAX = 300;
 const MAX_ROOT = 1024;
 
@@ -67,6 +67,18 @@ export function pickProjectColor(colors: ProjectColors, open: readonly string[],
     if (best === 0 || inOpen[c]! < inOpen[best]! || (inOpen[c] === inOpen[best] && inAll[c]! < inAll[best]!)) best = c;
   }
   return best;
+}
+
+/**
+ * What main saves when `root`'s window opens (null: nothing). A project with no color gets one picked. With the colors
+ * full, one that has a color saves it again as the latest: the limit then forgets the projects not opened for longest,
+ * never one in use (an open window would otherwise change color on the next new project). One write, only then.
+ */
+export function projectColorOnOpen(colors: ProjectColors, open: readonly string[], root: string): ProjectColors | null {
+  const mine = colors[root];
+  if (!isColor(mine)) return { [root]: pickProjectColor(colors, open, root) };
+  const roots = Object.keys(colors);
+  return roots.length >= PROJECT_COLORS_MAX && roots[roots.length - 1] !== root ? { [root]: mine } : null;
 }
 
 /** The colors with `root` wearing `color`, as the latest; the oldest go past the limit. */
