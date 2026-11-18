@@ -124,12 +124,11 @@ export function repoMenu(root: string, o: { staging?: boolean } = {}): MenuItem[
 }
 
 /**
- * Whether a repository can be hidden: one of Source Control's entries inside the project, not its root, not a linked
+ * Whether a repository can be hidden, as main says of each entry: inside the project, not its root, not a linked
  * worktree (it shares its repository's store: hiding it would hide that repository).
  */
 export function hideable(root: string): boolean {
-  const e = st().scmRepos?.find((x) => x.root === root);
-  return !!e && e.rel !== '' && !e.rel.startsWith('..') && !e.linked && !e.worktreeOf;
+  return !!st().scmRepos?.find((x) => x.root === root)?.hideable;
 }
 
 /**

@@ -1,9 +1,10 @@
 // The repository switcher's entries: working trees, not object stores. The project's repos
 // as Changes discovers them, each followed by its linked worktrees that live inside the project in a hidden folder
 // (`.worktrees/v2.2`), which discovery skips.
-import { basename, relative } from '../cpath';
+import { basename, relative, sep } from '../cpath';
 import type { ScmRepoEntry } from '@shared/scm';
 import { isBelow } from '@shared/paths';
+import { isHiddenRel } from '@shared/hidden-repos';
 import { listWorkingTrees, type WorkingTree } from './repos';
 
 /** The entries for working trees Changes already listed (GitHub's). */
@@ -15,8 +16,10 @@ export function scmEntries(root: string, trees: readonly WorkingTree[]): ScmRepo
     let nestedIn: string | null = null;
     if (!w.worktreeOf) for (const t of trees) if (t.root !== w.root && isBelow(t.root, w.root) && (!nestedIn || t.root.length > nestedIn.length)) nestedIn = t.root;
     // A visible linked worktree is a repo of its own in the switcher; only the ones discovery missed show their owner.
-    const linked = w.gitDir !== null && w.gitDir !== w.common;
-    return { root: w.root, rel, name: rel ? basename(w.root) : basename(root), worktreeOf: w.hidden ? w.worktreeOf : null, nestedIn, common: w.common, status: null, ...(linked ? { linked: true as const } : {}) };
+    const linked = w.worktreeOf !== null || (w.gitDir !== null && w.gitDir !== w.common);
+    // Kept by its path inside the project, '/'-separated: a backslash in a macOS folder name can't be kept so.
+    const hideable = rel !== '' && !linked && isBelow(root, w.root) && isHiddenRel(rel.split(sep).join('/'));
+    return { root: w.root, rel, name: rel ? basename(w.root) : basename(root), worktreeOf: w.hidden ? w.worktreeOf : null, nestedIn, common: w.common, status: null, ...(hideable ? { hideable: true as const } : {}) };
   });
 }
 

@@ -339,13 +339,13 @@ import { createHiddenRepos } from './hidden-repos';
 import { join } from 'node:path';
 
 /** A project with its root repository, a nested one, a linked worktree and a repository reached outside the root. */
-function hidingHub() {
+function hidingHub(more: string[] = []) {
   const tree = (root: string, common = `${root}/.git`, gitDir: string | null = common) => ({ root, common, gitDir, worktreeOf: null, hidden: false });
   const info = {
     root: '/p', repos: [], discovered: [], status: new Map(), windows: new Set(), capped: false, searching: false, maxFolders: 20_000, hiddenAt: [],
     trees: [tree('/p'), tree('/p/agent/data/repo'), tree('/p/wt', '/p/.git', '/p/.git/worktrees/wt'), tree('/elsewhere/linked'),
       // A linked worktree in a hidden folder whose .git file can't be read: no git dir, its owner known.
-      { root: '/p/.claude/worktrees/x', common: '/p/.git', gitDir: null, worktreeOf: '/p', hidden: true }]
+      { root: '/p/.claude/worktrees/x', common: '/p/.git', gitDir: null, worktreeOf: '/p', hidden: true }, ...more.map((r) => tree(r))]
   };
   const hiddenChanged = vi.fn();
   const git = { onScm: () => {}, onProjectClosed: () => {}, info: () => info, hiddenChanged };
@@ -382,10 +382,21 @@ test('scm:hide refuses the project root, a linked worktree, a repository outside
   } finally { h.done(); }
 });
 
-test('the switcher\'s entries say which ones are linked worktrees (never hidden on their own)', async () => {
+test('the switcher\'s entries say which ones can be hidden: not the root, a linked worktree or one outside the project', async () => {
   const h = hidingHub();
   try {
     const entries = await h.call('scm:repos') as ScmRepoEntry[];
-    expect(entries.filter((x) => x.linked).map((x) => x.root)).toEqual(['/p/wt']);
+    expect(entries.filter((x) => x.hideable).map((x) => x.root)).toEqual(['/p/agent/data/repo']);
+  } finally { h.done(); }
+});
+
+// A backslash is a character of a macOS folder name, not a separator: such a path can't be kept as a hidden one.
+test.skipIf(process.platform === 'win32')('a repository whose folder name holds a backslash is not offered, and main refuses to hide it', async () => {
+  const h = hidingHub(['/p/odd\\name']);
+  try {
+    const entries = await h.call('scm:repos') as ScmRepoEntry[];
+    expect(entries.find((x) => x.root === '/p/odd\\name')?.hideable).toBeUndefined();
+    await expect(h.call('scm:hide', { root: '/p/odd\\name' })).rejects.toThrow();
+    expect(h.store.list('/p')).toEqual([]);
   } finally { h.done(); }
 });

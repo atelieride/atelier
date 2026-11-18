@@ -89,8 +89,10 @@ import type { ScmRepoEntry } from '@shared/scm';
 const entry = (root: string, rel: string, extra: Partial<ScmRepoEntry> = {}): ScmRepoEntry => ({ root, rel, name: rel.split('/').at(-1) || 'p', worktreeOf: null, nestedIn: null, common: `${root}/.git`, status: null, ...extra });
 const ids = (root: string) => repoMenu(root).map((m) => (m === 'sep' ? 'sep' : m.id));
 
-test('Hide This Repository: offered for a repository inside the project, never for its root or a linked worktree', () => {
-  useApp.setState({ scmRepos: [entry('/p', ''), entry('/p/agent/data/repo', 'agent/data/repo'), entry('/p/wt', 'wt', { linked: true }), entry('/p/.claude/worktrees/x', '.claude/worktrees/x', { worktreeOf: '/p' })], scmRefs: {}, repos: [] });
+test('Hide This Repository: offered for the entries main says can be hidden, and only those', () => {
+  // Main decides (the root, a linked worktree, a folder outside the project or one whose name can't be kept are not):
+  // a menu that offered more would end in "Couldn't hide this repository".
+  useApp.setState({ scmRepos: [entry('/p', ''), entry('/p/agent/data/repo', 'agent/data/repo', { hideable: true }), entry('/p/wt', 'wt'), entry('/p/.claude/worktrees/x', '.claude/worktrees/x', { worktreeOf: '/p' })], scmRefs: {}, repos: [] });
   expect(ids('/p/agent/data/repo')).toEqual(['show-history', 'sep', 'hide-repo']);
   expect(ids('/p')).not.toContain('hide-repo');
   expect(ids('/p/wt')).not.toContain('hide-repo');

@@ -20,7 +20,7 @@ import { noArgsSchema, scmAheadBehindSchema, scmCommitSchema, scmFetchSchema, sc
 import type { HiddenRepos } from './hidden-repos';
 import { REPO_SEARCH_MAX_FOLDERS } from './git/repos';
 import type { GitHub } from './git-hub';
-import { relative, toOut } from './cpath';
+import { relative, sep, toOut } from './cpath';
 import { isBelow } from '@shared/paths';
 
 /** The root must be one of the entries main listed for the window's project. */
@@ -282,14 +282,14 @@ export class ScmHub {
       const hidden = this.hidden?.list(key) ?? [];
       return i ? { capped: i.capped, searching: i.searching, maxFolders: i.maxFolders, hidden } : { capped: false, searching: false, maxFolders: REPO_SEARCH_MAX_FOLDERS, hidden };
     });
-    // Hide This Repository: an entry listed here, inside the project, not its root nor a linked worktree (hiding one
-    // would hide its repository's store). Kept by its path inside the project's real root.
+    // Hide This Repository: an entry listed here that can be hidden (inside the project, not its root nor a linked
+    // worktree, whose store hiding it would hide). Kept by its path inside the project's real root.
     handle(IPC.scmHide, async (e, arg) => {
       const { key, root } = await rooted(e, scmRootSchema.parse(arg).root);
       const entry = (await this.entriesOf(key)).find((x) => x.root === root)!;
       const real = this.git.info(key)?.root;
-      if (!this.hidden || !real || entry.rel === '' || entry.linked || entry.worktreeOf || !isBelow(real, root)) throw new Error('this repository cannot be hidden');
-      const list = this.hidden.add(key, relative(real, root).split(/[\\/]/).join('/'));
+      if (!this.hidden || !real || !entry.hideable || !isBelow(real, root)) throw new Error('this repository cannot be hidden');
+      const list = this.hidden.add(key, relative(real, root).split(sep).join('/'));
       this.git.hiddenChanged(key);
       return list;
     });

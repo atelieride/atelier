@@ -62,5 +62,5 @@ test('a broken repo stays listed with its .git as common dir', async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-scm-broken-')));
   mkdirSync(join(root, 'x', '.git'), { recursive: true });
   const list = await listScmRepos(root, [join(root, 'x')]);
-  expect(list).toEqual([{ root: join(root, 'x'), rel: 'x', name: 'x', worktreeOf: null, nestedIn: null, common: join(root, 'x', '.git'), status: null }]);
+  expect(list).toEqual([{ root: join(root, 'x'), rel: 'x', name: 'x', worktreeOf: null, nestedIn: null, common: join(root, 'x', '.git'), status: null, hideable: true }]);
 });

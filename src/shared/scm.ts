@@ -133,8 +133,11 @@ export interface ScmRepoEntry {
   /** Absolute git common dir: events name it. */
   common: string;
   status: ScmRepoStatus | null;
-  /** A linked worktree (its git dir is not its common dir): never hidden on its own, it shares its repository's store. */
-  linked?: true;
+  /**
+   * Hide This Repository applies: a repository inside the project whose path can be kept as a hidden one. Never the
+   * project's root (it would hide everything) nor a linked worktree (it shares its repository's store).
+   */
+  hideable?: true;
 }
 
 /** Refs, a HEAD or a fetch changed in a repository (its git common dir). Worktrees' statuses come with Changes' own. */
