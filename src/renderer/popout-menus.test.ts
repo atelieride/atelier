@@ -53,7 +53,8 @@ test('a session pop-out: its items, Rename in its bar, its real close; never a s
   st().setRenaming(null);
   // Its close is asked under the pop-out's bar.
   item(menu, 'close-terminal')!.run();
-  expect(st().closeAsk).toEqual({ id: 'a', at: 'popout', stops: { kind: 'claude', doing: 'idle' }, note: 'history' });
+  // A known session, idle with nothing beside it: quiet, its close loses no work.
+  expect(st().closeAsk).toEqual({ id: 'a', at: 'popout', stops: { kind: 'claude', doing: 'idle', quiet: true }, note: 'history' });
   st().cancelClose();
 });
 

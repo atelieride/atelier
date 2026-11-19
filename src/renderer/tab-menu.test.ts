@@ -37,7 +37,8 @@ test('a terminal tab menu: "Close Tab" (⌘W) only hides the tab; "Close Session
   real?.run();
   // A Claude session stops: asked under its tab, closed only on Close.
   expect(close).not.toHaveBeenCalled();
-  expect(useApp.getState().closeAsk).toEqual({ id: 's', at: 'tab', stops: { kind: 'claude', doing: 'idle' }, note: 'history' });
+  // A known session, idle with nothing beside it: quiet, its close loses no work.
+  expect(useApp.getState().closeAsk).toEqual({ id: 's', at: 'tab', stops: { kind: 'claude', doing: 'idle', quiet: true }, note: 'history' });
   useApp.getState().confirmClose();
   expect(close).toHaveBeenCalledWith('s');
   const shell = item(tabMenu('t:t'), 'close-terminal');
