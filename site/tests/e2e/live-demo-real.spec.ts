@@ -103,10 +103,17 @@ async function isClosed(page: Page) {
   await expect(page.locator('header.appbar')).toBeVisible();
   await expect(page.locator('.hero .frame')).toBeVisible();
 }
-/** Focus forced onto the page (a click on the dimmed edge would do it). */
+/**
+ * Focus forced onto the page (a click on the dimmed edge would do it), until it stays there for a frame of the demo:
+ * after a sheet closes the demo may still put its focus back, and a focus() inside the frame takes the page's focus
+ * back to the iframe, undoing a blur made before it.
+ */
 async function blurDemo(page: Page) {
-  await stage(page).locator('iframe').evaluate((f) => (f as HTMLIFrameElement).blur());
-  expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('IFRAME');
+  await expect(async () => {
+    await stage(page).locator('iframe').evaluate((f) => (f as HTMLIFrameElement).blur());
+    await app(page).locator(':root').evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0))));
+    expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('IFRAME');
+  }).toPass({ timeout: 5000 });
 }
 
 test.use({ viewport: { width: 1440, height: 900 } });
