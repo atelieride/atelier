@@ -3,6 +3,30 @@
 Release notes for Atelier. Each version has a `## <version>` section: the release workflow requires it and the app
 shows it in Settings › About and in "What's new".
 
+## 0.2.0-beta.32
+
+- **Split in both directions**: stack panes as well as setting them side by side, up to four in rows and columns, each
+  with its own tabs. View › Split Down (⌥⌘\, Ctrl+Alt+\ on Windows), drop a tab on any edge of a pane, and focus a
+  pane or move a tab in four directions from the View menu, ⌘K and the keyboard. Equal Widths is now Equal Sizes.
+- **Each project's window wears a color of its own**, so open windows can be told apart at a glance: on the project
+  chip and as a faint tint on the header. Change it from the chip's menu, View › Project Color… or ⌘K; Settings ›
+  Appearance turns the tint off. A project window is also titled after its selected session.
+- **Changes shows this session or this activity**: Filters › Show offers This session and This activity next to This
+  workspace, following what is in front, and the strip's count and Stage All follow the same choice.
+- **Pull from where you see it**: every ↓ in Changes pulls (rows, repository headers, the Clean and To sync chips). In
+  All Repositories a header keeps its marks under the pointer: its ↓ and ↑ counts pull and push, and ⋯ has Fetch,
+  Pull and Push.
+- **Hide a repository** you don't work in: right-click it in Source Control or Changes and choose Hide This
+  Repository, with Undo. Settings › Source Control lists the hidden ones, with Show.
+- **A session's artifacts**: the pages a Claude session published are counted on its background chip and listed in
+  its popover, to open in your browser or copy their link.
+- **Activities wear colors of their own** and their rows step in under the activity's head; session avatars are
+  quieter. Closing a sidebar row asks in a bubble beside it instead of growing the row, and the closed row folds
+  away.
+- Restart to update answers every click and works again after a quit was called off. A Settings stepper counts every
+  press. Enter right after typing in ⌘K picks the first row. A workspace's + offers New Terminal with activities off
+  too. A toast's button keeps its words on one line.
+
 ## 0.2.0-beta.31
 
 - **Find in Files**: search the text of every project file from the sidebar (⌘⇧F, Shift+Alt+F on Windows; also View ›
