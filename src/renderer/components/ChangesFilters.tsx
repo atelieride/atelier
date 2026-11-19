@@ -46,7 +46,7 @@ export function ChangesFilters({ wsOn }: { wsOn: boolean }) {
   const [open, setOpen] = useState(false);
   const funnel = useRef<HTMLButtonElement>(null);
   const pop = useRef<HTMLDivElement>(null);
-  const view = filtersView(group, scope, wsOn);
+  const view = filtersView(group, scope, wsOn ? SCOPES : ['all']);
   const tf = t.changesFilters;
 
   const close = (back: boolean) => { setOpen(false); if (back) funnel.current?.focus(); };
@@ -92,7 +92,7 @@ export function ChangesFilters({ wsOn }: { wsOn: boolean }) {
           onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true); } }}>
           <Choice label={tf.groupBy} values={GROUPS} value={group} names={{ repo: tf.repository, session: tf.session }} onPick={pick} />
           {wsOn && (
-            <Choice label={tf.show} values={SCOPES} value={scope} names={{ ws: t.ws.thisWorkspace, all: t.ws.allChanges }}
+            <Choice label={tf.show} values={SCOPES} value={scope === 'ws' ? 'ws' : 'all'} names={{ ws: t.ws.thisWorkspace, all: t.ws.allChanges }}
               icons={{ ws: 'workspace' }} onPick={(v) => useApp.getState().setChangesScope(v)} />
           )}
           <button type="button" className="cf-switch" role="switch" aria-checked={folders} data-tip={t.showFoldersTip}

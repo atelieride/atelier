@@ -710,6 +710,8 @@ const strings = {
     reset: 'Reset',
     bySession: 'by session',
     thisWorkspace: 'this workspace',
+    thisActivity: 'this activity',
+    thisSession: 'this session',
     tip: (parts: string[]) => ['Filters', ...parts].join(' · ')
   },
   twoSessions: 'Two sessions on the same file',

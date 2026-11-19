@@ -29,6 +29,7 @@ import { afterClose, canPopOut, moveTab as moveKey, noteActive, openTab, syncTer
 import { dropRecent, pushRecent, renameRecent, type RecentFile } from './recent';
 import { clampPanel, loadLayout, saveLayout, type Panel, type PanelWidths } from './panels';
 import { loadChangesPrefs, saveChangesPrefs, toggleAllGroups, toggleGroup } from './changes-prefs';
+import { frontSessionNext, type ChangesScope } from './changes-scope';
 import { loadPins, pinnedFirst, prunePins, relinkPin, savePins, togglePin } from './pins';
 import {
   EMPTY_ORDER, loadOrder, moveInBand, placeBand, pruneOrder, relinkOrder, sameOrder, saveOrder, stepBefore, unplace, type Band, type ManualOrder
@@ -701,9 +702,11 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
   setWsSheet(v: { move?: TabKey } | null): void;
   /** Close Workspace… asked: the workspace the confirm is about, or null. */
   wsCloseAsk: string | null;
-  /** Changes with workspaces on: all of them, or the active workspace's. Per window. */
-  changesScope: 'ws' | 'all';
-  setChangesScope(v: 'ws' | 'all'): void;
+  /** Changes' Show: all of them, the active workspace's, the activity in front's or the Claude session in front's. Per window. */
+  changesScope: ChangesScope;
+  setChangesScope(v: ChangesScope): void;
+  /** The Claude session This session follows: the one in front, or the last one while a plain terminal or a file is. */
+  changesSession: string | null;
   setWsCloseAsk(id: string | null): void;
   renameWorkspace(id: string, name: string): void;
   recolorWorkspace(id: string, color: number): void;
@@ -1878,6 +1881,7 @@ export const useApp = create<AppState>((set, get) => ({
   setWsActCloseAsk: (wsActCloseAsk) => set({ wsActCloseAsk }),
   changesScope: 'all',
   setChangesScope: (changesScope) => set({ changesScope }),
+  changesSession: null,
   setWsCloseAsk: (wsCloseAsk) => set({ wsCloseAsk }),
   activeKey: () => keyOf(get().activeTab, get().selectedId),
   activate: (key) => {
@@ -3531,6 +3535,13 @@ useApp.subscribe((s, prev) => {
 });
 // Closing the window right after a change: saved now, not lost with the timer.
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') window.addEventListener('pagehide', () => { if (layoutTimer) saveLayoutNow(); });
+
+// Changes' This session follows the Claude session in front (the last one while a plain terminal or a file is).
+useApp.subscribe((s, prev) => {
+  if (s.selectedId === prev.selectedId && s.terminals === prev.terminals) return;
+  const next = frontSessionNext(s.changesSession, s.selectedId, s.terminals);
+  if (next !== s.changesSession) useApp.setState({ changesSession: next });
+});
 
 /**
  * The active tab is going away (closed, trashed, its terminal exited). One pane: `next`, today's neighbor rule. Split
