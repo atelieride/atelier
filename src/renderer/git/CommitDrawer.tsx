@@ -10,7 +10,8 @@ import { branchLabel } from '../worktrees';
 import { cancelOp, commit, openCommitAll, push, refreshFacts, stage, undoCommit } from './actions';
 import { stageAllPlan, type StageAllOffer } from './stage-all';
 import { StageAllConfirm } from './StageAllConfirm';
-import { changesInWorkspace } from '../workspace-view';
+import { shownChanges } from '../changes-scope';
+import { useScopeState } from '../use-changes-scope';
 import { CommitButton } from './CommitButton';
 import {
   AMEND_OFF, amendFollow, amendOffer, amendStart, coAuthorShown, commitBlock, dragEnd, drawerLog, drawerNotices, liveHeight, othersLine, RESULT_MS,
@@ -78,9 +79,8 @@ export function CommitDrawer() {
   const coAuthorDefault = useApp((s) => s.settings.commitCoAuthor);
   const messagesOn = useApp((s) => s.settings.commitMessages !== 'off');
   const nothingMode = useApp((s) => s.settings.commitNothingStaged);
-  // Changes showing This workspace: Stage All takes only the rows shown.
-  const wsF = useApp((s) => (s.ws?.on && !s.popout ? s.ws : null));
-  const scope = useApp((s) => s.changesScope);
+  // Changes showing This workspace, This activity or This session: Stage All takes only the rows shown.
+  const scope = useScopeState();
   const anyWrite = useApp((s) => s.gitWrite);
   const repo = repos.find((r) => r.root === target) ?? null;
   const toPush = repo ? trackedCounts(repo).ahead : 0;
@@ -134,9 +134,9 @@ export function CommitDrawer() {
   const lastAt = Math.max(0, ...Object.values(results).map((r) => ('sha' in r ? r.at : 0)));
   const now = useExpiry(lastAt || null, RESULT_MS);
   const rows = useMemo(() => (repo ? buildRows([repo], attributions) : []), [repo, attributions]);
-  // What Stage All would take here: the whole repository, or the rows This workspace shows.
+  // What Stage All would take here: the whole repository, or the rows Changes shows.
   const stageAll: StageAllOffer = repo
-    ? stageAllPlan({ repo, shown: wsF && scope === 'ws' ? changesInWorkspace(wsF, rows) : null, writes: true })
+    ? stageAllPlan({ repo, shown: shownChanges(scope, rows), writes: true })
     : { offered: false, why: 'nothing' };
   const notices = drawerNotices({ target, repos, facts, allFacts, live, results, actedAt, now, amendMoved, unstaged: stageAll.offered && !ask ? stageAll.plan.changes : 0 });
   const staged = repo ? stagedCount(repo) : 0;

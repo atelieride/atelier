@@ -35,7 +35,7 @@ import { paneBox } from '../pane-place';
 import { usePaneArea } from '../pane-area';
 import { isProjectKey } from '../workspaces';
 import { kbd } from '../kbd';
-import { wsChangeCount } from '../workspace-view';
+import { shownChangeCount } from '../changes-scope';
 import { keepPaneKeyboard } from '../pane-focus';
 import { useShallow } from 'zustand/react/shallow';
 import { useDb } from '../databases/store';
@@ -434,8 +434,8 @@ function PaneTools({ pane, onLeaving }: { pane: number; onLeaving: (on: boolean)
 function ChangesToggle() {
   const showChanges = useApp((s) => s.showChanges);
   const toggleChanges = useApp((s) => s.toggleChanges);
-  // Workspaces on with This workspace: the count follows the filter.
-  const changed = useApp((s) => (s.ws?.on && !s.popout && s.changesScope === 'ws' ? wsChangeCount(s.ws, s.repos, s.attributions) : s.repos.reduce((n, r) => n + r.changes.length, 0)));
+  // The count follows Changes' Show: this workspace's, this activity's or this session's files when one is chosen.
+  const changed = useApp(shownChangeCount);
   return (
     <button type="button" className={`changes-toggle ${showChanges ? 'is-on' : ''}`} onClick={toggleChanges} aria-label={t.toggleChanges} data-tip={t.changesTip} data-kbd={kbd('⌘⇧M')} data-pane-keep>
       <Icon name="git" size={14} />

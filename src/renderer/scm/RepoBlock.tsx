@@ -10,6 +10,7 @@ import { t } from '../i18n/en';
 import { kbd } from '../kbd';
 import type { MenuItem } from '../menu-model';
 import { useApp } from '../store';
+import { useScopeKey } from '../use-changes-scope';
 import { cancelOp, push, refreshFacts } from '../git/actions';
 import { commitRepo, repoCommitState, stageThenCommitRepo } from '../git/commit-repo';
 import { messageApplied, messageEdited, stopMessage, writeMessage } from '../git/message-run';
@@ -53,7 +54,7 @@ export function RepoBlock({ row, folds, writes }: { row: AllRow; folds: Readonly
   const op = useApp((s) => Object.values(s.gitOps).find((o) => o.root === root && o.op !== 'stage' && o.op !== 'unstage') ?? null);
   const facts = useApp((s) => s.gitFacts[root]);
   useApp((s) => s.settings.commitNothingStaged);
-  useApp((s) => s.ws?.on && s.changesScope);
+  useScopeKey();
   const messagesOn = useApp((s) => s.settings.commitMessages !== 'off');
   const w = useApp((s) => (s.gitWrite?.root === root ? s.gitWrite : null));
   const [text, setText] = useMessage(root);

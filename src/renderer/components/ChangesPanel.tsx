@@ -30,7 +30,8 @@ import { gitMissing } from '../git/missing';
 import { RepoTrouble } from '../git/RepoTrouble';
 import { isBelow } from '@shared/paths';
 import { idStyle } from '../avatar';
-import { changesInWorkspace } from '../workspace-view';
+import { shownChanges } from '../changes-scope';
+import { useScopeState } from '../use-changes-scope';
 import { ChangesFilters } from './ChangesFilters';
 import { CleanState } from './CleanState';
 import { PullCounts } from './SyncCounts';
@@ -431,11 +432,11 @@ export function ChangesPanel() {
   const collapsed = useApp((s) => s.changesCollapsed);
   const expanded = useApp((s) => s.changesExpanded);
   const compact = !expanded;
-  // Workspaces on: All (the default) or This workspace; the filter only changes what is shown.
+  // Show: All (the default), This workspace, This activity or This session; the filter only changes what is shown.
   const wsF = useApp((s) => (s.ws?.on && !s.popout ? s.ws : null));
-  const scope = useApp((s) => s.changesScope);
+  const scopeState = useScopeState();
   const allRows = buildRows(repos, attributions);
-  const filtered = wsF && scope === 'ws' ? changesInWorkspace(wsF, allRows) : null;
+  const filtered = shownChanges(scopeState, allRows);
   const rows = filtered ?? allRows;
   const flashing = useChangesFlash(rows, repos, useApp((s) => s.project?.root ?? ''));
   const nest = nestWorktrees(repos, rows);

@@ -2,7 +2,8 @@ import { expect, test } from 'vitest';
 import type { Resumable, TerminalInfo } from '@shared/protocol';
 import type { WorkspacesState } from './workspaces';
 import { t } from './i18n/en';
-import { cardOf, changesInWorkspace, headDot, inWorkspace, resumablesIn, rowClickAction, wsChangeCount, wsColorVar } from './workspace-view';
+import { cardOf, changesInWorkspace, headDot, inWorkspace, resumablesIn, rowClickAction, wsColorVar } from './workspace-view';
+import { shownChangeCount } from './changes-scope';
 
 // What the sidebar, the cards and the empty state show of a workspace.
 
@@ -90,13 +91,19 @@ test('Changes, This workspace: a session that ended (no workspace kept) or a new
   expect(changesInWorkspace(WS, rows).map((x: { path: string }) => x.path)).toEqual(['/p/old.ts', '/p/new.ts']);
 });
 
-test('the strip\'s count under This workspace: the active workspace\'s rows, computed again only when its inputs change', () => {
-  const repos = [{ root: '/p', changes: [{ path: '/p/a.ts', rel: 'a.ts', kind: 'modified', stage: 'none' }, { path: '/p/b.ts', rel: 'b.ts', kind: 'modified', stage: 'none' }] }] as never[];
+test('the strip\'s count follows Show: the active workspace\'s rows, the session in front\'s, or every change', () => {
+  const repos = [{ root: '/p', changes: [{ path: '/p/a.ts', rel: 'a.ts', kind: 'modified', stage: 'none' }, { path: '/p/b.ts', rel: 'b.ts', kind: 'modified', stage: 'none' }, { path: '/p/c.ts', rel: 'c.ts', kind: 'modified', stage: 'none' }] }] as never[];
   const attributions = [{ path: '/p/a.ts', terminalId: 'a', sessionId: 's', color: '#fff', title: 'a', at: 1 }, { path: '/p/b.ts', terminalId: 'b', sessionId: 's', color: '#fff', title: 'b', at: 1 }];
-  expect(wsChangeCount(WS, repos, attributions)).toBe(1);
-  expect(wsChangeCount({ ...WS, active: 'B' }, repos, attributions)).toBe(1);
-  // Nobody's (made by hand): counted in every workspace.
-  expect(wsChangeCount(WS, repos, [])).toBe(2);
+  const s = { ws: WS, popout: null, changesScope: 'ws' as const, changesSession: 'b', terminals: [term('a'), term('b')], settings: { wsActivities: false }, repos, attributions };
+  // This workspace: its own rows and the ones nobody's session made.
+  expect(shownChangeCount(s)).toBe(2);
+  expect(shownChangeCount({ ...s, ws: { ...WS, active: 'B' } })).toBe(2);
+  // This session: only the session in front's; computed again when the front changes.
+  expect(shownChangeCount({ ...s, changesScope: 'session' })).toBe(1);
+  expect(shownChangeCount({ ...s, changesScope: 'session', changesSession: null })).toBe(0);
+  // All, or workspaces off with This workspace chosen: every change.
+  expect(shownChangeCount({ ...s, changesScope: 'all' })).toBe(3);
+  expect(shownChangeCount({ ...s, ws: { ...WS, on: false } })).toBe(3);
 });
 
 test('colors are theme tokens', () => {

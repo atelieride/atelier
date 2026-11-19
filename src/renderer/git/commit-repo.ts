@@ -6,7 +6,7 @@ import type { GitOpResult } from '@shared/git-write';
 import { buildRows } from '../changes';
 import { t } from '../i18n/en';
 import { useApp, type AppState } from '../store';
-import { changesInWorkspace } from '../workspace-view';
+import { shownChanges } from '../changes-scope';
 import { commit, stage } from './actions';
 import { coAuthorShown, commitBlock, drawerNotices } from './drawer';
 import { stageAllPlan, type StageAllPlan } from './stage-all';
@@ -29,9 +29,8 @@ export function repoCommitState(root: string, s: AppState = useApp.getState()): 
   if (!repo) return { staged: 0, offered: false, block: t.git.drawer.noTarget, plan: null, name: '' };
   const staged = stagedCount(repo);
   const mode = s.settings.commitNothingStaged;
-  // Changes showing This workspace: Stage All takes only the rows shown, as the drawer's.
-  const ws = s.ws?.on && !s.popout && s.changesScope === 'ws' ? s.ws : null;
-  const all = stageAllPlan({ repo, shown: ws ? changesInWorkspace(ws, buildRows([repo], s.attributions)) : null, writes: s.settings.gitActions === 'on' });
+  // Changes showing This workspace, This activity or This session: Stage All takes only the rows shown, as the drawer's.
+  const all = stageAllPlan({ repo, shown: shownChanges(s, buildRows([repo], s.attributions)), writes: s.settings.gitActions === 'on' });
   const running = committing.has(root) || Object.values(s.gitOps).some((e) => e.root === root && e.op !== 'stage' && e.op !== 'unstage');
   const notices = drawerNotices({ target: root, repos: s.repos, facts: s.gitFacts[root], allFacts: {}, live: new Map(), results: {}, actedAt: 0, now: 0 });
   // ✦ writing this message: the field is Claude's until it is done (the drawer's rule).

@@ -4,9 +4,6 @@ import { dots, memberOf, workspaceOf, workspacesOf, type Dot, type WorkspacesSta
 import { t } from './i18n/en';
 import { inboxSection } from './inbox';
 import { resumablesFor } from './selectors';
-import { buildRows } from './changes';
-import type { RepoStatus } from '@shared/git';
-import type { Attribution } from '@shared/attribution';
 
 /** A workspace's color as a theme token (theme.css `--ws-1…8`): components never hold the hex. */
 export const wsColorVar = (color: number): string => `var(--ws-${color})`;
@@ -165,17 +162,4 @@ export function changesInWorkspace<R extends { by: { terminalId: string; ids?: s
   const elsewhere = (id: string) => id in ws.members && known.has(ws.members[id]!) && workspaceOf(ws, ws.members[id]!) !== here;
   const othersOnly = (r: R) => r.by.length > 0 && r.by.every((b) => (b.ids ?? [b.terminalId]).every(elsewhere));
   return rows.filter((r) => !othersOnly(r));
-}
-
-let counted: { ws: WorkspacesState; repos: RepoStatus[]; attributions: Attribution[]; n: number } | null = null;
-/**
- * The strip's Changes count under This workspace. A store selector runs on every update: the
- * count is computed again only when what it reads changed.
- */
-export function wsChangeCount(ws: WorkspacesState, repos: RepoStatus[], attributions: Attribution[]): number {
-  const c = counted;
-  if (c && c.ws === ws && c.repos === repos && c.attributions === attributions) return c.n;
-  const n = changesInWorkspace(ws, buildRows(repos, attributions)).length;
-  counted = { ws, repos, attributions, n };
-  return n;
 }

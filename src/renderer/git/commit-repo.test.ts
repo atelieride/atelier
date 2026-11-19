@@ -108,6 +108,17 @@ describe('commitRepo', () => {
     expect(repoCommitState('/p/a').plan).toMatchObject({ what: ['mine.ts'], changes: 1 });
   });
 
+  test("Changes showing This session: Stage All takes only the files that session touched, never another's or nobody's", () => {
+    useApp.setState({
+      repos: [repo(ch('mine.ts', 'none'), ch('theirs.ts', 'none'), ch('hand.ts', 'none'))], changesScope: 'session', changesSession: 't1',
+      terminals: [{ id: 't1' }, { id: 't2' }] as never,
+      attributions: [{ ...session, path: '/p/a/mine.ts' }, { ...session, path: '/p/a/theirs.ts', terminalId: 't2' }]
+    });
+    expect(repoCommitState('/p/a').plan).toMatchObject({ what: ['mine.ts'], changes: 1 });
+    useApp.setState({ changesScope: 'all' });
+    expect(repoCommitState('/p/a').plan).toMatchObject({ what: 'all', changes: 3 });
+  });
+
   test("a commit from a block leaves the drawer where it is, on another repository's draft", async () => {
     // The drawer is on billing, being written, nothing staged there yet: it stays open on it.
     useApp.setState({ repos: [repo(ch('a.ts', 'all')), { ...repo(ch('b.ts', 'none')), root: '/p/b', name: 'billing' }], gitDrawer: { open: true, height: null, unfolded: [], openedFor: null }, gitTarget: '/p/b' });

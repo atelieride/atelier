@@ -1,6 +1,9 @@
 // Changes' Show choices: what each one keeps of the changed files, which are offered, and the Claude session in front
 // they follow. Pure; every place that shows or stages "the rows Changes shows" goes through `shownChanges`.
 
+import type { RepoStatus } from '@shared/git';
+import type { Attribution } from '@shared/attribution';
+import { buildRows } from './changes';
 import { changesInWorkspace } from './workspace-view';
 import type { WorkspacesState } from './workspaces';
 
@@ -83,4 +86,20 @@ export function scopeViewOf(s: ScopeState): ScopeView {
 /** The rows Changes shows under the current scope, or null when it shows everything. */
 export function shownChanges<R extends ScopedRow>(s: ScopeState, rows: R[]): R[] | null {
   return changesInScope(scopeViewOf(s), rows);
+}
+
+type CountState = ScopeState & { repos: RepoStatus[]; attributions: Attribution[] };
+let counted: { key: unknown[]; n: number } | null = null;
+/**
+ * The strip's Changes count: what Changes shows. A store selector runs on every update: the rows are built and
+ * filtered again only when what they read changed (the terminals only matter to This activity).
+ */
+export function shownChangeCount(s: CountState): number {
+  const v = scopeViewOf(s);
+  if (v.scope === 'all') return s.repos.reduce((n, r) => n + r.changes.length, 0);
+  const key = [v.scope, v.ws, v.session, s.repos, s.attributions, v.scope === 'activity' ? s.terminals : null];
+  if (counted && counted.key.every((x, i) => x === key[i])) return counted.n;
+  const n = changesInScope(v, buildRows(s.repos, s.attributions))?.length ?? 0;
+  counted = { key, n };
+  return n;
 }
