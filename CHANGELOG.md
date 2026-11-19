@@ -3,7 +3,7 @@
 Release notes for Atelier. Each version has a `## <version>` section: the release workflow requires it and the app
 shows it in Settings › About and in "What's new".
 
-## 0.2.0-beta.32
+## 0.2.0-beta.33
 
 - **Split in both directions**: stack panes as well as setting them side by side, up to four in rows and columns, each
   with its own tabs. View › Split Down (⌥⌘\, Ctrl+Alt+\ on Windows), drop a tab on any edge of a pane, and focus a
@@ -26,6 +26,11 @@ shows it in Settings › About and in "What's new".
 - Restart to update answers every click and works again after a quit was called off. A Settings stepper counts every
   press. Enter right after typing in ⌘K picks the first row. A workspace's + offers New Terminal with activities off
   too. A toast's button keeps its words on one line.
+
+## 0.2.0-beta.32
+
+- **Not released**: a size check of the website's live demo stopped the build. Everything it was meant to bring is in
+  0.2.0-beta.33.
 
 ## 0.2.0-beta.31
 
