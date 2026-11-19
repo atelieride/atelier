@@ -712,6 +712,13 @@ const strings = {
     thisWorkspace: 'this workspace',
     thisActivity: 'this activity',
     thisSession: 'this session',
+    // Show's choices, each with what it follows now on its right.
+    showAll: 'All',
+    showWorkspace: 'This workspace',
+    showActivity: 'This activity',
+    showSession: 'This session',
+    outsideActivities: 'Outside activities',
+    noneInFront: 'None in front',
     tip: (parts: string[]) => ['Filters', ...parts].join(' · ')
   },
   twoSessions: 'Two sessions on the same file',
@@ -792,6 +799,15 @@ const strings = {
   cleanHidden: 'Nothing in this workspace',
   cleanHiddenCount: (n: number) => `· ${n} file${n === 1 ? '' : 's'} elsewhere`,
   cleanHiddenTip: (n: number) => `${n} changed file${n === 1 ? '' : 's'} from other workspaces’ sessions: All shows ${n === 1 ? 'it' : 'them'}`,
+  // This activity or This session hides every change: what the other sessions (or someone by hand) changed.
+  cleanHiddenActivity: 'Nothing in this activity',
+  cleanHiddenActivityTip: (n: number) => `${n} changed file${n === 1 ? '' : 's'} from outside this activity: All shows ${n === 1 ? 'it' : 'them'}`,
+  cleanHiddenSession: 'Nothing from this session',
+  cleanHiddenSessionTip: (n: number) => `${n} changed file${n === 1 ? '' : 's'} from other sessions or made by hand: All shows ${n === 1 ? 'it' : 'them'}`,
+  // This session before any Claude session came to the front (or once the last one closed).
+  cleanNoSession: 'No session in front',
+  cleanNoSessionTip: 'Bring a Claude session to the front to see only its changes',
+  cleanShowAll: 'Show all',
   noRepos: 'No git repositories in this folder.',
   toggleChanges: `Changes (${kbd('⌘⇧M')})`,
   changesTip: 'Show or hide Changes',

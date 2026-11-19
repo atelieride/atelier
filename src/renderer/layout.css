@@ -1000,11 +1000,23 @@ button.foot-item:disabled { cursor: default; }
 .cf-pop:focus, .cf-pop:focus-visible { outline: none; box-shadow: var(--shadow-float); }
 .cf-sec { display: flex; flex-direction: column; gap: 6px; }
 .cf-k { font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-4); }
-/* Two halves across the popover, equal while the words fit; a longer one ("This workspace") grows to its words, never
-   cut: at the narrowest panel (240 px) both still fit. `.seg` (a content-wide flex row, later in this file) must not win. */
+/* Group by: two halves across the popover. `.seg` (a content-wide flex row, later in this file) must not win. */
 .seg.cf-seg { display: flex; gap: 2px; }
 .seg.cf-seg > button { flex: 1 1 0; min-width: max-content; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 4px 9px; white-space: nowrap; }
-.seg.cf-seg > button > svg { flex: none; }
+/* Show: one row per choice, up to four, stacked so the narrowest panel (240 px) fits them all. The label never shrinks
+   or wraps; what the choice follows (a workspace, an activity, a session) takes the rest, cut with an ellipsis. */
+.cf-list { display: flex; flex-direction: column; gap: 1px; margin: 0 -6px; }
+.cf-opt { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 4px 6px; border-radius: var(--r-sm); font-size: 12px; color: var(--text-2); text-align: left; transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+.cf-opt > svg { flex: none; color: var(--text-4); transition: color var(--t-fast) var(--ease); }
+.cf-opt:hover { color: var(--text); background: var(--bg-3); }
+.cf-opt:hover > svg { color: var(--text-3); }
+.cf-opt.is-on { color: var(--text); background: var(--tint-violet); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--violet-soft) 35%, transparent); }
+.cf-opt.is-on > svg { color: var(--violet-light); }
+.cf-opt:focus-visible { box-shadow: 0 0 0 2px var(--bg-0), 0 0 0 3.5px var(--violet); }
+.cf-opt-label { flex: none; white-space: nowrap; }
+.cf-opt-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; font-size: 11.5px; color: var(--text-4); }
+.cf-opt.is-on .cf-opt-name { color: var(--text-3); }
+:root[data-motion="reduced"] .cf-opt, :root[data-motion="reduced"] .cf-opt > svg { transition: none; }
 .cf-switch { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 -6px; padding: 4px 6px; border-radius: var(--r-sm); font-size: 12px; color: var(--text-2); text-align: left; }
 .cf-switch:hover { color: var(--text); background: var(--bg-3); }
 .cf-toggle { position: relative; flex: none; width: 28px; height: 16px; border-radius: 999px; background: var(--bg-3); box-shadow: inset 0 0 0 1px var(--line-strong); transition: background-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
@@ -1181,6 +1193,10 @@ button.either:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .clean-note.is-clean > svg { color: var(--done); }
 .clean-note-n { color: var(--text-4); }
 .clean-note-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* This session with no session in front: the way back to every change, right after the line. */
+.clean-note-all { flex: none; margin-left: auto; padding: 1px 6px; border-radius: var(--r-sm); font-size: 11.5px; color: var(--violet-light); transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+.clean-note-all:hover { color: var(--text); background: var(--bg-3); }
+:root[data-motion="reduced"] .clean-note-all { transition: none; }
 /* The body pads 8, the note 8 with its check pulled in by 2: a row's 6 puts the name under the check. */
 .clean-row { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 3px 8px 3px 6px; min-height: 24px; font-size: 12.5px; color: var(--text-3); }
 /* The name gives way (as when it filled the row), its sync arrows stay right after it; the branch keeps the right edge

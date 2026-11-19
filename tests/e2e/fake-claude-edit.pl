@@ -8,6 +8,14 @@ my $hook = "$ENV{ATELIER_HOME}/bin/atelier-hook";
 my $sid = $ENV{ATELIER_FAKE_SESSION_ID} // "edit-$$";
 sub send_hook { open(my $h, '|-', $hook) or die; print $h $_[0]; close $h; }
 my $title = ''; for my $i (0..$#ARGV) { $title = $ARGV[$i+1] if $ARGV[$i] eq '-n'; $title = $1 if $ARGV[$i] =~ /^--name=(.*)$/s; }
+# ATELIER_FAKE_EDIT_BY_NAME: "Name=file[:file];Other=file" — a session whose name starts with Name edits those files
+# instead of ATELIER_FAKE_EDIT's (sessions of one test, each touching its own files).
+if (defined $ENV{ATELIER_FAKE_EDIT_BY_NAME}) {
+  for my $entry (split(/;/, $ENV{ATELIER_FAKE_EDIT_BY_NAME})) {
+    my ($name, $list) = split(/=/, $entry, 2);
+    if (index($title, $name) == 0) { $ENV{ATELIER_FAKE_EDIT} = $list; last; }
+  }
+}
 $title =~ s/(["\\])/\\$1/g;
 # Several files: separated by ':' (one Edit each, in order).
 my @files = defined $ENV{ATELIER_FAKE_EDIT} ? split(/:/, $ENV{ATELIER_FAKE_EDIT}) : (undef);

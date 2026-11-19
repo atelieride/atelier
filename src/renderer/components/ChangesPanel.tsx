@@ -30,7 +30,7 @@ import { gitMissing } from '../git/missing';
 import { RepoTrouble } from '../git/RepoTrouble';
 import { isBelow } from '@shared/paths';
 import { idStyle } from '../avatar';
-import { shownChanges } from '../changes-scope';
+import { changesInScope, scopeViewOf } from '../changes-scope';
 import { useScopeState } from '../use-changes-scope';
 import { ChangesFilters } from './ChangesFilters';
 import { CleanState } from './CleanState';
@@ -433,10 +433,10 @@ export function ChangesPanel() {
   const expanded = useApp((s) => s.changesExpanded);
   const compact = !expanded;
   // Show: All (the default), This workspace, This activity or This session; the filter only changes what is shown.
-  const wsF = useApp((s) => (s.ws?.on && !s.popout ? s.ws : null));
   const scopeState = useScopeState();
+  const scopeView = scopeViewOf(scopeState);
   const allRows = buildRows(repos, attributions);
-  const filtered = shownChanges(scopeState, allRows);
+  const filtered = changesInScope(scopeView, allRows);
   const rows = filtered ?? allRows;
   const flashing = useChangesFlash(rows, repos, useApp((s) => s.project?.root ?? ''));
   const nest = nestWorktrees(repos, rows);
@@ -507,7 +507,7 @@ export function ChangesPanel() {
         <span className="grow" />
         <button type="button" className="icon-btn changes-review" aria-label={t.menu.reviewAll} data-tip={t.menu.reviewAll}
           disabled={rows.length === 0} onClick={() => useApp.getState().openReview('all')}><Icon name="review" size={14} /></button>
-        <ChangesFilters wsOn={wsF !== null} />
+        <ChangesFilters />
       </div>
       {clashes.map((g) => <ClashCard key={g.key} by={g.by} rows={g.rows} repos={repos} />)}
       {meets.map((g) => (
@@ -532,7 +532,9 @@ export function ChangesPanel() {
         {unreadable.map((r) => <RepoTrouble key={r.root} name={r.name} root={r.root} error={r.error!} />)}
         {readable.length > 0 && !missing && nothing && (
           // All clean: one quiet line and a row per repo (no "Clean" section repeated below).
-          <CleanState repos={readable} worktreesOf={wtsOf} hidden={filtered ? allRows.length - rows.length : 0} live={live} />
+          <CleanState repos={readable} worktreesOf={wtsOf} hidden={filtered ? allRows.length - rows.length : 0} live={live}
+            scope={scopeView.scope === 'all' ? undefined : scopeView.scope} noSession={scopeView.scope === 'session' && scopeView.session === null}
+            onShowAll={() => useApp.getState().setChangesScope('all')} />
         )}
         {byRepo.map((g) => {
           const shown = shownOf(g.id, keepRepo ? groupKey('repo', keepRepo) : null);

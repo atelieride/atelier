@@ -11,12 +11,25 @@ import { branchLabel, toMerge, type WtView } from '../worktrees';
 import { Icon } from './Icon';
 import { PullCounts } from './SyncCounts';
 
+/** What the line says when Show hides every change, per choice: its words, its tooltip, its icon. */
+const HIDDEN_NOTE = {
+  ws: { text: () => t.cleanHidden, tip: (n: number) => t.cleanHiddenTip(n), icon: 'workspace' },
+  activity: { text: () => t.cleanHiddenActivity, tip: (n: number) => t.cleanHiddenActivityTip(n), icon: 'wsActivity' },
+  session: { text: () => t.cleanHiddenSession, tip: (n: number) => t.cleanHiddenSessionTip(n), icon: 'sessions' }
+} as const;
+
 /**
- * hidden: changes This workspace hides (other workspaces' sessions made them): the line says so instead of "clean".
+ * hidden: changes Show hides (`scope`: This workspace, the default, This activity or This session): the line says so
+ * instead of "clean". `noSession`: This session with no Claude session in front yet; the line says so, with a way back
+ * to All (`onShowAll`).
  * A dozen repositories get their row; the rest wait behind one row that shows them (repositories a live session works
  * in, `live`, always get theirs).
  */
-export function CleanState({ repos: all, worktreesOf, hidden = 0, live = new Set() }: { repos: RepoStatus[]; worktreesOf: (root: string) => WtView[]; hidden?: number; live?: ReadonlySet<string> }) {
+export function CleanState({ repos: all, worktreesOf, hidden = 0, live = new Set(), scope = 'ws', noSession = false, onShowAll }: {
+  repos: RepoStatus[]; worktreesOf: (root: string) => WtView[]; hidden?: number; live?: ReadonlySet<string>;
+  scope?: 'ws' | 'activity' | 'session'; noSession?: boolean; onShowAll?: () => void;
+}) {
+  const note = HIDDEN_NOTE[scope];
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const { shown: repos, more } = open ? { shown: all, more: 0 } : capShown(all, CHANGES_CAP, (r) => live.has(r.root));
@@ -24,10 +37,16 @@ export function CleanState({ repos: all, worktreesOf, hidden = 0, live = new Set
   const showAll = () => { const from = repos.length; setOpen(true); requestAnimationFrame(() => box.current?.querySelectorAll<HTMLElement>('.clean-row:not(.is-wt)')[from]?.focus()); };
   return (
     <div className="clean-state" ref={box}>
-      {hidden > 0 ? (
-        <span className="clean-note" data-tip={t.cleanHiddenTip(hidden)}>
-          <Icon name="workspace" size={12} stroke={1.8} />
-          <span className="clean-note-text">{t.cleanHidden}{' '}<span className="clean-note-n">{t.cleanHiddenCount(hidden)}</span></span>
+      {hidden > 0 && noSession ? (
+        <span className="clean-note">
+          <Icon name="sessions" size={12} stroke={1.8} />
+          <span className="clean-note-text" data-tip={t.cleanNoSessionTip}>{t.cleanNoSession}</span>
+          {onShowAll && <button type="button" className="link-btn clean-note-all" onClick={onShowAll}>{t.cleanShowAll}</button>}
+        </span>
+      ) : hidden > 0 ? (
+        <span className="clean-note" data-tip={note.tip(hidden)}>
+          <Icon name={note.icon} size={12} stroke={1.8} />
+          <span className="clean-note-text">{note.text()}{' '}<span className="clean-note-n">{t.cleanHiddenCount(hidden)}</span></span>
         </span>
       ) : (
         <span className="clean-note is-clean">

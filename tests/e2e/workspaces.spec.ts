@@ -231,8 +231,8 @@ test('workspaces: off by default; on; a new one with its own tabs; switching by 
     await menu(app, 'Toggle Workspaces for This Project');
     await expect(front(win)).toContainText('Workspace 1');
 
-    // Changes' This workspace · All, in its Filters: one radio group, All by default, the
-    // arrows move the choice; a choice other than the usual one lights the funnel with a dot.
+    // Changes' Show in its Filters: All, This workspace, This session (activities off), All by default, the arrows move
+    // the choice; a choice other than the usual one lights the funnel with a dot.
     const changes = win.locator('aside.changes');
     const funnel = changes.getByRole('button', { name: /^Filters/ });
     await expect(changes.locator('.changes-ws')).toHaveCount(0);
@@ -240,29 +240,26 @@ test('workspaces: off by default; on; a new one with its own tabs; switching by 
     const pop = changes.getByRole('dialog', { name: 'Filters' });
     // Opening puts the focus on the chosen grouping.
     await expect(pop.getByRole('radio', { name: 'Repository' })).toBeFocused();
-    // Both groups fill their row; Group by in equal halves (Show too when its words fit, else This workspace grows).
-    const sizes = (name: string) => pop.getByRole('radiogroup', { name }).evaluate((g) => {
+    // Group by in equal halves filling its row; Show one row per choice, each as wide as the popover.
+    const by = await pop.getByRole('radiogroup', { name: 'Group by' }).evaluate((g) => {
       const [a, b] = [...g.querySelectorAll('button')].map((x) => x.getBoundingClientRect().width);
       return { group: g.getBoundingClientRect().width, a: a!, b: b! };
     });
-    const by = await sizes('Group by');
     expect(Math.abs(by.a - by.b)).toBeLessThan(1.5);
-    for (const s of [by, await sizes('Show')]) expect(s.a + s.b).toBeGreaterThan(s.group - 12);
+    expect(by.a + by.b).toBeGreaterThan(by.group - 12);
+    await expect(pop.getByRole('radiogroup', { name: 'Show' }).getByRole('radio')).toHaveText([/^All/, /^This workspace/, /^This session/]);
     const thisWs = pop.getByRole('radio', { name: 'This workspace' });
+    // It names the workspace it follows.
+    await expect(thisWs.locator('.cf-opt-name')).toHaveText('Workspace 1');
     // Its words whole, never cut, at the default width and the narrowest panel (240 px).
-    const whole = () => thisWs.evaluate((b) => {
-      const text = document.createRange();
-      text.selectNodeContents(b);
-      const room = b.getBoundingClientRect().right - parseFloat(getComputedStyle(b).paddingRight);
-      return text.getBoundingClientRect().right <= room + 0.5;
-    });
+    const whole = () => thisWs.locator('.cf-opt-label').evaluate((l) => l.scrollWidth <= l.clientWidth && l.getBoundingClientRect().height < 24);
     expect(await whole()).toBe(true);
     // All by default: every change of the project.
     const all = pop.getByRole('radio', { name: 'All' });
     await expect(all).toHaveAttribute('aria-checked', 'true');
     await look(pop, `${SHOTS}/workspaces-changes-scope.png`);
     await all.focus();
-    await win.keyboard.press('ArrowLeft');
+    await win.keyboard.press('ArrowDown');
     await expect(thisWs).toHaveAttribute('aria-checked', 'true');
     await expect(thisWs).toBeFocused();
     await win.keyboard.press('Escape');

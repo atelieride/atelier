@@ -103,7 +103,8 @@ test('Changes: collapsible groups (click, keyboard, ⌥-click, remembered), comp
     await funnel.click();
     const pop = panel.getByRole('dialog', { name: 'Filters' });
     await expect(pop.getByRole('radio', { name: 'Repository' })).toHaveAttribute('aria-checked', 'true');
-    await expect(pop.getByRole('radiogroup', { name: 'Show' })).toHaveCount(0);
+    // Workspaces off: Show offers every change or the Claude session in front's.
+    await expect(pop.getByRole('radiogroup', { name: 'Show' }).getByRole('radio')).toHaveText([/^All/, /^This session/]);
     await look(panel, 'test-results/changes-filters.png', { settle: 300 });
     // A click on the popover's own text keeps the focus in it: Esc still closes it, back on the funnel.
     await pop.locator('.cf-k').first().click();

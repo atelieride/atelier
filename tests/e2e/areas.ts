@@ -25,6 +25,7 @@ export const SPECS: Record<string, Area[]> = {
   'bash-attribution.spec.ts': ['changes'],
   'blocks.spec.ts': ['terminal'],
   'changes-groups.spec.ts': ['changes'],
+  'changes-scope.spec.ts': ['changes', 'workspace'],
   // Sync arrows in Changes: real remotes, fetch, worktrees, the narrowest panel.
   'changes-sync.spec.ts': ['changes', 'scm'],
   'claude-accounts.spec.ts': ['accounts', 'sessions'],

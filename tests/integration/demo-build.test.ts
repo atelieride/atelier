@@ -25,7 +25,9 @@ import { SENSITIVE, SHOTS_ONLY, findBanned } from '../support/banned-strings';
 // +1 KB for a project's color: its pick, the chip's Project Color › menu and command, the tint's styles and strings.
 // +1 KB for a row's close question as a bubble beside it (its place, arrow, folding row) and a repository's counts
 // that pull and push.
-const BUDGET = 918 * 1024;
+// +1 KB for Changes' Show › This activity and This session: the scope that follows the session in front, Show's list
+// of choices and their notes.
+const BUDGET = 919 * 1024;
 const SHARED = resolve('src/shared');
 const INSTALL = resolve('src/demo/install.ts');
 
