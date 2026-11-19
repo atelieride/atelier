@@ -73,7 +73,11 @@ test('Changes › Show: this session follows the Claude session in front, this a
     await expect(panel.locator('.clean-note')).toContainText('No session in front');
     await expect(funnel).toHaveAttribute('aria-label', 'Filters · this session');
     await look(panel, 'test-results/changes-scope-no-session.png');
-    await panel.getByRole('button', { name: 'Show all' }).click();
+    // Under the pointer it lights with a fill, not an underline as well.
+    const showAll = panel.getByRole('button', { name: 'Show all' });
+    await showAll.hover();
+    expect(await showAll.evaluate((b) => getComputedStyle(b).textDecorationLine)).toBe('none');
+    await showAll.click();
     await expect(panel.locator('.change-row')).toHaveCount(4);
     await expect(funnel).toHaveAttribute('aria-label', 'Filters');
 
@@ -89,9 +93,17 @@ test('Changes › Show: this session follows the Claude session in front, this a
     await expect(win.locator('.changes-toggle')).toHaveText('1');
     await expect(funnel).toHaveClass(/is-lit/);
     await look(panel, 'test-results/changes-scope-session.png');
-    // Alfa to the front: Changes follows.
+    // Alfa to the front: Changes follows, its rows shown without the flash of a file that just changed (watched from
+    // before the click, so a flash however short is seen).
+    await panel.evaluate((el) => {
+      const w = window as unknown as { flashed: boolean };
+      w.flashed = false;
+      new MutationObserver(() => { if (el.querySelector('.change-row.is-new')) w.flashed = true; })
+        .observe(el, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+    });
     await win.locator('.session-row', { hasText: 'Alfa' }).click();
     await expect.poll(() => rowNames(panel)).toEqual(['a.ts']);
+    expect(await win.evaluate(() => (window as unknown as { flashed: boolean }).flashed)).toBe(false);
     // A plain terminal in front keeps the last session's.
     await win.locator('.btn-new').click();
     // The plain terminal, not "Terminal with Profile" or "Terminal in Folder…" (an item's name ends with its shortcut).
@@ -147,6 +159,20 @@ test('Changes › Show: this session follows the Claude session in front, this a
     await expect(opt('This activity')).toContainText('SSO');
     await look(pop, 'test-results/changes-scope-pop-activities.png', { settle: 300 });
     await win.keyboard.press('Escape');
+    // All four at the narrowest panel: each label whole on one line, inside its row and the popover.
+    await panel.evaluate((el) => el.style.setProperty('--changes-w', '240px'));
+    await funnel.click();
+    const four = await pop.evaluate((p) => {
+      const box = p.getBoundingClientRect();
+      return [...p.querySelectorAll('.cf-opt')].map((o) => {
+        const l = o.querySelector('.cf-opt-label')!.getBoundingClientRect(), r = o.getBoundingClientRect();
+        return l.right <= r.right && r.right <= box.right && l.height < 24;
+      });
+    });
+    expect(four).toEqual([true, true, true, true]);
+    await look(pop, 'test-results/changes-scope-pop-activities-narrow.png', { settle: 300 });
+    await win.keyboard.press('Escape');
+    await panel.evaluate((el) => el.style.removeProperty('--changes-w'));
     await show(panel, 'This activity');
     await expect.poll(() => rowNames(panel)).toEqual(['c.ts']);
     await expect(funnel).toHaveAttribute('aria-label', 'Filters · this activity');

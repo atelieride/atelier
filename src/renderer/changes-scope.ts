@@ -76,11 +76,25 @@ export interface ScopeState {
   settings: { wsActivities: boolean };
 }
 
-/** The scope in effect now, from the store. */
+const NONE: ReadonlySet<string> = new Set();
+
+/** The scope in effect now, from the store. Runs on every store update: the live terminals are gathered only for This activity. */
 export function scopeViewOf(s: ScopeState): ScopeView {
   const wsOn = !!s.ws?.on;
   const offered = scopesOffered({ wsOn, activities: s.settings.wsActivities, popout: !!s.popout });
-  return { scope: scopeInEffect(s.changesScope, offered), ws: wsOn ? s.ws : null, session: s.changesSession, live: new Set(s.terminals.map((x) => x.id)) };
+  const scope = scopeInEffect(s.changesScope, offered);
+  return { scope, ws: wsOn ? s.ws : null, session: s.changesSession, live: scope === 'activity' ? new Set(s.terminals.map((x) => x.id)) : NONE };
+}
+
+/**
+ * Everything the rows shown depend on besides the repositories, for a view that reads them through `getState()` (to
+ * render again, compared item by item): the scope, the session or place it follows, the attributions and the places'
+ * members; the terminals too under This activity (a running session not placed yet is the place in front's).
+ */
+export function scopeInputs(s: ScopeState & { attributions: readonly unknown[] }): unknown[] {
+  const v = scopeViewOf(s);
+  if (v.scope === 'all') return ['all'];
+  return [v.scope, v.scope === 'session' ? v.session : v.ws?.active, s.attributions, v.ws?.members, ...(v.scope === 'activity' ? [s.terminals] : [])];
 }
 
 /** The rows Changes shows under the current scope, or null when it shows everything. */

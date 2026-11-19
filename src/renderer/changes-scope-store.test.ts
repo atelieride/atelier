@@ -22,7 +22,7 @@ const term = (id: string, claude: boolean): TerminalInfo => ({
 });
 const st = () => useApp.getState();
 
-beforeEach(() => useApp.setState({ terminals: [], selectedId: null, changesSession: null, changesScope: 'all' }));
+beforeEach(() => useApp.setState({ terminals: [], selectedId: null, activeTab: 'term', hidden: [], changesSession: null, changesScope: 'all' }));
 
 test('Changes follows the Claude session in front; a plain terminal in front keeps the last one; its terminal gone, none', () => {
   const alfa = term('alfa', true), beta = term('beta', true), sh = term('sh', false);
@@ -34,6 +34,21 @@ test('Changes follows the Claude session in front; a plain terminal in front kee
   expect(st().changesSession).toBe('beta');
   useApp.setState({ terminals: [alfa, sh] });
   expect(st().changesSession).toBeNull();
+});
+
+test('a file in front never makes a background session the one in front, even when the store parks the selection on it', () => {
+  const alfa = term('alfa', true), beta = term('beta', true);
+  useApp.setState({ terminals: [beta, alfa], selectedId: 'alfa', activeTab: 'term' });
+  expect(st().changesSession).toBe('alfa');
+  // A file comes to the front; the selection moves to a background session (Alfa's tab closed, a workspace switch).
+  useApp.setState({ activeTab: '/p/x.ts', selectedId: 'beta' });
+  expect(st().changesSession).toBe('alfa');
+  // Alfa's tab closed (hidden): none in front, never Beta.
+  useApp.setState({ hidden: ['alfa'] });
+  expect(st().changesSession).toBeNull();
+  // Beta's tab clicked: the terminal comes to the front.
+  useApp.setState({ activeTab: 'term' });
+  expect(st().changesSession).toBe('beta');
 });
 
 test('the Show choice is the store\'s, every value of it', () => {

@@ -438,7 +438,9 @@ export function ChangesPanel() {
   const allRows = buildRows(repos, attributions);
   const filtered = changesInScope(scopeView, allRows);
   const rows = filtered ?? allRows;
-  const flashing = useChangesFlash(rows, repos, useApp((s) => s.project?.root ?? ''));
+  // A flash says a file just changed: it is computed on every change, shown or not, so a row Show brings back (another
+  // session to the front, All again) comes in quietly. Hidden rows have no element to flash.
+  const flashing = useChangesFlash(allRows, repos, useApp((s) => s.project?.root ?? ''));
   const nest = nestWorktrees(repos, rows);
   const byRepo = group === 'repo' ? nest.families.map((f) => ({ ...f, id: groupKey('repo', f.repo.root) })) : [];
   const bySession = group === 'session' ? groupBySession(rows, t.unknownOrigin).map((g) => ({ ...g, id: groupKey('session', g.key) })) : [];

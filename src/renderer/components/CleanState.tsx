@@ -41,7 +41,7 @@ export function CleanState({ repos: all, worktreesOf, hidden = 0, live = new Set
         <span className="clean-note">
           <Icon name="sessions" size={12} stroke={1.8} />
           <span className="clean-note-text" data-tip={t.cleanNoSessionTip}>{t.cleanNoSession}</span>
-          {onShowAll && <button type="button" className="link-btn clean-note-all" onClick={onShowAll}>{t.cleanShowAll}</button>}
+          {onShowAll && <button type="button" className="clean-note-all" onClick={onShowAll}>{t.cleanShowAll}</button>}
         </span>
       ) : hidden > 0 ? (
         <span className="clean-note" data-tip={note.tip(hidden)}>

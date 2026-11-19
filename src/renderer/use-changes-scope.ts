@@ -2,7 +2,8 @@
 // selector), put together once per change.
 
 import { useMemo } from 'react';
-import { scopeViewOf, type ScopeState } from './changes-scope';
+import { useShallow } from 'zustand/react/shallow';
+import { scopeInputs, type ScopeState } from './changes-scope';
 import { useApp } from './store';
 
 export function useScopeState(): ScopeState {
@@ -17,12 +18,9 @@ export function useScopeState(): ScopeState {
 }
 
 /**
- * What decides the rows shown, as one string: a component that reads `shownChanges` through `getState()` renders again
- * when it changes (the scope in effect, the session or place it follows).
+ * A component that reads the rows shown through `getState()` (Source Control's blocks: their Stage All offer) renders
+ * again when anything they depend on changes: the scope, what it follows, the attributions and the places.
  */
-export function useScopeKey(): string {
-  return useApp((s) => {
-    const v = scopeViewOf(s);
-    return `${v.scope}:${v.scope === 'session' ? v.session ?? '' : v.scope === 'all' ? '' : v.ws?.active ?? ''}`;
-  });
+export function useScopeInputs(): void {
+  useApp(useShallow(scopeInputs));
 }

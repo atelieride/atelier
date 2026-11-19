@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import type { WorkspacesState } from './workspaces';
 import { changesInWorkspace } from './workspace-view';
-import { changesInScope, frontSessionNext, scopeInEffect, scopesOffered, shownChanges, type ScopeView } from './changes-scope';
+import { changesInScope, frontSessionNext, scopeInEffect, scopeInputs, scopesOffered, scopeViewOf, shownChanges, type ScopeView } from './changes-scope';
 
 // Changes' Show choices: which are offered, the session in front, and the rows each one keeps.
 
@@ -74,6 +74,30 @@ test('This workspace is today\'s filter; All shows everything (null)', () => {
   const rows = [sure('a'), sure('o'), sure('b'), unknown];
   expect(changesInScope(view({ scope: 'ws' }), rows)).toEqual(changesInWorkspace(WS, rows));
   expect(changesInScope(view({ scope: 'all' }), rows)).toBeNull();
+});
+
+test('from the store on every update: the live terminals are gathered only for This activity, the only scope that reads them', () => {
+  const terminals = [...LIVE].map((id) => ({ id, session: {} })) as never[];
+  const base = { ws: WS, popout: false, changesSession: 'o', terminals, settings: { wsActivities: true } };
+  expect(scopeViewOf({ ...base, changesScope: 'session' }).live.size).toBe(0);
+  expect(scopeViewOf({ ...base, changesScope: 'ws' }).live.size).toBe(0);
+  expect(scopeViewOf({ ...base, changesScope: 'activity' }).live.size).toBe(LIVE.size);
+});
+
+test('what a view that stages the rows shown must follow: nothing under All; the attributions and places under a filter; the terminals too under This activity', () => {
+  const terminals = [{ id: 'o', session: {} }] as never[];
+  const attributions = [] as never[];
+  const base = { ws: WS, popout: false, changesSession: 'o', terminals, attributions, settings: { wsActivities: true } };
+  expect(scopeInputs({ ...base, changesScope: 'all' })).toEqual(['all']);
+  const session = scopeInputs({ ...base, changesScope: 'session' });
+  expect(session).toContain('o');
+  expect(session).toContain(attributions);
+  expect(session).not.toContain(terminals);
+  const activity = scopeInputs({ ...base, changesScope: 'activity' });
+  expect(activity).toContain('a1');
+  expect(activity).toContain(WS.members);
+  expect(activity).toContain(attributions);
+  expect(activity).toContain(terminals);
 });
 
 test('from the store: a scope whose feature is off shows everything', () => {

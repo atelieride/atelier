@@ -252,7 +252,10 @@ test('workspaces: off by default; on; a new one with its own tabs; switching by 
     // It names the workspace it follows.
     await expect(thisWs.locator('.cf-opt-name')).toHaveText('Workspace 1');
     // Its words whole, never cut, at the default width and the narrowest panel (240 px).
-    const whole = () => thisWs.locator('.cf-opt-label').evaluate((l) => l.scrollWidth <= l.clientWidth && l.getBoundingClientRect().height < 24);
+    const whole = () => thisWs.locator('.cf-opt-label').evaluate((l) => {
+      const r = l.getBoundingClientRect(), row = l.closest('button')!.getBoundingClientRect();
+      return r.right <= row.right - parseFloat(getComputedStyle(l.closest('button')!).paddingRight) + 0.5 && r.height < 24;
+    });
     expect(await whole()).toBe(true);
     // All by default: every change of the project.
     const all = pop.getByRole('radio', { name: 'All' });

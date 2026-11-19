@@ -1623,8 +1623,6 @@ const strings = {
     stopFailed: "Couldn't stop them: they keep running, in this workspace now",
     stopForGood: 'Stop them',
     stopNoResume: 'This atelierd can’t keep them under Resume: they stop for good (restart atelierd for that).',
-    thisWorkspace: 'This workspace',
-    allChanges: 'All',
     palette: 'Workspaces',
     paletteOff: 'This project doesn’t use workspaces. Turn them on in Settings › Appearance, or with Toggle Workspaces for This Project.',
     newNamed: (name: string) => `New Workspace “${name}”`,

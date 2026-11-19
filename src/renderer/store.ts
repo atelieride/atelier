@@ -3536,10 +3536,13 @@ useApp.subscribe((s, prev) => {
 // Closing the window right after a change: saved now, not lost with the timer.
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') window.addEventListener('pagehide', () => { if (layoutTimer) saveLayoutNow(); });
 
-// Changes' This session follows the Claude session in front (the last one while a plain terminal or a file is).
+// Changes' This session follows the Claude session in front (the last one while a plain terminal or a file is). Only a
+// terminal in front counts: with a file in front the store parks the selection on a background terminal, which never
+// came to the front. A closed (hidden) tab's session is gone for it.
 useApp.subscribe((s, prev) => {
-  if (s.selectedId === prev.selectedId && s.terminals === prev.terminals) return;
-  const next = frontSessionNext(s.changesSession, s.selectedId, s.terminals);
+  if (s.selectedId === prev.selectedId && s.terminals === prev.terminals && s.activeTab === prev.activeTab && s.hidden === prev.hidden) return;
+  const shown = s.hidden.length ? s.terminals.filter((x) => !s.hidden.includes(x.id)) : s.terminals;
+  const next = frontSessionNext(s.changesSession, s.activeTab === 'term' ? s.selectedId : null, shown);
   if (next !== s.changesSession) useApp.setState({ changesSession: next });
 });
 
