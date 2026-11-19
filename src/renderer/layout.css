@@ -616,7 +616,7 @@ button.foot-item:disabled { cursor: default; }
 .term-row.is-asking :is(.row-pin, .row-close) { margin-left: 0; }
 .term-row.is-asking .row-pin { margin-right: -8px; }
 :is(.session-row, .term-row).is-asking .row-close { background: var(--tint-error-strong); color: var(--text-error); }
-/* Its terminal gone: the copy that folds away in its place (confirms/RowConfirm.tsx), its look held in its own style. */
+/* Its terminal gone: the copy that folds away in its place (confirms/RowConfirm.tsx), with its row's classes and look. */
 .row-leaving { min-height: 0; overflow: hidden; pointer-events: none; animation: atl-row-out calc(var(--t-slow) + var(--t-fast)) var(--ease) both; }
 /* Its close sent (confirms/slice.ts `closing`): faded until atelierd drops it (its content: the row's entrance holds
    the row's own opacity). */

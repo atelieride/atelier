@@ -139,7 +139,7 @@ input::placeholder { color: var(--text-4); }
 @keyframes atl-bubble { from { opacity: 0; transform: translateX(var(--bubble-from, -8px)) scale(.95); } to { opacity: 1; transform: none; } }
 /* A sidebar row whose terminal is gone: it slides out, then the rows below close the gap, the list's 2px gap after it
    included (the copy leaves nothing behind when it goes). */
-@keyframes atl-row-out { 0% { height: var(--leave-h); opacity: var(--leave-o, 1); } 45% { height: var(--leave-h); margin-block: 0; opacity: 0; transform: translateX(-18px); } 100% { height: 0; padding-block: 0; margin-block: 0 -2px; opacity: 0; transform: translateX(-18px); } }
+@keyframes atl-row-out { 0% { height: var(--leave-h); opacity: 1; } 45% { height: var(--leave-h); margin-block: 0; opacity: 0; transform: translateX(-18px); } 100% { height: 0; padding-block: 0; margin-block: 0 -2px; opacity: 0; transform: translateX(-18px); } }
 /* An in-app question opening inside its row (a session's Restart): the row grows to hold it. */
 @keyframes atl-unfold { from { max-height: 46px; } to { max-height: 220px; } }
 /* Something running, length unknown (a git write while quitting): a bar that sweeps; and dots that breathe. */

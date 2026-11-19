@@ -1,7 +1,7 @@
 // A row's close question is a bubble beside the row: it stays with its row however the list moves, opens on the side
 // with room, keeps the keyboard inside and gives it back to the × that asked; with no row in sight it stands centered.
-// A row whose terminal is gone folds away, unless motion is reduced, and the copy that folds is no row to anything
-// that looks for one. The rows are found by their data-term-row id, never by a class.
+// A row whose terminal is gone folds away, unless motion is reduced, and the copy that folds (the row's look, its
+// classes included) is no row to what finds rows: their data-term-row id, which the tests here use too, never a class.
 import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -70,12 +70,12 @@ async function watchLeaving(how: { seek?: boolean; pause?: boolean; hold?: boole
     w.leavingObserver?.disconnect();
     w.leaving = [];
     w.leavingCopies = [];
-    const rows = '.session-row, .term-row, [data-term-row], [role="listitem"], .is-selected, .is-asking, [class*="state-"]';
+    const rows = '[data-term-row], [role="listitem"], .is-selected, .is-asking, .is-caret-before, .is-caret-after';
     w.leavingObserver = new MutationObserver((all) => {
       for (const m of all) for (const n of m.addedNodes) {
         if (!(n instanceof HTMLElement) || !n.classList.contains('row-leaving')) continue;
         const list = n.parentElement!;
-        const rec: Leaving = { classes: n.className, rowish: n.matches(rows) || n.querySelector(rows) !== null, duration: getComputedStyle(n).animationDuration, endHeight: -1, afterHeight: -1, text: n.innerText, marked: `${n.style.backgroundImage} ${n.style.boxShadow}` };
+        const rec: Leaving = { classes: n.className, rowish: n.matches(rows) || n.querySelector(rows) !== null, duration: getComputedStyle(n).animationDuration, endHeight: -1, afterHeight: -1, text: n.innerText, marked: `${getComputedStyle(n).backgroundImage} ${getComputedStyle(n).boxShadow}` };
         const [fold] = n.getAnimations();
         if (o.pause) fold?.pause();
         if (o.hold && fold) { fold.pause(); fold.currentTime = 0; }
@@ -247,7 +247,7 @@ test('Reduce motion from the system: a row whose terminal is gone just goes, no 
   }
 });
 
-test('the copy that folds away is no row (no row class, no state, no id) and its list’s gap closes with it', async () => {
+test('the copy that folds away is no row (no id, no role, no selection) and its list’s gap closes with it', async () => {
   await win.emulateMedia({ reducedMotion: 'no-preference' });
   const a = await openTerminal();
   const b = await openTerminal();
@@ -259,7 +259,7 @@ test('the copy that folds away is no row (no row class, no state, no id) and its
   expect(all).toHaveLength(2);
   for (const l of all) {
     expect.soft(Math.abs(l.endHeight - l.afterHeight), `the list at the fold's end: ${l.endHeight} px, then ${l.afterHeight} px`).toBeLessThan(0.5);
-    expect.soft(l.rowish, `a row selector finds the copy: ${l.classes}`).toBe(false);
+    expect.soft(l.rowish, `what finds rows finds the copy: ${l.classes}`).toBe(false);
   }
   // A section's head under a leaving copy is its list's first: no rule above it, as once the copy is gone.
   const head = await win.evaluate(() => {
@@ -318,7 +318,12 @@ test('a closed session’s row folds away as a copy that looks like it, without 
   expect(copy!.text).toContain(title);
   // The row was the selected one: its copy isn't marked as it (another row is, now).
   expect(copy!.marked).toBe('none none');
-  // Held at its first frame: the row's own box.
+  // Held at its first frame: the row as it was, closing — its content faded as the row's was, the copy itself not
+  // faded further (no jump as the fold starts).
+  expect(await win.evaluate(() => {
+    const c = document.querySelector('.row-leaving')!;
+    return [getComputedStyle(c).opacity, getComputedStyle(c.querySelector('.row-main')!).opacity];
+  })).toEqual(['1', '0.55']);
   const held = (await win.locator('.row-leaving').boundingBox())!;
   expect(held.height).toBeGreaterThanOrEqual(46);
   await win.mouse.move(900, 500);
