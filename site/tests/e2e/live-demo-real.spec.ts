@@ -129,6 +129,8 @@ test.describe('the real demo', () => {
     await expect(page.locator('dialog.search-sheet')).toBeHidden();
     expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('IFRAME');
     await page.keyboard.press('Escape');
+    // Closing, the palette gives the focus back inside the demo: blurring before that would be undone.
+    await expect(palette).toBeHidden();
     // "/" from the page is the app's too: it never opens the site's search.
     await blurDemo(page);
     await page.keyboard.press('/');
@@ -181,7 +183,7 @@ test.describe('the real demo', () => {
     // Attributed to it: Changes by session puts both under db-migration.
     //
     await changes.getByRole('button', { name: /^Filters/ }).click();
-    await changes.getByRole('dialog', { name: 'Filters' }).getByRole('radio', { name: 'Session' }).click();
+    await changes.getByRole('dialog', { name: 'Filters' }).getByRole('radio', { name: 'Session', exact: true }).click();
     await page.keyboard.press('Escape');
     await expect(changes.getByRole('dialog', { name: 'Filters' })).toHaveCount(0);
     // The group's header ("db-migration · 2 files"), then its files, before the next group's header.
