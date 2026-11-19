@@ -278,6 +278,9 @@ export const SOURCES: Record<string, Area[]> = {
   'src/renderer/brand.ts': ['workspace'],
   'src/renderer/change-targets.ts': ['changes', 'editor'],
   'src/renderer/changes': ['changes'],
+  // Changes' Show (this workspace, activity, session): the workspaces' specs exercise it too.
+  'src/renderer/changes-scope.ts': ['changes', 'workspace'],
+  'src/renderer/use-changes-scope.ts': ['changes', 'workspace'],
   'src/renderer/chime.ts': ['notifications'],
   'src/renderer/clipboard.ts': ['terminal', 'editor', 'files', 'companion'],
   'src/renderer/comment-targets.ts': ['review'],
