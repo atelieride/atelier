@@ -118,6 +118,14 @@ test('check: the packaged checks and the full verification run on the very files
   expect(c).toMatch(/--notarized/);
 });
 
+test('every macOS job runs on the same macos-26 image', () => {
+  // One runner pool for the whole release: a job left on an older image waits on that image's capacity alone, and a
+  // tag run whose last job can't get a runner is cancelled after its approval, costing a re-run and another approval.
+  const mac = Object.entries(jobs()).filter(([, job]) => /^ {4}runs-on: macos-/m.test(job));
+  expect(mac.map(([k]) => k)).toEqual(['build', 'sign', 'check', 'publish']);
+  for (const [k, job] of mac) expect(job, k).toMatch(/^ {4}runs-on: macos-26$/m);
+});
+
 test('publish signs the feed the check job made and refuses anything not notarized', () => {
   const p = jobs().publish!;
   expect(p).toMatch(/node scripts\/sign-feed\.mjs [^\n]*latest-mac\.yml/);

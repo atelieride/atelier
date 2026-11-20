@@ -777,7 +777,7 @@ jobs:
     needs: [build, check, check-win]
     # Both platforms passed, or Windows was left out on purpose (input windows: false; never on a tag push).
     if: ${{ !cancelled() && needs.build.outputs.publish == 'true' && needs.check.result == 'success' && (needs.check-win.result == 'success' || needs.build.outputs.windows == 'false') }}
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 30
     environment: release
     permissions:
