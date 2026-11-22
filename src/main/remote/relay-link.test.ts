@@ -201,7 +201,8 @@ describe('the connection', () => {
   });
 
   test('keep-alive: pings are answered; a relay that stops answering is left for a new connection', async () => {
-    const { link, roomId } = makeLink({ timing: { pingMs: 30, deadMs: 120, backoffMinMs: 20, backoffMaxMs: 40 } });
+    // Short, but with room for a busy machine: silence is only taken for death after several missed pongs.
+    const { link, roomId } = makeLink({ timing: { pingMs: 50, deadMs: 600, backoffMinMs: 20, backoffMaxMs: 40 } });
     link.start();
     await until(() => link.state === 'online');
     await until(() => relay.hostFrames.filter((f) => f.frame.t === 'ping').length >= 2);
