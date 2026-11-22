@@ -19,6 +19,8 @@ import { devEnv, testMs } from './dev-env';
 import type { NoteEntry } from '@shared/notifications';
 import type { DaemonClient } from './daemon-client';
 import { Attachments } from './attachments';
+import { TerminalSizes, type Size } from './terminal-sizes';
+import { typesSomething } from '@shared/drafts';
 import { IPC, type CheckedFile, type DaemonState, type ShellEnvAuto } from '@shared/api';
 import { pathListSplit } from '@shared/env';
 import { neverSent } from '@shared/daemon-errors';
@@ -56,6 +58,22 @@ import { SessionTray, type TrayActions, type TrayHost } from './tray';
 
 interface WindowEntry { wc: WebContents; project: string }
 
+/**
+ * A viewer that is not a window (a paired phone): it gets a terminal's screen, then its output in order, nothing lost
+ * or duplicated, as a window does; the size changes it doesn't own; the terminal's end.
+ */
+export interface RemoteViewer {
+  /** The screen, as escape sequences, at the terminal's size (null: not known). */
+  snapshot(id: string, data: string, size: Size | null): void;
+  data(id: string, data: string): void;
+  /** Another view took the terminal's size. */
+  size(id: string, cols: number, rows: number): void;
+  exit(id: string): void;
+}
+
+/** Remote viewers share the windows' attachments under negative keys, which no webContents id ever is. */
+const isRemote = (viewer: number) => viewer < 0;
+
 const inProject = (t: TerminalInfo, root: string) => t.projectRoot === root;
 /** `p` under a `…/` prefix (projectPrefix): `p.startsWith(prefix)` on macOS; any case and separator on Windows. */
 export const underPrefix = (prefix: string, p: string) => isBelow(trimOneSep(prefix), p);
@@ -66,6 +84,12 @@ export class TerminalHub {
   /** What each window last got, the Dock badge, the usage: an equal value is not sent again. */
   private readonly sent = new LastSent();
   private attachments = new Attachments();
+  /** Each terminal's one size, and which view owns it (windows and remote viewers alike). */
+  private readonly sizes = new TerminalSizes();
+  private readonly remotes = new Map<number, RemoteViewer>();
+  private nextRemote = -1;
+  /** Which terminals a remote viewer owns the size of may have changed (index.ts: the iPhone status). */
+  onRemoteSized: () => void = () => {};
   /** What windows get: atelierd's list (capabilities applied) with each session's background work and artifacts attached. */
   private terminals: TerminalInfo[] = [];
   /** atelierd's list, capabilities applied, before the work is attached. */
@@ -96,6 +120,7 @@ export class TerminalHub {
   /** The automations' runner: whether atelierd's first list is in, and who to call after each list. */
   private listedOnce = false;
   private readonly terminalListeners = new Set<() => void>();
+  private readonly shownListeners = new Set<() => void>();
   private attributions: Attribution[] = [];
   private resumables: Resumable[] = [];
   /** Which of atelierd's lists arrived since it connected: until both did, the sessions it keeps aren't known. */
@@ -224,13 +249,19 @@ export class TerminalHub {
       this.osc7?.feed(id, data);
       if (this.interrupts.output(id, data, Date.now())) this.publish(true);
       for (const wcId of this.attachments.watchers(id)) {
+        if (isRemote(wcId)) { this.remotes.get(wcId)?.data(id, data); continue; }
         const w = this.windows.get(wcId);
         if (w) this.emit(w, IPC.evData, id, data);
       }
     });
     client.on('exit', (id: string) => {
       this.osc7?.forget(id);
+      const remotes = this.attachments.watchers(id).filter(isRemote);
       this.attachments.forgetTerminal(id);
+      const sized = this.sizes.owner(id);
+      this.sizes.forgetTerminal(id);
+      for (const key of remotes) this.remotes.get(key)?.exit(id);
+      if (sized !== undefined && isRemote(sized)) this.onRemoteSized();
       this.interrupts.forget(id);
       this.endQuietCheck(id);
       for (const w of this.windows.values()) this.emit(w, IPC.evExit, id);
@@ -268,7 +299,7 @@ export class TerminalHub {
       this.listed = false;
       this.keptKnown = { terminals: false, resumables: false };
       // The next atelierd may be another one: its own capture and notebook arrive after its welcome.
-      if (s !== 'connected') { this.shellEnv = null; this.signals = null; }
+      if (s !== 'connected') { this.shellEnv = null; this.signals = null; this.sizes.unknown(); }
       if (s === 'connected') { this.waiting.reset(); this.done.reset(); this.failed.reset(); this.turns = new TurnClock(); }
       // Service lost: the Dock menu and badge must not point to sessions that may no longer exist.
       if (s !== 'connected') {
@@ -285,6 +316,15 @@ export class TerminalHub {
         for (const id of this.attachments.terminalsOf(wcId)) {
           this.attachments.remove(wcId, id);
           void this.attachFor(w, wcId, id).catch(() => {});
+        }
+      }
+      // A phone too, with a new screen; its size only if it owned it (a reconnection is nobody taking the size).
+      for (const [key, v] of this.remotes) {
+        for (const id of this.attachments.terminalsOf(key)) {
+          const size = this.sizes.asked(key, id);
+          this.attachments.remove(key, id);
+          if (!size) continue;
+          void this.remoteAttach(key, id, size.cols, size.rows, this.sizes.owner(id) === key).catch(() => v.exit(id));
         }
       }
     });
@@ -305,7 +345,10 @@ export class TerminalHub {
     this.sent.forget(`terminals:${wcId}`);
     this.sent.forget(`mcp:${wcId}`);
     this.bg?.windowGone(wcId);
+    const shown = this.attachments.terminalsOf(wcId);
     for (const id of this.attachments.removeWindow(wcId)) void this.client.request({ t: 'detach', id }).catch(() => {});
+    for (const id of shown) this.leaveSize(wcId, id);
+    this.sizes.forgetViewer(wcId);
   }
 
   /**
@@ -320,6 +363,8 @@ export class TerminalHub {
    */
   rehomed(id: string, to: string): void {
     for (const wcId of this.attachments.watchers(id)) {
+      // A phone follows the terminal wherever it goes.
+      if (isRemote(wcId)) continue;
       if (this.windows.get(wcId)?.project !== to) this.attachments.remove(wcId, id);
     }
   }
@@ -391,6 +436,7 @@ export class TerminalHub {
     }
     this.workTimer.arm(nextChange, now);
     if (!changed) { this.revealPending(list, fromDaemon); return; }
+    this.shownChanged();
     this.notifyWaiting(list, now, count);
     for (const [wcId, w] of this.windows) {
       const mine = list.filter((t) => inProject(t, w.project));
@@ -652,7 +698,10 @@ export class TerminalHub {
     handle(IPC.termAttach, (w, wcId, arg) => this.attachFor(w, wcId, idSchema.parse(arg)));
     handle(IPC.termDetach, async (_w, wcId, arg) => {
       const id = idSchema.parse(arg);
-      if (this.attachments.remove(wcId, id)) await this.client.request({ t: 'detach', id });
+      const was = this.attachments.has(wcId, id);
+      const last = this.attachments.remove(wcId, id);
+      if (was) this.leaveSize(wcId, id);
+      if (last) await this.client.request({ t: 'detach', id });
     });
     // The page asked already, in the row or the popover where the close was asked. With
     // "Keep closed sessions under Resume" the session comes back there: main decides.
@@ -685,6 +734,8 @@ export class TerminalHub {
       // Typed while this window's attach is still on its way (the terminal is on screen, its screen not yet): held
       // and sent once attached, never dropped (it was: a lost first keystroke right after opening a terminal).
       if (!this.attachments.has(wcId, o.data.id)) { this.attachments.hold(wcId, o.data.id, o.data.data); return; }
+      // Typing in a window takes the size back from a phone (never from another window: there only a resize does).
+      if (typesSomething(o.data.data)) this.applySize(o.data.id, this.sizes.takeBack(wcId, o.data.id, isRemote), wcId);
       this.typed(o.data.id, o.data.data);
       this.client.send({ t: 'input', id: o.data.id, data: o.data.data });
     });
@@ -694,7 +745,12 @@ export class TerminalHub {
       const deliver = this.attachments.has(wcId, o.data.id) && this.client.connected;
       // One that can't be sent now goes when the attach that comes next completes (see Attachments.sized).
       this.attachments.sized(wcId, o.data.id, o.data.cols, o.data.rows, deliver);
+      // A window's resize always goes as before; the views that don't own the size any more learn it.
+      const hadRemote = this.remoteOwns(o.data.id);
+      const changed = this.sizes.ask(wcId, o.data.id, { cols: o.data.cols, rows: o.data.rows });
       if (deliver) this.client.send({ t: 'resize', id: o.data.id, cols: o.data.cols, rows: o.data.rows });
+      if (changed) this.tellSize(o.data.id, changed, wcId);
+      if (hadRemote) this.onRemoteSized();
     });
     // A "notify" trigger matched: the window made its center entry; the OS banner is decided here, for a
     // terminal of its project it is attached to, with main's own setting, focus and 30 s checks.
@@ -730,6 +786,21 @@ export class TerminalHub {
   onTerminals(cb: () => void): () => void {
     this.terminalListeners.add(cb);
     return () => { this.terminalListeners.delete(cb); };
+  }
+
+  /**
+   * Called whenever the list windows are shown may have changed: atelierd's lists, and the work, interrupts and
+   * artifacts recomputed between them, or a terminal just created.
+   */
+  onShown(cb: () => void): () => void {
+    this.shownListeners.add(cb);
+    return () => { this.shownListeners.delete(cb); };
+  }
+
+  private shownChanged(): void {
+    for (const cb of [...this.shownListeners]) {
+      try { cb(); } catch { /* a listener's failure never stops the windows' list */ }
+    }
   }
 
   /**
@@ -881,11 +952,175 @@ export class TerminalHub {
     return this.created(await this.client.request<TerminalInfo>(() => ({ t: 'create', projectRoot: o.project, cwd, cols: 120, rows: 36, name: o.name, command: o.command, ...this.sessionProfile() })));
   }
 
+  // ── Remote viewers: a paired phone, through the remote hub ─────────────────────────────
+
+  /** A viewer that is not a window; its key, for the calls below. */
+  addRemoteViewer(v: RemoteViewer): number {
+    const key = this.nextRemote--;
+    this.remotes.set(key, v);
+    return key;
+  }
+
+  /** The viewer is gone (its phone's channel ended): it leaves every terminal it watched, sizes given back. */
+  removeRemoteViewer(key: number): void {
+    if (!this.remotes.delete(key)) return;
+    const shown = this.attachments.terminalsOf(key);
+    for (const id of this.attachments.removeWindow(key)) void this.client.request({ t: 'detach', id }).catch(() => {});
+    for (const id of shown) this.leaveSize(key, id);
+    this.sizes.forgetViewer(key);
+    for (const k of [...this.detachAfter]) if (k.startsWith(`${key} `)) this.detachAfter.delete(k);
+    this.onRemoteSized();
+  }
+
+  /** Detaches asked for while their attach was still on its way, by `key id`: done once it completes. */
+  private readonly detachAfter = new Set<string>();
+
+  /**
+   * The viewer starts watching a listed terminal at its size (taking the size unless `take` is false): the terminal is
+   * resized first, then atelierd sends its screen (the viewer's snapshot), then output. Resolves once the screen is in.
+   * A terminal already watched is asked again: atelierd keeps one listener per terminal, and the stream the windows get
+   * goes on without a gap.
+   */
+  remoteAttach(key: number, id: string, cols: number, rows: number, take = true): Promise<void> {
+    if (!this.remotes.has(key)) return Promise.reject(new Error('viewer gone'));
+    if (!this.terminals.some((t) => t.id === id)) return Promise.reject(new Error('no such terminal'));
+    this.detachAfter.delete(`${key} ${id}`);
+    this.applySize(id, this.sizes.ask(key, id, { cols, rows }, take), key);
+    this.attachments.begin(key, id);
+    return new Promise<void>((resolve, reject) => {
+      let done = false;
+      const onSnap = (sid: string, data: string) => {
+        if (sid !== id) return;
+        done = true;
+        this.client.off('snapshot', onSnap);
+        const held = this.attachments.complete(key, id);
+        const cancelled = this.detachAfter.delete(`${key} ${id}`);
+        if (held === null || cancelled) {
+          if (cancelled) { this.attachments.remove(key, id); this.leaveSize(key, id); }
+          if (this.attachments.watchers(id).length === 0) this.client.request({ t: 'detach', id }).catch(() => {});
+          resolve();
+          return;
+        }
+        this.remotes.get(key)?.snapshot(id, data, this.sizeOf(id));
+        for (const d of held) this.remoteType(key, id, d);
+        resolve();
+      };
+      this.client.on('snapshot', onSnap);
+      this.client.request({ t: 'attach', id }).catch((err: Error) => {
+        if (done) return;
+        this.client.off('snapshot', onSnap);
+        this.attachments.abort(key, id);
+        reject(err);
+      });
+    });
+  }
+
+  remoteDetach(key: number, id: string): void {
+    if (!this.attachments.has(key, id)) {
+      if (this.attachments.attaching(key, id)) this.detachAfter.add(`${key} ${id}`);
+      return;
+    }
+    const last = this.attachments.remove(key, id);
+    this.leaveSize(key, id);
+    if (last) void this.client.request({ t: 'detach', id }).catch(() => {});
+  }
+
+  /** Input from the viewer: false (refused) unless it watches the terminal or its attach is on its way. */
+  remoteInput(key: number, id: string, data: string): boolean {
+    if (!this.remotes.has(key)) return false;
+    if (!this.attachments.has(key, id)) return this.attachments.hold(key, id, data);
+    this.remoteType(key, id, data);
+    return true;
+  }
+
+  /** The viewer's own size changed: it takes the terminal's size. False unless it watches the terminal. */
+  remoteResize(key: number, id: string, cols: number, rows: number): boolean {
+    if (!this.attachments.has(key, id) && !this.attachments.attaching(key, id)) return false;
+    this.applySize(id, this.sizes.ask(key, id, { cols, rows }), key);
+    this.onRemoteSized();
+    return true;
+  }
+
+  /** The terminals whose size a remote viewer owns now. */
+  remoteSized(): string[] {
+    return this.sizes.owned(isRemote);
+  }
+
+  /** Typing from a phone takes the size back for it, from whichever view had it. */
+  private remoteType(key: number, id: string, data: string): void {
+    if (typesSomething(data)) this.applySize(id, this.sizes.takeBack(key, id, () => true), key);
+    this.typed(id, data);
+    this.client.send({ t: 'input', id, data });
+  }
+
+  /** The size the terminal has: what atelierd was sent, else the owner's own (unknown after a reconnection). */
+  private sizeOf(id: string): Size | null {
+    const owner = this.sizes.owner(id);
+    return this.sizes.current(id) ?? (owner === undefined ? undefined : this.sizes.asked(owner, id)) ?? null;
+  }
+
+  /** A new size for atelierd (null: nothing to send); the remote viewers but `by` are told. */
+  private applySize(id: string, size: Size | null, by: number | null): void {
+    if (!size) return;
+    if (this.client.connected) this.client.send({ t: 'resize', id, cols: size.cols, rows: size.rows });
+    this.tellSize(id, size, by);
+    this.onRemoteSized();
+  }
+
+  private tellSize(id: string, size: Size, by: number | null): void {
+    for (const key of this.attachments.watchers(id)) if (isRemote(key) && key !== by) this.remotes.get(key)?.size(id, size.cols, size.rows);
+  }
+
+  private remoteOwns(id: string): boolean {
+    const owner = this.sizes.owner(id);
+    return owner !== undefined && isRemote(owner);
+  }
+
+  /** `viewer` stopped showing the terminal: when it owned the size, the most recent view still showing it takes it back. */
+  private leaveSize(viewer: number, id: string): void {
+    const owned = this.sizes.owner(id) === viewer;
+    const next = this.sizes.leave(viewer, id, this.attachments.watchers(id));
+    if (next) this.applySize(id, next, null);
+    else if (owned && isRemote(viewer)) this.onRemoteSized();
+  }
+
+  /**
+   * A session a phone starts in a listed project: exactly New Session (the command for the account set for new
+   * sessions, its launch flags, the session profile) or New Terminal (the default profile), at the project's root, at
+   * the phone's size. The shell environment is checked first, as for any Atelier terminal.
+   */
+  async createRemoteSession(o: { project: string; kind: 'claude' | 'terminal'; cols: number; rows: number }): Promise<TerminalInfo> {
+    const cwd = terminalCwd(o.project, o.project);
+    if (!cwd) throw new Error('project folder not found');
+    const at = (info: TerminalInfo) => { const t = this.created(info); this.sizes.known(t.id, { cols: o.cols, rows: o.rows }); return t; };
+    const s = this.settings();
+    if (o.kind === 'claude') {
+      const command = sessionCommand(s, defaultConfigDirNow(), undefined, undefined);
+      await this.freshEnvQuietly(sessionProfile(s.terminalProfile, this.profilesAvailable()));
+      return at(await this.client.request<TerminalInfo>(() => ({ t: 'create', projectRoot: o.project, cwd, cols: o.cols, rows: o.rows, command, ...this.sessionProfile() })));
+    }
+    const shells = () => this.shells().map((x) => x.path);
+    let likely: TerminalProfile | undefined;
+    try { likely = terminalProfile(undefined, s.terminalProfile, shells(), this.profilesAvailable()); } catch { likely = undefined; }
+    await this.freshEnvQuietly(likely);
+    return at(await this.client.request<TerminalInfo>(() => {
+      const profile = terminalProfile(undefined, this.settings().terminalProfile, shells(), this.profilesAvailable());
+      return { t: 'create', projectRoot: o.project, cwd, cols: o.cols, rows: o.rows, ...(profile ? { profile } : {}), ...this.aliases() };
+    }));
+  }
+
+  /** freshEnv for a terminal no window asked for: nobody to show the reload to. */
+  private async freshEnvQuietly(profile: TerminalProfile | undefined): Promise<void> {
+    if (!checkApplies(profile, this.settings().shellEnvAutoReload, this.client.connected)) return;
+    await this.freshness.ensure(this.checkedFiles(), { reloading: () => {}, failed: () => {} });
+  }
+
   private created(raw: TerminalInfo): TerminalInfo {
     const info = wellFormedTerminal(raw);
     this.terminals = withTerminal(this.terminals, info);
     // Kept by a recomputation of the work before atelierd's list arrives.
     this.raw = withTerminal(this.raw, info);
+    this.shownChanged();
     return info;
   }
 

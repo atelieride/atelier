@@ -21,3 +21,19 @@ test.each(['termCreate', 'termCreateSession', 'termResume', 'claudeResume'])('%s
   expect(request, `${name}: no request`).toBeGreaterThan(-1);
   expect(check, `${name}: freshEnv after the request`).toBeLessThan(request);
 });
+
+test('a session a phone starts checks the shell environment before each request to atelierd', () => {
+  const start = hub.indexOf('  async createRemoteSession(');
+  expect(start).toBeGreaterThan(-1);
+  const body = hub.slice(start, hub.indexOf('\n  }\n', start));
+  // One check before each of the two requests (Claude session, terminal).
+  const checks = [...body.matchAll(/await this\.freshEnvQuietly\(/g)].map((m) => m.index!);
+  const requests = [...body.matchAll(/this\.client\.request</g)].map((m) => m.index!);
+  expect(requests).toHaveLength(2);
+  expect(checks).toHaveLength(2);
+  expect(checks[0]!).toBeLessThan(requests[0]!);
+  expect(checks[1]!).toBeGreaterThan(requests[0]!);
+  expect(checks[1]!).toBeLessThan(requests[1]!);
+  const quiet = hub.slice(hub.indexOf('  private async freshEnvQuietly('));
+  expect(quiet.slice(0, quiet.indexOf('\n  }\n'))).toMatch(/await this\.freshness\.ensure\(this\.checkedFiles\(\)/);
+});

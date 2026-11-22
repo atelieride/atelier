@@ -848,3 +848,257 @@ describe('the artifacts a session published', () => {
     expect(sent()).toHaveLength(n);
   });
 });
+
+describe('remote viewers (a paired phone): watched like a window, with one size per terminal', () => {
+  beforeEach(() => { fake.windows.clear(); });
+
+  /** A hub with one window attached to terminal 'a' at 120×40, and a phone viewer recording what it gets. */
+  async function withWindow(o: { windowAttached?: boolean } = {}) {
+    const { hub, register, client } = setup();
+    const { ipcMain } = await import('electron');
+    vi.mocked(ipcMain.handle).mockClear(); vi.mocked(ipcMain.on).mockClear();
+    hub.installIpc();
+    const handler = (mock: unknown, channel: string) => (mock as { mock: { calls: [string, (e: unknown, arg: unknown) => unknown][] } }).mock.calls.find((c) => c[0] === channel)![1];
+    const ev = { sender: { id: 1 } };
+    const winAttach = () => handler(ipcMain.handle, IPC.termAttach)(ev, 'a') as Promise<void>;
+    const winDetach = () => handler(ipcMain.handle, IPC.termDetach)(ev, 'a') as Promise<void>;
+    const winResize = (cols: number, rows: number) => handler(ipcMain.on, IPC.termResize)(ev, { id: 'a', cols, rows });
+    const winType = (data: string) => handler(ipcMain.on, IPC.termInput)(ev, { id: 'a', data });
+    const w = wc(1); win(w); register(w);
+    client.emit('status', 'connected');
+    client.emit('terminals', [term('a'), term('b', '/q')]);
+    if (o.windowAttached !== false) {
+      const p = winAttach();
+      await Promise.resolve();
+      client.emit('snapshot', 'a', 'win screen');
+      await p;
+      winResize(120, 40);
+    }
+    const got: unknown[][] = [];
+    const key = hub.addRemoteViewer({
+      snapshot: (id, data, size) => got.push(['snapshot', id, data, size]),
+      data: (id, data) => got.push(['data', id, data]),
+      size: (id, cols, rows) => got.push(['size', id, cols, rows]),
+      exit: (id) => got.push(['exit', id])
+    });
+    client.send.mockClear(); client.request.mockClear();
+    const sent = () => client.send.mock.calls.map((c) => c[0] as Record<string, unknown>);
+    const requests = () => client.request.mock.calls.map((c) => (c as unknown[])[0] as Record<string, unknown>);
+    const phoneAttach = async (id = 'a', cols = 60, rows = 30) => {
+      const p = hub.remoteAttach(key, id, cols, rows);
+      await Promise.resolve();
+      client.emit('snapshot', id, `screen of ${id}`);
+      await p;
+    };
+    return { hub, client, w, key, got, sent, requests, phoneAttach, winAttach, winDetach, winResize, winType };
+  }
+
+  test('attaching resizes the terminal to the phone first, then asks atelierd for the screen; output follows in order', async () => {
+    const t = await withWindow();
+    await t.phoneAttach();
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 60, rows: 30 }]);
+    expect(t.requests()).toEqual([{ t: 'attach', id: 'a' }]);
+    t.client.emit('data', 'a', 'one');
+    t.client.emit('data', 'a', 'two');
+    expect(t.got).toEqual([['snapshot', 'a', 'screen of a', { cols: 60, rows: 30 }], ['data', 'a', 'one'], ['data', 'a', 'two']]);
+    // The window keeps its output too, and was never sent the phone's screen.
+    const winData = t.w.send.mock.calls.filter((c) => c[0] === IPC.evData).map((c) => c[2]);
+    expect(winData).toEqual(['one', 'two']);
+    expect(t.hub.remoteSized()).toEqual(['a']);
+  });
+
+  test('a terminal nobody lists is refused', async () => {
+    const t = await withWindow();
+    await expect(t.hub.remoteAttach(t.key, 'nope', 60, 30)).rejects.toThrow(/no such terminal/);
+    expect(t.requests()).toEqual([]);
+  });
+
+  test('typing in the window takes the size back for it, and the phone is told', async () => {
+    const t = await withWindow();
+    await t.phoneAttach();
+    t.client.send.mockClear();
+    t.winType('l');
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 120, rows: 40 }, { t: 'input', id: 'a', data: 'l' }]);
+    expect(t.got.at(-1)).toEqual(['size', 'a', 120, 40]);
+    expect(t.hub.remoteSized()).toEqual([]);
+    // Not typing (a focus report): no resize.
+    t.client.send.mockClear();
+    await t.phoneAttach();
+    t.client.send.mockClear();
+    t.winType('\x1b[I');
+    expect(t.sent()).toEqual([{ t: 'input', id: 'a', data: '\x1b[I' }]);
+  });
+
+  test('a window resize takes the size; the phone is told; the phone typing takes it back', async () => {
+    const t = await withWindow();
+    await t.phoneAttach();
+    t.client.send.mockClear();
+    t.winResize(100, 30);
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 100, rows: 30 }]);
+    expect(t.got.at(-1)).toEqual(['size', 'a', 100, 30]);
+    t.client.send.mockClear();
+    expect(t.hub.remoteInput(t.key, 'a', 'x')).toBe(true);
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 60, rows: 30 }, { t: 'input', id: 'a', data: 'x' }]);
+    t.client.send.mockClear();
+    expect(t.hub.remoteResize(t.key, 'a', 50, 20)).toBe(true);
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 50, rows: 20 }]);
+  });
+
+  test('the phone leaving gives the window its size back; atelierd keeps the window\'s listener', async () => {
+    const t = await withWindow();
+    await t.phoneAttach();
+    t.client.send.mockClear();
+    t.hub.remoteDetach(t.key, 'a');
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 120, rows: 40 }]);
+    expect(t.requests()).toEqual([{ t: 'attach', id: 'a' }]);
+    t.client.emit('data', 'a', 'after');
+    expect(t.got.filter((g) => g[0] === 'data')).toEqual([]);
+  });
+
+  test('the last viewer: a phone alone detaches atelierd when it leaves; a window leaving while the phone watches does not', async () => {
+    const t = await withWindow();
+    await t.phoneAttach();
+    await t.winDetach();
+    expect(t.requests().filter((r) => r.t === 'detach')).toEqual([]);
+    t.client.emit('data', 'a', 'still');
+    expect(t.got.at(-1)).toEqual(['data', 'a', 'still']);
+    t.hub.remoteDetach(t.key, 'a');
+    expect(t.requests().filter((r) => r.t === 'detach')).toEqual([{ t: 'detach', id: 'a' }]);
+  });
+
+  test('the window gone while the phone owns nothing: the phone gets its size back', async () => {
+    const t = await withWindow();
+    await t.phoneAttach();
+    t.winResize(120, 40);
+    t.client.send.mockClear();
+    await t.winDetach();
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 60, rows: 30 }]);
+    expect(t.got.at(-1)).toEqual(['size', 'a', 60, 30]);
+  });
+
+  test('input: refused before an attach, held while one is on its way, sent after the screen', async () => {
+    const t = await withWindow({ windowAttached: false });
+    expect(t.hub.remoteInput(t.key, 'a', 'early')).toBe(false);
+    const p = t.hub.remoteAttach(t.key, 'a', 60, 30);
+    expect(t.hub.remoteInput(t.key, 'a', 'held')).toBe(true);
+    expect(t.sent().filter((m) => m.t === 'input')).toEqual([]);
+    await Promise.resolve();
+    t.client.emit('snapshot', 'a', 'screen');
+    await p;
+    expect(t.sent().filter((m) => m.t === 'input')).toEqual([{ t: 'input', id: 'a', data: 'held' }]);
+  });
+
+  test('the terminal exits: the phone is told, and its watch goes', async () => {
+    const t = await withWindow();
+    await t.phoneAttach();
+    t.client.emit('exit', 'a');
+    expect(t.got.at(-1)).toEqual(['exit', 'a']);
+    expect(t.hub.remoteInput(t.key, 'a', 'x')).toBe(false);
+    expect(t.hub.remoteSized()).toEqual([]);
+  });
+
+  test('a viewer removed (the phone\'s channel over) leaves every terminal it watched, sizes restored', async () => {
+    const t = await withWindow();
+    await t.phoneAttach('a');
+    await t.phoneAttach('b');
+    t.client.send.mockClear(); t.client.request.mockClear();
+    t.hub.removeRemoteViewer(t.key);
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 120, rows: 40 }]);
+    expect(t.requests()).toEqual([{ t: 'detach', id: 'b' }]);
+    t.client.emit('data', 'a', 'x');
+    expect(t.got.filter((g) => g[0] === 'data')).toEqual([]);
+  });
+
+  test('a terminal moved to another project\'s window keeps its phone', async () => {
+    const t = await withWindow();
+    await t.phoneAttach();
+    t.hub.rehomed('a', '/elsewhere');
+    t.client.emit('data', 'a', 'moved');
+    expect(t.got.at(-1)).toEqual(['data', 'a', 'moved']);
+  });
+
+  test('atelierd reconnected: the phone attaches again and gets a new screen, the size left to its owner', async () => {
+    const t = await withWindow();
+    await t.phoneAttach();
+    t.winResize(120, 40);
+    t.client.request.mockClear(); t.client.send.mockClear();
+    t.client.emit('status', 'disconnected');
+    t.client.emit('status', 'connected');
+    t.client.emit('reconnected');
+    await Promise.resolve();
+    t.client.emit('snapshot', 'a', 'screen again');
+    await Promise.resolve();
+    // What atelierd has is unknown after a reconnection: the owner's own size is the best answer.
+    expect(t.got.filter((g) => g[0] === 'snapshot').at(-1)).toEqual(['snapshot', 'a', 'screen again', { cols: 120, rows: 40 }]);
+    expect(t.sent().filter((m) => m.t === 'resize')).toEqual([]);
+  });
+});
+
+describe('createRemoteSession: New Session or New Terminal at a project\'s root, from a phone', () => {
+  async function project() {
+    const { mkdtempSync, realpathSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    initPlatform(process.platform);
+    return toOut(realpathSync(mkdtempSync(join(tmpdir(), 'atl-hub-remote-'))));
+  }
+
+  test('a Claude session: the command New Session runs (default account, launch flags), cwd the root, the phone\'s size', async () => {
+    try {
+      const root = await project();
+      const { hub, client } = setup();
+      hub.settings = () => ({ ...DEFAULT_SETTINGS, claudeModel: 'opus' });
+      let req: Record<string, unknown> = {};
+      client.request.mockImplementation((async (build: () => unknown) => { req = build() as Record<string, unknown>; return term('n1', root); }) as never);
+      const info = await hub.createRemoteSession({ project: root, kind: 'claude', cols: 60, rows: 30 });
+      expect(info.id).toBe('n1');
+      expect(req).toMatchObject({ t: 'create', projectRoot: root, cwd: root, cols: 60, rows: 30 });
+      expect(String(req.command)).toMatch(/^claude\b.*--model opus/);
+      expect(hub.allTerminals().map((x) => x.id)).toContain('n1');
+    } finally { resetPlatformForTests(); }
+  });
+
+  test('a terminal: no command, the default profile', async () => {
+    try {
+      const root = await project();
+      const { hub, client } = setup();
+      let req: Record<string, unknown> = {};
+      client.request.mockImplementation((async (build: () => unknown) => { req = build() as Record<string, unknown>; return term('n2', root); }) as never);
+      await hub.createRemoteSession({ project: root, kind: 'terminal', cols: 80, rows: 24 });
+      expect(req).toMatchObject({ t: 'create', projectRoot: root, cwd: root, cols: 80, rows: 24 });
+      expect(req.command).toBeUndefined();
+    } finally { resetPlatformForTests(); }
+  });
+
+  test('a project folder that is gone is refused before atelierd is asked', async () => {
+    const { hub, client } = setup();
+    await expect(hub.createRemoteSession({ project: '/nonexistent/atl-remote-project', kind: 'claude', cols: 80, rows: 24 })).rejects.toThrow();
+    expect(client.request).not.toHaveBeenCalled();
+  });
+});
+
+describe('onShown: every change of the list windows get', () => {
+  test('an atelierd list, a terminal just created, and the work recomputed between lists', async () => {
+    const { hub, client } = setup();
+    let calls = 0;
+    const off = hub.onShown(() => { calls++; });
+    client.emit('status', 'connected');
+    client.emit('terminals', [term('a')]);
+    expect(calls).toBe(1);
+    const scans = { onChange: (_s: unknown) => {}, update: vi.fn() };
+    hub.useWorkHub(scans as never);
+    const withWork = { ...term('a'), session: { sessionId: 's', state: 'idle', title: null, activity: null, contextPct: null, unread: false, updatedAt: 0, background: { items: [{ kind: 'shell', id: 'b1', label: 'npm run dev', startedAt: 0 }], crons: [] } } } as unknown as TerminalInfo;
+    client.emit('terminals', [withWork]);
+    expect(calls).toBe(2);
+    client.request.mockResolvedValueOnce(term('b') as never);
+    const { mkdtempSync, realpathSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-hub-shown-')));
+    await hub.createRemoteSession({ project: root, kind: 'terminal', cols: 80, rows: 24 });
+    expect(calls).toBe(3);
+    off();
+    client.emit('terminals', [term('a')]);
+    expect(calls).toBe(3);
+  });
+});
