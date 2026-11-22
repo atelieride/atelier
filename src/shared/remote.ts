@@ -38,6 +38,15 @@ export function relayBase(raw: string): string | null {
   return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, '')}`;
 }
 
+/**
+ * The relay Atelier dials for the `remoteRelay` setting. A test relay (development only) stands in for the default
+ * one, so no test or dev run reaches the real relay by default; a relay typed in Settings is dialed as it is, which is
+ * how a developer points a dev Atelier, or a test, at a relay of their own.
+ */
+export function relayToDial(setting: string, testRelay: string | undefined): string {
+  return testRelay && setting === DEFAULT_RELAY ? testRelay : setting;
+}
+
 /** How the relay connection stands: 'offline' also while remote access is off. */
 export type RemoteRelayState = 'online' | 'connecting' | 'offline' | 'error';
 

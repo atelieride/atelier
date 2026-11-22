@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { DEFAULT_RELAY, relayBase } from './remote';
+import { DEFAULT_RELAY, relayBase, relayToDial } from './remote';
 
 test('https anywhere, normalised without a trailing slash', () => {
   expect(relayBase(DEFAULT_RELAY)).toBe('https://relay.useatelier.dev');
@@ -22,4 +22,11 @@ test('nothing else: other schemes, credentials, queries, fragments, garbage', ()
     expect(relayBase(bad), bad).toBeNull();
   }
   expect(relayBase('https://relay.test/' + 'a'.repeat(600))).toBeNull();
+});
+
+test('a test relay stands in for the default relay only: a relay typed in Settings is dialed as it is', () => {
+  expect(relayToDial(DEFAULT_RELAY, 'http://127.0.0.1:9')).toBe('http://127.0.0.1:9');
+  expect(relayToDial('http://127.0.0.1:8787', 'http://127.0.0.1:9')).toBe('http://127.0.0.1:8787');
+  expect(relayToDial('https://relay.test', undefined)).toBe('https://relay.test');
+  expect(relayToDial(DEFAULT_RELAY, undefined)).toBe(DEFAULT_RELAY);
 });

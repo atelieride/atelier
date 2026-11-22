@@ -130,6 +130,7 @@ import { randomUUID } from 'node:crypto';
 import { installMedia, registerMediaScheme } from './media-ipc';
 import { RemoteHub } from './remote/remote-hub';
 import { installRemoteIpc } from './remote/ipc';
+import { relayToDial } from '@shared/remote';
 
 // atelier-media: must be privileged before the app is ready.
 registerMediaScheme();
@@ -1416,12 +1417,16 @@ if (!app.requestSingleInstanceLock()) {
       handle: (channel, fn) => ipcMain.handle(channel, fn)
     });
     // iPhone access: off until Settings › iPhone turns it on (no relay connection, safeStorage untouched). Keys through
-    // the secret store (the e2e stand-in with ATELIER_TEST_FAKE_SAFE_STORAGE); a test relay with ATELIER_TEST_RELAY_URL.
+    // the secret store (the e2e stand-in with ATELIER_TEST_FAKE_SAFE_STORAGE); ATELIER_TEST_RELAY_URL stands in for the
+    // default relay (a relay typed in Settings › iPhone is dialed as it is). Tests shorten the Allow wait and the code's life.
+    const pairDecideMs = testMs('ATELIER_TEST_REMOTE_DECIDE_MS');
+    const pairCodeMs = testMs('ATELIER_TEST_REMOTE_CODE_MS');
     remote = new RemoteHub({
       home: paths.home,
       secrets: secretStoreFor(paths.home, safeStorage),
       settings: () => settings.get(),
-      relayUrl: () => devEnv('ATELIER_TEST_RELAY_URL') ?? settings.get().remoteRelay,
+      relayUrl: () => relayToDial(settings.get().remoteRelay, devEnv('ATELIER_TEST_RELAY_URL')),
+      ...(pairDecideMs || pairCodeMs ? { timing: { ...(pairDecideMs ? { decideMs: pairDecideMs } : {}), ...(pairCodeMs ? { codeTtlMs: pairCodeMs } : {}) } } : {}),
       terminals: hub,
       projects: () => ({ open: openProjectRoots(windowsView), recent: recentForWelcome(uiState, isDir) }),
       // The name phones show: the host name without its local-network suffix.
