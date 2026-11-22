@@ -69,7 +69,7 @@ describe('failures', () => {
   };
 
   test('a full handshake, then transport both ways', () => {
-    const { init, resp } = pair('Noise_XX_25519_ChaChaPoly_SHA256');
+    const { init, resp } = pair('Noise_XX_25519_AESGCM_SHA256');
     resp.readMessage(init.writeMessage(Buffer.alloc(0)));
     expect(init.readMessage(resp.writeMessage(Buffer.from('host hello'))).toString()).toBe('host hello');
     expect(resp.readMessage(init.writeMessage(Buffer.from('device hello'))).toString()).toBe('device hello');
@@ -81,7 +81,7 @@ describe('failures', () => {
   });
 
   test('a tampered message fails to decrypt', () => {
-    const { init, resp } = pair('Noise_XX_25519_ChaChaPoly_SHA256');
+    const { init, resp } = pair('Noise_XX_25519_AESGCM_SHA256');
     resp.readMessage(init.writeMessage(Buffer.alloc(0)));
     const m2 = resp.writeMessage(Buffer.from('hello'));
     m2[m2.length - 1]! ^= 1;
@@ -89,39 +89,39 @@ describe('failures', () => {
   });
 
   test('XXpsk3: a wrong prologue fails at the first message already (its empty payload is authenticated)', () => {
-    const { init, resp } = pair('Noise_XXpsk3_25519_ChaChaPoly_SHA256', { initPrologue: 'a', respPrologue: 'b' });
+    const { init, resp } = pair('Noise_XXpsk3_25519_AESGCM_SHA256', { initPrologue: 'a', respPrologue: 'b' });
     const m1 = init.writeMessage(Buffer.alloc(0));
     expect(m1).toHaveLength(48);
     expect(() => resp.readMessage(m1)).toThrow();
   });
 
   test('XXpsk3: a wrong pre-shared key fails at the third message', () => {
-    const { init, resp } = pair('Noise_XXpsk3_25519_ChaChaPoly_SHA256', { initPsk: Buffer.alloc(32, 1), respPsk: Buffer.alloc(32, 2) });
+    const { init, resp } = pair('Noise_XXpsk3_25519_AESGCM_SHA256', { initPsk: Buffer.alloc(32, 1), respPsk: Buffer.alloc(32, 2) });
     resp.readMessage(init.writeMessage(Buffer.alloc(0)));
     init.readMessage(resp.writeMessage(Buffer.alloc(0)));
     expect(() => resp.readMessage(init.writeMessage(Buffer.alloc(0)))).toThrow();
   });
 
   test('messages out of turn, or after the handshake, are refused', () => {
-    const { init, resp } = pair('Noise_XX_25519_ChaChaPoly_SHA256');
+    const { init, resp } = pair('Noise_XX_25519_AESGCM_SHA256');
     expect(() => resp.writeMessage(Buffer.alloc(0))).toThrow();
     expect(() => init.readMessage(Buffer.alloc(32))).toThrow();
     expect(() => init.split()).toThrow();
   });
 
   test('a message too short for its tokens is refused', () => {
-    const { resp } = pair('Noise_XX_25519_ChaChaPoly_SHA256');
+    const { resp } = pair('Noise_XX_25519_AESGCM_SHA256');
     expect(() => resp.readMessage(Buffer.alloc(10))).toThrow();
   });
 
   test('a low-order public key (an all-zero shared secret) is refused', () => {
-    const { resp } = pair('Noise_XX_25519_ChaChaPoly_SHA256');
+    const { resp } = pair('Noise_XX_25519_AESGCM_SHA256');
     resp.readMessage(Buffer.alloc(32));
     expect(() => resp.writeMessage(Buffer.alloc(0))).toThrow();
   });
 
   test('a transport message replayed or reordered fails', () => {
-    const { init, resp } = pair('Noise_XX_25519_ChaChaPoly_SHA256');
+    const { init, resp } = pair('Noise_XX_25519_AESGCM_SHA256');
     resp.readMessage(init.writeMessage(Buffer.alloc(0)));
     init.readMessage(resp.writeMessage(Buffer.alloc(0)));
     resp.readMessage(init.writeMessage(Buffer.alloc(0)));

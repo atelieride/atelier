@@ -14,7 +14,7 @@ const electron = createRequire(import.meta.url)('electron') as unknown as string
 const SCRIPT = `
 import { NoiseHandshake, generateKeyPair } from ${JSON.stringify(resolve(__dirname, '../../src/main/remote/noise.ts'))};
 for (const psk of [undefined, Buffer.alloc(32, 7)]) {
-  const protocol = psk ? 'Noise_XXpsk3_25519_ChaChaPoly_SHA256' : 'Noise_XX_25519_ChaChaPoly_SHA256';
+  const protocol = psk ? 'Noise_XXpsk3_25519_AESGCM_SHA256' : 'Noise_XX_25519_AESGCM_SHA256';
   const prologue = Buffer.from('atelier-test');
   const i = new NoiseHandshake({ protocol, initiator: true, prologue, s: generateKeyPair(), ...(psk ? { psk } : {}) });
   const r = new NoiseHandshake({ protocol, initiator: false, prologue, s: generateKeyPair(), ...(psk ? { psk } : {}) });

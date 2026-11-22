@@ -1,10 +1,11 @@
 // The Noise protocol framework (revision 34) for iPhone access: the XX and XXpsk3 handshakes with X25519,
-// ChaCha20-Poly1305 and SHA-256, on node:crypto alone. Both roles: Atelier answers as the responder, the test phone
+// AES-256-GCM and SHA-256, on node:crypto alone. AES-GCM, not ChaChaPoly: the main process runs on Electron's crypto
+// (BoringSSL), whose ciphers have no chacha20-poly1305. Both roles: Atelier answers as the responder, the test phone
 // drives the initiator. Ephemeral keys can be injected (test vectors); otherwise each handshake makes its own.
 // Nothing here knows about the relay, the app messages or Electron, so the test phone can import it as is.
 import { createCipheriv, createDecipheriv, createHash, createHmac, createPrivateKey, createPublicKey, diffieHellman, randomBytes, type KeyObject } from 'node:crypto';
 
-export type NoiseProtocol = 'Noise_XX_25519_ChaChaPoly_SHA256' | 'Noise_XXpsk3_25519_ChaChaPoly_SHA256';
+export type NoiseProtocol = 'Noise_XX_25519_AESGCM_SHA256' | 'Noise_XXpsk3_25519_AESGCM_SHA256';
 
 /** An X25519 key pair, both halves raw 32 bytes. */
 export interface KeyPair { publicKey: Buffer; privateKey: Buffer }
@@ -59,7 +60,7 @@ function hkdf(ck: Buffer, ikm: Uint8Array, outputs: 2 | 3): Buffer[] {
   return outputs === 2 ? [o1, o2] : [o1, o2, hmac(temp, o2, Buffer.from([3]))];
 }
 
-/** One direction's key and nonce. Nonces are 32 zero bits then the 64-bit counter, little-endian. */
+/** One direction's key and nonce. Nonces are 32 zero bits then the 64-bit counter, big-endian (Noise's AESGCM). */
 class CipherState {
   private n = 0;
   constructor(private readonly k: Buffer | null = null) {}
@@ -69,15 +70,15 @@ class CipherState {
 
   private nonce(): Buffer {
     const iv = Buffer.alloc(12);
-    iv.writeUInt32LE(this.n >>> 0, 4);
-    iv.writeUInt32LE(Math.floor(this.n / 2 ** 32), 8);
+    iv.writeUInt32BE(Math.floor(this.n / 2 ** 32), 4);
+    iv.writeUInt32BE(this.n >>> 0, 8);
     return iv;
   }
 
   encrypt(ad: Uint8Array, plaintext: Uint8Array): Buffer {
     if (!this.k) throw new Error('no key');
-    const c = createCipheriv('chacha20-poly1305', this.k, this.nonce(), { authTagLength: NOISE_TAG });
-    c.setAAD(ad, { plaintextLength: plaintext.length });
+    const c = createCipheriv('aes-256-gcm', this.k, this.nonce(), { authTagLength: NOISE_TAG });
+    c.setAAD(ad);
     const out = Buffer.concat([c.update(plaintext), c.final(), c.getAuthTag()]);
     this.n++;
     return out;
@@ -88,8 +89,8 @@ class CipherState {
     if (!this.k) throw new Error('no key');
     if (ciphertext.length < NOISE_TAG) throw new Error('message too short');
     const body = ciphertext.subarray(0, ciphertext.length - NOISE_TAG);
-    const d = createDecipheriv('chacha20-poly1305', this.k, this.nonce(), { authTagLength: NOISE_TAG });
-    d.setAAD(ad, { plaintextLength: body.length });
+    const d = createDecipheriv('aes-256-gcm', this.k, this.nonce(), { authTagLength: NOISE_TAG });
+    d.setAAD(ad);
     d.setAuthTag(ciphertext.subarray(ciphertext.length - NOISE_TAG));
     const out = Buffer.concat([d.update(body), d.final()]);
     this.n++;
@@ -144,8 +145,8 @@ class SymmetricState {
 
 type Token = 'e' | 's' | 'ee' | 'es' | 'se' | 'psk';
 const PATTERNS: Record<NoiseProtocol, Token[][]> = {
-  Noise_XX_25519_ChaChaPoly_SHA256: [['e'], ['e', 'ee', 's', 'es'], ['s', 'se']],
-  Noise_XXpsk3_25519_ChaChaPoly_SHA256: [['e'], ['e', 'ee', 's', 'es'], ['s', 'se', 'psk']]
+  Noise_XX_25519_AESGCM_SHA256: [['e'], ['e', 'ee', 's', 'es'], ['s', 'se']],
+  Noise_XXpsk3_25519_AESGCM_SHA256: [['e'], ['e', 'ee', 's', 'es'], ['s', 'se', 'psk']]
 };
 
 /** The two directions after the handshake: what this side sends with, what it receives with. */

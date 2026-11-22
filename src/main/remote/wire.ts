@@ -21,8 +21,8 @@ export function fromB64url(s: string, bytes?: number): Buffer | null {
 }
 
 const PROTOCOLS: Record<ChannelKind, NoiseProtocol> = {
-  pair: 'Noise_XXpsk3_25519_ChaChaPoly_SHA256',
-  device: 'Noise_XX_25519_ChaChaPoly_SHA256'
+  pair: 'Noise_XXpsk3_25519_AESGCM_SHA256',
+  device: 'Noise_XX_25519_AESGCM_SHA256'
 };
 export const protocolOf = (kind: ChannelKind): NoiseProtocol => PROTOCOLS[kind];
 

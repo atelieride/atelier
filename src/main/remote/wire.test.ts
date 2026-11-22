@@ -19,8 +19,8 @@ describe('base64url', () => {
 
 test('the prologue: version, kind and id separated by NUL', () => {
   expect(prologue('pair', 'abc').toString('latin1')).toBe('atelier-remote-v1\0pair\0abc');
-  expect(protocolOf('pair')).toBe('Noise_XXpsk3_25519_ChaChaPoly_SHA256');
-  expect(protocolOf('device')).toBe('Noise_XX_25519_ChaChaPoly_SHA256');
+  expect(protocolOf('pair')).toBe('Noise_XXpsk3_25519_AESGCM_SHA256');
+  expect(protocolOf('device')).toBe('Noise_XX_25519_AESGCM_SHA256');
 });
 
 describe('fragments', () => {
