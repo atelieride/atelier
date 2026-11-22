@@ -13,8 +13,11 @@ export interface TestRelayOptions {
   waitHostMs?: number;
   /** How long a host has to authenticate (10 s). */
   authMs?: number;
-  /** Per connection and per window: frames and bytes (400 and 4 MiB per 10 s). null: no traffic limit. */
-  traffic?: { frames: number; bytes: number; windowMs: number } | null;
+  /**
+   * Per connection and per window, frames and bytes: a host connection 4000 and 32 MiB per 10 s over all its channels,
+   * a device connection 400 and 4 MiB. null: no traffic limit.
+   */
+  traffic?: { host: { frames: number; bytes: number }; device: { frames: number; bytes: number }; windowMs: number } | null;
   /** At most this many device channels per room (8). */
   maxChannels?: number;
 }
@@ -44,7 +47,7 @@ const ID = /^[A-Za-z0-9_-]{43}$/;
 const MAX_BINARY = 65535;
 const MAX_TEXT = 1024;
 
-interface Channel { ch: number; kind: 'device' | 'pair'; ws: WebSocket; waitTimer: ReturnType<typeof setTimeout> | null }
+interface Channel { ch: number; kind: 'device' | 'pair'; lookup: string | null; ws: WebSocket; waitTimer: ReturnType<typeof setTimeout> | null }
 interface Room { id: string; host: WebSocket | null; channels: Map<number, Channel>; nextCh: number; offers: Map<string, number>; connections: number }
 
 const roomIdOf = (secret: Buffer) => createHash('sha256').update('atelier-room-v1').update(secret).digest('base64url');
@@ -52,7 +55,7 @@ const roomIdOf = (secret: Buffer) => createHash('sha256').update('atelier-room-v
 export async function startTestRelay(o: TestRelayOptions = {}): Promise<TestRelay> {
   const waitHostMs = o.waitHostMs ?? 10 * 60_000;
   const authMs = o.authMs ?? 10_000;
-  const traffic = o.traffic === undefined ? { frames: 400, bytes: 4 * 1024 * 1024, windowMs: 10_000 } : o.traffic;
+  const traffic = o.traffic === undefined ? { host: { frames: 4000, bytes: 32 * 1024 * 1024 }, device: { frames: 400, bytes: 4 * 1024 * 1024 }, windowMs: 10_000 } : o.traffic;
   const maxChannels = o.maxChannels ?? 8;
   const rooms = new Map<string, Room>();
   const hostFrames: TestRelay['hostFrames'] = [];
@@ -78,17 +81,19 @@ export async function startTestRelay(o: TestRelayOptions = {}): Promise<TestRela
   const send = (ws: WebSocket | null, frame: unknown) => { if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(frame)); };
 
   /** Frames and bytes per window and connection: past either, 4429. */
-  const meter = (ws: WebSocket, who: string) => {
+  const meter = (ws: WebSocket, who: 'host' | 'device') => {
     let start = Date.now(); let frames = 0; let bytes = 0;
     return (size: number): boolean => {
       if (!traffic) return true;
+      const limit = traffic[who];
       const now = Date.now();
       if (now - start >= traffic.windowMs) { start = now; frames = 0; bytes = 0; }
       frames++; bytes += size;
-      if (frames > traffic.frames || bytes > traffic.bytes) { shut(ws, who, 4429); return false; }
+      if (frames > limit.frames || bytes > limit.bytes) { shut(ws, who, 4429); return false; }
       return true;
     };
   };
+  const openFrame = (c: Channel) => ({ t: 'open', ch: c.ch, kind: c.kind, ...(c.lookup ? { lookup: c.lookup } : {}) });
 
   const server: Server = createServer((req, res) => {
     if (req.url === '/v1/health') { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('ok'); return; }
@@ -113,7 +118,7 @@ export async function startTestRelay(o: TestRelayOptions = {}): Promise<TestRela
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
       if (kind === 'host') hostConnection(ws, id);
-      else deviceConnection(ws, kind === 'pair' ? target! : room(id), kind === 'pair' ? 'pair' : 'device');
+      else deviceConnection(ws, kind === 'pair' ? target! : room(id), kind === 'pair' ? 'pair' : 'device', kind === 'pair' ? id : null);
     });
   });
 
@@ -142,8 +147,11 @@ export async function startTestRelay(o: TestRelayOptions = {}): Promise<TestRela
         if (secret.length === 0 || roomIdOf(secret) !== roomId) { shut(ws, 'host', 4401); return; }
         clearTimeout(authTimer);
         const r = room(roomId);
-        // A newer host replaces the older.
-        if (r.host && r.host !== ws) shut(r.host, 'host', 4409);
+        // A newer host replaces the older; its devices see the host go and come back, and start a new handshake.
+        if (r.host && r.host !== ws) {
+          shut(r.host, 'host', 4409);
+          for (const c of r.channels.values()) send(c.ws, { t: 'status', host: 'offline' });
+        }
         r.host = ws;
         r.connections++;
         authed = r;
@@ -152,7 +160,7 @@ export async function startTestRelay(o: TestRelayOptions = {}): Promise<TestRela
         for (const c of r.channels.values()) {
           if (c.waitTimer) { clearTimeout(c.waitTimer); c.waitTimer = null; }
           send(c.ws, { t: 'status', host: 'online' });
-          send(ws, { t: 'open', ch: c.ch, kind: c.kind });
+          send(ws, openFrame(c));
         }
         return;
       }
@@ -177,7 +185,8 @@ export async function startTestRelay(o: TestRelayOptions = {}): Promise<TestRela
           const code = f.code;
           if (typeof f.ch !== 'number' || typeof code !== 'number' || !Number.isInteger(code) || code < 4000 || code > 4999) { shut(ws, 'host', 4400); return; }
           const c = r.channels.get(f.ch);
-          if (c) { r.channels.delete(c.ch); shut(c.ws, 'device', code); }
+          // Every channel that ends is reported, the ones the host closed too.
+          if (c) { r.channels.delete(c.ch); shut(c.ws, 'device', code); send(ws, { t: 'closed', ch: c.ch }); }
           return;
         }
         case 'ping':
@@ -205,13 +214,13 @@ export async function startTestRelay(o: TestRelayOptions = {}): Promise<TestRela
     c.waitTimer = setTimeout(() => { r.channels.delete(c.ch); shut(c.ws, 'device', 4408); }, waitHostMs);
   }
 
-  function deviceConnection(ws: WebSocket, r: Room, kind: 'device' | 'pair'): void {
+  function deviceConnection(ws: WebSocket, r: Room, kind: 'device' | 'pair', lookup: string | null): void {
     if (r.channels.size >= maxChannels) { shut(ws, 'device', 4429); return; }
-    const c: Channel = { ch: r.nextCh++, kind, ws, waitTimer: null };
+    const c: Channel = { ch: r.nextCh++, kind, lookup, ws, waitTimer: null };
     r.channels.set(c.ch, c);
     const count = meter(ws, 'device');
     send(ws, { t: 'status', host: r.host ? 'online' : 'offline' });
-    if (r.host) send(r.host, { t: 'open', ch: c.ch, kind });
+    if (r.host) send(r.host, openFrame(c));
     else armWait(r, c);
     ws.on('message', (data: RawData, isBinary: boolean) => {
       const buf = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);

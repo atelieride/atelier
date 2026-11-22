@@ -10,7 +10,7 @@ import { MAX_APP_MESSAGE, Reassembler, b64url, fragments, prologue, protocolOf, 
 
 export interface ChannelLink {
   send(ch: number, payload: Uint8Array): void;
-  closeChannel(ch: number, code: number): void;
+  closeChannel(ch: number, code: number, o?: { drop?: boolean }): void;
   queued(ch: number): number;
 }
 
@@ -84,7 +84,8 @@ export class SecureChannel {
   private readonly timer: ReturnType<typeof setTimeout>;
   private readonly now: () => number;
 
-  constructor(readonly ch: number, readonly kind: ChannelKind, private readonly d: ChannelDeps) {
+  /** `lookup`: the offer a pairing channel was opened for, as the relay names it. */
+  constructor(readonly ch: number, readonly kind: ChannelKind, private readonly d: ChannelDeps, private readonly lookup?: string) {
     this.limits = { ...LIMITS, ...d.limits };
     this.now = d.now ?? Date.now;
     this.messages = new TokenBucket(this.limits.messagesPerSec, this.limits.messagesPerSec, this.now);
@@ -115,10 +116,11 @@ export class SecureChannel {
       this.hs = new NoiseHandshake({ ...base, prologue: prologue('device', this.d.roomId) });
       try { this.hs.readMessage(frame); } catch { this.close(CLOSE.malformed); return; }
     } else {
-      const codes = this.d.pairCodes();
+      // The code of the offer the relay names; without a name, any live code (message 1 of XXpsk3 authenticates its
+      // empty payload under a hash that covers the prologue: only the code whose lookup the phone dialed reads it).
+      const live = this.d.pairCodes();
+      const codes = this.lookup === undefined ? live : live.filter((c) => c.lookup === this.lookup);
       if (codes.length === 0) { this.close(CLOSE.noCode); return; }
-      // Message 1 of XXpsk3 authenticates its empty payload under a hash that covers the prologue: only the code whose
-      // lookup the phone dialed reads it.
       for (const c of codes) {
         const hs = new NoiseHandshake({ ...base, prologue: prologue('pair', c.lookup), psk: c.psk });
         try { hs.readMessage(frame); this.hs = hs; this.code = c; break; } catch { /* not this code */ }
@@ -212,25 +214,29 @@ export class SecureChannel {
   bye(reason: ByeReason): void {
     if (this.state === 'closed') return;
     if (this.state === 'open') this.send({ t: 'bye', reason });
-    this.close(CLOSE.normal);
+    this.close(CLOSE.normal, { flush: true });
   }
 
   /** The phone is not let in: why, then the close. */
   deny(reason: DeniedReason, code: number = CLOSE.normal): void {
     if (this.state === 'closed') return;
     this.send({ t: 'denied', reason });
-    this.close(code);
+    this.close(code, { flush: true });
   }
 
   /** Bytes waiting at the relay link for this channel. */
   queuedBytes(): number { return this.d.link.queued(this.ch); }
 
-  close(code: number): void {
+  /**
+   * Ends the channel. With `flush` what was queued for the phone goes first (a `bye` or `denied` just sent); otherwise
+   * it is dropped and the close goes at once.
+   */
+  close(code: number, o: { flush?: boolean } = {}): void {
     if (this.state === 'closed') return;
     this.state = 'closed';
     clearTimeout(this.timer);
     this.held = [];
-    this.d.link.closeChannel(this.ch, code);
+    this.d.link.closeChannel(this.ch, code, { drop: !o.flush });
     this.d.closed(this);
   }
 

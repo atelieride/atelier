@@ -51,7 +51,8 @@ export function remoteState(i: StateInput): RemoteState {
   const projects = order.map((root) => ({ id: projectIdOf(root), name: nameOf(root), color: projectColorOf(i.colors, root), open: open.has(root) }));
   const sessions = byAge.map((t): RemoteSession => {
     const state = shownState(t);
-    const wait = state === 'waiting' ? waitKind(t.session) : null;
+    // What it waits for, by the shared definition (a usage-limit pause is no wait).
+    const wait = isLimitPaused(t.session) ? null : waitKind(t.session);
     return {
       id: t.id, project: projectIdOf(t.projectRoot), title: t.title, claude: t.session !== null, state,
       ...(wait === 'permission' || wait === 'question' ? { waitingFor: wait } : {}),

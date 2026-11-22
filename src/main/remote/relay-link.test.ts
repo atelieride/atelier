@@ -28,14 +28,14 @@ function makeLink(o: Partial<RelayLinkOptions> = {}) {
   const secret = randomBytes(32);
   const roomId = roomIdOf(secret);
   const states: { state: RelayState; message?: string }[] = [];
-  const opened: [number, string][] = [];
+  const opened: [number, string, string?][] = [];
   const closed: number[] = [];
   const data: [number, string][] = [];
   const drained: number[] = [];
   const link = new RelayLink({
     base: relay.url, roomId, secret,
     onState: (state, message) => states.push({ state, ...(message ? { message } : {}) }),
-    onOpen: (ch, kind) => opened.push([ch, kind]),
+    onOpen: (ch, kind, lookup) => opened.push(lookup ? [ch, kind, lookup] : [ch, kind]),
     onClosed: (ch) => closed.push(ch),
     onData: (ch, payload) => data.push([ch, payload.toString()]),
     onDrain: (ch) => drained.push(ch),
@@ -129,6 +129,24 @@ describe('channels', () => {
     expect(d.got.binary).toEqual(['one', 'two', 'bye']);
     expect(d.got.close).toBe(4401);
   });
+
+  test('a close that drops what is queued goes at once', async () => {
+    const { link, roomId, opened } = makeLink({ budget: { frames: { burst: 1, perSec: 2 }, bytes: { burst: 64 * 1024, perSec: 512 * 1024 } } });
+    link.start();
+    await until(() => link.state === 'online');
+    const d = device(`/v1/device/${roomId}`);
+    await d.open();
+    await until(() => opened.length === 1);
+    const ch = opened[0]![0];
+    for (let i = 0; i < 20; i++) link.send(ch, Buffer.from(`m${i}`));
+    const started = Date.now();
+    link.closeChannel(ch, 4429, { drop: true });
+    await until(() => d.got.close !== null);
+    expect(Date.now() - started).toBeLessThan(400);
+    expect(d.got.close).toBe(4429);
+    expect(d.got.binary.length).toBeLessThan(3);
+    expect(link.queued(ch)).toBe(0);
+  });
 });
 
 describe('offers', () => {
@@ -144,7 +162,8 @@ describe('offers', () => {
     const d = device(`/v1/pair/${l}`);
     await d.open();
     await until(() => opened.length === 1);
-    expect(opened[0]![1]).toBe('pair');
+    // A pairing channel's open names the offer it came through.
+    expect(opened[0]!.slice(1)).toEqual(['pair', l]);
     link.withdraw(l);
     await until(() => relay.offers(roomId).length === 0);
     const late = device(`/v1/pair/${l}`);
@@ -219,7 +238,7 @@ describe('the connection', () => {
 describe('pacing under the relay\'s traffic limits', () => {
   test('frames beyond the budget wait their turn, in order, without the relay closing the connection', async () => {
     await relay.close();
-    relay = await startTestRelay({ traffic: { frames: 40, bytes: 1024 * 1024, windowMs: 1000 } });
+    relay = await startTestRelay({ traffic: { host: { frames: 40, bytes: 1024 * 1024 }, device: { frames: 40, bytes: 1024 * 1024 }, windowMs: 1000 } });
     const { link, roomId, opened, drained } = makeLink({ budget: { frames: { burst: 5, perSec: 30 }, bytes: { burst: 64 * 1024, perSec: 512 * 1024 } } });
     link.start();
     await until(() => link.state === 'online');

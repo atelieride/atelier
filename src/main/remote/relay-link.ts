@@ -25,13 +25,13 @@ export interface RelayTiming {
 /** A token bucket's burst and refill per second. */
 export interface Bucket { burst: number; perSec: number }
 /**
- * What may leave per connection. The relay closes a connection past 400 frames or 4 MiB in 10 s: bursts plus 10 s of
- * refill stay under both in any 10 s window.
+ * What may leave this computer's connection. The relay closes a host connection past 4000 frames or 32 MiB in 10 s
+ * (all channels together): bursts plus 10 s of refill stay under both in any 10 s window.
  */
 export interface RelayBudget { frames: Bucket; bytes: Bucket }
 
 const TIMING: RelayTiming = { readyMs: 15_000, pingMs: 25_000, deadMs: 60_000, backoffMinMs: 1000, backoffMaxMs: 30_000 };
-const BUDGET: RelayBudget = { frames: { burst: 60, perSec: 30 }, bytes: { burst: 512 * 1024, perSec: 320 * 1024 } };
+const BUDGET: RelayBudget = { frames: { burst: 600, perSec: 300 }, bytes: { burst: 4 * 1024 * 1024, perSec: 2.5 * 1024 * 1024 } };
 /** Bytes the socket may hold unsent before the queues wait for it. */
 const SOCKET_HIGH_WATER = 1024 * 1024;
 
@@ -41,8 +41,11 @@ export interface RelayLinkOptions {
   roomId: string;
   secret: Buffer;
   onState(state: RelayState, message?: string): void;
-  /** A phone's channel opened (a new one, or one waiting while this computer was away). */
-  onOpen(ch: number, kind: ChannelKind): void;
+  /**
+   * A phone's channel opened (a new one, or one waiting while this computer was away). A pairing channel names the
+   * offer the phone dialed (its lookup).
+   */
+  onOpen(ch: number, kind: ChannelKind, lookup?: string): void;
   /** A channel ended: the phone left, the relay closed it, or this connection dropped. */
   onClosed(ch: number): void;
   onData(ch: number, payload: Buffer): void;
@@ -134,9 +137,17 @@ export class RelayLink {
   /** Bytes waiting to leave for a channel. */
   queued(ch: number): number { return this.queues.get(ch)?.bytes ?? 0; }
 
-  /** Ends a channel with a close code (4000…4999) once what was queued for it has left. */
-  closeChannel(ch: number, code: number): void {
+  /**
+   * Ends a channel with a close code (4000…4999) once what was queued for it has left; with `drop`, at once, what was
+   * queued thrown away (a phone that can't keep up, or sent garbage, gets nothing more).
+   */
+  closeChannel(ch: number, code: number, o: { drop?: boolean } = {}): void {
     if (!this.channels.has(ch)) return;
+    if (o.drop) {
+      this.dropChannel(ch);
+      this.text({ t: 'close', ch, code });
+      return;
+    }
     this.enqueue(ch, { close: code });
     this.channels.delete(ch);
   }
@@ -217,7 +228,7 @@ export class RelayLink {
   }
 
   private onText(text: string): void {
-    let f: { t?: unknown; ch?: unknown; kind?: unknown };
+    let f: { t?: unknown; ch?: unknown; kind?: unknown; lookup?: unknown };
     try { f = JSON.parse(text) as typeof f; } catch { return; }
     if (!f || typeof f !== 'object') return;
     switch (f.t) {
@@ -241,7 +252,8 @@ export class RelayLink {
         // A channel id opened again: the earlier channel is over.
         if (this.channels.has(ch)) { this.dropChannel(ch); this.o.onClosed(ch); }
         this.channels.add(ch);
-        this.o.onOpen(ch, f.kind);
+        const lookup = f.kind === 'pair' && typeof f.lookup === 'string' && /^[A-Za-z0-9_-]{43}$/.test(f.lookup) ? f.lookup : undefined;
+        this.o.onOpen(ch, f.kind, lookup);
         return;
       }
       case 'closed': {

@@ -9,7 +9,7 @@ const host = generateKeyPair();
 const ROOM = 'R'.repeat(43);
 const code = (n: number): PairCode => ({ lookup: String.fromCharCode(65 + n).repeat(43), psk: Buffer.alloc(32, n) });
 
-function setup(o: { kind?: 'pair' | 'device'; codes?: PairCode[]; admit?: (c: SecureChannel) => Promise<Admission>; limits?: ChannelDeps['limits']; now?: () => number } = {}) {
+function setup(o: { kind?: 'pair' | 'device'; codes?: PairCode[]; admit?: (c: SecureChannel) => Promise<Admission>; limits?: ChannelDeps['limits']; now?: () => number; lookup?: string } = {}) {
   const kind = o.kind ?? 'device';
   const sent: Buffer[] = [];
   const closes: number[] = [];
@@ -27,7 +27,7 @@ function setup(o: { kind?: 'pair' | 'device'; codes?: PairCode[]; admit?: (c: Se
     ...(o.limits ? { limits: o.limits } : {}),
     ...(o.now ? { now: o.now } : {})
   };
-  const ch = new SecureChannel(7, kind, deps);
+  const ch = new SecureChannel(7, kind, deps, o.lookup);
   return { ch, sent, closes, received, events };
 }
 
@@ -88,6 +88,18 @@ describe('the handshake', () => {
     await handshake(s, phone);
     expect(s.ch.state).toBe('open');
     expect(s.ch.code?.lookup).toBe(codes[1]!.lookup);
+  });
+
+  test('pair: the offer the relay names picks the code; one that is not live closes the channel', async () => {
+    const codes = [code(1), code(2)];
+    const s = setup({ kind: 'pair', codes, lookup: codes[0]!.lookup });
+    const phone = new PhoneChannel({ kind: 'pair', id: codes[0]!.lookup, key: generateKeyPair(), psk: codes[0]!.psk });
+    await handshake(s, phone);
+    expect(s.ch.code?.lookup).toBe(codes[0]!.lookup);
+    const gone = setup({ kind: 'pair', codes, lookup: code(3).lookup });
+    gone.ch.receive(new PhoneChannel({ kind: 'pair', id: code(3).lookup, key: generateKeyPair(), psk: code(3).psk }).start());
+    expect(gone.closes).toEqual([CLOSE.noCode]);
+    expect(gone.events).toEqual(['closed']);
   });
 
   test('pair: a wrong code is a failed attempt and closes the channel', async () => {
