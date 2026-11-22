@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ITEM_ID } from '@shared/background-files';
+import { MAX_RELAY_URL, relayBase } from '@shared/remote';
 import { SETTINGS_FIELDS, isDockerEngineSetting, isSettingPath, isSettingText, type Field } from '@shared/settings';
 import { isFontFamily } from '@shared/terminal-font';
 import { normalizeCustom } from '@shared/redis';
@@ -483,6 +484,7 @@ const zField = (f: Field): z.ZodType => {
     case 'text': return z.string().refine((v) => isSettingText(v, f.max), 'text');
     case 'fontFamily': return z.string().refine(isFontFamily, 'font family');
     case 'accountChoice': return z.union([z.literal('session'), z.string().regex(ACCOUNT_ID)]);
+    case 'relayUrl': return z.string().max(MAX_RELAY_URL).refine((v) => relayBase(v) !== null, 'relay url');
   }
 };
 

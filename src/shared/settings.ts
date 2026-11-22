@@ -13,6 +13,7 @@ import type { AnswerStyle, CompanionModel } from './companion/types';
 import { THEME_IDS, type TerminalColors, type ThemeId } from './themes';
 import { mergeProjectColors, normalizeProjectColors, type ProjectColors } from './project-color';
 import { BUNDLED_FONT, isFontFamily } from './terminal-font';
+import { DEFAULT_RELAY, relayBase } from './remote';
 
 export type InterfaceSize = 'small' | 'default' | 'large' | 'larger';
 export type CursorStyle = 'bar' | 'block' | 'underline';
@@ -247,6 +248,9 @@ export interface Settings {
   dbTimes: DbTimes;
   dbPageSize: DbPageSize;
   dbTimeoutSec: number;
+  /** Settings › iPhone: access from paired phones through the relay (off: no relay connection at all), the relay. */
+  remoteAccess: boolean;
+  remoteRelay: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -353,7 +357,9 @@ export const DEFAULT_SETTINGS: Settings = {
   showDatabases: 'auto',
   dbTimes: 'local',
   dbPageSize: '100',
-  dbTimeoutSec: 15
+  dbTimeoutSec: 15,
+  remoteAccess: false,
+  remoteRelay: DEFAULT_RELAY
 };
 
 export type Field =
@@ -381,7 +387,9 @@ export type Field =
   /** 'session' or a Claude account id. */
   | { kind: 'accountChoice' }
   /** Each project's color by root (normalizeProjectColors' form). */
-  | { kind: 'projectColors' };
+  | { kind: 'projectColors' }
+  /** The iPhone relay's URL: https, or http to a loopback or private address (relayBase). */
+  | { kind: 'relayUrl' };
 
 /** The most characters "What I already know" (Settings › Ask) keeps. */
 export const ASK_KNOWN_MAX = 2000;
@@ -506,7 +514,9 @@ export const SETTINGS_FIELDS: { [K in keyof Settings]: Field } = {
   showDatabases: { kind: 'enum', values: ['auto', 'always', 'never'] },
   dbTimes: { kind: 'enum', values: ['local', 'utc', 'stored'] },
   dbPageSize: { kind: 'enum', values: ['50', '100', '250', '500'] },
-  dbTimeoutSec: { kind: 'step', min: 5, max: 120, step: 5 }
+  dbTimeoutSec: { kind: 'step', min: 5, max: 120, step: 5 },
+  remoteAccess: { kind: 'bool' },
+  remoteRelay: { kind: 'relayUrl' }
 };
 
 const snap = (v: number, step: number) => Math.round(Math.round(v / step) * step * 100) / 100;
@@ -525,6 +535,7 @@ function valid(f: Field, v: unknown, ctx: SettingsContext): unknown {
     case 'claudeAccounts': return normalizeAccounts(v);
     case 'claudeFlags': return normalizeFlags(v);
     case 'projectColors': return normalizeProjectColors(v);
+    case 'relayUrl': return typeof v === 'string' && relayBase(v) !== null ? v : undefined;
     case 'paths': return Array.isArray(v) ? [...new Set(v.filter(isSettingPath))].slice(0, f.max) : undefined;
     case 'path': return v === '' || isSettingPath(v) ? v : undefined;
     case 'dockerEngine': return v === '' || isDockerEngineSetting(v) ? v : undefined;
