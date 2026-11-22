@@ -502,3 +502,82 @@ test('a phone keeps a terminal\'s size through the window\'s answers to its prog
     await relay.close();
   }
 });
+
+/**
+ * Where the note and the terminal's drawn screen (its rows at the phone's size) are, in the window's pixels, once the
+ * last change of size is laid out (two frames).
+ */
+async function noteAndScreen(win: Page) {
+  await win.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const note = await win.locator('.terminal-slot:visible .size-note').boundingBox();
+  const screen = await win.locator('.terminal-slot:visible .xterm-screen').boundingBox();
+  const slot = await win.locator('.terminal-slot:visible').boundingBox();
+  if (!note || !screen || !slot) throw new Error('nothing to measure');
+  const overlap = note.x < screen.x + screen.width && screen.x < note.x + note.width && note.y < screen.y + screen.height && screen.y < note.y + note.height;
+  return { note, screen, slot, overlap };
+}
+
+// The note on a terminal a phone sized sits where it covers none of the terminal's text: the pane's free corner
+// beside the phone's narrower screen, or just under its rows in a pane barely wider than the phone. Only when the
+// phone's size fills the pane both ways is there no such room: then the corner all the same, Fit to Window in reach.
+test('the size note never covers the terminal\'s text, in a wide pane or a narrow one', async () => {
+  test.setTimeout(180_000);
+  const relay = await startTestRelay();
+  const { app, win, home } = await launch({ ATELIER_TEST_RELAY_URL: relay.url });
+  const phone = new FakePhone({ relay: relay.url });
+  try {
+    await pairPhone(app, win, phone);
+    const id = await phoneOpens(win, phone, 50, 20);
+    const rows = win.locator('.terminal-slot:visible .xterm-rows');
+    const note = win.locator('.terminal-slot:visible .size-note');
+    await expect(note).toContainText('Sized for iPhone');
+    // Lines as long as the phone's width, on every row the phone shows.
+    phone.input(id, "clear; for i in {1..40}; do printf '%050d\\n' $i; done\r");
+    await expect(rows).toContainText('00000000000000000000000000000000000000000000000040');
+    const wide = await noteAndScreen(win);
+    await look(win, `${SHOTS}/note-wide.png`, { settle: 400 });
+    expect(wide.overlap, JSON.stringify(wide)).toBe(false);
+    // In the corner, beside the drawn screen.
+    expect(wide.note.x).toBeGreaterThan(wide.screen.x + wide.screen.width);
+    expect(wide.note.y).toBeLessThan(wide.screen.y + 20);
+
+    // A window resized takes the size back; the phone takes it again, in a pane six columns wider than the phone.
+    const cell = { width: wide.screen.width / 50, height: wide.screen.height / 20 };
+    const content = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.getContentSize());
+    const narrow = Math.round(content[0]! - (wide.slot.width - (wide.screen.width + 32 + 6 * cell.width)));
+    await app.evaluate(({ BrowserWindow }, w) => BrowserWindow.getAllWindows()[0]!.setContentSize(w, 800), narrow);
+    await expect(note).toHaveCount(0);
+    phone.resize(id, 50, 20);
+    await expect(note).toContainText('Sized for iPhone');
+    await expect(rows.locator(':scope > div')).toHaveCount(20);
+    const keyboard = await noteAndScreen(win);
+    await look(win, `${SHOTS}/note-narrow.png`, { settle: 400 });
+    expect(keyboard.overlap, JSON.stringify(keyboard)).toBe(false);
+    expect(keyboard.note.y).toBeGreaterThan(keyboard.screen.y + keyboard.screen.height);
+
+    // The phone's keyboard gone: taller, a few rows short of the pane; the note follows the rows down.
+    const fits = Math.floor((keyboard.slot.height - 26) / cell.height);
+    phone.resize(id, 50, fits - 3);
+    await expect(rows.locator(':scope > div')).toHaveCount(fits - 3);
+    const taller = await noteAndScreen(win);
+    await look(win, `${SHOTS}/note-narrow-taller.png`, { settle: 400 });
+    expect(taller.overlap, JSON.stringify(taller)).toBe(false);
+    expect(taller.note.y).toBeGreaterThan(taller.screen.y + taller.screen.height);
+
+    // The phone's size fills the pane: no room left, the corner, and Fit to Window gives the window its size back.
+    phone.resize(id, 50, fits);
+    await expect(rows.locator(':scope > div')).toHaveCount(fits);
+    const full = await noteAndScreen(win);
+    expect(full.note.y).toBeLessThan(full.screen.y + 20);
+    await look(win, `${SHOTS}/note-narrow-full.png`, { settle: 400 });
+    const since = phone.messages.length;
+    await note.getByRole('button', { name: 'Fit to Window' }).click();
+    await expect(note).toHaveCount(0);
+    expect((await phone.waitFor((m) => m.t === 'size' && m.id === id, { since, ms: 10000 })).cols).toBeGreaterThan(50);
+  } finally {
+    phone.drop();
+    await app.close();
+    stopDaemon(home);
+    await relay.close();
+  }
+});

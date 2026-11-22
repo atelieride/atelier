@@ -212,8 +212,8 @@ export function TerminalView({ id, visible, focused = visible, place }: { id: st
   return <div ref={slot} className={`terminal-slot ${dropping ? 'is-drop' : ''}`} style={{ display: visible ? 'block' : 'none', ...place }} onContextMenu={(e) => void onMenu(e)}
     onDragOver={onDragOver} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false); }} onDrop={onDrop}>
     {find !== null && Find && <Find id={id} nonce={find} visible={visible} onClose={() => setFind(null)} />}
-    {/* Its size a phone's: said in the corner its smaller screen leaves free (Find's card takes that corner while
-        open), with the way back to this view's size. */}
+    {/* Its size a phone's: said where it covers none of the text, the corner its smaller screen leaves free or under
+        its rows (Find's card takes that corner while open), with the way back to this view's size. */}
     {visible && find === null && <SizeNote id={id} />}
   </div>;
 }
