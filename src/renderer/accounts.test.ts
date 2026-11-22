@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { normalizeAccounts } from '@shared/claude-accounts';
-import { accountArrow, accountChoices, accountFolder, accountFormError, accountStep, accountTag, canAddAccount, accountUsage, cycleAccount, detectedDirs, dismissDir, expandDir, meterAccounts, paletteAccountCommands, removeAccount, saveAccount } from './accounts';
+import { accountArrow, accountChoices, accountFolder, accountFormError, accountKey, accountStep, accountTag, canAddAccount, accountUsage, cycleAccount, detectedDirs, dismissDir, expandDir, meterAccounts, paletteAccountCommands, removeAccount, saveAccount, sharedAccount } from './accounts';
 import { useApp } from './store';
 
 const two = normalizeAccounts({ list: [{ id: 'default', name: 'Claude', dir: '', color: 1 }, { id: 'ops', name: 'Ops', dir: '/Users/x/.claude_ops', color: 5 }] })!;
@@ -175,4 +175,33 @@ test('accountChoices: a task\'s account step — every account in order, its lim
     { id: 'ops', name: 'Ops', color: 5, hint: '~/.claude_ops' },
     { id: 'work', name: 'Work', color: 3, hint: '/…/claude/work' }
   ], initial: 0 });
+});
+
+test('accountKey: an account by its id (the default\'s too), a dir no account has by the dir itself; nothing while unknown', () => {
+  const d = '/Users/x/.claude';
+  expect(accountKey('/Users/x/.claude_ops', two, d)).toBe('ops');
+  expect(accountKey(d, two, d)).toBe('default');
+  expect(accountKey('/Users/x/.claude-lab', two, d)).toBe('dir:/Users/x/.claude-lab');
+  expect(accountKey(undefined, two, d)).toBeNull();
+  expect(accountKey('/Users/x/.claude_ops', two, null)).toBeNull();
+});
+
+test('sharedAccount: two or more sessions all on one account other than the default: that account, once for the group', () => {
+  const d = '/Users/x/.claude';
+  const ops = '/Users/x/.claude_ops';
+  expect(sharedAccount([ops, ops], two, d)).toEqual({ key: 'ops', dir: ops, tag: { name: 'Ops', color: 5, isDefault: false } });
+  // Sessions whose account isn't known yet (still starting) neither join nor break it.
+  expect(sharedAccount([ops, undefined, ops], two, d)?.key).toBe('ops');
+  // One session: its own row says it.
+  expect(sharedAccount([ops], two, d)).toBeNull();
+  expect(sharedAccount([ops, undefined], two, d)).toBeNull();
+  // Mixed, or all on the default account (whose rows show nothing anyway): nothing to say once.
+  expect(sharedAccount([ops, d], two, d)).toBeNull();
+  expect(sharedAccount([d, d], two, d)).toBeNull();
+  // A folder no account has counts as an account of its own: the same one shared, two different ones not.
+  expect(sharedAccount(['/Users/x/.claude-lab', '/Users/x/.claude-lab'], two, d)?.tag).toEqual({ name: '.claude-lab', color: null, isDefault: false });
+  expect(sharedAccount(['/Users/x/.claude-lab', '/Users/x/.claude-alt'], two, d)).toBeNull();
+  // The default dir not known yet: nothing, as for the rows.
+  expect(sharedAccount([ops, ops], two, null)).toBeNull();
+  expect(sharedAccount([], two, d)).toBeNull();
 });

@@ -14,7 +14,7 @@ import { nameTip } from '../names';
  * pin badge, and the pin follows it to the resumed session. Without avatars the title starts the row and a pinned one
  * shows a pin mark after it (a resume row has no pin button).
  */
-export function ResumeRow({ r, pinned = false, queued = false }: { r: Resumable; pinned?: boolean; queued?: boolean }) {
+export function ResumeRow({ r, pinned = false, queued = false, account }: { r: Resumable; pinned?: boolean; queued?: boolean; account?: string }) {
   const avatars = useApp((s) => s.settings.sessionAvatars);
   const [busy, setBusy] = useState(false);
   const [enter] = useState(() => enterClass(`r-${r.id}`));
@@ -29,7 +29,7 @@ export function ResumeRow({ r, pinned = false, queued = false }: { r: Resumable;
       {avatars && <Avatar title={r.title} color={r.color} size={22} dim pinned={pinned} />}
       <span className="resume-title" data-tip={nameTip(r.title)}>{r.title}</span>
       {!avatars && pinned && <span className="row-mark is-pin" role="img" aria-label={t.pinnedTip} data-tip={t.pinnedTip}><Icon name="pin" size={11} stroke={1.8} /></span>}
-      <AccountChip configDir={r.configDir} />
+      <AccountChip configDir={r.configDir} except={account} />
       {/* Waiting its turn in Resume all. */}
       {queued ? <span className="resume-queued">{t.resumeQueued}</span> : (
         <>

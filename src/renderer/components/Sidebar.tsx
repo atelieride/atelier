@@ -17,6 +17,8 @@ import { useDb } from '../databases/store';
 import { DockerPortChips } from '../docker/DockerPorts';
 import { displayCommand, resumablesFor, splitTerminals } from '../selectors';
 import { ResumeRow } from './ResumeRow';
+import { GroupAccount } from './AccountChip';
+import { sharedAccountOf, useAccounts } from '../accounts';
 import { closeFromRow, useRowLeave } from '../confirms/RowConfirm';
 import { onEscCancel } from '../confirms/InlineConfirm';
 import { RenameInput } from './RenameInput';
@@ -32,7 +34,7 @@ import { useReorder, useReorderDrop } from '../reorder-drag';
 import { groupSessions, trackSections, type Entered, type InboxSection } from '../inbox';
 import { WorkspaceGroup, WsOwnRows, useRowClick, useRowDrag } from './WorkspaceGroup';
 import { WsActivityGroup } from './WsActivityGroup';
-import { cardOf, inWorkspace, resumablesIn, wsActivityCard } from '../workspace-view';
+import { cardOf, inWorkspace, inWorkspaceTree, resumablesIn, wsActivityCard } from '../workspace-view';
 import { activitiesOf, isOpen, workspaceOf, workspacesOf, type WorkspacesState } from '../workspaces';
 import { kbd } from '../kbd';
 import { newTerminalIn } from '../launch';
@@ -74,11 +76,12 @@ function SearchHeadLoading() {
   );
 }
 
-function Head({ label, count, children }: { label: string; count?: number; children?: React.ReactNode }) {
+function Head({ label, count, after, children }: { label: string; count?: number; after?: React.ReactNode; children?: React.ReactNode }) {
   return (
     <div className="sidebar-head">
       <span className="section-label">{label}</span>
       {count !== undefined && count > 0 && <span className="count mono">{count}</span>}
+      {after}
       <span className="grow" />
       {children}
     </div>
@@ -246,10 +249,11 @@ const newMenuAt = (e: React.MouseEvent<HTMLButtonElement>) => {
  */
 /**
  * A list's sections. In a group: `empty` is what an empty one says (null: nothing), `place` the activity whose Resume
- * head acts on its own sessions.
+ * head acts on its own sessions, `account` the account its head names for every session there (not said on the rows).
+ * Alone (workspaces off), Sessions' head names it itself.
  */
-function Sections({ terminals, toResume, entered, scope, inGroup = false, empty = t.ws.groupEmpty, place }: {
-  terminals: TerminalInfo[]; toResume: Resumable[]; entered: Map<string, Map<string, Entered>>; scope: string; inGroup?: boolean; empty?: string | null; place?: string;
+function Sections({ terminals, toResume, entered, scope, inGroup = false, empty = t.ws.groupEmpty, place, account }: {
+  terminals: TerminalInfo[]; toResume: Resumable[]; entered: Map<string, Map<string, Entered>>; scope: string; inGroup?: boolean; empty?: string | null; place?: string; account?: string;
 }) {
   // Launched as sessions and still starting: listed (and drawn) as sessions, never under Terminals.
   const starting = useApp((s) => s.starting);
@@ -269,6 +273,11 @@ function Sections({ terminals, toResume, entered, scope, inGroup = false, empty 
   // Kept by the always-mounted Sidebar, one map per workspace (or the whole project's): another view, a workspace
   // switch or a folded block never resets it.
   const split = splitTerminals(terminals, starting);
+  // Every session on one account other than the default: Sessions' head says it once.
+  const accounts = useAccounts();
+  const defaultDir = useApp((s) => s.claudeDefaultDir);
+  const shared = inGroup ? null : sharedAccountOf(split.sessions, accounts, defaultDir);
+  const groupAccount = inGroup ? account : shared?.key;
   const tracked = trackSections(entered.get(scope) ?? new Map<string, Entered>(), split.sessions, Date.now());
   useEffect(() => { entered.set(scope, tracked); });
   // The order rows were put in by hand: unpinned ones follow it; the ones never placed come after them, oldest first
@@ -286,13 +295,13 @@ function Sections({ terminals, toResume, entered, scope, inGroup = false, empty 
   const shellDrop = useReorderDrop(shellBands);
   const queued = new Set(queue ?? []);
   const row = (x: TerminalInfo, section?: InboxSection) => <SessionRow key={x.id} term={x} selected={isFront(x.id)} pinned={pins.includes(x.id)} popped={isPopped(x.id)} onSelect={onSelect} section={section}
-    band={bandWith(sessionBands, x.id) ?? undefined} />;
+    band={bandWith(sessionBands, x.id) ?? undefined} account={groupAccount} />;
   const nothing = sessions.length === 0 && shells.length === 0 && toResume.length === 0 && queue === undefined;
   if (inGroup && nothing) return empty === null ? null : <p className="ws-none">{empty}</p>;
   return (
     <>
       {!inGroup && (
-        <Head label={t.sessions} count={sessions.length}>
+        <Head label={t.sessions} count={sessions.length} after={<GroupAccount shared={shared} />}>
           <GroupToggle />
           <PlusButton label={t.newSession} keys="⌘N" menu={sessionsPlusMenu} onContextMenu={newMenuAt} />
         </Head>
@@ -320,7 +329,7 @@ function Sections({ terminals, toResume, entered, scope, inGroup = false, empty 
       {toResume.length > 0 && (
         <>
           {(!inGroup || toResume.length > 1) && <ResumeHead count={toResume.length} pinned={toResume.filter((r) => pins.includes(r.id)).length} place={place} />}
-          <div className="list">{toResume.map((r) => <ResumeRow key={r.id} r={r} pinned={pins.includes(r.id)} queued={queued.has(r.id)} />)}</div>
+          <div className="list">{toResume.map((r) => <ResumeRow key={r.id} r={r} pinned={pins.includes(r.id)} queued={queued.has(r.id)} account={groupAccount} />)}</div>
         </>
       )}
       {shells.length > 0 && !inGroup && (
@@ -352,6 +361,10 @@ function Workspaces({ ws, entered }: { ws: WorkspacesState; entered: Map<string,
   const revFiles = useApp((s) => s.revFiles);
   const tabs = revFiles.map((f) => f.key);
   const withActivities = useApp((s) => s.settings.wsActivities);
+  // The account every session of a workspace runs as goes on its head; when they differ, an activity whose sessions
+  // all share one gets it on its own head.
+  const accounts = useAccounts();
+  const defaultDir = useApp((s) => s.claudeDefaultDir);
   const wss = workspacesOf(ws);
   const here = workspaceOf(ws, ws.active);
   return (
@@ -367,18 +380,21 @@ function Workspaces({ ws, entered }: { ws: WorkspacesState; entered: Map<string,
           const open = isOpen(ws, w.id);
           const acts = withActivities ? activitiesOf(ws, w.id) : [];
           const atOwn = ws.active === w.id;
+          const wsAccount = sharedAccountOf(inWorkspaceTree(ws, w.id, terminals), accounts, defaultDir);
           // With activities on, its own rows' Resume head acts on its own sessions, whatever place is in front.
           const own = <Sections terminals={inWorkspace(ws, w.id, terminals)} toResume={pinnedFirst(resumablesIn(ws, w.id, resumables, root), pins)} entered={entered} scope={`ws:${w.id}`} inGroup
-            empty={acts.length ? null : t.ws.groupEmpty} {...(withActivities ? { place: w.id } : {})} />;
+            empty={acts.length ? null : t.ws.groupEmpty} {...(withActivities ? { place: w.id } : {})} account={wsAccount?.key} />;
           return (
-            <WorkspaceGroup key={w.id} w={w} active={here === w.id} inAct={here === w.id && !atOwn} open={open} card={cardOf(ws, w.id, terminals, resumables, root, paths, tabs)}>
+            <WorkspaceGroup key={w.id} w={w} active={here === w.id} inAct={here === w.id && !atOwn} open={open} card={cardOf(ws, w.id, terminals, resumables, root, paths, tabs)} account={wsAccount}>
               {/* Its activities first, at the same indent as its own rows; then its own rows, a drop zone of its own tabs. */}
               {open && acts.map((a) => {
                 const aOpen = isOpen(ws, a.id);
+                const actTerminals = inWorkspace(ws, a.id, terminals);
+                const actAccount = wsAccount ? null : sharedAccountOf(actTerminals, accounts, defaultDir);
                 return (
-                  <WsActivityGroup key={a.id} a={a} current={ws.active === a.id} open={aOpen} card={wsActivityCard(ws, a.id, terminals, resumables, root, paths, tabs)}>
-                    {aOpen && <Sections terminals={inWorkspace(ws, a.id, terminals)} toResume={pinnedFirst(resumablesIn(ws, a.id, resumables, root), pins)} entered={entered} scope={`act:${a.id}`} inGroup
-                      empty={t.wsAct.emptyRows} place={a.id} />}
+                  <WsActivityGroup key={a.id} a={a} current={ws.active === a.id} open={aOpen} card={wsActivityCard(ws, a.id, terminals, resumables, root, paths, tabs)} account={actAccount}>
+                    {aOpen && <Sections terminals={actTerminals} toResume={pinnedFirst(resumablesIn(ws, a.id, resumables, root), pins)} entered={entered} scope={`act:${a.id}`} inGroup
+                      empty={t.wsAct.emptyRows} place={a.id} account={(wsAccount ?? actAccount)?.key} />}
                   </WsActivityGroup>
                 );
               })}

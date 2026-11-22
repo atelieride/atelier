@@ -45,6 +45,33 @@ export function accountTag(configDir: string | undefined | null, a: ClaudeAccoun
   return { name: configDir.split('/').filter(Boolean).at(-1) ?? configDir, color: null, isDefault: false };
 }
 
+/** The account a group's head names once for every session there (sharedAccount): its key, a dir of it, how it reads. */
+export interface SharedAccount { key: string; dir: string; tag: AccountTag }
+
+/** Which account a config dir is, as a key: an account's id (the default's too), or `dir:<dir>` for a dir no account has. */
+export function accountKey(configDir: string | undefined | null, a: ClaudeAccounts, defaultDir: string | null): string | null {
+  if (!configDir || !defaultDir) return null;
+  return accountOf(configDir, a, defaultDir)?.id ?? `dir:${configDir}`;
+}
+
+/**
+ * The account every session of a group runs as, said once on the group's head instead of on each row: two or more
+ * sessions whose account is known, all on the same one, and not the default (its sessions show no account anyway).
+ * Sessions whose account isn't known yet (still starting) neither join nor break it.
+ */
+export function sharedAccount(configDirs: readonly (string | undefined | null)[], a: ClaudeAccounts, defaultDir: string | null): SharedAccount | null {
+  const known = configDirs.flatMap((dir) => { const key = accountKey(dir, a, defaultDir); return key && dir ? [{ key, dir }] : []; });
+  const first = known[0];
+  if (known.length < 2 || !first || known.some((k) => k.key !== first.key)) return null;
+  const tag = accountTag(first.dir, a, defaultDir);
+  return tag && !tag.isDefault ? { key: first.key, dir: first.dir, tag } : null;
+}
+
+/** sharedAccount over a group's terminals: its sessions' config dirs (shells have no account). */
+export function sharedAccountOf(terminals: readonly TerminalInfo[], a: ClaudeAccounts, defaultDir: string | null): SharedAccount | null {
+  return sharedAccount(terminals.filter((x) => x.session).map((x) => x.configDir), a, defaultDir);
+}
+
 /** A row of the meter's popover: one account (or unknown dir) with live limits. */
 export interface MeterAccount { dir: string; name: string; color: number | null; current: boolean; parts: ReturnType<typeof usageParts> }
 

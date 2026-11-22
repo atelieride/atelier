@@ -6,7 +6,6 @@
 .rs-chip:hover { color: var(--text); background: var(--bg-3); }
 .rs-chip.is-new svg { color: var(--violet-light); }
 .rs-chip.is-armed svg { color: var(--working); }
-.session-sub .rs-chip { font-size: 10px; line-height: 15px; }
 .session-bar .rs-chip { flex-shrink: 0; }
 
 /* The row's question: amber, not rose — nothing is lost, the conversation continues. */

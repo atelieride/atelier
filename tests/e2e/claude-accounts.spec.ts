@@ -144,18 +144,13 @@ test('two accounts: the arrow keys and Tab pick the account in New Session; the 
     await expect(row('Main')).toHaveCount(1, { timeout: 20000 });
     await expect(row('Hero').locator('.account-chip')).toHaveText('Ops');
     await expect(row('Main').locator('.account-chip')).toHaveCount(0);
-    // The title line clips (overflow): the chip keeps a pixel of room above and below it, or the clip, snapped to
-    // device pixels, eats its border on rows that start on a fraction of a pixel.
-    const room = await row('Hero').locator('.account-chip').evaluate((chip) => {
-      const c = chip.getBoundingClientRect();
-      const l = chip.closest('.session-line')!.getBoundingClientRect();
-      return Math.min(c.top - l.top, l.bottom - c.bottom);
-    });
-    expect(room).toBeGreaterThanOrEqual(0.9);
-    // A long title gives way first: the account's short name stays whole, never "D…".
+    // Under the name, on the details line: a long title has its line to itself (cut at its end), the account's name
+    // stays whole.
+    await expect(row('Hero').locator('.session-details .account-chip')).toHaveText('Ops');
+    await expect(row('Hero').locator('.session-line .account-chip')).toHaveCount(0);
     const clipped = (sel: string) => row('Hero').locator(sel).evaluate((el) => el.scrollWidth > el.clientWidth);
     expect(await clipped('.session-title')).toBe(true);
-    expect(await clipped('.account-chip')).toBe(false);
+    expect(await clipped('.account-chip .chip-text')).toBe(false);
     await look(win.locator('.sidebar'), 'test-results/claude-accounts-sidebar.png');
     const meter = win.locator('.usage');
     await row('Hero').click();
@@ -237,6 +232,60 @@ test('two accounts: the empty state\'s Start a Claude session asks for the accou
     await win.keyboard.press('Enter');
     await expect(win.locator('.session-row', { hasText: 'Empty state' })).toHaveCount(1, { timeout: 20000 });
     await expect.poll(() => configDirOf(win, 'Empty state'), { timeout: 15000 }).toBe(ops);
+  } finally {
+    await stop(app, home);
+  }
+});
+
+test('every session on one account: the group\'s head names it once (Sessions, then the workspace), not the rows; a session on another account and each row says its own', async () => {
+  const { app, home, ops, win } = await launch(true, {}, true);
+  try {
+    const row = (name: string) => win.locator('.session-row', { hasText: name });
+    const start = async (name: string, asOps: boolean) => {
+      await openSheet(win);
+      await win.getByPlaceholder('Session name (optional)').fill(name);
+      if (asOps) await win.keyboard.press('Tab');
+      await win.keyboard.press('Enter');
+      await expect(row(name)).toHaveCount(1, { timeout: 20000 });
+      if (asOps) await expect.poll(() => configDirOf(win, name), { timeout: 15000 }).toBe(ops);
+      else await expect.poll(() => configDirOf(win, name), { timeout: 15000 }).toBeTruthy();
+    };
+    await start('Ops one', true);
+    // One session: its own row says it.
+    await expect(row('Ops one').locator('.account-chip')).toHaveText('Ops');
+    await expect(win.locator('.group-account')).toHaveCount(0);
+    // Two, both on Ops: Sessions' head says it once, in its color, with its folder; the rows don't.
+    await start('Ops two', true);
+    const head = win.locator('.sidebar-head .group-account');
+    await expect(head).toHaveText('Ops');
+    await expect(head).toHaveAttribute('style', /--person-2/);
+    await expect(head).toHaveAttribute('data-tip', 'Every session here runs as Ops · ~/cfg/.claude_ops');
+    await expect(win.locator('.session-row .account-chip')).toHaveCount(0);
+    await win.mouse.move(600, 400);
+    await look(win.locator('.sidebar'), 'test-results/claude-accounts-shared-sessions.png');
+
+    // Workspaces on (View › Toggle Workspaces for This Project): the workspace's head says it, its name whole beside it.
+    await app.evaluate(({ Menu, BrowserWindow }) => {
+      const walk = (items: Electron.MenuItem[]): Electron.MenuItem | undefined => {
+        for (const it of items) { if (it.label === 'Toggle Workspaces for This Project') return it; const sub = it.submenu ? walk(it.submenu.items) : undefined; if (sub) return sub; }
+        return undefined;
+      };
+      walk(Menu.getApplicationMenu()!.items)!.click(undefined, BrowserWindow.getAllWindows()[0]);
+    });
+    const wsHead = win.locator('.ws-head .group-account');
+    await expect(wsHead).toHaveText('Ops');
+    await expect(win.locator('.sidebar-head .group-account')).toHaveCount(0);
+    await expect(win.locator('.session-row .account-chip')).toHaveCount(0);
+    expect(await win.locator('.ws-group.is-active .ws-name').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await win.mouse.move(600, 400);
+    await look(win.locator('.sidebar'), 'test-results/claude-accounts-shared-workspace.png');
+
+    // A session on the default account joins: the head says nothing more, each Ops row says its own, the default's none.
+    await start('Main', false);
+    await expect(wsHead).toHaveCount(0);
+    await expect(row('Ops one').locator('.account-chip')).toHaveText('Ops');
+    await expect(row('Ops two').locator('.account-chip')).toHaveText('Ops');
+    await expect(row('Main').locator('.account-chip')).toHaveCount(0);
   } finally {
     await stop(app, home);
   }

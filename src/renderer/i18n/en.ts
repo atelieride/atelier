@@ -77,6 +77,8 @@ const strings = {
     pick: 'Claude account for the new session',
     picked: (name: string) => `Account: ${name}`,
     chipTip: (name: string, dir: string) => `Claude account: ${name} · ${dir}`,
+    /** On a group's head: every session there runs as this account. */
+    groupTip: (name: string, dir: string) => `Every session here runs as ${name} · ${dir}`,
     allAccounts: 'All accounts',
     thisSession: 'this session',
     title: 'Accounts',
