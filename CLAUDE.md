@@ -27,7 +27,8 @@ which git ignores.
 - **`atelierd` changes are rare and backward compatible.** The daemon owns the terminals and outlives app updates: a
   change in what it bundles reaches users only after an `atelierd` restart, which closes their sessions.
   `node scripts/daemon-reach.mjs` lists the modules it bundles; `node scripts/daemon-fingerprint.mjs`, run on two
-  commits, tells whether a change would ask for that restart.
+  commits, tells whether a change would ask for that restart (compare checkouts at the same folder depth: a worktree's
+  deeper path alone changes the hash).
 - **Quality bar:** usefulness, UX, polish, modernity and cleanliness weigh together. Never flat, never sluggish.
 - **The website and its live demo follow the app.** When a change visibly alters the UI or adds a feature, check
   `site/` (screenshots with `npm run site:shots`, the copy in `site/src/content/features.ts`, claims no longer true),
@@ -43,6 +44,7 @@ which git ignores.
 | Part | Where | Notes |
 |---|---|---|
 | Main process | `src/main/` | Windows, IPC (zod schemas in `ipc-schemas.ts`), git (reads through `git/exec.ts`; writes only through Source Control's fetch, `git/fetch.ts` + `fetch-scheduler.ts`, and `git/write.ts` behind `git-ops.ts`: commit, push, pull, stash, branches, discard; ✦ messages in `scm/message.ts`), tmux services (read-only), settings, updates, dictation. |
+| iPhone access | `src/main/remote/` | Off by default (`remoteAccess`). Atelier dials out to a relay and never listens: `relay-link.ts` holds the only WebSocket. Each paired phone talks to it end to end over Noise (`noise.ts`: X25519, AES-256-GCM, SHA-256), so the relay forwards bytes it cannot read. Pairing by a 12-symbol code or its QR (`code.ts`, `pairing.ts`, confirmed with Allow in the app), keys through the secret store (`identity.ts`), paired phones in `ATELIER_HOME/remote/devices.json`, sessions and terminals for the phone in `remote-hub.ts` (the last view to attach, resize or type owns a terminal's size). UI in `src/renderer/iphone/`. |
 | `atelierd` | `src/daemon/` | The daemon that owns the PTYs, started as a launchd job of its own. Each terminal's shell runs in its own one-shot launchd job (`session-pty.ts`, `native/atelier-pty-host.c`), node-pty spawn as fallback. Survives app quits and updates. Unix socket 0600 + tokens. Protocol version in `src/shared/version.ts`. |
 | Renderer | `src/renderer/` | React + zustand store (`store.ts`), xterm.js terminals (`terminal/`), CodeMirror editor (`editor/`), components. |
 | Preload | `src/preload/index.ts` | The only bridge (`window.atelier`), typed in `src/shared/api.ts`. |
@@ -178,3 +180,9 @@ tile + white Λ).
   `CLAUDE_CONFIG_DIR` (Claude Code keys its sign-in on the dir it is given), and another account starts as
   `CLAUDE_CONFIG_DIR='<dir>' claude`, an assignment, never `env …` (that skips Atelier's zsh function and the hooks).
   Anything that reads a session's Claude files (transcripts, history, config) must use its config dir, not `~/.claude`.
+- Electron's crypto is BoringSSL, not Node's OpenSSL: a cipher `node:crypto` has under vitest can be missing in the
+  app (`chacha20-poly1305` through `createCipheriv` is). Main-process crypto is proven inside Electron too
+  (`tests/integration/remote-crypto-electron.test.ts`).
+- A view that draws a terminal at a size other than its program's breaks the shell's redraws (zsh moves up by the
+  rows its prompt took at the program's width) and wipes output: while a phone owns a terminal's size, the window
+  draws it at the phone's size.
