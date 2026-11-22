@@ -1,0 +1,87 @@
+// iPhone access: the relay URL rule (Settings validates it, the main process dials only what passes it) and the types
+// the renderer gets through `window.atelier.remote`. Pure: shared by main, preload and the renderer.
+
+/** The relay a fresh install uses. */
+export const DEFAULT_RELAY = 'https://relay.useatelier.dev';
+
+/** The longest relay URL accepted. */
+export const MAX_RELAY_URL = 512;
+
+const privateV4 = (host: string): boolean => {
+  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(host);
+  if (!m) return false;
+  const [a, b] = [Number(m[1]), Number(m[2])];
+  return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+};
+
+/** Loopback (::1) or a unique local address (fc00::/7), as the URL parser writes an IPv6 host: in brackets. */
+const privateV6 = (host: string): boolean => {
+  const m = /^\[([0-9a-f:.]+)\]$/.exec(host);
+  if (!m) return false;
+  const ip = m[1]!;
+  return ip === '::1' || /^f[cd][0-9a-f]{0,2}:/.test(ip);
+};
+
+/**
+ * The relay's base URL as Atelier dials it (scheme, host, port, path, no trailing slash), or null when it is not one
+ * Atelier may use: https to any host; http only to localhost, loopback and private (RFC 1918, unique local) addresses,
+ * for a relay on this computer or the local network. No credentials, query or fragment.
+ */
+export function relayBase(raw: string): string | null {
+  if (typeof raw !== 'string' || raw.length === 0 || raw.length > MAX_RELAY_URL || raw.trim() !== raw) return null;
+  let u: URL;
+  try { u = new URL(raw); } catch { return null; }
+  if (u.username || u.password || u.search || u.hash || raw.includes('?') || raw.includes('#') || !u.hostname) return null;
+  if (u.protocol === 'http:') {
+    if (u.hostname !== 'localhost' && !privateV4(u.hostname) && !privateV6(u.hostname)) return null;
+  } else if (u.protocol !== 'https:') return null;
+  return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, '')}`;
+}
+
+/** How the relay connection stands: 'offline' also while remote access is off. */
+export type RemoteRelayState = 'online' | 'connecting' | 'offline' | 'error';
+
+/** A paired phone as Settings lists it. */
+export interface RemoteDeviceInfo {
+  id: string;
+  name: string;
+  /** The hardware model it reported (e.g. iPhone17,1). */
+  model: string;
+  pairedAt: number;
+  lastSeenAt: number;
+  /** Connected to this computer right now. */
+  connected: boolean;
+  /** The terminals it has open now (ids, as in TerminalInfo). */
+  attached: string[];
+}
+
+export interface RemoteStatus {
+  /** Settings › iPhone › Allow access from iPhone. */
+  enabled: boolean;
+  /** This computer can keep the keys encrypted (safeStorage); without it remote access stays off. */
+  available: boolean;
+  relay: { state: RemoteRelayState; message?: string };
+  devices: RemoteDeviceInfo[];
+  /** Terminals whose size a phone owns now: an Atelier window shows them at the phone's size until it takes it back. */
+  sized: string[];
+}
+
+/** A pairing code on screen: as shown (7K4Q-9MXD-2HTR), the QR code's text, and when it gives way to a fresh one. */
+export interface RemotePairing { code: string; qr: string; expiresAt: number }
+
+/** A phone presented the code: Allow or Deny before `expiresAt`. */
+export interface RemotePairRequest { id: string; name: string; model: string; expiresAt: number }
+
+export type RemotePairingStart = { ok: true; pairing: RemotePairing } | { ok: false; reason: 'disabled' | 'unavailable' | 'failed'; message: string };
+
+/**
+ * What happens to a pairing in progress: a fresh code (expiry, too many failed attempts, after a Deny), a phone asking
+ * to pair, the phone paired (the sheet closes), a request declined or left unanswered, or pairing over (remote access
+ * turned off).
+ */
+export type RemotePairingEvent =
+  | { kind: 'code'; pairing: RemotePairing }
+  | { kind: 'request'; request: RemotePairRequest }
+  | { kind: 'paired'; device: RemoteDeviceInfo }
+  | { kind: 'denied'; reason: 'declined' | 'expired' }
+  | { kind: 'stopped' };
