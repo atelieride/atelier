@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { InboxSection } from '../inbox';
 import type { TerminalInfo } from '@shared/protocol';
 import { Avatar } from './Avatar';
@@ -20,7 +20,6 @@ import { isPending } from '../comments';
 import { PlanBadge, ScheduledChip, WorkChip } from './StateChips';
 import { PromptChip } from './PromptChip';
 import { isLimitPaused, isWaiting } from '@shared/session-view';
-import { workChipView } from '../work-view';
 import { lastMessageLine } from '../last-message';
 import { useAgo, useDayTurn } from '../minute';
 import { closeFromRow, useRowLeave } from '../confirms/RowConfirm';
@@ -32,7 +31,6 @@ import { openAskFor, shownTerminals } from '../companion/actions';
 import { useRowClick, useRowDrag } from './WorkspaceGroup';
 import { bandAttr, sameBand, type Band } from '../row-order';
 import { useReorder } from '../reorder-drag';
-import { useRowFit, type RowFitParts } from '../row-fit';
 
 /**
  * section: the row's section in the grouped list; when it changes, the row enters its new place with the motion.
@@ -44,13 +42,60 @@ export function PoppedMarker() {
   return <span className="row-popout" role="img" aria-label={t.popout.inWindow} data-tip={t.popout.inWindow}><Icon name="window" size={12} stroke={1.8} /></span>;
 }
 
-const SESSION_FIT: RowFitParts = {
-  name: '.session-line > .session-title',
-  chips: '.session-line > :is(.cwd-chip, .profile-chip, .account-chip)',
-  busy: ':hover, :has(:focus-visible), :has(.rename-input), .is-confirming, .is-asking'
-};
+/**
+ * The details line keeps its one form while its live parts fit beside the first of the others; a line that can't hold
+ * them (a crowd of them on a narrow row) marks the row data-crowded, and layout.css compacts the work to its total and
+ * the wake-up to its clock; still too much (narrower than the default sidebar), data-packed also makes plan mode its
+ * "P" and leaves the other ports to the first one's tooltip. Then, a name on its left (account, folder, profile) that would be cut to a stub ("C…")
+ * marks it data-who-short: those show their glyphs alone (the tooltips keep the names). Decided in the full form each
+ * time (attributes off, measured, back on, before paint), so one width never flips between the two.
+ */
+const WHO_TEXT = '.sd-who :is(.chip-text, .cwd-chip > bdi, .cwd-wt-name)';
 
-function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, section, band }: { term: TerminalInfo; selected: boolean; pinned: boolean; popped?: boolean; onSelect: (id: string) => void; section?: InboxSection; band?: Band }) {
+/** A label cut down to a stub: under about five characters of room left for it. */
+function isStub(el: HTMLElement): boolean {
+  return el.scrollWidth > el.clientWidth + 0.5 && el.clientWidth < 36;
+}
+
+function useDetailsFit(row: RefObject<HTMLElement | null>): void {
+  const check = useRef(() => {});
+  check.current = () => {
+    const el = row.current;
+    const line = el?.querySelector<HTMLElement>('.session-details');
+    if (!el) return;
+    el.removeAttribute('data-crowded');
+    el.removeAttribute('data-packed');
+    el.removeAttribute('data-who-short');
+    // The ports' room is read here, at once, as each form changes their width (the observer would set it a frame late).
+    const ports = el.querySelector<HTMLElement>(':scope > .row-ports');
+    const over = () => {
+      if (ports) el.style.setProperty('--row-ports-w', `${ports.offsetWidth}px`);
+      return !!line && line.offsetWidth > 0 && line.scrollWidth > line.clientWidth + 0.5;
+    };
+    if (over()) {
+      el.setAttribute('data-crowded', '');
+      if (over()) { el.setAttribute('data-packed', ''); over(); }
+    }
+    if (!line || line.offsetWidth === 0) return;
+    if ([...line.querySelectorAll<HTMLElement>(WHO_TEXT)].some(isStub)) el.setAttribute('data-who-short', '');
+  };
+  useLayoutEffect(() => check.current());
+  useEffect(() => {
+    const el = row.current;
+    if (!el) return;
+    // The row's width changes (the sidebar resized): the attribute changes no width, so this never loops.
+    const ro = new ResizeObserver(() => check.current());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [row]);
+}
+
+/**
+ * Three lines, one thing each: the name; what Claude is doing; then the details (who and where it runs on the left, what
+ * runs with it on the right, the ports at the end), only when there are some. `account`: the account its group's head
+ * says every session there runs as (sharedAccount), not said again on the row.
+ */
+function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, section, band, account }: { term: TerminalInfo; selected: boolean; pinned: boolean; popped?: boolean; onSelect: (id: string) => void; section?: InboxSection; band?: Band; account?: string }) {
   const s = term.session;
   // Double-click, or Rename from the row's menu (the field where it was asked).
   const [editingHere, setEditing] = useState(false);
@@ -79,16 +124,12 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
   // Paused at a usage limit: "continues tomorrow at 01:30" becomes "continues at 01:30" at midnight.
   const today = useDayTurn(isLimitPaused(s));
   const subtitle = shutting ? { text: t.closingRow, tip: null } : restarting ? { text: t.restart.restarting, tip: null } : s ? sessionSubtitle(s, t.stateLabel, undefined, term.work, today) : { text: t.starting, tip: null };
-  const restartChip = useApp((st) => !!st.restarts[term.id]?.armed || (st.mcpAdded[term.id]?.length ?? 0) > 0);
   const hasPorts = useApp((st) => st.settings.showPorts && (st.ports[term.id]?.length ?? 0) > 0);
   // Nothing going on: when the last message was ("28m ago"), re-rendered when the label changes.
   const now = useAgo(subtitle === null && s && (s.state === 'done' || s.state === 'idle') ? s.lastMessageAt ?? null : null);
   const last = s && subtitle === null ? lastMessageLine(s, now) : null;
-  // The second line holds what changes during the turn: activity, plan mode, background work, wake-ups, ports; with
-  // nothing going on, the last message time.
-  // Scheduled prompts: the next one's time on the second line.
-  const scheduled = useApp((st) => st.schedules.some((x) => x.terminalId === term.id && x.status !== 'sent' && x.status !== 'skipped'));
-  const second = subtitle !== null || last !== null || hasPorts || scheduled || restartChip || (!!s && (s.permissionMode === 'plan' || workChipView(term, 0) !== null || (term.work?.crons.length ?? 0) > 0));
+  // The second line: what Claude is doing, or with nothing going on, when the last message was.
+  const sub = subtitle !== null || last !== null;
   // Started by an automation: the avatar's mark.
   const automated = useApp((st) => runOf(st.automations, term.id) !== null);
   // Its close asked here: a bubble beside the row asks (confirms/CloseHost.tsx); the row keeps its form, marked.
@@ -117,25 +158,31 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
           <span className="session-line">
             <span className={`session-title ${strong ? 'is-strong' : ''}`}>{term.title}</span>
             {popped && <PoppedMarker />}
-            <CwdChip term={term} />
-            <ProfileChip term={term} />
-            <AccountChip configDir={term.configDir} />
           </span>
         )}
-        {second && (
-          // The title keeps its room: what changes during the turn shares the second line, always one line, which
-          // runs under the row's buttons too. The activity gives way first; the ports (buttons, so outside this
-          // button: .row-ports) sit at its right end, in their measured room.
+        {sub && (
           <span className="session-sub">
             {subtitle !== null && <span className="session-activity" data-tip={subtitle.tip ?? undefined}>{subtitle.text}</span>}
             {last && <span className="session-activity is-time mono" data-tip={last.tip}>{last.text}</span>}
+          </span>
+        )}
+        {/* The details: who and where on the left, what runs with it on the right; the ports (buttons, so outside this
+            button: .row-ports) at its end, in their measured room. Each part shows only when it has something to say,
+            and the line with them: layout.css hides it while it is empty. */}
+        <span className={`session-details${hasPorts ? ' has-ports' : ''}`}>
+          <span className="sd-who">
+            <AccountChip configDir={term.configDir} except={account} />
+            <CwdChip term={term} />
+            <ProfileChip term={term} />
+          </span>
+          <span className="sd-live">
             {s && <PlanBadge session={s} />}
             <WorkChip term={term} side="right" />
             <ScheduledChip term={term} side="right" />
             <PromptChip terminalId={term.id} side="right" />
             <RestartChip terminalId={term.id} side="right" />
           </span>
-        )}
+        </span>
       </span>
     </>
   );
@@ -143,7 +190,7 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
   // shows (data-keep: the pending review count, Ask's mark; without avatars the automation mark and a pinned row's pin
   // too, --row-reserve); pin and close show on hover or focus, over its end, which fades out under them (--row-cover:
   // how far they reach). Pinning never shortens anyone's title while avatars show.
-  // The ports at the end of the second line keep their room (--row-ports-w).
+  // The ports at the end of the details line keep their room (--row-ports-w).
   const actionsEl = useRef<HTMLDivElement>(null);
   const portsEl = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -163,8 +210,8 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
     if (p) ro.observe(p);
     return () => ro.disconnect();
   }, [hasPorts, pending > 0, askMark, !!closing, restartAsked, avatars, automated, pinned]);
-  // The title line's chips give way to the name.
-  useRowFit(rowEl, SESSION_FIT);
+  // A crowd of live parts on a narrow row compacts them rather than cut them.
+  useDetailsFit(rowEl);
   // Its terminal gone: the row folds away.
   useRowLeave(rowEl, term.id);
   // Dragged inside its band (not while closing), and onto another place while workspaces are on.
@@ -214,7 +261,7 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
         {kept ? <>{closeBtn}{pinBtn}</> : <>{pinBtn}{closeBtn}</>}
       </div>
       {hasPorts && (
-        // Buttons, so never inside the row's own: laid over the end of the second line, which keeps their room.
+        // Buttons, so never inside the row's own: laid over the end of the details line, which keeps their room.
         // After the row's buttons in the DOM, so Tab reaches pin and close first.
         <div ref={portsEl} className="row-ports"><PortChips id={term.id} compact /></div>
       )}
@@ -223,4 +270,4 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
 }
 
 /** Rows re-render only when their terminal changes (not on every tick of the others). */
-export const SessionRow = memo(SessionRowImpl, (a, b) => a.selected === b.selected && a.pinned === b.pinned && !!a.popped === !!b.popped && a.onSelect === b.onSelect && a.section === b.section && sameBand(a.band, b.band) && JSON.stringify(a.term) === JSON.stringify(b.term));
+export const SessionRow = memo(SessionRowImpl, (a, b) => a.selected === b.selected && a.pinned === b.pinned && !!a.popped === !!b.popped && a.onSelect === b.onSelect && a.section === b.section && sameBand(a.band, b.band) && a.account === b.account && JSON.stringify(a.term) === JSON.stringify(b.term));

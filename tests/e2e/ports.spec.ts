@@ -62,23 +62,25 @@ test('ports: chip in the terminal row, opens localhost through main, follows int
     // The same terminal starts Claude (the fake): the server is still its child, so the session row and bar show it.
     await win.locator('.xterm-helper-textarea:visible').focus();
     await win.keyboard.type('claude\n');
-    // At the default sidebar width a session row shows its ports as one live dot (the waiting reason
-    // keeps the room); the dot names the port and opens it.
-    const sessionChip = win.locator('.session-row .port-all');
+    // At the default sidebar width a session row shows its port at the end of its details line: the live dot and the
+    // port, which opens it.
+    const sessionChip = win.locator('.session-row .row-ports .port-chip', { hasText: `:${port}` });
     await expect(sessionChip).toBeVisible({ timeout: 20000 });
     await expect(sessionChip).toHaveAttribute('data-tip', `Open localhost:${port} · node`);
+    await expect(sessionChip.locator('.port-dot')).toBeVisible();
+    await expect(win.locator('.session-row .port-all')).toBeHidden();
     await win.locator('.session-row').first().click();
     const barChip = win.locator('.session-bar .port-chip', { hasText: `:${port}` });
     await expect(barChip).toBeVisible({ timeout: 10000 });
-    // The chip never covers the row's title: it sits at the right end of the second line, whose
-    // text keeps the measured room of the ports. (Polled: the room is measured by a ResizeObserver, a frame later.)
+    // The chip never covers the row's title or its activity: it sits at the right end of the details line, under them,
+    // whose parts keep the measured room of the ports. (Polled: the room is measured by a ResizeObserver, a frame later.)
     await expect.poll(() => win.evaluate(() => {
       const row = document.querySelector('.session-row')!;
-      const line = row.querySelector('.session-line')!.getBoundingClientRect();
       const sub = row.querySelector('.session-sub')!.getBoundingClientRect();
+      const details = row.querySelector('.session-details')!.getBoundingClientRect();
       const chips = row.querySelector('.port-chips')!.getBoundingClientRect();
-      return { belowTitle: chips.top >= line.bottom - 0.5, clearOfSub: sub.right <= chips.left + 0.5 };
-    }), { timeout: 3000 }).toEqual({ belowTitle: true, clearOfSub: true });
+      return { belowActivity: chips.top >= sub.bottom - 0.5, onDetails: Math.abs((chips.top + chips.bottom) / 2 - (details.top + details.bottom) / 2) < 2, clearOfDetails: details.right <= chips.left + 0.5 };
+    }), { timeout: 3000 }).toEqual({ belowActivity: true, onDetails: true, clearOfDetails: true });
     await look(win.locator('.sidebar'), 'test-results/ports-session-row.png');
     await look(win.locator('.session-bar'), 'test-results/ports-session-bar.png');
 

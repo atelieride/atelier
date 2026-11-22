@@ -4,6 +4,8 @@ import { t } from '../i18n/en';
 import { Icon } from './Icon';
 import { WorkspaceGlyph } from './WorkspaceGlyph';
 import { RenameInput } from './RenameInput';
+import { GroupAccount } from './AccountChip';
+import type { SharedAccount } from '../accounts';
 import { workspaceMenu } from '../workspace-menus';
 import { headDot, rowClickAction, wsColorVar, type WsCard } from '../workspace-view';
 import { MAX_ACTIVITIES, activitiesOf, memberOf, type Workspace } from '../workspaces';
@@ -115,9 +117,10 @@ const menuAt = (id: string) => (e: React.MouseEvent) => useApp.getState().openMe
  * and, open, its rows indented under a guide. The chevron folds or opens without switching (peek); the name brings
  * another workspace's own tabs to the front, and from one of its activities its own tabs (at its own tabs it folds).
  * Rows and tabs dropped on its head move into its own tabs, unless they are in front.
- * `active`: one of its places is in front; `inAct`: that place is one of its activities.
+ * `active`: one of its places is in front; `inAct`: that place is one of its activities. `account`: the account every
+ * session in it runs as, named once after its name.
  */
-export function WorkspaceGroup({ w, active, inAct = false, open, card, children }: { w: Workspace; active: boolean; inAct?: boolean; open: boolean; card: WsCard; children: ReactNode }) {
+export function WorkspaceGroup({ w, active, inAct = false, open, card, account, children }: { w: Workspace; active: boolean; inAct?: boolean; open: boolean; card: WsCard; account?: SharedAccount | null; children: ReactNode }) {
   const atOwn = active && !inAct;
   const { dropping, handlers } = usePlaceDrop({ id: w.id, kind: 'workspace' });
   const editing = useApp((s) => s.wsRenaming === w.id);
@@ -148,6 +151,7 @@ export function WorkspaceGroup({ w, active, inAct = false, open, card, children 
         ? <RenameInput value={w.name} onCommit={(v) => { stopRename(); st().renameWorkspace(w.id, v); }} onCancel={stopRename} />
         : <span className="ws-name">{w.name}</span>}
       {!editing && card.folder && <span className="ws-folder mono" data-tip={w.folder ?? undefined}>{card.folder}</span>}
+      {!editing && <GroupAccount shared={account} />}
     </>
   );
   return (

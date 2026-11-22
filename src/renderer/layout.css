@@ -296,6 +296,17 @@ button.foot-item:disabled { cursor: default; }
 .ws-group:not(.is-active) .ws-glyph { opacity: .6; }
 .ws-group:not(.is-active) .ws-head:hover .ws-glyph { opacity: 1; }
 .ws-folder { flex: 0 1 auto; min-width: 3ch; font-size: 10.5px; color: var(--text-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The account every session of a group runs as, once on its head (workspace, activity, Sessions): the person glyph
+   and the name in the account's color; it gives way before the group's name. */
+.group-account { flex: 0 100 auto; min-width: 22px; display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 7px 0 6px; border-radius: 999px; font-size: 10.5px; font-weight: 500; letter-spacing: 0; text-transform: none; white-space: nowrap; overflow: hidden; color: color-mix(in srgb, var(--acct) 58%, var(--text)); background: color-mix(in srgb, var(--acct) 10%, transparent); animation: atl-pop var(--t-med) var(--ease) both; }
+.group-account svg { flex: none; color: var(--acct); }
+.group-account .chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.group-account.is-unknown { color: var(--text-3); background: var(--tint-violet-soft); }
+.group-account[data-short] { padding: 0 5px; }
+.group-account[data-short] .chip-text { display: none; }
+/* The group's name stays whole while the account can still give way; once that is its glyph alone, the name may too. */
+:is(.ws-name-btn, .wsa-name-btn):has(> .group-account:not([data-short])) > :is(.ws-name, .wsa-name) { flex-shrink: 0; }
+.group-account.is-unknown svg { color: var(--text-4); }
 .ws-head .ws-dot { flex: none; padding: 0 4px; font-size: 10.5px; }
 /* "+": a new session in it — always there on the active head, under the pointer or the keyboard on the others. */
 .ws-plus { opacity: 0; transition: opacity var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
@@ -397,9 +408,11 @@ button.foot-item:disabled { cursor: default; }
 /* Session rows: the buttons sit at the end of the title line. It keeps room only for what always shows
    there (--row-reserve, set by SessionRow from its [data-keep] children: Ask's mark, the pending review count, and
    without avatars the automation mark and a pinned row's pin); pin and close show on hover or focus, over its end, which
-   fades out under them (--row-cover). The second line runs under them, so chips there have the full width. */
+   fades out under them (--row-cover). The lines below run under them, with the full width. */
 .session-row .row-actions { position: absolute; top: 5px; right: 8px; display: flex; align-items: center; gap: 2px; }
-.session-row:not(:has(.session-sub)) .row-actions { top: 50%; transform: translateY(-50%); }
+.session-row:not(:has(.session-sub, .session-details.has-ports, .sd-who:not(:empty), .sd-live:not(:empty))) .row-actions { top: 50%; transform: translateY(-50%); }
+/* A row of two or three lines: the avatar stands beside the name, not between the lines. */
+.session-row:has(.session-sub, .session-details.has-ports, .sd-who:not(:empty), .sd-live:not(:empty)) > .row-main { align-items: flex-start; }
 .session-row .row-pin { margin-right: 0; }
 .session-row .row-pending { margin-right: 4px; }
 /* A pixel of room above and below the chips inside the clip (given back by the margins): snapped to device pixels, the
@@ -409,7 +422,6 @@ button.foot-item:disabled { cursor: default; }
 .session-row .rename-input { margin-right: calc(var(--row-cover, 0px) + 6px); }
 /* A terminal row renamed in place: the field takes the name's room. */
 .term-row .rename-input { flex: 1 1 auto; margin-right: 6px; }
-.session-line .profile-chip { flex-shrink: 1; min-width: 3ch; overflow: hidden; text-overflow: ellipsis; }
 /* Where a row runs when it is not the project root: a quiet mono chip, full path in the tooltip. */
 /* It gives way before the title (shrinks faster), clipping its start: the end of the path is the telling part. */
 .cwd-chip { flex: 0 4 auto; min-width: 4.5ch; overflow: hidden; text-overflow: ellipsis; direction: rtl; white-space: nowrap; font-size: 10.5px; line-height: 16px; padding: 0 6px; border-radius: 999px; background: var(--bg-3); border: 1px solid var(--line); color: var(--text-3); transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); }
@@ -425,14 +437,10 @@ button.foot-item:disabled { cursor: default; }
 .account-chip { flex: 0 0 auto; max-width: 14ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; line-height: 16px; padding: 0 6px; border-radius: 999px; color: color-mix(in srgb, var(--acct) 55%, var(--text)); background: color-mix(in srgb, var(--acct) 12%, transparent); border: 1px solid color-mix(in srgb, var(--acct) 38%, transparent); transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); }
 .account-chip:hover, .is-selected .account-chip, .tab.is-active .account-chip { background: color-mix(in srgb, var(--acct) 18%, transparent); border-color: color-mix(in srgb, var(--acct) 55%, transparent); }
 .account-chip.is-unknown { color: var(--text-3); background: var(--tint-violet-soft); border-color: var(--edge-violet-soft); }
-/* In a session's title line the title gives way first: a short account name stays whole (never "D…"), a long one
-   keeps about five characters. The 14px are the chip's padding and border. */
-.session-line .account-chip { flex-shrink: 0; max-width: calc(5ch + 14px); }
-/* Compact chips: once full chips would cut a row's name (row-fit.ts sets data-tight), the
-   folder, worktree, profile and account chips become their glyph; the tooltip still says everything. */
+/* Compact chips: once full chips would cut a terminal row's name (row-fit.ts sets data-tight), the
+   folder, worktree and profile chips become their glyph; the tooltip still says everything. */
 .chip-glyph { display: none; }
 [data-tight] :is(.cwd-chip, .profile-chip, .account-chip) { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; min-width: 0; max-width: none; height: 18px; padding: 0 2px; direction: ltr; }
-[data-tight] .session-line { gap: 4px; }
 [data-tight] :is(.cwd-chip, .profile-chip, .account-chip) .chip-glyph { display: inline-flex; }
 [data-tight] :is(.cwd-chip > bdi, .cwd-wt-name, .profile-chip > .chip-text, .account-chip > .chip-text) { display: none; }
 [data-tight] .cwd-chip:not(.is-wt) svg { color: var(--text-3); }
@@ -446,23 +454,16 @@ button.foot-item:disabled { cursor: default; }
 .is-selected .port-chip:hover { color: var(--text); }
 .port-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--done); flex: none; }
 .port-more { padding: 0 5px; color: var(--text-4); }
-/* Session rows: the ports over the right end of the second line, the first one and +N; on the
-   narrowest rows a single live dot whose tooltip and menu list them all. */
+/* Session rows: the ports at the end of the details line, the live dot, the first one and +N, quiet like the rest of
+   the line (no outline); a click there reaches the row, only the chips take it. */
 .session-row { container: srow / inline-size; }
-/* The gaps between the chips are not dead: a click there reaches the row (selects it), only the chips take it. */
-.session-row .row-ports { position: absolute; right: 8px; bottom: 7px; display: flex; align-items: center; pointer-events: none; }
-.row-ports .port-chip { pointer-events: auto; height: 16px; font-size: 10px; line-height: 14px; padding: 0 4px; gap: 4px; }
-.row-ports .port-more { padding: 0 4px; }
+.session-row .row-ports { position: absolute; right: 4px; bottom: 7px; display: flex; align-items: center; pointer-events: none; }
+.row-ports .port-chips { gap: 1px; }
+.row-ports .port-chip { pointer-events: auto; height: 17px; font-size: 10.5px; line-height: 17px; padding: 0 4px; gap: 5px; border: 0; border-radius: var(--r-sm); color: var(--text-2); }
+.row-ports .port-more { color: var(--text-4); }
 .port-all { display: none; }
-/* Rows up to 360 px (sidebar ≤ 376): the first port alone; its tooltip lists the others (the session bar has them all). */
-@container srow (max-width: 360px) { .row-ports .port-more { display: none; } }
-/* Rows up to 290 px (the default 264 px sidebar included): the waiting reason needs the room; one live dot. */
-@container srow (max-width: 290px) {
-  .row-ports .port-chip { display: none; }
-  .row-ports .port-all { display: inline-flex; width: 16px; padding: 0; justify-content: center; }
-}
-/* A session's second line is short of room: its dot alone (the tooltip counts them); a terminal row shows how many. */
-.row-ports .port-n { display: none; }
+/* Terminal rows are short of room: no live dot on the first port (the single chip of a tight row keeps its own). */
+.term-row .port-chip:not(.port-all) > .port-dot { display: none; }
 .term-row .port-chips { margin-left: 2px; }
 /* Terminal rows: the first port and +N, the row's size; once they would cut the name
    (data-tight), one chip with the live dot and how many, and the command goes (the tab and tooltip have it). */
@@ -525,45 +526,47 @@ button.foot-item:disabled { cursor: default; }
 .sched-time { font-size: 10px; }
 .is-selected .sched-chip { color: var(--text-2); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .session-bar .plan-badge, .session-bar .work-chip, .session-bar .sched-chip { flex-shrink: 0; }
-/* The second line: always one line. The activity gives way first (down to ~2.5em); the chips never shrink but
-   compact with the line's width (container queries below); the ports sit over its right end (.row-ports), in their
-   measured room (--row-ports-w, set by SessionRow). */
-.session-sub { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 16px; overflow-x: clip; container-type: inline-size; }
-.session-row:has(> .row-ports) .session-sub { margin-right: calc(var(--row-ports-w, 0px) + 4px); }
-.session-sub .session-activity { flex: 0 1 auto; min-width: 2.5em; }
-/* Waiting or failed, the reason is the row's most important text: it keeps more room ("Needs permis…"). */
-.session-row:is(.state-waiting, .state-error) .session-sub .session-activity { min-width: min(6em, 36cqw); }
-.session-sub .work-chip, .session-sub .sched-chip { font-size: 10px; line-height: 15px; }
-/* Medium, on a crowded line (ports, a clock, the plan badge, or a summary of three kinds): the clock alone, the work
-   chip as numbers with small glyphs. */
-/* The crowded condition sits in :where(), so the narrower rules below win over it (one rendering at a time). */
-@container (max-width: 280px) {
-  .session-sub .sched-time { display: none; }
-  .session-sub .sched-chip { padding: 0 4px; }
-  .session-row:where(:has(> .row-ports, .sched-chip, .plan-badge, .work-chip.is-long)) .session-sub .work-full { display: none; }
-  .session-row:where(:has(> .row-ports, .sched-chip, .plan-badge, .work-chip.is-long)) .session-sub .work-short { display: inline-flex; align-items: center; }
-}
-/* A crowded waiting or failed line up to 200 px leaves the reason its room: the work chip goes to its total; PLAN
-   becomes a bare "P", like the bypass mark (its tooltip says the rest). */
-@container (max-width: 200px) {
-  .session-row:is(.state-waiting, .state-error):has(> .row-ports, .sched-chip, .plan-badge, .work-chip.is-long) .session-sub .work-short { display: none; }
-  .session-row:is(.state-waiting, .state-error):has(> .row-ports, .sched-chip, .plan-badge, .work-chip.is-long) .session-sub .work-total { display: inline; }
-  .session-sub .plan-badge:not(.is-bypass) { width: 15px; padding: 0; text-align: center; letter-spacing: 0; }
-  .session-sub .plan-badge .plan-full { display: none; }
-  .session-sub .plan-badge::after { content: attr(data-short); }
-}
-/* Narrow: "● 3" (the tooltip lists everything), the activity down to 2em. */
-@container (max-width: 160px) {
-  .session-row .session-sub .work-chip .work-full, .session-row .session-sub .work-chip .work-short { display: none; }
-  .session-row .session-sub .work-chip .work-total { display: inline; }
-  .session-sub .work-chip { padding: 0 5px 0 4px; gap: 4px; }
-  .session-sub .sched-chip { padding: 0 3px; }
-  .session-sub .session-activity, .session-row:is(.state-waiting, .state-error) .session-sub .session-activity { min-width: 2em; }
-}
-/* On narrow rows the second line's own gaps tighten too (a container can't query itself: the row's width decides). */
-@container srow (max-width: 230px) {
-  .session-sub { gap: 4px; }
-}
+/* The second line: what Claude is doing (or when the last message was), alone, the whole width. */
+.session-sub { display: flex; align-items: center; min-width: 0; min-height: 16px; }
+.session-sub .session-activity { flex: 0 1 auto; min-width: 0; }
+/* The details line: who and where on the left (account, folder or worktree, profile), what runs with it on the right
+   (mode, background work, wake-ups, scheduled prompts, restart), the ports at its end in their measured room
+   (--row-ports-w). Quiet: glyphs and text, no pills, each part lit under the pointer; one form whatever the width, but
+   a line that can't hold its live parts (useDetailsFit sets data-crowded) gives the work its total and the wake-up its
+   clock alone. Hidden while it has nothing to say. */
+.session-details { display: flex; align-items: center; gap: 10px; min-width: 0; height: 17px; margin: 1px 0 0 -4px; font-size: 10.5px; line-height: 17px; color: var(--text-3); }
+.session-details:not(.has-ports):has(> .sd-who:empty):has(> .sd-live:empty) { display: none; }
+.session-row:has(> .row-ports) .session-details { margin-right: calc(var(--row-ports-w, 0px) + 2px); }
+.sd-who, .sd-live { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.sd-who { flex: 0 1 auto; min-width: 18px; overflow: hidden; }
+.sd-live { flex: none; margin-left: auto; }
+.sd-who:empty, .sd-live:empty { display: none; }
+.session-details :is(.account-chip, .cwd-chip, .profile-chip, .plan-badge, .work-chip, .sched-chip, .sp-chip, .rs-chip) { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 4px; min-width: 18px; max-width: none; height: 17px; padding: 0 4px; border: 0; border-radius: var(--r-sm); background: none; box-shadow: none; font-size: 10.5px; line-height: 17px; direction: ltr; overflow: hidden; }
+.session-details :is(.plan-badge, .work-chip, .sched-chip, .sp-chip, .rs-chip) { flex: none; min-width: 0; }
+.session-details :is(.account-chip, .cwd-chip, .profile-chip, .work-chip, .sched-chip, .sp-chip, .rs-chip):hover { color: var(--text); background: var(--bg-3); }
+.session-details .chip-glyph { display: inline-flex; flex: none; }
+/* On the left the folder and the profile give way before the account; a name cut to a stub leaves its glyph alone. */
+.session-details :is(.cwd-chip, .profile-chip) { flex-shrink: 4; }
+.session-row[data-who-short] .sd-who :is(.chip-text, .cwd-chip > bdi, .cwd-wt-name) { display: none; }
+.session-row[data-who-short] .sd-who > * { flex: none; min-width: 0; padding: 0 3px; }
+.session-details :is(.chip-text, .cwd-chip > bdi, .cwd-wt-name) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-details .account-chip svg { color: var(--acct); }
+.session-details .account-chip.is-unknown { color: var(--text-3); }
+.session-details .account-chip.is-unknown svg { color: var(--text-4); }
+.session-details .cwd-chip:not(.is-wt) { color: var(--text-3); }
+.session-details .cwd-chip:not(.is-wt) svg { color: var(--text-4); }
+.session-details .profile-chip svg { color: var(--violet-soft); }
+.session-details .plan-badge:not(.is-bypass) { padding: 0 3px; font-size: 9.5px; font-weight: 700; letter-spacing: .08em; color: var(--violet-soft); }
+.session-details .plan-badge.is-bypass { width: 15px; height: 15px; min-width: 15px; padding: 0; justify-content: center; box-shadow: inset 0 0 0 1px var(--edge-error); }
+.session-details .work-chip { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.session-details .work-chip :is(.work-full, .work-total) { display: none; }
+.session-details .work-chip .work-short { display: inline-flex; align-items: center; }
+.session-details .sched-chip { color: var(--text-3); }
+.session-details .sched-time { font-size: 10.5px; }
+.session-row[data-crowded] .session-details .work-chip .work-short, .session-row[data-crowded] .session-details .sched-time { display: none; }
+.session-row[data-crowded] .session-details .work-chip .work-total { display: inline; }
+.session-row[data-packed] .session-details .plan-badge:not(.is-bypass) .plan-full, .session-row[data-packed] .row-ports .port-more { display: none; }
+.session-row[data-packed] .session-details .plan-badge:not(.is-bypass)::after { content: attr(data-short); }
 .session-row.is-unread .session-title::after { content: ''; display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%; background: var(--done); vertical-align: middle; }
 .session-activity { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-3); }
 /* Nothing going on: when the last message was, quiet. */
@@ -683,12 +686,13 @@ button.foot-item:disabled { cursor: default; }
 .row-popout { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: var(--r-sm); color: var(--text-3); background: var(--tint-violet-soft); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); transition: color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
 :is(.session-row, .term-row):is(:hover, :focus-within) .row-popout { color: var(--text); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet); }
 .resume-row { container: rrow / inline-size; min-height: 34px; padding: 0 4px 0 9px; color: var(--text-3); cursor: default; }
-/* A narrow sidebar: Resume is its icon, so the kept session's name keeps its room. */
-@container rrow (max-width: 280px) { .resume-btn-label { display: none; } .resume-btn { padding: 0 6px; } }
 .resume-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .resume-btn { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; height: 22px; padding: 0 9px; border-radius: var(--r-sm); border: 1px solid var(--line-strong); color: var(--text-2); }
 .resume-btn:hover { color: var(--on-brand); border-color: transparent; background: var(--brand); }
 .resume-btn:disabled { opacity: .5; cursor: default; }
+/* A narrow sidebar: Resume is its icon, so the kept session's name keeps its room (after the button's own rules, which
+   would otherwise put its padding back). */
+@container rrow (max-width: 280px) { .resume-btn-label { display: none; } .resume-btn { padding: 0 6px; } }
 /* Resume all / Resume pinned. */
 .resume-head { min-height: 22px; }
 .resume-pill { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11px; font-weight: 500; color: var(--text-2); box-shadow: inset 0 0 0 1px var(--line-strong);
@@ -2528,7 +2532,6 @@ button.nsf-opt[aria-disabled="true"]:active { filter: none; }
 
 /* Background popover */
 .work-chip, .sched-chip { font: inherit; font-size: 10.5px; line-height: 16px; border: 0; cursor: pointer; }
-.session-sub .work-chip, .session-sub .sched-chip { font-size: 10px; line-height: 15px; }
 .work-chip:focus-visible, .sched-chip:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .work-chip.is-open { color: var(--text); background: var(--bg-3); }
 .sched-chip.is-open { color: var(--text); background: var(--bg-3); }

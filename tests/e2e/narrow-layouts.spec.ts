@@ -23,6 +23,11 @@ const six = [3000, 3081, 5173, 6006, 8080, 9229].map((port) => ({ port, name: 'n
 const ROW_PIECES = '.avatar, .term-icon, .session-title, .term-name, .term-cmd, .cwd-chip, .profile-chip, .account-chip, .row-popout, .port-chip, .session-activity, .work-chip, .sched-chip, .plan-badge, .resume-title, .resume-btn';
 const still = (w: Page) => w.addStyleTag({ content: '*, *::before, *::after { animation: none !important; transition: none !important; }' });
 const row = (name: string) => win.locator('.session-row, .term-row', { hasText: name });
+/**
+ * Tall enough for the whole crowd (its session rows have their details line): these tests are about each row's own
+ * room, and a sidebar that scrolls would take its scrollbar's 11 px from every row.
+ */
+const TALL = 880;
 const nameOf = (r: Locator) => r.locator('.session-title, .term-name').first();
 /** What a name needs to read: all of it, or at least its first several letters. */
 const readable = async (l: Locator) => {
@@ -47,7 +52,7 @@ test.beforeAll(async () => {
   home = e.home;
   app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env: e.env });
   win = await app.firstWindow();
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 800));
+  await app.evaluate(({ BrowserWindow }, h) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, h), TALL);
   await expect(win.locator('.sidebar')).toBeVisible();
   staged = crowd(project);
   await stage(app, staged, project);
@@ -76,7 +81,9 @@ test('every name stays readable and nothing in a row collides, from 200 px up, a
       const label = `${w} px · ${(await r.innerText()).split('\n')[0]}`;
       expect(await collisions(r, ROW_PIECES), label).toEqual([]);
       const name = r.locator('.session-title, .term-name, .resume-title').first();
-      expect(await readable(name), `${label}: name cut to ${await shownWidth(name)} px`).toBe(true);
+      const bar = await win.locator('.sidebar').evaluate((el) => `${(el as HTMLElement).offsetWidth - el.clientWidth}px scrollbar, ${el.scrollHeight} of ${el.clientHeight}px`)
+        + ' · ' + await r.evaluate((el) => [el, ...el.children].map((c) => `${c.className.toString().split(' ')[0]} ${Math.round(c.getBoundingClientRect().width)}`).join(', '));
+      expect(await readable(name), `${label}: name cut to ${await shownWidth(name)} px (${bar})`).toBe(true);
     }
     // Hovered, a terminal row makes room for pin and close: its name still shows, its chips don't move over it.
     for (const t of ['Terminal 1', 'storybook']) {
@@ -107,23 +114,26 @@ test('a terminal shows one port and +N with room, one count chip when its name n
   expect(await cmd.evaluate((el) => (el as HTMLElement).offsetWidth === 0 || el.scrollWidth <= el.clientWidth)).toBe(true);
 });
 
-test('a session’s chips go compact only when they would cut its name', async () => {
+test('a session’s folder, profile and account sit under its name: the name keeps its line; a name cut to a stub leaves its glyph', async () => {
   await sidebarByKeys(win, 264);
   await away();
-  // "CI" has the room: its folder chip keeps its text.
-  await expect(row('CI').locator('.cwd-chip bdi')).toBeVisible();
-  // "Docs for the public API" with a folder, a profile and an account: glyphs, the name whole or nearly.
+  // "CI" with a folder: under its name, the folder's text whole.
+  await expect(row('CI').locator('.session-details .cwd-chip bdi')).toBeVisible();
+  // "Docs for the public API" with a folder, a profile and an account: all three under its name, alone on its line.
   const docs = row('Docs for the public');
-  await expect(docs).toHaveAttribute('data-tight', '');
-  await expect(docs.locator('.cwd-chip bdi')).toBeHidden();
-  await expect(docs.locator('.cwd-chip svg')).toBeVisible();
-  await expect(docs.locator('.profile-chip svg')).toBeVisible();
-  await expect(docs.locator('.account-chip svg')).toBeVisible();
-  // Wide enough again: full chips come back.
+  await expect(docs.locator('.session-line > *')).toHaveCount(1);
+  expect(await readable(docs.locator('.session-title'))).toBe(true);
+  for (const c of ['.cwd-chip', '.profile-chip', '.account-chip']) await expect(docs.locator(`.session-details ${c} svg`)).toBeVisible();
+  // Never a stub ("p…"): each name shows about five characters or more, or leaves its glyph alone.
+  for (const t of await docs.locator('.sd-who :is(.chip-text, .cwd-chip > bdi)').all()) {
+    expect(await t.evaluate((el) => getComputedStyle(el).display === 'none' || el.clientWidth >= 36 || el.scrollWidth <= el.clientWidth + 0.5)).toBe(true);
+  }
+  // Wide: every name in full.
   await sidebarByKeys(win, 456);
   await away();
-  await expect(docs).not.toHaveAttribute('data-tight');
-  await expect(docs.locator('.cwd-chip bdi')).toBeVisible();
+  await expect(docs).not.toHaveAttribute('data-who-short');
+  await expect(docs.locator('.session-details .cwd-chip bdi')).toBeVisible();
+  await expect(docs.locator('.session-details .account-chip .chip-text')).toHaveText('.claude-work');
 });
 
 test('a terminal’s Docker ports stay on a crowded row (their chip is already compact)', async () => {
@@ -178,22 +188,25 @@ test('after its close question the row still watches its name: ports arriving la
   expect(await readable(r.locator('.term-name'))).toBe(true);
 });
 
-test('the second line: one rendering of the work chip, PLAN as P, the waiting reason keeps its words', async () => {
+test('the details line at 200 px: one rendering of each work chip; a crowded row compacts; the waiting reason keeps its words', async () => {
   await sidebarByKeys(win, 200);
   await away();
   for (const chip of await win.locator('.sidebar .work-chip').all()) {
     expect(await chip.locator('.work-full, .work-short, .work-total').evaluateAll((els) => els.filter((e) => getComputedStyle(e).display !== 'none').length)).toBe(1);
   }
   const auth = row('Auth refactor');
-  // PLAN as a bare P (the bypass mark's form); its text stays "plan" for the tooltip and screen readers.
-  await expect(auth.locator('.plan-badge .plan-full')).toBeHidden();
-  expect(await auth.locator('.plan-badge').evaluate((el) => getComputedStyle(el, '::after').content)).toBe('"P"');
-  expect((await auth.locator('.plan-badge').boundingBox())!.width).toBeLessThanOrEqual(16);
+  // Plan mode, two agents and a shell, a wake-up: the work becomes its total, the wake-up its clock; PLAN stays a word.
+  await expect(auth).toHaveAttribute('data-crowded', '');
+  await expect(auth).not.toHaveAttribute('data-packed');
+  await expect(auth.locator('.work-chip .work-total')).toHaveText('3');
+  await expect(auth.locator('.sched-chip .sched-time')).toBeHidden();
+  await expect(auth.locator('.plan-badge .plan-full')).toBeVisible();
   await expect(auth.locator('.plan-badge')).toHaveAttribute('data-tip', /Plan mode/);
-  // Read as what it is, whatever its form (like the bypass mark).
   await expect(auth.locator('.plan-badge')).toHaveAttribute('role', 'img');
   await expect(auth.locator('.plan-badge')).toHaveAttribute('aria-label', 'Plan mode');
-  expect(await shownWidth(auth.locator('.session-activity'))).toBeGreaterThanOrEqual(50);
+  // The waiting reason has its own line: it fills it, nothing beside it.
+  expect(await auth.locator('.session-activity').evaluate((el) => el.scrollWidth <= el.clientWidth + 0.5 || el.getBoundingClientRect().width >= el.parentElement!.getBoundingClientRect().width - 0.5)).toBe(true);
+  expect(await auth.locator('.session-sub > *').count()).toBe(1);
 });
 
 test('a row’s close question beside a 200 px sidebar: no label leaves its button, nothing overlaps', async () => {
@@ -269,7 +282,7 @@ test('a narrow session bar keeps the waiting reason readable: the work chip as i
   await row('Email campaign').locator('.row-main').click();
   await expect(bar.locator('.work-total')).toBeVisible();
   await expect(bar.locator('.work-short')).toBeHidden();
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 800));
+  await app.evaluate(({ BrowserWindow }, h) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, h), TALL);
 });
 
 test('the smallest window keeps a work area with both side panels at their widest; an edge drag responds at once', async () => {
@@ -338,7 +351,7 @@ test('the smallest window keeps a work area with both side panels at their wides
   await win.mouse.move(x2 - 40, y2);
   await win.mouse.up();
   await expect.poll(async () => Math.round((await box('.sidebar')).width)).toBe(Math.round(sidebarBefore - 40));
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 800));
+  await app.evaluate(({ BrowserWindow }, h) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, h), TALL);
 });
 
 test('a closing terminal says so on a crowded row', async () => {

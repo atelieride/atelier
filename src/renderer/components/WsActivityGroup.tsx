@@ -5,6 +5,8 @@ import { useApp } from '../store';
 import { t } from '../i18n/en';
 import { Icon } from './Icon';
 import { RenameInput } from './RenameInput';
+import { GroupAccount } from './AccountChip';
+import type { SharedAccount } from '../accounts';
 import { headDot, wsColorVar, type WsActivityCard } from '../workspace-view';
 import type { Workspace } from '../workspaces';
 import { kbd } from '../kbd';
@@ -17,9 +19,10 @@ import { newTerminalIn } from '../launch';
  * chevron, glyph and name, the folded state's dot, "+" — and, open, its rows on a band of its color, indented under its
  * head. The chevron
  * folds or opens without switching; the name brings the activity forward and leaves it as it is in the sidebar. Folded
- * and in front, its head is the selected box: it stands for the tab in front.
+ * and in front, its head is the selected box: it stands for the tab in front. `account`: the account every session in
+ * it runs as, named once after its name.
  */
-export function WsActivityGroup({ a, current, open, card, children }: { a: Workspace; current: boolean; open: boolean; card: WsActivityCard; children?: ReactNode }) {
+export function WsActivityGroup({ a, current, open, card, account, children }: { a: Workspace; current: boolean; open: boolean; card: WsActivityCard; account?: SharedAccount | null; children?: ReactNode }) {
   const editing = useApp((s) => s.wsRenaming === a.id);
   const st = useApp.getState;
   // Rows and tabs dropped on its head (or its band, open) move into it.
@@ -66,6 +69,7 @@ export function WsActivityGroup({ a, current, open, card, children }: { a: Works
               {...(current ? { 'aria-current': 'location' as const } : {})} onClick={current ? undefined : () => st().switchWorkspace(a.id)}>
               {glyph}
               <span className="wsa-name">{a.name}</span>
+              <GroupAccount shared={account} />
             </button>
           )}
         {dot && !dropping && <span className={`ws-dot is-${dot.kind}`} data-tip={card.label} aria-hidden="true"><i /></span>}
