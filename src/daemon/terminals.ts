@@ -7,7 +7,7 @@ import { Terminal as Headless } from '@xterm/headless';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { basename, dirname, join, win32 } from 'node:path';
 import type { Resumable, TerminalInfo, TerminalProfile } from '@shared/protocol';
-import { applyStatusLine, configDirOf, expireBackground, expireSubagents, markSeen, onShellForeground, publicSession, reduceHook, seedLastMessage, stampUsage, type SessionInfo, type Usage } from '@shared/session';
+import { applyStatusLine, configDirOf, expireBackground, expireSubagents, markSeen, onShellForeground, publicSession, reduceHook, seedLastMessage, stampUsage, withRemote, type SessionInfo, type Usage } from '@shared/session';
 import { claudeVersion, confirmLimitPause, openLimitPause, sweepLimitPause } from '@shared/limit-pause';
 import { attributionFromHook, type Attribution } from '@shared/attribution';
 import { NO_NAME, onNameHook, onNameStatus, renamed, terminalTitle, visibleSync, type NameReply, type NameState } from '@shared/session-name';
@@ -374,9 +374,10 @@ export class TerminalManager extends EventEmitter {
 
   /**
    * Hook event for a terminal: updates the session and, for file changes, returns the attribution; reply = what the
-   * bridge prints back to Claude (a pending name), or null.
+   * bridge prints back to Claude (a pending name), or null. remote: the claude.ai session Remote Control bridges it to,
+   * as the hook's bridge says ('' none; undefined: unsaid).
    */
-  applyHook(id: string, payload: unknown): { ok: boolean; attribution: Attribution | null; reply: NameReply | null } {
+  applyHook(id: string, payload: unknown, remote?: string): { ok: boolean; attribution: Attribution | null; reply: NameReply | null } {
     const t = this.terms.get(id);
     if (!t) return { ok: false, attribution: null, reply: null };
     const now = Date.now();
@@ -394,6 +395,8 @@ export class TerminalManager extends EventEmitter {
     // A new conversation in this terminal (/clear, another `claude`): a name synced with the previous one doesn't follow
     // it (a pending or Atelier-only name does: it is what the user called this terminal).
     if (t.session && next && next.sessionId !== t.session.sessionId && t.name.sync === 'synced') t.name = NO_NAME;
+    // Remote Control, as Claude Code says with each hook; a bridge that says nothing leaves it as it was.
+    if (next && remote !== undefined) next = withRemote(next, remote);
     t.session = next;
     if (next) t.sessionSeen = true;
     t.configDir = configDir;

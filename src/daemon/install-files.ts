@@ -5,14 +5,18 @@ import { DROPPED, DROPPED_PREFIXES } from './env';
 /**
  * Hook bridge: forwards the event to atelierd. Decides nothing for Claude and always exits 0; it prints only what
  * atelierd sends back, which is nothing or a session name for Claude (session name sync: `hookSpecificOutput
- * .sessionTitle` on UserPromptSubmit/SessionStart).
+ * .sessionTitle` on UserPromptSubmit/SessionStart). The header also says whether Remote Control is on: Claude Code
+ * sets CLAUDE_CODE_BRIDGE_SESSION_ID (`session_…`) in its hooks' environment while connected; anything else is none.
  */
 export const HOOK_SCRIPT = `#!/bin/sh
 # Atelier: Claude Code hook bridge. Observation only, plus the session name Atelier hands back.
 case "$ATELIER_TERMINAL_ID" in ''|*[!0-9a-f-]*) cat >/dev/null; exit 0;; esac
 case "$ATELIER_HOOK_TOKEN" in ''|*[!0-9a-f]*) cat >/dev/null; exit 0;; esac
 [ -S "$ATELIER_SOCK" ] || { cat >/dev/null; exit 0; }
-{ printf '{"t":"hook","token":"%s","term":"%s"}\\n' "$ATELIER_HOOK_TOKEN" "$ATELIER_TERMINAL_ID"; cat; } \\
+rc=$CLAUDE_CODE_BRIDGE_SESSION_ID
+case "$rc" in session_?*) case "\${rc#session_}" in *[!A-Za-z0-9]*) rc='';; esac;; *) rc='';; esac
+[ \${#rc} -le 88 ] || rc=''
+{ printf '{"t":"hook","token":"%s","term":"%s","rc":"%s"}\\n' "$ATELIER_HOOK_TOKEN" "$ATELIER_TERMINAL_ID" "$rc"; cat; } \\
   | /usr/bin/nc -U -w 1 "$ATELIER_SOCK" 2>/dev/null
 exit 0
 `;

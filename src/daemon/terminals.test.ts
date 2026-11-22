@@ -313,3 +313,21 @@ describe('usage-limit pause', () => {
     expect(tm.foregroundOf('nope')).toBeNull();
   });
 });
+
+test('Remote Control: each hook says whether Claude Code is bridged to a claude.ai session; the session carries it until a hook says it ended', () => {
+  initPlatform('darwin');
+  const { tm } = manager();
+  const a = tm.create({ projectRoot: '/tmp', cwd: '/tmp', cols: 80, rows: 24 });
+  const remote = () => tm.list().find((x) => x.id === a.id)!.session?.remote;
+  start(tm, a.id);
+  expect(remote()).toBeUndefined();
+  tm.applyHook(a.id, { hook_event_name: 'UserPromptSubmit', session_id: 's1', prompt: 'hi' }, 'session_01AbC');
+  expect(remote()).toBe('session_01AbC');
+  // A bridge that says nothing (installed by an earlier atelierd) leaves it as it was.
+  tm.applyHook(a.id, { hook_event_name: 'Stop', session_id: 's1' });
+  expect(remote()).toBe('session_01AbC');
+  // Ended: the next hook's bridge says none.
+  tm.applyHook(a.id, { hook_event_name: 'UserPromptSubmit', session_id: 's1', prompt: 'again' }, '');
+  expect(remote()).toBeUndefined();
+  expect('remote' in tm.list().find((x) => x.id === a.id)!.session!).toBe(false);
+});

@@ -24,8 +24,11 @@ export interface ServerDeps {
   terminals: TerminalManager;
   version: string;
   pid: number;
-  /** May return what the hook bridge prints back to Claude Code (a pending session name). */
-  onHook(term: string, payload: unknown): NameReply | null | void;
+  /**
+   * May return what the hook bridge prints back to Claude Code (a pending session name). remote: what the bridge says
+   * of Remote Control ('' none, an id), undefined when it says nothing.
+   */
+  onHook(term: string, payload: unknown, remote?: string): NameReply | null | void;
   onStatus(term: string, payload: unknown): void;
   onShutdown(): void;
   log(msg: string): void;
@@ -100,6 +103,7 @@ function handleConnection(socket: net.Socket, deps: ServerDeps, onControl: () =>
   let mode: 'header' | 'event' | 'control' = 'header';
   let eventKind: 'hook' | 'status' = 'hook';
   let eventTerm = '';
+  let eventRemote: string | undefined;
   let eventBody = '';
   let delivered = false;
   let control: ControlSession | null = null;
@@ -115,7 +119,7 @@ function handleConnection(socket: net.Socket, deps: ServerDeps, onControl: () =>
     try {
       // Windows paths (`C:\\…`) become canonical before any reducer reads them.
       const canonical = canonicalPayload(payload);
-      if (eventKind === 'hook') reply = deps.onHook(eventTerm, canonical); else deps.onStatus(eventTerm, canonical);
+      if (eventKind === 'hook') reply = deps.onHook(eventTerm, canonical, eventRemote); else deps.onStatus(eventTerm, canonical);
     } catch (err) {
       deps.log(`${eventKind} event dropped: ${(err as Error).message}`);
     }
@@ -161,6 +165,7 @@ function handleConnection(socket: net.Socket, deps: ServerDeps, onControl: () =>
             mode = 'event';
             eventKind = h.data.t;
             eventTerm = h.data.term;
+            eventRemote = h.data.t === 'hook' ? h.data.rc : undefined;
             // The following payload lines are part of the body, not messages.
             const idx = lines.indexOf(line);
             eventBody = lines.slice(idx + 1).map((l) => l + '\n').join('') + decoder.rest();

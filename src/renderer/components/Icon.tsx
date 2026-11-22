@@ -42,6 +42,8 @@ const paths = {
   collapseAll: <path d="M6 3.5l4 4 4-4M6 16.5l4-4 4 4" />,
   chevronUp: <path d="M5 12.5l5-5 5 5" />,
   phone: <><rect x="5.5" y="2.5" width="9" height="15" rx="2.2" /><path d="M8.8 14.8h2.4" /></>,
+  // Remote Control: a signal reaching out from a point.
+  remote: <><circle cx="10" cy="13.5" r="1.6" /><path d="M6.4 10a5.1 5.1 0 0 1 7.2 0M3.8 7.3a8.8 8.8 0 0 1 12.4 0" /></>,
   inbox: <><path d="M3 11l2.1-5.9A1.5 1.5 0 0 1 6.5 4h7a1.5 1.5 0 0 1 1.4 1.1L17 11v4a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 15z" /><path d="M3 11h4l1.2 2h3.6L13 11h4" /></>,
   // Pushpin: the head is a closed shape, so `fill: currentColor` (pinned rows) fills it.
   pin: <><path d="M8.5 3.5h3v4l2.5 3h-8l2.5-3z" /><path d="M7.5 3.5h5M10 10.5V17" /></>,

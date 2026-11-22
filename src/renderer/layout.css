@@ -541,9 +541,9 @@ button.foot-item:disabled { cursor: default; }
 .sd-who { flex: 0 1 auto; min-width: 18px; overflow: hidden; }
 .sd-live { flex: none; margin-left: auto; }
 .sd-who:empty, .sd-live:empty { display: none; }
-.session-details :is(.account-chip, .cwd-chip, .profile-chip, .plan-badge, .work-chip, .sched-chip, .sp-chip, .rs-chip) { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 4px; min-width: 18px; max-width: none; height: 17px; padding: 0 4px; border: 0; border-radius: var(--r-sm); background: none; box-shadow: none; font-size: 10.5px; line-height: 17px; direction: ltr; overflow: hidden; }
-.session-details :is(.plan-badge, .work-chip, .sched-chip, .sp-chip, .rs-chip) { flex: none; min-width: 0; }
-.session-details :is(.account-chip, .cwd-chip, .profile-chip, .work-chip, .sched-chip, .sp-chip, .rs-chip):hover { color: var(--text); background: var(--bg-3); }
+.session-details :is(.account-chip, .cwd-chip, .profile-chip, .remote-chip, .plan-badge, .work-chip, .sched-chip, .sp-chip, .rs-chip) { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 4px; min-width: 18px; max-width: none; height: 17px; padding: 0 4px; border: 0; border-radius: var(--r-sm); background: none; box-shadow: none; font-size: 10.5px; line-height: 17px; direction: ltr; overflow: hidden; }
+.session-details :is(.remote-chip, .plan-badge, .work-chip, .sched-chip, .sp-chip, .rs-chip) { flex: none; min-width: 0; }
+.session-details :is(.account-chip, .cwd-chip, .profile-chip, .remote-chip, .work-chip, .sched-chip, .sp-chip, .rs-chip):hover { color: var(--text); background: var(--bg-3); }
 .session-details .chip-glyph { display: inline-flex; flex: none; }
 /* On the left the folder and the profile give way before the account; a name cut to a stub leaves its glyph alone. */
 .session-details :is(.cwd-chip, .profile-chip) { flex-shrink: 4; }
@@ -564,6 +564,12 @@ button.foot-item:disabled { cursor: default; }
 .session-details .sched-chip { color: var(--text-3); }
 .session-details .sched-time { font-size: 10.5px; }
 .session-row[data-crowded] .session-details .work-chip .work-short, .session-row[data-crowded] .session-details .sched-time { display: none; }
+/* Remote Control on: a wifi glyph alone in the link's indigo, a way out to claude.ai like the ports. */
+.remote-chip { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 999px; font: inherit; font-size: 11px; white-space: nowrap; cursor: pointer; color: var(--link); background: color-mix(in srgb, var(--link) 10%, transparent); transition: color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); animation: atl-pop var(--t-med) var(--ease) both; }
+.remote-chip svg { flex: none; }
+.remote-chip:hover { color: var(--text); background: color-mix(in srgb, var(--link) 18%, transparent); }
+.remote-chip:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.session-details .remote-chip { justify-content: center; width: 18px; padding: 0; color: var(--link); }
 .session-row[data-crowded] .session-details .work-chip .work-total { display: inline; }
 .session-row[data-packed] .session-details .plan-badge:not(.is-bypass) .plan-full, .session-row[data-packed] .row-ports .port-more { display: none; }
 .session-row[data-packed] .session-details .plan-badge:not(.is-bypass)::after { content: attr(data-short); }

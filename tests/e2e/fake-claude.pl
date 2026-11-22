@@ -123,6 +123,10 @@ sub ev {
   elsif ($what eq 'limit') { send_hook(qq({"hook_event_name":"StopFailure","session_id":"$sid","error":"rate_limit","last_assistant_message":"You've hit your session limit · resets 3:45pm"})); }
   elsif ($what =~ /^notify:(\w+)$/) { send_hook(qq({"hook_event_name":"Notification","session_id":"$sid","notification_type":"$1","message":"Claude Code says so"})); }
   elsif ($what eq 'stop') { send_hook(qq({"hook_event_name":"Stop","session_id":"$sid"})); }
+  # Remote Control on ("rc:<session_…>") or off ("rc-off"): like Claude Code, the id is in every later hook's
+  # environment (CLAUDE_CODE_BRIDGE_SESSION_ID) until it ends; the next hook tells Atelier.
+  elsif ($what =~ /^rc:(\w+)$/) { $ENV{CLAUDE_CODE_BRIDGE_SESSION_ID} = $1; }
+  elsif ($what eq 'rc-off') { delete $ENV{CLAUDE_CODE_BRIDGE_SESSION_ID}; }
   # "session-end": Claude Code's SessionEnd (the terminal has no session any more; this fake keeps reading events).
   elsif ($what eq 'session-end') { send_hook(qq({"hook_event_name":"SessionEnd","session_id":"$sid","reason":"other"})); }
   elsif ($what eq 'work') { send_hook(qq({"hook_event_name":"UserPromptSubmit","session_id":"$sid","prompt":"<task-notification>"})); }
@@ -269,12 +273,15 @@ sub ev {
     }
   }
 }
-$SIG{ALRM} = sub { exit 0 }; alarm 30;
+# ATELIER_FAKE_LINGER (seconds, opt-in): how long it waits for the next line before it ends (30 by default); a test
+# Atelier someone looks at keeps its sessions, their ports and their background work for that long.
+my $linger = ($ENV{ATELIER_FAKE_LINGER} // '') =~ /^\d+$/ ? $ENV{ATELIER_FAKE_LINGER} : 30;
+$SIG{ALRM} = sub { exit 0 }; alarm $linger;
 while (my $next = <STDIN>) {
   chomp $next; $next =~ s/\r$//; print "FAKE-CLAUDE got=$next\n";
   # "/exit": Claude Code quits: its SessionEnd, then the process ends and the shell is back.
   if ($next eq '/exit') { send_hook(qq({"hook_event_name":"SessionEnd","session_id":"$sid","reason":"prompt_input_exit"})); print "FAKE-CLAUDE bye\n"; exit 0; }
   ev($1) if $next =~ /^ev:(.+)$/;
-  alarm 30;
+  alarm $linger;
 }
 sleep 30;

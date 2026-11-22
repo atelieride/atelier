@@ -181,7 +181,9 @@ export const headerSchema = z.discriminatedUnion('t', [
   // Stops atelierd whatever the client's protocol version: the control token only. Windows has
   // no graceful signal for an atelierd that speaks another version.
   z.object({ t: z.literal('stop'), token: z.string().max(256) }),
-  z.object({ t: z.literal('hook'), token: z.string().max(256), term: id }),
+  // rc: the claude.ai session Claude Code's Remote Control bridges this session to (CLAUDE_CODE_BRIDGE_SESSION_ID in the
+  // hook's environment), empty when none. Absent from a bridge an earlier atelierd installed.
+  z.object({ t: z.literal('hook'), token: z.string().max(256), term: id, rc: z.string().regex(/^(?:session_[A-Za-z0-9]{1,80})?$/).optional() }),
   z.object({ t: z.literal('status'), token: z.string().max(256), term: id })
 ]);
 export type Header = z.infer<typeof headerSchema>;
