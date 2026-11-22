@@ -31,6 +31,16 @@ test('the Databases view\'s strings (loaded with its chunk) follow too: the Keyc
   expect(all.filter(([, s]) => /\b(Mac|macOS|Finder|Dock|Keychain|Trash)\b/.test(s)).map(([p, s]) => `${p}: ${s}`)).toEqual([]);
 });
 
+test('Settings › iPhone\'s and the pairing sheet\'s strings (loaded with their chunks) follow too', async () => {
+  vi.resetModules();
+  (await import('@shared/platform')).initPlatform('win32');
+  const { tiph } = await import('./iphone');
+  const all: [string, string][] = [];
+  leaves(tiph, 'tiph', all);
+  expect(all.length).toBeGreaterThan(40);
+  expect(all.filter(([, s]) => /\b(Mac|macOS|Finder|Dock|Keychain|Trash)\b/.test(s)).map(([p, s]) => `${p}: ${s}`)).toEqual([]);
+});
+
 test('a table tab\'s strings (loaded with its chunk) follow too', async () => {
   vi.resetModules();
   (await import('@shared/platform')).initPlatform('win32');

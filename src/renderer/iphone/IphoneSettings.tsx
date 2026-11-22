@@ -3,13 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { DEFAULT_RELAY, relayBase, type RemoteDeviceInfo } from '@shared/remote';
 import type { Settings as S } from '@shared/settings';
-import { t } from '../i18n/en';
+import { tiph } from '../i18n/iphone';
 import { Icon } from '../components/Icon';
 import { Row, Toggle } from '../components/Settings';
 import { ConfirmActions, onEscCancel, useDismiss } from '../confirms/InlineConfirm';
 import { useAgo } from '../minute';
 import { openPairing, refreshIphone, useIphone } from './store';
-import { deviceSubtitle, deviceTitle, relayLine, relayProblem, seenText } from './view';
+import { deviceSubtitle, deviceTitle, relayLine, relayProblem, seenText } from './sheet-view';
 import './iphone.css';
 
 const set = (patch: Partial<S>) => void window.atelier.settings.set(patch);
@@ -23,11 +23,11 @@ export function IphoneSettings({ s }: { s: S }) {
   const devices = status?.devices ?? [];
   return (
     <>
-      <Row label={t.iphone.access} hint={t.iphone.accessHint} disabled={unavailable && !s.remoteAccess}>
-        <Toggle label={t.iphone.access} value={s.remoteAccess} disabled={unavailable && !s.remoteAccess} onChange={(v) => set({ remoteAccess: v })} />
+      <Row label={tiph.access} hint={tiph.accessHint} disabled={unavailable && !s.remoteAccess}>
+        <Toggle label={tiph.access} value={s.remoteAccess} disabled={unavailable && !s.remoteAccess} onChange={(v) => set({ remoteAccess: v })} />
       </Row>
       {line && (
-        <div className={`upd-card iph-status tone-${line.tone}`} role="status" aria-live="polite" aria-label={t.iphone.statusLabel}>
+        <div className={`upd-card iph-status tone-${line.tone}`} role="status" aria-live="polite" aria-label={tiph.statusLabel}>
           <span className="upd-dot" />
           <div className="upd-text">
             <span className="upd-title">{line.text}</span>
@@ -35,18 +35,18 @@ export function IphoneSettings({ s }: { s: S }) {
           </div>
         </div>
       )}
-      <Row label={t.iphone.pairLabel} hint={t.iphone.pairHint}>
-        <button type="button" className="btn-primary" disabled={unavailable} onClick={openPairing}><Icon name="qr" size={13} stroke={1.9} />{t.iphone.pair}</button>
+      <Row label={tiph.pairLabel} hint={tiph.pairHint}>
+        <button type="button" className="btn-primary" disabled={unavailable} onClick={openPairing}><Icon name="qr" size={13} stroke={1.9} />{tiph.pair}</button>
       </Row>
-      <div className="set-group-title">{t.iphone.devices}</div>
+      <div className="set-group-title">{tiph.devices}</div>
       {status && devices.length === 0 && (
         <div className="iph-empty">
           <span className="iph-empty-glyph"><Icon name="phone" size={18} stroke={1.6} /></span>
-          <span className="set-text"><span className="set-label">{t.iphone.devicesNone}</span><span className="set-hint">{t.iphone.devicesNoneHint}</span></span>
+          <span className="set-text"><span className="set-label">{tiph.devicesNone}</span><span className="set-hint">{tiph.devicesNoneHint}</span></span>
         </div>
       )}
-      {devices.length > 0 && <ul className="iph-devices" aria-label={t.iphone.devices}>{devices.map((d) => <DeviceRow key={d.id} d={d} live={!!status?.enabled} />)}</ul>}
-      <div className="set-group-title">{t.iphone.advanced}</div>
+      {devices.length > 0 && <ul className="iph-devices" aria-label={tiph.devices}>{devices.map((d) => <DeviceRow key={d.id} d={d} live={!!status?.enabled} />)}</ul>}
+      <div className="set-group-title">{tiph.advanced}</div>
       <RelayField saved={s.remoteRelay} />
       <ForgetAll />
     </>
@@ -68,7 +68,7 @@ function DeviceRow({ d, live }: { d: RemoteDeviceInfo; live: boolean }) {
   const now = useAgo(d.connected ? null : d.lastSeenAt);
   const title = deviceTitle(d);
   const connected = live && d.connected;
-  const sub = [deviceSubtitle(d), connected && d.attached.length ? t.iphone.openCount(d.attached.length) : null].filter(Boolean).join(' · ');
+  const sub = [deviceSubtitle(d), connected && d.attached.length ? tiph.openCount(d.attached.length) : null].filter(Boolean).join(' · ');
   return (
     <li className={`iph-device${connected ? ' is-connected' : ''}${asking ? ' is-asking' : ''}`}>
       <span className="iph-device-glyph"><Icon name="phone" size={16} stroke={1.7} /></span>
@@ -78,8 +78,8 @@ function DeviceRow({ d, live }: { d: RemoteDeviceInfo; live: boolean }) {
       </span>
       {asking ? <RemoveConfirm d={d} title={title} onDone={() => setAsking(false)} /> : (
         <>
-          {connected ? <span className="iph-chip"><i />{t.iphone.connected}</span> : <span className="iph-seen">{seenText({ ...d, connected: false }, now)}</span>}
-          <button ref={removeBtn} type="button" className="btn-ghost sm iph-remove" aria-label={t.iphone.removeTip(title)} onClick={() => setAsking(true)}>{t.iphone.remove}</button>
+          {connected ? <span className="iph-chip"><i />{tiph.connected}</span> : <span className="iph-seen">{seenText({ ...d, connected: false }, now)}</span>}
+          <button ref={removeBtn} type="button" className="btn-ghost sm iph-remove" aria-label={tiph.removeTip(title)} onClick={() => setAsking(true)}>{tiph.remove}</button>
         </>
       )}
     </li>
@@ -91,9 +91,9 @@ function RemoveConfirm({ d, title, onDone }: { d: RemoteDeviceInfo; title: strin
   const box = useRef<HTMLDivElement>(null);
   useDismiss(box, onDone);
   return (
-    <div ref={box} className="iph-confirm" role="group" aria-label={t.iphone.removeAsk(title)} data-own-esc="" onKeyDown={onEscCancel(onDone)}>
-      <p><b>{t.iphone.removeAsk(title)}</b> {t.iphone.removeBody}</p>
-      <ConfirmActions confirm={t.iphone.remove} onConfirm={() => { onDone(); void window.atelier.remote.removeDevice(d.id); }} onCancel={onDone} end />
+    <div ref={box} className="iph-confirm" role="group" aria-label={tiph.removeAsk(title)} data-own-esc="" onKeyDown={onEscCancel(onDone)}>
+      <p><b>{tiph.removeAsk(title)}</b> {tiph.removeBody}</p>
+      <ConfirmActions confirm={tiph.remove} onConfirm={() => { onDone(); void window.atelier.remote.removeDevice(d.id); }} onCancel={onDone} end />
     </div>
   );
 }
@@ -113,16 +113,16 @@ function RelayField({ saved }: { saved: string }) {
   return (
     <div className="set-row iph-relay-row">
       <div className="set-text">
-        <span className="set-label">{t.iphone.relayServer}</span><span className="set-hint">{t.iphone.relayServerHint}</span>
+        <span className="set-label">{tiph.relayServer}</span><span className="set-hint">{tiph.relayServerHint}</span>
       </div>
       <div className="iph-relay">
-        <input ref={field} className="set-text-input mono" value={draft} spellCheck={false} aria-label={t.iphone.relayServer} aria-invalid={problem ? true : undefined}
+        <input ref={field} className="set-text-input mono" value={draft} spellCheck={false} aria-label={tiph.relayServer} aria-invalid={problem ? true : undefined}
           aria-describedby={problem ? 'iph-relay-warn' : undefined} placeholder={DEFAULT_RELAY} onChange={(e) => setDraft(e.target.value)} onBlur={commit}
           onKeyDown={(e) => {
             if (e.key === 'Enter') { e.preventDefault(); commit(); }
             else if (e.key === 'Escape' && draft !== saved) { e.preventDefault(); e.stopPropagation(); setDraft(saved); }
           }} />
-        {saved !== DEFAULT_RELAY && <button type="button" className="btn-ghost sm" onClick={() => { setDraft(DEFAULT_RELAY); set({ remoteRelay: DEFAULT_RELAY }); }}>{t.iphone.relayDefault}</button>}
+        {saved !== DEFAULT_RELAY && <button type="button" className="btn-ghost sm" onClick={() => { setDraft(DEFAULT_RELAY); set({ remoteRelay: DEFAULT_RELAY }); }}>{tiph.relayDefault}</button>}
       </div>
       {problem && <span id="iph-relay-warn" className="set-warn" role="note"><Icon name="info" size={12} stroke={1.8} />{problem}</span>}
     </div>
@@ -139,8 +139,8 @@ function ForgetAll() {
   // Asked, the question takes the row's place, the row's whole width.
   if (asking) return <div className="set-row"><ForgetCard box={box} onDone={() => setAsking(false)} /></div>;
   return (
-    <Row label={t.iphone.forget} hint={t.iphone.forgetHint}>
-      <button ref={button} type="button" className="btn-ghost is-danger iph-forget" onClick={() => setAsking(true)}>{t.iphone.forgetButton}</button>
+    <Row label={tiph.forget} hint={tiph.forgetHint}>
+      <button ref={button} type="button" className="btn-ghost is-danger iph-forget" onClick={() => setAsking(true)}>{tiph.forgetButton}</button>
     </Row>
   );
 }
@@ -148,9 +148,9 @@ function ForgetAll() {
 function ForgetCard({ box, onDone }: { box: React.RefObject<HTMLDivElement | null>; onDone: () => void }) {
   useDismiss(box, onDone);
   return (
-    <div ref={box} className="iph-confirm is-card" role="group" aria-label={t.iphone.forgetAsk} data-own-esc="" onKeyDown={onEscCancel(onDone)}>
-      <p><b>{t.iphone.forgetAsk}</b> {t.iphone.forgetBody}</p>
-      <ConfirmActions confirm={t.iphone.forgetConfirm} onConfirm={() => { onDone(); void window.atelier.remote.reset(); }} onCancel={onDone} end />
+    <div ref={box} className="iph-confirm is-card" role="group" aria-label={tiph.forgetAsk} data-own-esc="" onKeyDown={onEscCancel(onDone)}>
+      <p><b>{tiph.forgetAsk}</b> {tiph.forgetBody}</p>
+      <ConfirmActions confirm={tiph.forgetConfirm} onConfirm={() => { onDone(); void window.atelier.remote.reset(); }} onCancel={onDone} end />
     </div>
   );
 }

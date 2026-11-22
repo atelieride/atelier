@@ -10,18 +10,18 @@ import { connectedDevices, pillView } from './view';
 
 /** The footer pill while a phone is connected: a click opens Settings › iPhone; its tooltip names the phones. */
 export function IphonePill() {
-  const pill = useIphone(useShallow((x) => pillView(connectedDevices(x.status))));
+  const pill = useIphone(useShallow((x) => (x.marksReady ? pillView(connectedDevices(x.status)) : null)));
   if (!pill) return null;
   return (
     <button type="button" className="foot-iphone" data-tip={pill.tip} aria-label={pill.tip} onClick={() => useApp.getState().setSettingsOpen('iphone')}>
-      <Icon name="phone" size={11} stroke={2} /><span>{pill.label}</span>
+      <Icon name="phone" size={11} stroke={2} /><span>{pill.label}</span><i aria-hidden="true" />
     </button>
   );
 }
 
 /** On a tab or a sidebar row: a phone has this terminal open now. */
 export function PhoneBadge({ id }: { id: string }) {
-  const on = useIphone((x) => x.attached.has(id));
+  const on = useIphone((x) => x.marksReady && x.attached.has(id));
   if (!on) return null;
   return <span className="phone-badge" role="img" aria-label={t.iphone.badge} data-tip={t.iphone.badge}><Icon name="phone" size={14} stroke={1.8} /></span>;
 }
@@ -31,7 +31,7 @@ export function PhoneBadge({ id }: { id: string }) {
  * by typing, or here with Fit to Window (this view's own size).
  */
 export function SizeNote({ id }: { id: string }) {
-  const on = useIphone((x) => x.sized.has(id));
+  const on = useIphone((x) => x.marksReady && x.sized.has(id));
   if (!on) return null;
   const fit = () => {
     const lt = getLiveTerminal(id);

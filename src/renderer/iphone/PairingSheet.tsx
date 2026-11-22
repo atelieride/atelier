@@ -4,12 +4,13 @@
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { RemotePairing } from '@shared/remote';
 import { t } from '../i18n/en';
+import { tiph } from '../i18n/iphone';
 import { useApp } from '../store';
 import { Icon } from '../components/Icon';
 import { PAIR_START, pairReducer, type PairSheet } from './pairing';
 import { qrPath } from './qr';
 import { useIphone } from './store';
-import { countdown, deviceSubtitle, deviceTitle } from './view';
+import { countdown, deviceSubtitle, deviceTitle } from './sheet-view';
 import './iphone.css';
 
 /** What is left until `until` (ms), re-rendered as each second turns. */
@@ -35,7 +36,7 @@ export function PairingSheet() {
     dispatch({ kind: 'start' });
     window.atelier.remote.startPairing().then(
       (result) => { if (alive.current) dispatch({ kind: 'started', result }); },
-      () => { if (alive.current) dispatch({ kind: 'started', result: { ok: false, reason: 'failed', message: t.iphone.errorTitle } }); }
+      () => { if (alive.current) dispatch({ kind: 'started', result: { ok: false, reason: 'failed', message: tiph.errorTitle } }); }
     );
   };
 
@@ -49,7 +50,7 @@ export function PairingSheet() {
 
   // Paired: the sheet closes with the news. Stopped elsewhere (another window's sheet, access turned off): a code again.
   useEffect(() => {
-    if (s.phase === 'paired') { close(); useApp.getState().showToast(t.iphone.paired, undefined, 'info'); }
+    if (s.phase === 'paired') { close(); useApp.getState().showToast(tiph.paired, undefined, 'info'); }
     else if (s.phase === 'stopped') start();
   }, [s.phase]);
 
@@ -85,12 +86,12 @@ export function PairingSheet() {
   const asking = s.phase === 'request';
   return (
     <div className="palette-backdrop settings-backdrop" onMouseDown={close}>
-      <div ref={sheet} className={`pair-sheet${asking ? ' is-asking' : ''}`} role="dialog" aria-modal="true" aria-label={t.iphone.sheetTitle} tabIndex={-1} onMouseDown={(e) => e.stopPropagation()}>
+      <div ref={sheet} className={`pair-sheet${asking ? ' is-asking' : ''}`} role="dialog" aria-modal="true" aria-label={tiph.sheetTitle} tabIndex={-1} onMouseDown={(e) => e.stopPropagation()}>
         <header className="pair-head">
           <span className="pair-head-glyph"><Icon name="phone" size={15} stroke={1.8} /></span>
-          <h2>{t.iphone.sheetTitle}</h2>
+          <h2>{tiph.sheetTitle}</h2>
           <span className="grow" />
-          <button type="button" className="pair-x" aria-label={t.iphone.close} data-tip={t.iphone.close} data-kbd="Esc" onClick={close}><Icon name="x" size={12} stroke={2} /></button>
+          <button type="button" className="pair-x" aria-label={tiph.close} data-tip={tiph.close} data-kbd="Esc" onClick={close}><Icon name="x" size={12} stroke={2} /></button>
         </header>
         <Body s={s} onStart={start} onAllow={(id) => { dispatch({ kind: 'allow' }); void window.atelier.remote.decide(id, true); }} />
       </div>
@@ -109,9 +110,9 @@ function Body({ s, onStart, onAllow }: { s: PairSheet; onStart: () => void; onAl
       return (
         <div className="pair-body pair-message">
           <span className="pair-hero is-error"><Icon name="info" size={22} stroke={1.7} /></span>
-          <h3>{t.iphone.errorTitle}</h3>
+          <h3>{tiph.errorTitle}</h3>
           <p>{s.message}</p>
-          <div className="pair-actions"><button type="button" className="btn-ghost" onClick={close}>{t.iphone.close}</button><button type="button" className="btn-primary" onClick={onStart}>{t.iphone.tryAgain}</button></div>
+          <div className="pair-actions"><button type="button" className="btn-ghost" onClick={close}>{tiph.close}</button><button type="button" className="btn-primary" onClick={onStart}>{tiph.tryAgain}</button></div>
         </div>
       );
     case 'code': return <Code pairing={s.pairing} notice={s.notice} spent={s.waiting} />;
@@ -128,11 +129,11 @@ function Off({ onStart }: { onStart: () => void }) {
   return (
     <div className="pair-body pair-message">
       <span className={`pair-hero${unavailable ? ' is-error' : ''}`}><Icon name="phone" size={24} stroke={1.6} /></span>
-      <h3>{unavailable ? t.iphone.unavailableTitle : t.iphone.offTitle}</h3>
-      <p>{unavailable ? t.iphone.relay.unavailable : t.iphone.offBody}</p>
+      <h3>{unavailable ? tiph.unavailableTitle : tiph.offTitle}</h3>
+      <p>{unavailable ? tiph.relay.unavailable : tiph.offBody}</p>
       <div className="pair-actions">
         <button type="button" className="btn-ghost" onClick={close}>{t.confirm.cancel}</button>
-        {!unavailable && <button ref={first} type="button" className="btn-primary" onClick={turnOn}><Icon name="qr" size={13} stroke={1.9} />{t.iphone.turnOn}</button>}
+        {!unavailable && <button ref={first} type="button" className="btn-primary" onClick={turnOn}><Icon name="qr" size={13} stroke={1.9} />{tiph.turnOn}</button>}
       </div>
     </div>
   );
@@ -152,7 +153,7 @@ function Code({ pairing, notice, spent }: { pairing: RemotePairing; notice: 'dec
   const pad = 4;
   return (
     <div className="pair-body pair-code-body">
-      <div className={`pair-qr${renewing ? ' is-spent' : ''}`} role="img" aria-label={t.iphone.qrLabel} data-qr={pairing.qr}>
+      <div className={`pair-qr${renewing ? ' is-spent' : ''}`} role="img" aria-label={tiph.qrLabel} data-qr={pairing.qr}>
         <svg viewBox={`${-pad} ${-pad} ${qr.size + pad * 2} ${qr.size + pad * 2}`} shapeRendering="crispEdges" aria-hidden="true">
           <rect x={-pad} y={-pad} width={qr.size + pad * 2} height={qr.size + pad * 2} className="pair-qr-paper" />
           <path d={qr.d} className="pair-qr-ink" />
@@ -160,17 +161,17 @@ function Code({ pairing, notice, spent }: { pairing: RemotePairing; notice: 'dec
       </div>
       <div className="pair-side">
         <ol className="pair-steps">
-          <li><span className="pair-step-n">1</span>{t.iphone.step1}</li>
-          <li><span className="pair-step-n">2</span>{t.iphone.step2}</li>
+          <li><span className="pair-step-n">1</span>{tiph.step1}</li>
+          <li><span className="pair-step-n">2</span>{tiph.step2}</li>
         </ol>
-        <div className="pair-code-label">{t.iphone.codeLabel}</div>
+        <div className="pair-code-label">{tiph.codeLabel}</div>
         <div key={pairing.code} className={`pair-code mono${renewing ? ' is-spent' : ''}`} aria-live="polite">{pairing.code}</div>
         <div className="pair-timer" aria-hidden={renewing ? undefined : 'true'}>
           <span className="pair-bar"><span key={pairing.code} style={{ transform: `scaleX(${renewing ? 0 : left / total})` }} /></span>
-          <span className="pair-left mono">{renewing ? t.iphone.renewing : t.iphone.renewsIn(countdown(left))}</span>
+          <span className="pair-left mono">{renewing ? tiph.renewing : tiph.renewsIn(countdown(left))}</span>
         </div>
-        {offline && !notice && <p className="pair-notice" role="status"><Icon name="info" size={13} stroke={1.8} />{t.iphone.notOnline}</p>}
-        {notice && <p className="pair-notice" role="status"><Icon name="info" size={13} stroke={1.8} />{notice === 'declined' ? t.iphone.declined : t.iphone.expired}</p>}
+        {offline && !notice && <p className="pair-notice" role="status"><Icon name="info" size={13} stroke={1.8} />{tiph.notOnline}</p>}
+        {notice && <p className="pair-notice" role="status"><Icon name="info" size={13} stroke={1.8} />{notice === 'declined' ? tiph.declined : tiph.expired}</p>}
       </div>
     </div>
   );
@@ -187,13 +188,13 @@ function Ask({ s, onAllow }: { s: Extract<PairSheet, { phase: 'request' }>; onAl
   return (
     <div className="pair-body pair-message pair-ask">
       <span className="pair-hero is-asking"><Icon name="phone" size={24} stroke={1.6} /></span>
-      <h3>{t.iphone.askTitle(title)}</h3>
+      <h3>{tiph.askTitle(title)}</h3>
       {sub && <span className="pair-ask-model">{sub}</span>}
-      <p>{t.iphone.askBody}</p>
-      <span className="pair-left mono">{t.iphone.answerWithin(countdown(left))}</span>
+      <p>{tiph.askBody}</p>
+      <span className="pair-left mono">{tiph.answerWithin(countdown(left))}</span>
       <div className="pair-actions">
-        <button ref={deny} type="button" className="btn-ghost" disabled={s.answering} onClick={() => void window.atelier.remote.decide(s.request.id, false)}>{t.iphone.deny}</button>
-        <button type="button" className="btn-primary" disabled={s.answering} onClick={() => onAllow(s.request.id)}>{s.answering ? t.iphone.allowing : t.iphone.allow}</button>
+        <button ref={deny} type="button" className="btn-ghost" disabled={s.answering} onClick={() => void window.atelier.remote.decide(s.request.id, false)}>{tiph.deny}</button>
+        <button type="button" className="btn-primary" disabled={s.answering} onClick={() => onAllow(s.request.id)}>{s.answering ? tiph.allowing : tiph.allow}</button>
       </div>
     </div>
   );

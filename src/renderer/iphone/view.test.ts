@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import type { RemoteDeviceInfo, RemoteStatus } from '@shared/remote';
-import { connectedDevices, countdown, deviceSubtitle, deviceTitle, modelName, phoneTerminals, pillView, relayLine, relayProblem, seenText } from './view';
+import { connectedDevices, phoneTerminals, pillView } from './view';
+import { countdown, deviceSubtitle, deviceTitle, modelName, relayLine, relayProblem, seenText } from './sheet-view';
 
 const device = (o: Partial<RemoteDeviceInfo> = {}): RemoteDeviceInfo => ({ id: 'd1', name: 'Test iPhone', model: 'iPhone17,1', pairedAt: 1000, lastSeenAt: 1000, connected: false, attached: [], ...o });
 const status = (o: Partial<RemoteStatus> = {}): RemoteStatus => ({ enabled: true, available: true, relay: { state: 'online' }, devices: [], sized: [], ...o });
@@ -74,5 +75,5 @@ test('the connected phones, the terminals they have open, the pill naming them',
   expect(connectedDevices(status({ enabled: false, devices: [a] }))).toEqual([]);
   expect(pillView([])).toBeNull();
   expect(pillView([a])).toEqual({ label: 'iPhone', tip: 'Connected now: Test iPhone' });
-  expect(pillView([a, b])).toEqual({ label: '2 iPhones', tip: 'Connected now: Test iPhone, iPhone 15' });
+  expect(pillView([a, b])).toEqual({ label: '2 iPhones', tip: 'Connected now: Test iPhone, iPhone' });
 });
