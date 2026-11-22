@@ -9,7 +9,7 @@
 
 export const AREAS = [
   'editor', 'files', 'changes', 'scm', 'review', 'terminal', 'sessions', 'accounts', 'workspace', 'settings',
-  'background', 'services', 'dictation', 'connectors', 'notifications', 'updates', 'companion', 'databases'
+  'background', 'services', 'dictation', 'connectors', 'notifications', 'updates', 'companion', 'databases', 'iphone'
 ] as const;
 export type Area = (typeof AREAS)[number];
 
@@ -176,6 +176,8 @@ export const SPECS: Record<string, Area[]> = {
   'wheel.spec.ts': ['terminal'],
   'themes.spec.ts': ['settings', 'workspace', 'terminal'],
   'project-color.spec.ts': ['settings', 'workspace'],
+  // iPhone access through the test relay and a fake phone: Settings › iPhone, pairing, a phone typing, the marks.
+  'iphone-remote.spec.ts': ['iphone', 'settings', 'terminal'],
   'terminal-font.spec.ts': ['settings', 'terminal'],
   'window.spec.ts': ['workspace'],
   'word-wrap.spec.ts': ['editor', 'settings'],
@@ -242,9 +244,13 @@ export const SOURCES: Record<string, Area[]> = {
   // Ask companion: its pure rules, main's runs and threads, the renderer's state and panel.
   'src/shared/companion/': ['companion'],
   'src/main/companion/': ['companion'],
-  // iPhone access: Noise, pairing, the relay link, the phones' channels and their terminals.
-  'src/main/remote/': ['terminal', 'sessions', 'settings'],
-  'src/shared/remote.ts': ['settings'],
+  // iPhone access: Noise, pairing, the relay link, the phones' channels and their terminals; the renderer's Settings ›
+  // iPhone, pairing sheet, pill, badges and size note; the test relay and the fake phone the spec drives them with.
+  'src/main/remote/': ['iphone', 'terminal', 'sessions', 'settings'],
+  'src/renderer/iphone/': ['iphone'],
+  'tests/support/test-relay.ts': ['iphone'],
+  'tests/support/fake-phone.ts': ['iphone'],
+  'src/shared/remote.ts': ['iphone', 'settings'],
   'src/renderer/companion/': ['companion'],
   'src/renderer/components/companion/': ['companion'],
   // Renderer: folders
