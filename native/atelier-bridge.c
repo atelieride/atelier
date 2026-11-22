@@ -92,8 +92,17 @@ static void forward(const char *kind, const char *in, DWORD in_len, int print_re
   if (!env("ATELIER_TERMINAL_ID", term, sizeof term) || !only(term, "0123456789abcdef-")) return;
   HANDLE p = connect_pipe(pipe);
   if (p == INVALID_HANDLE_VALUE) return;
-  char header[400];
-  int n = snprintf(header, sizeof header, "{\"t\":\"%s\",\"token\":\"%s\",\"term\":\"%s\"}\n", kind, token, term);
+  /* A hook also says whether Remote Control is on: Claude Code sets CLAUDE_CODE_BRIDGE_SESSION_ID ("session_…") in its
+     hooks' environment while connected; anything else is none, as in the sh bridge. 89 bytes: "session_" and at most 80
+     letters and digits, what atelierd accepts (a longer value would make it refuse the whole hook). */
+  char rc[89] = "";
+  if (strcmp(kind, "hook") == 0 && env("CLAUDE_CODE_BRIDGE_SESSION_ID", rc, sizeof rc)) {
+    if (strncmp(rc, "session_", 8) != 0 || !only(rc + 8, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")) rc[0] = 0;
+  } else rc[0] = 0;
+  char header[512];
+  int n = strcmp(kind, "hook") == 0
+    ? snprintf(header, sizeof header, "{\"t\":\"%s\",\"token\":\"%s\",\"term\":\"%s\",\"rc\":\"%s\"}\n", kind, token, term, rc)
+    : snprintf(header, sizeof header, "{\"t\":\"%s\",\"token\":\"%s\",\"term\":\"%s\"}\n", kind, token, term);
   if (n > 0 && n < (int)sizeof header) {
     write_all(p, header, (DWORD)n);
     write_all(p, in, in_len);

@@ -40,6 +40,8 @@ import { openAskFor } from './companion/actions';
 import { moveToWorkspaceItems } from './workspace-menus';
 import { moveToWindowItems } from './move-window';
 import { memberOf } from './workspaces';
+import { remoteUrl } from './remote-view';
+import { openRemote } from './components/RemoteChip';
 
 // Right-click menu entries, by context. None writes to the project (those arrive with file editing).
 const m = t.menu;
@@ -371,6 +373,8 @@ function orderItems(id: string, band: Band | undefined): MenuItem[] {
 export function sessionRowMenu(term: TerminalInfo, band?: Band): MenuItem[] {
   // The chips' popover is mouse-only; this is the keyboard way in (Shift+F10 on the row).
   const background: MenuItem[] = term.session ? [{ id: 'show-background', label: t.bg.showBackground, run: () => st().openBackground({ terminalId: term.id }) }] : [];
+  // Remote Control on: the keyboard's way to the row's Remote chip.
+  if (remoteUrl(term.session?.remote)) background.push({ id: 'open-remote', label: t.remote.open, icon: 'remote', run: () => openRemote(term) });
   const key: TabKey = `t:${term.id}`;
   // In a window of its own: bring it forward or move it back; no pane here to show it in.
   if (st().poppedOut.includes(key)) {

@@ -30,7 +30,8 @@ import { SENSITIVE, SHOTS_ONLY, findBanned } from '../support/banned-strings';
 // +1 KB of room for the chunk names, not for code: What's New's lazy chunk carries CHANGELOG.md, so its hash changes
 // with every release's notes, and with it the names of the chunks the entry lists. Those names are random and compress
 // poorly: one word of release notes moved the first paint by more than 100 bytes, enough to fail a budget met exactly.
-const BUDGET = 920 * 1024;
+// +1 KB for Remote Control: the wifi glyph on a session's row and bar, its URL check, the row's menu item and strings.
+const BUDGET = 921 * 1024;
 const SHARED = resolve('src/shared');
 const INSTALL = resolve('src/demo/install.ts');
 

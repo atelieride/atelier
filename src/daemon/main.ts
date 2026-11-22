@@ -55,7 +55,7 @@ export interface RunDaemonOptions {
   shell?: string;
   shellArgs?: string[];
   /** Replaces the hook handling (tests): such a daemon never replies to the bridge. */
-  onHook?: (term: string, payload: unknown) => void;
+  onHook?: (term: string, payload: unknown, remote?: string) => void;
   onStatus?: (term: string, payload: unknown) => void;
   maxQueuedBytes?: number;
   /** Called after a shutdown requested by a client (the real process exits). */
@@ -316,9 +316,9 @@ export async function runDaemon(o: RunDaemonOptions): Promise<RunningDaemon> {
   // ignore is noted too; it never throws.
   const signals = new SignalBook({ file: paths.claudeSignals, installed: new Set<string>(HOOK_EVENTS), log });
   const custom = o.onHook;
-  const onHook = custom ? (term: string, payload: unknown): null => { custom(term, payload); return null; } : ((term: string, payload: unknown): NameReply | null => {
+  const onHook = custom ? (term: string, payload: unknown, remote?: string): null => { custom(term, payload, remote); return null; } : ((term: string, payload: unknown, remote?: string): NameReply | null => {
     signals.noteHook(payload, terminals.foregroundOf(term));
-    const r = terminals.applyHook(term, payload);
+    const r = terminals.applyHook(term, payload, remote);
     if (!r.ok) { log(`hook ignored for terminal ${term}`); return null; }
     if (r.attribution) { attributions = addAttribution(attributions, r.attribution); emitAttributions(); }
     // After the reducer: a background Bash's PostToolUse registers its shell, which gives the window its taskId.

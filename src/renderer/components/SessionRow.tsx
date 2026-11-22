@@ -25,6 +25,7 @@ import { useAgo, useDayTurn } from '../minute';
 import { closeFromRow, useRowLeave } from '../confirms/RowConfirm';
 import { onEscCancel } from '../confirms/InlineConfirm';
 import { RestartChip } from './RestartChip';
+import { RemoteChip } from './RemoteChip';
 import { RowRestartConfirm } from './RowRestartConfirm';
 import { askMarked } from '../companion/attention';
 import { openAskFor, shownTerminals } from '../companion/actions';
@@ -176,6 +177,7 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
             <ProfileChip term={term} />
           </span>
           <span className="sd-live">
+            <RemoteChip term={term} side="right" />
             {s && <PlanBadge session={s} />}
             <WorkChip term={term} side="right" />
             <ScheduledChip term={term} side="right" />

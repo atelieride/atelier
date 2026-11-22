@@ -1,5 +1,5 @@
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { e2eEnv } from './env';
@@ -346,6 +346,50 @@ test('session rows: the name alone, then the activity alone, then a details line
       if (width >= 264) expect(await busy.locator('.session-activity').evaluate((el) => el.scrollWidth <= el.clientWidth), `activity whole at ${width}px`).toBe(true);
       await look(win.locator('.sidebar'), `test-results/rows-${width}.png`);
     }
+  } finally {
+    await stop(app, home);
+  }
+});
+
+test('Remote Control: the wifi glyph alone on the row and the session bar while Claude Code says it is on; a click opens the session at claude.ai/code; gone with the next hook once off', async () => {
+  const urlLog = join(mkdtempSync(join(tmpdir(), 'atl-url-')), 'urls.log');
+  const { app, home, win } = await launch({ ATELIER_TEST_URL_LOG: urlLog });
+  try {
+    await newSession(win, 'Couch');
+    await typeInto(win, 'Couch', '\r');
+    const r = row(win, 'Couch');
+    await expect(r).toHaveClass(/state-done/, { timeout: 10000 });
+    await expect(r.locator('.remote-chip')).toHaveCount(0);
+    // /remote-control: Claude Code puts the claude.ai session's id in its hooks' environment; the next hook says it.
+    await typeInto(win, 'Couch', 'ev:rc:session_01TestRemoteCtl4Kp9Zq\rev:work\r');
+    const chip = r.locator('.session-details .remote-chip');
+    await expect(chip.locator('svg')).toBeVisible({ timeout: 10000 });
+    // The glyph alone, no word beside it; the row's name still says it to a screen reader.
+    await expect(chip).toHaveText('Remote Control');
+    expect((await chip.boundingBox())!.width).toBeLessThanOrEqual(20);
+    await expect(chip).toHaveAttribute('data-tip', /^Remote Control is on: this session goes on at claude\.ai/);
+    await still(win);
+    await win.mouse.move(700, 500);
+    await look(win.locator('.sidebar'), 'test-results/remote-row.png');
+    // A click opens it in the browser (logged here), and leaves the row as it was.
+    await chip.click();
+    await expect.poll(() => (existsSync(urlLog) ? readFileSync(urlLog, 'utf8') : ''), { timeout: 5000 }).toContain('https://claude.ai/code/session_01TestRemoteCtl4Kp9Zq');
+    // The session bar: a button that says where it goes.
+    await r.locator('.row-main').click();
+    const bar = win.locator('.session-bar .remote-chip');
+    await expect(bar).toBeVisible();
+    await expect(bar).toHaveAttribute('aria-label', 'Open on claude.ai');
+    const box = (await bar.boundingBox())!;
+    expect(box.width).toBeLessThanOrEqual(box.height + 1);
+    await look(win.locator('.session-bar'), 'test-results/remote-bar.png');
+    // The keyboard's way: the row's menu.
+    await r.click({ button: 'right' });
+    await expect(win.getByRole('menuitem', { name: 'Open on claude.ai' })).toBeVisible();
+    await win.keyboard.press('Escape');
+    // Off: the next hook's environment no longer has it.
+    await typeInto(win, 'Couch', 'ev:rc-off\rev:stop\r');
+    await expect(r.locator('.remote-chip')).toHaveCount(0, { timeout: 10000 });
+    await expect(win.locator('.session-bar .remote-chip')).toHaveCount(0);
   } finally {
     await stop(app, home);
   }

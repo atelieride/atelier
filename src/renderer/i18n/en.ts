@@ -70,6 +70,12 @@ const strings = {
   /** A terminal whose close was sent, until it is gone (confirms/slice.ts `closing`). */
   closingRow: 'Closing…',
   sessionNamePlaceholder: 'Session name (optional)',
+  /** Claude Code's Remote Control: the session goes on at claude.ai and in the Claude app. */
+  remote: {
+    chip: 'Remote Control',
+    tip: 'Remote Control is on: this session goes on at claude.ai and in the Claude app\nClick to open it in the browser',
+    open: 'Open on claude.ai'
+  },
   /** Claude accounts. */
   accounts: {
     row: 'Account',

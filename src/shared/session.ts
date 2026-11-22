@@ -55,6 +55,12 @@ export interface SessionInfo {
   limitPause?: LimitPause;
   /** Claude Code's permission mode from the hook inputs (default, plan, acceptEdits, auto, dontAsk, bypassPermissions). */
   permissionMode?: string | null;
+  /**
+   * Remote Control on: the claude.ai session (`session_…`) Claude Code bridges this one to, so it can go on from
+   * claude.ai/code or the Claude app. As the last hook's bridge said (Claude Code sets CLAUDE_CODE_BRIDGE_SESSION_ID in
+   * its hooks' environment while connected): a change shows with the next hook. Absent: off, or an earlier atelierd.
+   */
+  remote?: string;
   /** The session's first prompt, cleaned and cut to 60 characters: the title when no name and no Claude title. */
   autoTitle?: string | null;
   /**
@@ -863,4 +869,11 @@ export function markSeen(s: SessionInfo): SessionInfo {
 /** The shell is back in the foreground: claude exited (even without SessionEnd). */
 export function onShellForeground(_s: SessionInfo | null): SessionInfo | null {
   return null;
+}
+
+/** The session with Remote Control as a hook's bridge said it: its claude.ai session id, or none (the key goes). */
+export function withRemote(s: SessionInfo, remote: string): SessionInfo {
+  if ((s.remote ?? '') === remote) return s;
+  const { remote: _gone, ...rest } = s;
+  return remote ? { ...rest, remote } : rest;
 }

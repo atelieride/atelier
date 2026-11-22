@@ -32,6 +32,14 @@ describe('schemas', () => {
     expect(headerSchema.safeParse({ t: 'hook', token: 'x' }).success).toBe(false);
     expect(headerSchema.safeParse({ t: 'hook', token: 'x', term: 'abc' }).success).toBe(true);
   });
+  test('hook header: the claude.ai session Remote Control bridges to (empty: none), only ever a plain id', () => {
+    const h = { t: 'hook', token: 'x', term: 'abc' };
+    expect(headerSchema.safeParse({ ...h, rc: 'session_01TestRemoteCtl4Kp9Zq' }).success).toBe(true);
+    expect(headerSchema.safeParse({ ...h, rc: '' }).success).toBe(true);
+    expect(headerSchema.safeParse({ ...h, rc: 'session_1"}' }).success).toBe(false);
+    expect(headerSchema.safeParse({ ...h, rc: 'session_../x' }).success).toBe(false);
+    expect(headerSchema.safeParse({ ...h, rc: `session_${'a'.repeat(200)}` }).success).toBe(false);
+  });
 });
 
 describe('terminal profiles (additive, same protocol version)', () => {
