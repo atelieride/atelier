@@ -37,6 +37,7 @@ import type { Run } from './automation-run';
 import type { IfBusy, ScheduledPrompt } from './scheduled-prompts';
 import type { ScheduleNotice } from './schedule-notices';
 import type { Binding, CompanionEvent, CompanionModel, Thread } from './companion/types';
+import type { RemotePairingEvent, RemotePairingStart, RemoteStatus } from './remote';
 import type { SignalBookView } from './claude-signals';
 import type { SearchEvent, SearchRequest } from './search';
 
@@ -114,6 +115,23 @@ export interface CompanionApi {
   newThread(sessionId: string): Promise<Thread>;
   /** The thread's latest outcome was looked at: its unseen mark goes. */
   seen(sessionId: string): Promise<void>;
+}
+
+/**
+ * iPhone access (Settings › iPhone): any trusted app page, the welcome window included. `status` is what Settings,
+ * the footer pill and the phone badges show (on.remote pushes it when it changes). `startPairing` gives the code on
+ * screen (the same one while it lives; on.remotePairing brings a fresh one, a phone asking to pair, the outcome);
+ * `stopPairing` when the sheet closes; `decide` answers the request on screen by its id (false: it is no longer the
+ * one waiting). `removeDevice` unpairs a phone and ends its connection at once; `reset` makes a new identity, which
+ * unpairs every phone.
+ */
+export interface RemoteApi {
+  status(): Promise<RemoteStatus>;
+  startPairing(): Promise<RemotePairingStart>;
+  stopPairing(): Promise<void>;
+  decide(requestId: string, allow: boolean): Promise<boolean>;
+  removeDevice(id: string): Promise<boolean>;
+  reset(): Promise<void>;
 }
 
 /** Install / Uninstall 'atelier' Command. */
@@ -438,6 +456,21 @@ export const IPC = {
    */
   searchStart: 'search:start',
   searchStop: 'search:stop',
+  /**
+   * iPhone access: a trusted app page (any window), strict schemas. ev:remote (RemoteStatus) and ev:remote-pairing
+   * (RemotePairingEvent) go to every window.
+   *   remote:status, remote:start-pairing, remote:stop-pairing, remote:reset   no argument
+   *   remote:decide          { requestId, allow }
+   *   remote:remove-device   { id }
+   */
+  remoteStatus: 'remote:status',
+  remoteStartPairing: 'remote:start-pairing',
+  remoteStopPairing: 'remote:stop-pairing',
+  remoteDecide: 'remote:decide',
+  remoteRemoveDevice: 'remote:remove-device',
+  remoteReset: 'remote:reset',
+  evRemote: 'ev:remote',
+  evRemotePairing: 'ev:remote-pairing',
   // main → renderer events
   evTerminals: 'ev:terminals',
   evBackgroundFeed: 'ev:background-feed',
@@ -1074,6 +1107,8 @@ export interface AtelierApi {
   };
   /** Ask, the read-only companion of a session. */
   companion: CompanionApi;
+  /** iPhone access: status, pairing, paired phones. */
+  remote: RemoteApi;
   /**
    * Find in Files over the window's project. `start` stops the window's search before it; every event carries the id
    * the page gave its search, so a late event of an older one is told apart.
@@ -1162,6 +1197,10 @@ export interface AtelierApi {
     scmMessage(cb: (e: ScmMessageEvent) => void): () => void;
     /** An Ask run queued, started, streamed or traced, or a thread saved (any session's: every window gets them). */
     companion(cb: (e: CompanionEvent) => void): () => void;
+    /** iPhone access's status, whenever it changes (every window). */
+    remote(cb: (s: RemoteStatus) => void): () => void;
+    /** A pairing's news: a fresh code, a phone asking (Allow / Deny), paired, denied, stopped (every window). */
+    remotePairing(cb: (e: RemotePairingEvent) => void): () => void;
     /** The keys of the tabs in pop-outs changed. */
     popouts(cb: (keys: string[]) => void): () => void;
     /** A pop-out's tab is moved back here. */

@@ -219,3 +219,8 @@ test('test timings (ports poll, server threshold, missing output, outside-file g
     expect(index).toContain(`testMs('${name}')`);
   }
 });
+
+test('e2eEnv never lets the app reach the real iPhone relay: a closed loopback port unless a test passes its test relay', () => {
+  expect(e2eEnv().env.ATELIER_TEST_RELAY_URL).toBe('http://127.0.0.1:9');
+  expect(e2eEnv({ ATELIER_TEST_RELAY_URL: 'http://127.0.0.1:4567' }).env.ATELIER_TEST_RELAY_URL).toBe('http://127.0.0.1:4567');
+});

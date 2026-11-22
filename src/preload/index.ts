@@ -380,6 +380,15 @@ const api: AtelierApi = {
     newThread: (sessionId) => ipcRenderer.invoke(IPC.companionNew, { sessionId }),
     seen: (sessionId) => ipcRenderer.invoke(IPC.companionSeen, { sessionId })
   },
+  // Arguments rebuilt field by field: main's schemas are strict.
+  remote: {
+    status: () => ipcRenderer.invoke(IPC.remoteStatus),
+    startPairing: () => ipcRenderer.invoke(IPC.remoteStartPairing),
+    stopPairing: () => ipcRenderer.invoke(IPC.remoteStopPairing),
+    decide: (requestId, allow) => ipcRenderer.invoke(IPC.remoteDecide, { requestId, allow }),
+    removeDevice: (id) => ipcRenderer.invoke(IPC.remoteRemoveDevice, { id }),
+    reset: () => ipcRenderer.invoke(IPC.remoteReset)
+  },
   // The request's fields one by one, as for companion: main's schema is strict.
   search: {
     start: (r) => ipcRenderer.invoke(IPC.searchStart, {
@@ -442,6 +451,8 @@ const api: AtelierApi = {
     gitOp: (cb) => listen(IPC.evGitOp, cb),
     scmMessage: (cb) => listen(IPC.evScmMessage, cb),
     companion: (cb) => listen(IPC.evCompanion, cb),
+    remote: (cb) => listen(IPC.evRemote, cb),
+    remotePairing: (cb) => listen(IPC.evRemotePairing, cb),
     popouts: (cb) => listen(IPC.evPopouts, cb),
     dock: (cb) => listen(IPC.evDock, cb),
     dockHover: (cb) => listen(IPC.evDockHover, cb),

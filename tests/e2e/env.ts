@@ -29,6 +29,8 @@ import { delimiter, join, resolve } from 'node:path';
  * - never the real ClickUp: ATELIER_TEST_CLICKUP_URL is a closed loopback port unless a test passes its fake ClickUp
  * - never the real Notion: ATELIER_TEST_NOTION_URL is a closed loopback port unless a test passes its fake Notion
  * - never the real Atlassian: ATELIER_TEST_JIRA_URL and ATELIER_TEST_JIRA_AUTH_URL likewise, unless a test passes its fake Jira
+ * - never the real iPhone relay: ATELIER_TEST_RELAY_URL is the closed loopback port unless a test passes its test relay
+ *   (tests/support/test-relay.ts)
  * - never the user's desktop apps: ATELIER_TEST_APP_SCHEMES says no app handles task links ("none") unless a test
  *   names the schemes; opened links go to ATELIER_TEST_URL_LOG when a test sets it
  * - never the real Keychain: ATELIER_TEST_FAKE_SAFE_STORAGE swaps safeStorage for a stand-in (always on); a test that
@@ -93,6 +95,8 @@ export function e2eEnv(extra: Record<string, string> = {}): { env: Record<string
   // server, are the closed port unless a test passes tests/fixtures/fake-jira.mjs's two.
   if (!env.ATELIER_TEST_JIRA_URL) env.ATELIER_TEST_JIRA_URL = 'http://127.0.0.1:9';
   if (!env.ATELIER_TEST_JIRA_AUTH_URL) env.ATELIER_TEST_JIRA_AUTH_URL = env.ATELIER_TEST_JIRA_URL;
+  // Never the real iPhone relay, even with iPhone access turned on: the closed port unless a test passes its test relay.
+  if (!env.ATELIER_TEST_RELAY_URL) env.ATELIER_TEST_RELAY_URL = 'http://127.0.0.1:9';
   // Never the user's Claude Code config (Session panel): a fake home with nothing in it unless a test
   // passes its fixture (whatever the environment the tests run in says).
   env.ATELIER_TEST_CLAUDE_HOME = extra.ATELIER_TEST_CLAUDE_HOME || join(home, 'no-claude-home');

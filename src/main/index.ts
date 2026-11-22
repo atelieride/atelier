@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, p
 import { AppLog } from './app-log';
 import { installErrorLog } from './error-log';
 import { basename, join } from 'node:path';
-import { homedir, tmpdir } from 'node:os';
+import { homedir, hostname, tmpdir } from 'node:os';
 import { appendFileSync, existsSync, realpathSync, statSync } from 'node:fs';
 import { daemonPaths } from '@shared/paths.node';
 import { daemonVersionArg } from '@shared/daemon-build';
@@ -128,6 +128,8 @@ import { installSearchIpc } from './search/ipc';
 import { branchAt, companionAccountDir, companionFacts, sessionFiles } from './companion/wiring';
 import { randomUUID } from 'node:crypto';
 import { installMedia, registerMediaScheme } from './media-ipc';
+import { RemoteHub } from './remote/remote-hub';
+import { installRemoteIpc } from './remote/ipc';
 
 // atelier-media: must be privileged before the app is ready.
 registerMediaScheme();
@@ -150,6 +152,8 @@ let uiState: UiState = loadUiState(paths.uiState);
 const shells = readShells();
 const settings = new SettingsStore(paths.preferences, { shells: () => shells().map((s) => s.path), log: (message) => { appLog.write({ source: 'main:settings', message }); } });
 let quitting = false;
+/** iPhone access, made once the app is ready (safeStorage needs it). */
+let remote: RemoteHub | null = null;
 
 function isDir(p: string): boolean {
   try { return existsSync(p) && statSync(p).isDirectory(); } catch { return false; }
@@ -519,6 +523,8 @@ if (!app.requestSingleInstanceLock()) {
     if (s.countBackgroundWork !== prevSettings.countBackgroundWork) hub.workSettingsChanged();
     if (s.claudeMcpNotice !== prevSettings.claudeMcpNotice) hub.mcpSettingsChanged();
     if (s.prStatus !== prevSettings.prStatus) prHub.settingsChanged();
+    // iPhone access: on/off and the relay; project colors change what the phones show.
+    if (s.remoteAccess !== prevSettings.remoteAccess || s.remoteRelay !== prevSettings.remoteRelay || s.projectTint !== prevSettings.projectTint || s.projectColors !== prevSettings.projectColors) remote?.settingsChanged();
     if (s.autoFetch !== prevSettings.autoFetch) scmHub.fetchSettingsChanged();
     if (s.repoSearchDepth !== prevSettings.repoSearchDepth) gitHub.settingsChanged();
     if (s.showServices !== prevSettings.showServices) servicesHub.settingsChanged();
@@ -848,6 +854,8 @@ if (!app.requestSingleInstanceLock()) {
   const projectWindowsInfo = (): ProjectWindowInfo[] => openProjectRoots(windowsView).map((root) => ({ root, name: basename(root) }));
   let windowsKey = '';
   const announceWindows = () => {
+    // The projects a paired phone sees follow the open windows (and the recent list a new window adds to).
+    remote?.projectsChanged();
     const list = projectWindowsInfo();
     const key = JSON.stringify(list);
     if (key === windowsKey) return;
@@ -1406,6 +1414,33 @@ if (!app.requestSingleInstanceLock()) {
       projectOf: (id) => windowProjects.get(id) ?? null,
       isTrusted: trusted,
       handle: (channel, fn) => ipcMain.handle(channel, fn)
+    });
+    // iPhone access: off until Settings › iPhone turns it on (no relay connection, safeStorage untouched). Keys through
+    // the secret store (the e2e stand-in with ATELIER_TEST_FAKE_SAFE_STORAGE); a test relay with ATELIER_TEST_RELAY_URL.
+    remote = new RemoteHub({
+      home: paths.home,
+      secrets: secretStoreFor(paths.home, safeStorage),
+      settings: () => settings.get(),
+      relayUrl: () => devEnv('ATELIER_TEST_RELAY_URL') ?? settings.get().remoteRelay,
+      terminals: hub,
+      projects: () => ({ open: openProjectRoots(windowsView), recent: recentForWelcome(uiState, isDir) }),
+      // The name phones show: the host name without its local-network suffix.
+      host: { name: hostname().replace(/\.local$/i, ''), app: app.getVersion(), platform: currentPlatform() === 'win32' ? 'win32' : 'darwin' },
+      emitStatus: (st) => { for (const b of BrowserWindow.getAllWindows()) sendTo(b, IPC.evRemote, st); },
+      emitPairing: (ev) => { for (const b of BrowserWindow.getAllWindows()) sendTo(b, IPC.evRemotePairing, ev); },
+      log: (message) => { appLog.write({ source: 'main:remote', message }); }
+    });
+    hub.onRemoteSized = () => remote?.statusChanged();
+    installRemoteIpc(remote, { isTrusted: trusted, handle: (channel, fn) => ipcMain.handle(channel, fn) });
+    remote.start();
+    // Quitting: every phone is told (`bye`), then the relay connection closes; the quit goes on right after.
+    let remoteClosed = false;
+    app.on('will-quit', (e) => {
+      if (remoteClosed || !remote) return;
+      remoteClosed = true;
+      if (!remote.hasPhones()) { void remote.dispose(); return; }
+      e.preventDefault();
+      void remote.dispose().finally(() => app.quit());
     });
     // Ask: a project window's pages, pop-outs included (a popped-out session has its panel too).
     // A binding's session and account come from main's own terminal list (and the session's transcript), never the page.

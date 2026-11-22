@@ -82,6 +82,9 @@ export function createEmitter(): Emitter {
     scmMessage: listen('scmMessage'),
     // Ask plays its script (bridge/companion.ts): runs stream, threads live for the visit.
     companion: listen('companion'),
+    // iPhone access is off in the demo: no status changes or pairing news come.
+    remote: listen('remote'),
+    remotePairing: listen('remotePairing'),
     popouts: listen('popouts'),
     dock: listen('dock'),
     dockHover: listen('dockHover'),

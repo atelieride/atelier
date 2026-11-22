@@ -289,6 +289,10 @@ export const tokenConnectSchema = z.object({
 /** connectors:list and tasks:list take nothing. */
 export const noArgsSchema = z.undefined();
 
+// iPhone access: a pairing request's id (8 random bytes, hex) and a paired phone's id (16 base64url characters).
+export const remoteDecideSchema = z.object({ requestId: z.string().regex(/^[0-9a-f]{16}$/), allow: z.boolean() }).strict();
+export const remoteDeviceSchema = z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{16}$/) }).strict();
+
 // Automations: the shape is strict here, every value bounded; main then validates the values
 // field by field (normalizeAutomation), and a new automation must be the sender's project.
 const plainId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
