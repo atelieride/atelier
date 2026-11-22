@@ -904,7 +904,8 @@ describe('remote viewers (a paired phone): watched like a window, with one size 
     // The window keeps its output too, and was never sent the phone's screen.
     const winData = t.w.send.mock.calls.filter((c) => c[0] === IPC.evData).map((c) => c[2]);
     expect(winData).toEqual(['one', 'two']);
-    expect(t.hub.remoteSized()).toEqual(['a']);
+    // With the size, so a window draws the terminal at it.
+    expect(t.hub.remoteSized()).toEqual([{ id: 'a', cols: 60, rows: 30 }]);
   });
 
   test('a terminal nobody lists is refused', async () => {

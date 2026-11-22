@@ -21,6 +21,7 @@ import type { DaemonClient } from './daemon-client';
 import { Attachments } from './attachments';
 import { TerminalSizes, type Size } from './terminal-sizes';
 import { typesSomething } from '@shared/drafts';
+import type { RemoteSized } from '@shared/remote';
 import { IPC, type CheckedFile, type DaemonState, type ShellEnvAuto } from '@shared/api';
 import { pathListSplit } from '@shared/env';
 import { neverSent } from '@shared/daemon-errors';
@@ -1041,9 +1042,12 @@ export class TerminalHub {
     return true;
   }
 
-  /** The terminals whose size a remote viewer owns now. */
-  remoteSized(): string[] {
-    return this.sizes.owned(isRemote);
+  /** The terminals whose size a remote viewer owns now, with that size (windows draw them at it). */
+  remoteSized(): RemoteSized[] {
+    return this.sizes.owned(isRemote).flatMap((id) => {
+      const size = this.sizeOf(id);
+      return size ? [{ id, cols: size.cols, rows: size.rows }] : [];
+    });
   }
 
   /** Typing from a phone takes the size back for it, from whichever view had it. */

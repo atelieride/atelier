@@ -8,16 +8,19 @@ const status = (o: Partial<RemoteStatus> = {}): RemoteStatus => ({ enabled: true
 beforeEach(() => useIphone.setState({ status: null, attached: new Set(), sized: new Set(), pairOpen: false, marksReady: false }));
 
 test('the terminals a connected phone has open, and those a phone sized, as sets', () => {
-  useIphone.getState().setStatus(status({ devices: [device({ attached: ['t1'] }), device({ id: 'd2', connected: false, attached: ['t9'] })], sized: ['t1'] }));
+  useIphone.getState().setStatus(status({ devices: [device({ attached: ['t1'] }), device({ id: 'd2', connected: false, attached: ['t9'] })], sized: [{ id: 't1', cols: 60, rows: 20 }] }));
   expect([...useIphone.getState().attached]).toEqual(['t1']);
   expect([...useIphone.getState().sized]).toEqual(['t1']);
 });
 
 test('a status that changes nothing they show keeps the sets as they were: rows and tabs don\'t re-render', () => {
-  useIphone.getState().setStatus(status({ devices: [device({ attached: ['t1', 't2'] })], sized: ['t2'] }));
+  useIphone.getState().setStatus(status({ devices: [device({ attached: ['t1', 't2'] })], sized: [{ id: 't2', cols: 60, rows: 20 }] }));
   const { attached, sized } = useIphone.getState();
-  useIphone.getState().setStatus(status({ devices: [device({ attached: ['t2', 't1'], lastSeenAt: 99 })], sized: ['t2'], relay: { state: 'connecting' } }));
+  useIphone.getState().setStatus(status({ devices: [device({ attached: ['t2', 't1'], lastSeenAt: 99 })], sized: [{ id: 't2', cols: 60, rows: 20 }], relay: { state: 'connecting' } }));
   expect(useIphone.getState().attached).toBe(attached);
+  expect(useIphone.getState().sized).toBe(sized);
+  // The phone's keyboard came: the same terminal at another size (the terminal's view reads the size itself).
+  useIphone.getState().setStatus(status({ devices: [device({ attached: ['t1', 't2'] })], sized: [{ id: 't2', cols: 60, rows: 12 }] }));
   expect(useIphone.getState().sized).toBe(sized);
   useIphone.getState().setStatus(status({ devices: [device({ attached: ['t1'] })], sized: [] }));
   expect([...useIphone.getState().attached]).toEqual(['t1']);
@@ -25,8 +28,8 @@ test('a status that changes nothing they show keeps the sets as they were: rows 
 });
 
 test('access off: no badge and no size note, whatever the last list said', () => {
-  useIphone.getState().setStatus(status({ devices: [device({ attached: ['t1'] })], sized: ['t1'] }));
-  useIphone.getState().setStatus(status({ enabled: false, devices: [device({ attached: ['t1'] })], sized: ['t1'] }));
+  useIphone.getState().setStatus(status({ devices: [device({ attached: ['t1'] })], sized: [{ id: 't1', cols: 60, rows: 20 }] }));
+  useIphone.getState().setStatus(status({ enabled: false, devices: [device({ attached: ['t1'] })], sized: [{ id: 't1', cols: 60, rows: 20 }] }));
   expect(useIphone.getState().attached.size).toBe(0);
   expect(useIphone.getState().sized.size).toBe(0);
 });

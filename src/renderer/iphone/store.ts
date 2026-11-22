@@ -48,7 +48,7 @@ export const useIphone = create<IphoneState>((set, get) => ({
     const prev = get();
     if (status.enabled) loadMarks();
     // The sets keep their identity while their content stays: rows and tabs re-render only when theirs changes.
-    set({ status, attached: sameOr(prev.attached, phoneTerminals(status)), sized: sameOr(prev.sized, status.enabled ? status.sized : []) });
+    set({ status, attached: sameOr(prev.attached, phoneTerminals(status)), sized: sameOr(prev.sized, status.enabled ? status.sized.map((s) => s.id) : []) });
   },
   setPairOpen: (pairOpen) => set({ pairOpen })
 }));

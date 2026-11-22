@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { TerminalInfo } from '@shared/protocol';
-import type { RemotePairingEvent, RemoteStatus } from '@shared/remote';
+import type { RemotePairingEvent, RemoteSized, RemoteStatus } from '@shared/remote';
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings';
 import { FakePhone, type Msg } from '../../../tests/support/fake-phone';
 import { startTestRelay, type TestRelay } from '../../../tests/support/test-relay';
@@ -27,7 +27,7 @@ class FakeTerminals implements RemoteTerminals {
   inputs: [string, string][] = [];
   resizes: [string, number, number][] = [];
   created: { project: string; kind: string; cols: number; rows: number }[] = [];
-  sized: string[] = [];
+  sized: RemoteSized[] = [];
   allTerminals() { return this.list; }
   onShown(cb: () => void) { this.shown.add(cb); return () => { this.shown.delete(cb); }; }
   set(list: TerminalInfo[]) { this.list = list; for (const cb of this.shown) cb(); }

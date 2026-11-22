@@ -64,6 +64,9 @@ export interface RemoteDeviceInfo {
   attached: string[];
 }
 
+/** A terminal a phone sized, and the size it has. */
+export interface RemoteSized { id: string; cols: number; rows: number }
+
 export interface RemoteStatus {
   /** Settings › iPhone › Allow access from iPhone. */
   enabled: boolean;
@@ -71,8 +74,11 @@ export interface RemoteStatus {
   available: boolean;
   relay: { state: RemoteRelayState; message?: string };
   devices: RemoteDeviceInfo[];
-  /** Terminals whose size a phone owns now: an Atelier window shows them at the phone's size until it takes it back. */
-  sized: string[];
+  /**
+   * Terminals whose size a phone owns now, with that size: an Atelier window shows them at it until it takes it back
+   * (what the program draws for that size then lands where it does on the phone).
+   */
+  sized: RemoteSized[];
 }
 
 /** A pairing code on screen: as shown (7K4Q-9MXD-2HTR), the QR code's text, and when it gives way to a fresh one. */

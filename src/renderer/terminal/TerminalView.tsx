@@ -17,6 +17,7 @@ import { profileShellKind } from '@shared/shell-kind';
 import { onTerminalFind, requestTerminalFind } from './find';
 import { PtySize } from './pty-size';
 import { SizeNote } from '../iphone/marks';
+import { useIphone } from '../iphone/store';
 
 // Find in the terminal: the card and xterm's search addon are a chunk of their own, never in the
 // first paint (the app's nor the live demo's), fetched once the first terminal is up and the page is idle. Kept here
@@ -110,6 +111,18 @@ export function TerminalView({ id, visible, focused = visible, place }: { id: st
     refit.current = now;
     return () => { ro.disconnect(); pty.flush(); refit.current = null; };
   }, [id, visible, setSize]);
+  // A phone owns the terminal's size: drawn at it, the terminal's one size, so what the program draws for it (a shell
+  // redrawing its prompt, a full-screen app) lands where it does on the phone; drawn at the pane's size it went a line
+  // too high and wiped the output above. Only this view changes: the program has that size already. Taken back (typing
+  // here, a resize, Fit to Window) or the phone gone, main gives the program this window's size: the pane's here.
+  const phone = useIphone((x) => { const s = x.status?.enabled && x.status.sized.find((v) => v.id === id); return s ? `${s.cols}x${s.rows}` : ''; });
+  useEffect(() => {
+    if (!visible) return;
+    const lt = getLiveTerminal(id);
+    if (phone) { const [cols, rows] = phone.split('x').map(Number); lt.term.resize(cols!, rows!); }
+    else try { lt.fit.fit(); } catch { return; }
+    setSize(lt.term.cols, lt.term.rows);
+  }, [id, visible, phone, setSize]);
   // The keyboard goes to the shown terminal; in the split view only to the focused pane's.
   useEffect(() => { if (visible && focused) getLiveTerminal(id).term.focus(); }, [id, visible, focused]);
 

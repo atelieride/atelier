@@ -3,7 +3,7 @@
 // output, typing, sizes, new sessions — and runs pairing (the code, the Allow/Deny question to the windows). Off, no
 // relay connection exists at all. A phone only names what the state listed: opaque project ids and terminal ids, never
 // paths, commands, accounts or profiles.
-import type { RemoteDeviceInfo, RemotePairingEvent, RemotePairingStart, RemoteRelayState, RemoteStatus } from '@shared/remote';
+import type { RemoteDeviceInfo, RemotePairingEvent, RemotePairingStart, RemoteRelayState, RemoteSized, RemoteStatus } from '@shared/remote';
 import { relayBase } from '@shared/remote';
 import type { Settings } from '@shared/settings';
 import type { TerminalInfo } from '@shared/protocol';
@@ -29,7 +29,7 @@ export interface RemoteTerminals {
   remoteDetach(key: number, id: string): void;
   remoteInput(key: number, id: string, data: string): boolean;
   remoteResize(key: number, id: string, cols: number, rows: number): boolean;
-  remoteSized(): string[];
+  remoteSized(): RemoteSized[];
   createRemoteSession(o: { project: string; kind: 'claude' | 'terminal'; cols: number; rows: number }): Promise<TerminalInfo>;
 }
 

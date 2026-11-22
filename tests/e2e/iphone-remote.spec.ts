@@ -251,7 +251,7 @@ test('main\'s news on screen: the Allow question, Deny, no answer, paired; the p
     await expect.poll(() => calls(app)).toContainEqual(['stop']);
 
     // Connected, with this terminal open on the phone and sized by it: the pill, the badges, the note.
-    await pushStatus(app, statusOf({ devices: [device({ attached: [id] }), device({ id: 'dev-2', name: 'iPhone', model: 'iPhone15,4', connected: false, lastSeenAt: Date.now() - 3 * 3_600_000 })], sized: [id] }));
+    await pushStatus(app, statusOf({ devices: [device({ attached: [id] }), device({ id: 'dev-2', name: 'iPhone', model: 'iPhone15,4', connected: false, lastSeenAt: Date.now() - 3 * 3_600_000 })], sized: [{ id, cols: 60, rows: 20 }] }));
     const pill = win.locator('.foot-iphone');
     await expect(pill).toHaveText('iPhone');
     await expect(pill).toHaveAttribute('data-tip', 'Connected now: Test iPhone');
@@ -317,7 +317,7 @@ test('main\'s news on screen: the Allow question, Deny, no answer, paired; the p
 
     // The same marks in a light theme.
     await setTheme(win, 'daylight');
-    await pushStatus(app, statusOf({ devices: [device({ attached: [id] })], sized: [id] }));
+    await pushStatus(app, statusOf({ devices: [device({ attached: [id] })], sized: [{ id, cols: 60, rows: 20 }] }));
     await expect(pill).toBeVisible();
     await look(win, `${SHOTS}/marks-light.png`, { settle: 400 });
     await command(app, 'pair-iphone');
@@ -373,17 +373,36 @@ test('a phone pairs by code, Allow, types in a terminal; access off and Remove d
     expect(await phone.attach(id, 60, 20)).toMatchObject({ t: 'snapshot', id, cols: 60, rows: 20 });
     phone.input(id, 'echo phone-was-here\r');
     await phone.sees(id, 'phone-was-here', 10000);
-    await expect(win.locator('.terminal-slot:visible .xterm-rows')).toContainText('phone-was-here', { timeout: 10000 });
+    const rows = win.locator('.terminal-slot:visible .xterm-rows');
+    // The command, then its output on a line of its own (the rows' text line by line).
+    const echoed = /echo phone-was-here\s*\n\s*phone-was-here/;
+    await expect(rows).toContainText(echoed, { useInnerText: true, timeout: 10000 });
     await expect(win.locator('.tab.is-active .phone-badge')).toBeVisible();
     await expect(win.locator(`[data-term-row="${id}"] .phone-badge`)).toBeVisible();
     const note = win.locator('.terminal-slot:visible .size-note');
     await expect(note).toContainText('Sized for iPhone');
     await expect(row).toHaveCount(0);
+    // Drawn here at the phone's size, the terminal's one size: what the shell redraws for it lands where it does on the
+    // phone. The phone's keyboard coming changes its rows: the shell redraws its prompt, and the output above stays
+    // (drawn at this window's own width, the redraw went one line too high and wiped it).
+    await expect(rows.locator(':scope > div')).toHaveCount(20);
+    await expect(win.locator('.footer')).toContainText('60×20');
+    const redraw = phone.messages.length;
+    phone.resize(id, 60, 12);
+    await expect(rows.locator(':scope > div')).toHaveCount(12);
+    await phone.waitFor((m) => m.t === 'out' && m.id === id, { since: redraw, ms: 10000 });
+    // What the phone types next comes after the redraw: once its output is here, the redraw is too.
+    phone.input(id, 'echo after-redraw\r');
+    await expect(rows).toContainText(/\n\s*after-redraw\s*(\n|$)/, { useInnerText: true, timeout: 10000 });
+    await expect(rows).toContainText(/\n\s*phone-was-here\s*\n/, { useInnerText: true });
     await look(win, `${SHOTS}/real-phone-typed.png`, { settle: 400 });
     const since = phone.messages.length;
     await note.getByRole('button', { name: 'Fit to Window' }).click();
     await expect(note).toHaveCount(0);
     expect((await phone.waitFor((m) => m.t === 'size' && m.id === id, { since, ms: 10000 })).cols).toBeGreaterThan(60);
+    // This window's own size again.
+    await expect(rows.locator(':scope > div')).not.toHaveCount(12);
+    await expect(win.locator('.footer')).not.toContainText('60×12');
 
     // Access off: the phone is told and dropped; nothing shows it any more.
     await openSection(app, win);
