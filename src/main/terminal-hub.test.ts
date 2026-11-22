@@ -930,6 +930,27 @@ describe('remote viewers (a paired phone): watched like a window, with one size 
     expect(t.sent()).toEqual([{ t: 'input', id: 'a', data: '\x1b[I' }]);
   });
 
+  test('the window\'s answers to its program leave the phone the size; a key, a paste or Shift+Enter in the window take it back', async () => {
+    const t = await withWindow();
+    await t.phoneAttach();
+    t.client.send.mockClear();
+    // What the window's xterm answers by itself, through the path keys take: device attributes, status and cursor
+    // reports, mode reports, colors, a status string, the window size, focus and mouse reports. Nobody typed.
+    const answers = ['\x1b[?1;2c', '\x1b[>0;276;0c', '\x1b[0n', '\x1b[12;40R', '\x1b[?12;40R', '\x1b[?2004;2$y', '\x1b[4;2$y',
+      '\x1b]11;rgb:1e1e/1e1e/2e2e\x1b\\', '\x1b]4;1;rgb:cdcd/0000/0000\x1b\\', '\x1bP1$r0m\x1b\\', '\x1b[8;24;80t', '\x1b[I', '\x1b[O', '\x1b[<64;10;5M'];
+    for (const a of answers) t.winType(a);
+    expect(t.sent()).toEqual(answers.map((data) => ({ t: 'input', id: 'a', data })));
+    expect(t.got.filter((g) => g[0] === 'size')).toEqual([]);
+    expect(t.hub.remoteSized()).toEqual([{ id: 'a', cols: 60, rows: 30 }]);
+    // The person at the Mac: each takes the size back, before what it types.
+    for (const key of ['x', '\x1b[200~pasted\x1b[201~', '\x1b\r', '\r', '\x7f', '\x03']) {
+      t.hub.remoteResize(t.key, 'a', 60, 30);
+      t.client.send.mockClear();
+      t.winType(key);
+      expect(t.sent(), JSON.stringify(key)).toEqual([{ t: 'resize', id: 'a', cols: 120, rows: 40 }, { t: 'input', id: 'a', data: key }]);
+    }
+  });
+
   test('a window resize takes the size; the phone is told; the phone typing takes it back', async () => {
     const t = await withWindow();
     await t.phoneAttach();

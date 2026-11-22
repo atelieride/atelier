@@ -431,3 +431,74 @@ test('a phone pairs by code, Allow, types in a terminal; access off and Remove d
     await relay.close();
   }
 });
+
+// ── A terminal a phone sized, in the window ──
+
+/** Pairs `phone` by code from Settings › iPhone (access on, Allow), then closes Settings. */
+async function pairPhone(app: ElectronApplication, win: Page, phone: FakePhone): Promise<void> {
+  await openSection(app, win);
+  await win.getByRole('switch', { name: 'Allow access from iPhone' }).click();
+  await expect(win.locator('.iph-status')).toContainText('Connected to the relay', { timeout: 15000 });
+  await win.getByRole('button', { name: 'Pair iPhone…' }).click();
+  const paired = phone.pairByCode(await codeOnScreen(win));
+  const sheet = win.locator('.pair-sheet');
+  await sheet.getByRole('button', { name: 'Allow' }).click({ timeout: 20000 });
+  expect((await paired).t).toBe('welcome');
+  await expect(sheet).toHaveCount(0);
+  await win.keyboard.press('Escape');
+  await expect(win.locator('.settings')).toHaveCount(0);
+}
+
+/** The phone opens the window's terminal at its own size; the terminal's id. */
+async function phoneOpens(win: Page, phone: FakePhone, cols: number, rows: number): Promise<string> {
+  const id = (await win.locator('[data-term-row]').first().getAttribute('data-term-row'))!;
+  await phone.state((s) => sessionsOf(s).some((x) => x.id === id), 10000);
+  expect(await phone.attach(id, cols, rows)).toMatchObject({ t: 'snapshot', id, cols, rows });
+  return id;
+}
+
+// The window's terminal answers a program's queries (device attributes, cursor position, mode reports) through the
+// path keys take: an answer is no keystroke, so the phone keeps the size, and the window keeps drawing it at the
+// phone's. A key typed in the window takes it back.
+test('a phone keeps a terminal\'s size through the window\'s answers to its program; typing in the window takes it back', async () => {
+  test.setTimeout(180_000);
+  const relay = await startTestRelay();
+  const { app, win, home } = await launch({ ATELIER_TEST_RELAY_URL: relay.url });
+  const phone = new FakePhone({ relay: relay.url });
+  try {
+    await pairPhone(app, win, phone);
+    const id = await phoneOpens(win, phone, 50, 20);
+    const rows = win.locator('.terminal-slot:visible .xterm-rows');
+    const note = win.locator('.terminal-slot:visible .size-note');
+    await expect(note).toContainText('Sized for iPhone');
+    await expect(rows.locator(':scope > div')).toHaveCount(20);
+    await expect(win.locator('.footer')).toContainText('50×20');
+
+    // From the phone, a program asks the terminal three questions and reads each answer. Only the window answers (the
+    // fake phone has no terminal), and each answer reaches main before the program prints: once it has, a size taken
+    // back would have reached the phone already, in order.
+    const since = phone.messages.length;
+    phone.input(id, "printf '\\033[c'; read -s -t 5 -d c a; printf '\\033[6n'; read -s -t 5 -d R b; printf '\\033[?2004$p'; read -s -t 5 -d y c; echo \"ans\"\"wered ${#a} ${#b} ${#c}\"\r");
+    await expect.poll(() => phone.screen(id), { timeout: 15000 }).toMatch(/answered [1-9]\d* [1-9]\d* [1-9]\d*/);
+    expect(phone.messages.slice(since).filter((m) => m.t === 'size')).toEqual([]);
+    await expect(note).toContainText('Sized for iPhone');
+    await expect(rows.locator(':scope > div')).toHaveCount(20);
+    await expect(win.locator('.footer')).toContainText('50×20');
+    await look(win, `${SHOTS}/answers-kept-size.png`, { settle: 300 });
+
+    // A key typed in the window takes the size back: the phone is told, the note goes, the window's own size again.
+    const typed = phone.messages.length;
+    await win.locator('.terminal-slot:visible .xterm-helper-textarea').focus();
+    await win.keyboard.type('echo mac-typed');
+    expect((await phone.waitFor((m) => m.t === 'size' && m.id === id, { since: typed, ms: 10000 })).cols).toBeGreaterThan(50);
+    await expect(note).toHaveCount(0);
+    await expect(rows.locator(':scope > div')).not.toHaveCount(20);
+    await win.keyboard.press('Enter');
+    await expect(rows).toContainText(/\n\s*mac-typed\s*(\n|$)/, { useInnerText: true, timeout: 10000 });
+  } finally {
+    phone.drop();
+    await app.close();
+    stopDaemon(home);
+    await relay.close();
+  }
+});
