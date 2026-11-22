@@ -135,7 +135,7 @@ export const rows: FeatureRowData[] = [
   {
     id: 'accounts', eyebrow: 'Claude accounts', title: 'All your Claude accounts, side by side.',
     text: 'More than one Claude subscription? Pick the account as you start a session, with its limits in view. Every session remembers which one it runs as.',
-    bullets: ['Each account\'s 5-hour and weekly limits, right where you choose', 'A chip on the sessions that run as another account', 'Resume, the session panel and dictation clean-up follow each session\'s account', 'Your own claude flags on every new session, or on one account\'s only'],
+    bullets: ['Each account\'s 5-hour and weekly limits, right where you choose', 'The account under each session that runs as another one, or once on its workspace when they all do','Resume, the session panel and dictation clean-up follow each session\'s account', 'Your own claude flags on every new session, or on one account\'s only'],
     shot: 'accounts', corner: false, alt: 'New Session with two Claude accounts, Personal and Work, each with its limits; Work is picked',
     shortcut: '⇥  switch account',
     demo: { view: 'new-session-account:work' }
