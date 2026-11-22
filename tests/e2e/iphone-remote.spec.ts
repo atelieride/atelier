@@ -334,10 +334,8 @@ test('main\'s news on screen: the Allow question, Deny, no answer, paired; the p
 const sessionsOf = (s: Msg) => s.sessions as { id: string; project: string; title: string; claude: boolean }[];
 const projectsOf = (s: Msg) => s.projects as { id: string; name: string; open: boolean }[];
 
-// The whole way with a phone. Waits for the main process's Noise to run on Electron's own crypto, which has no
-// chacha20-poly1305 cipher (tests/integration/remote-crypto-electron.test.ts): until then the host can't complete a
-// handshake, and a phone is closed (4400) before the question is ever asked.
-test.fixme('a phone pairs by code, Allow, types in a terminal; access off and Remove drop it', async () => {
+// The whole way with a phone: the real handshakes, the real hub, the real terminal.
+test('a phone pairs by code, Allow, types in a terminal; access off and Remove drop it', async () => {
   test.setTimeout(180_000);
   const relay = await startTestRelay();
   const { app, win, home, root } = await launch({ ATELIER_TEST_RELAY_URL: relay.url });
@@ -351,14 +349,19 @@ test.fixme('a phone pairs by code, Allow, types in a terminal; access off and Re
     const sheet = win.locator('.pair-sheet');
     const paired = phone.pairByCode(await codeOnScreen(win));
     await expect(sheet.getByRole('heading', { name: 'Allow Test iPhone to use Atelier?' })).toBeVisible({ timeout: 20000 });
+    await expect(sheet).toContainText('iPhone 16 Pro');
+    await look(win, `${SHOTS}/real-request.png`, { settle: 300 });
     await sheet.getByRole('button', { name: 'Allow' }).click();
     expect((await paired).t).toBe('welcome');
     await expect(sheet).toHaveCount(0);
     await expect(win.locator('.toast')).toContainText('iPhone paired');
     const row = win.locator('.iph-device', { hasText: 'Test iPhone' });
     await expect(row.locator('.iph-chip')).toHaveText('Connected');
+    await expect(access).toHaveAttribute('aria-checked', 'true');
+    await look(win, `${SHOTS}/real-settings-paired.png`, { settle: 300 });
     await win.keyboard.press('Escape');
     await expect(win.locator('.foot-iphone')).toHaveText('iPhone');
+    await expect(win.locator('.foot-iphone')).toHaveAttribute('data-tip', 'Connected now: Test iPhone');
 
     // The phone sees the project and its terminal (by opaque ids, never a path), opens it and types.
     const id = (await win.locator('[data-term-row]').first().getAttribute('data-term-row'))!;
@@ -375,6 +378,8 @@ test.fixme('a phone pairs by code, Allow, types in a terminal; access off and Re
     await expect(win.locator(`[data-term-row="${id}"] .phone-badge`)).toBeVisible();
     const note = win.locator('.terminal-slot:visible .size-note');
     await expect(note).toContainText('Sized for iPhone');
+    await expect(row).toHaveCount(0);
+    await look(win, `${SHOTS}/real-phone-typed.png`, { settle: 400 });
     const since = phone.messages.length;
     await note.getByRole('button', { name: 'Fit to Window' }).click();
     await expect(note).toHaveCount(0);
