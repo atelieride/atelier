@@ -6,6 +6,7 @@
 // whole connection closed: frames wait in per-channel queues, served in turn. Relay URLs are checked by relayBase
 // (https anywhere, http only to loopback and private addresses) before anything dials them.
 import { relayBase } from '@shared/remote';
+import { TokenBucket } from './bucket';
 import { channelFrame, parseChannelFrame, type ChannelKind } from './wire';
 
 export type RelayState = 'connecting' | 'online' | 'offline' | 'error';
@@ -60,24 +61,6 @@ export function relayEndpoint(base: string, roomId: string): string {
 type Entry = { frame: Buffer } | { close: number };
 interface Queue { entries: Entry[]; bytes: number }
 
-class TokenBucket {
-  private tokens: number;
-  private at = Date.now();
-  constructor(private readonly b: Bucket) { this.tokens = b.burst; }
-  private refill(): void {
-    const now = Date.now();
-    this.tokens = Math.min(this.b.burst, this.tokens + ((now - this.at) / 1000) * this.b.perSec);
-    this.at = now;
-  }
-  /** Ms until `n` tokens are there (0: now). */
-  wait(n: number): number {
-    this.refill();
-    const need = Math.min(n, this.b.burst) - this.tokens;
-    return need <= 0 ? 0 : Math.ceil((need / this.b.perSec) * 1000);
-  }
-  take(n: number): void { this.refill(); this.tokens -= n; }
-}
-
 /** The relay's close codes that mean this computer must not simply retry at once. */
 const REFUSED: Record<number, string> = {
   4401: 'The relay refused this computer\'s identity.',
@@ -110,8 +93,8 @@ export class RelayLink {
   constructor(private readonly o: RelayLinkOptions) {
     this.timing = { ...TIMING, ...o.timing };
     this.budget = { ...BUDGET, ...o.budget };
-    this.frames = new TokenBucket(this.budget.frames);
-    this.bytes = new TokenBucket(this.budget.bytes);
+    this.frames = new TokenBucket(this.budget.frames.burst, this.budget.frames.perSec);
+    this.bytes = new TokenBucket(this.budget.bytes.burst, this.budget.bytes.perSec);
   }
 
   get state(): RelayState { return this.current; }

@@ -1,7 +1,8 @@
-import { mkdtempSync, readFileSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
+import { expectMode } from '../../../tests/support/platform';
 import { DeviceStore, MAX_DEVICES, deviceIdOf } from './devices';
 
 const home = () => mkdtempSync(join(tmpdir(), 'atl-remote-dev-'));
@@ -14,8 +15,8 @@ test('paired devices live in ATELIER_HOME/remote/devices.json, 0600 in a 0700 fo
   const d = store.add({ name: 'Test iPhone', model: 'iPhone17,1', key: key(1) });
   expect(d).toEqual({ id: deviceIdOf(key(1)), name: 'Test iPhone', model: 'iPhone17,1', key: key(1), pairedAt: 1000, lastSeenAt: 1000 });
   const file = join(h, 'remote', 'devices.json');
-  expect(statSync(file).mode & 0o777).toBe(0o600);
-  expect(statSync(join(h, 'remote')).mode & 0o777).toBe(0o700);
+  expectMode(file, 0o600);
+  expectMode(join(h, 'remote'), 0o700);
   expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ v: 1, devices: [d] });
   now = 5000;
   store.seen(d.id);

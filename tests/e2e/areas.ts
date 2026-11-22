@@ -242,6 +242,9 @@ export const SOURCES: Record<string, Area[]> = {
   // Ask companion: its pure rules, main's runs and threads, the renderer's state and panel.
   'src/shared/companion/': ['companion'],
   'src/main/companion/': ['companion'],
+  // iPhone access: Noise, pairing, the relay link, the phones' channels and their terminals.
+  'src/main/remote/': ['terminal', 'sessions', 'settings'],
+  'src/shared/remote.ts': ['settings'],
   'src/renderer/companion/': ['companion'],
   'src/renderer/components/companion/': ['companion'],
   // Renderer: folders
@@ -492,6 +495,7 @@ export const SOURCES: Record<string, Area[]> = {
   'src/main/about.ts': ['workspace'],
   'src/main/app-log.ts': ['workspace'],
   'src/main/attachments.ts': ['terminal'],
+  'src/main/terminal-sizes.ts': ['terminal'],
   'src/main/attention.ts': ['sessions'],
   'src/main/auto-update.ts': ['updates'],
   'src/main/store-': ['updates'],
