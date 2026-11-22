@@ -2,7 +2,8 @@
 // suite: the iOS app's live check starts the relay, runs this spec, then the app's own UI test on a simulator.
 //   ATELIER_LIVE_DIR    the folder both sides share: handoff.json (the code, the QR link, the terminal) goes there for
 //                       the phone, and the screenshots (with ATELIER_E2E_SHOTS=1); the phone writes phone-confirming
-//                       there while it waits for Allow, and phone-done (passed or failed) says the phone side ended
+//                       there while it waits for Allow, and phone-done (passed or failed) says the phone side ended;
+//                       this side writes mac-typed once it has seen the phone's output and the marks
 //   ATELIER_LIVE_RELAY  the relay's base URL (http://127.0.0.1:8787 by default), typed in Settings › iPhone
 //   ATELIER_LIVE_TEXT   what the phone echoes (from-iphone-live by default)
 // The Atelier is the e2e one (tests/e2e/env.ts): hidden, its own temporary home and atelierd, a fresh project with
@@ -130,6 +131,8 @@ test('live: the iOS app pairs through the relay, Allow, and types in a terminal'
     await expect(win.locator('.tab.is-active .phone-badge')).toBeVisible();
     await expect(win.locator(`[data-term-row="${terminal}"] .phone-badge`)).toBeVisible();
     await look(win, join(LIVE, 'mac-4-typed.png'), { settle: 400 });
+    // The phone stays in the terminal until this side has its screenshot: leaving earlier would take the marks away.
+    writeFileSync(join(LIVE, 'mac-typed'), '');
 
     // Atelier stays up until the phone side has checked its own screen.
     await expect.poll(phoneOutcome, { timeout: 15 * 60_000, intervals: [1000] }).not.toBe('');
