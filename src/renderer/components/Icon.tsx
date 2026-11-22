@@ -182,7 +182,11 @@ const paths = {
   fkArrow: <path d="M7 13l6-6M8.5 7H13v4.5" />,
   jsonBranch: <path d="M6 4v6.5a3 3 0 0 0 3 3h7M13 10.5l3 3-3 3" />,
   refresh: <><path d="M15.5 8A6 6 0 0 0 4.6 7M4.5 12a6 6 0 0 0 10.9 1" /><path d="M4.5 3.5V7H8M15.5 16.5V13H12" /></>,
-  shieldOff: <><path d="M10 2.5 4 5v4.6c0 3.7 2.6 6.8 6 7.9 3.4-1.1 6-4.2 6-7.9V5z" /><path d="M7.5 7.5l5 5M12.5 7.5l-5 5" /></>
+  shieldOff: <><path d="M10 2.5 4 5v4.6c0 3.7 2.6 6.8 6 7.9 3.4-1.1 6-4.2 6-7.9V5z" /><path d="M7.5 7.5l5 5M12.5 7.5l-5 5" /></>,
+  // iPhone access: a QR code's three finder squares and a few modules (Pair iPhone…), and a frame whose corners open
+  // out (a terminal sized for a phone, fitted to its window again).
+  qr: <><rect x="3" y="3" width="5" height="5" rx="1.2" /><rect x="12" y="3" width="5" height="5" rx="1.2" /><rect x="3" y="12" width="5" height="5" rx="1.2" /><path d="M12 12h2.2M17 12v.01M12 15v2M14.5 14.5h2.5V17" /></>,
+  fit: <><path d="M3 7.5V5a2 2 0 0 1 2-2h2.5M12.5 3H15a2 2 0 0 1 2 2v2.5M17 12.5V15a2 2 0 0 1-2 2h-2.5M7.5 17H5a2 2 0 0 1-2-2v-2.5" /><rect x="7.5" y="7.5" width="5" height="5" rx="1" /></>
 } as const;
 
 export type IconName = keyof typeof paths;

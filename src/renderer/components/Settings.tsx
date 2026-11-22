@@ -53,7 +53,7 @@ const zshEnv = shellEnv();
 
 const SECTIONS: { id: SettingsSection; icon: IconName }[] = [
   { id: 'appearance', icon: 'appearance' }, { id: 'terminal', icon: 'terminal' }, { id: 'editor', icon: 'code' }, { id: 'scm', icon: 'git' }, { id: 'docker', icon: 'whale' }, { id: 'redis', icon: 'redis' }, { id: 'databases', icon: 'databases' },
-  { id: 'claude', icon: 'sparkle' }, { id: 'connectors', icon: 'plug' }, { id: 'ask', icon: 'ask' }, { id: 'automations', icon: 'automation' }, { id: 'dictation', icon: 'mic' }, { id: 'notifications', icon: 'bell' }, { id: 'keyboard', icon: 'keyboard' }, { id: 'about', icon: 'info' }
+  { id: 'claude', icon: 'sparkle' }, { id: 'connectors', icon: 'plug' }, { id: 'ask', icon: 'ask' }, { id: 'automations', icon: 'automation' }, { id: 'dictation', icon: 'mic' }, { id: 'notifications', icon: 'bell' }, { id: 'iphone', icon: 'phone' }, { id: 'keyboard', icon: 'keyboard' }, { id: 'about', icon: 'info' }
 ];
 
 // Main validates, saves and sends the settings back to all windows: the view updates from there.
@@ -768,6 +768,8 @@ function Notifications({ s }: { s: S }) {
 // list and details pages, with Jira's and Notion's options. The header's "‹ Connectors" is ConnectorsBack.
 const Keyboard = lazy(() => import('./SettingsKeyboard').then((m) => ({ default: m.Keyboard })));
 const Connectors = lazy(() => import('./Connectors').then((m) => ({ default: m.Connectors })));
+// iPhone access: its rows and the paired phones, with its section too.
+const IphoneSettings = lazy(() => import('../iphone/IphoneSettings').then((m) => ({ default: m.IphoneSettings })));
 
 /** What the app and the site send (site/src/pages/privacy.astro). */
 const PRIVACY_URL = 'https://useatelier.dev/privacy';
@@ -904,9 +906,10 @@ export function Settings() {
       if (!root) return;
       // A menu opened from the sheet (Default profile) or the terminal font's popover handles its own keys, Esc included.
       if ((document.activeElement as HTMLElement | null)?.closest('.ctx-menu, .font-pop')) return;
-      // A question over the sheet (Restart atelierd from About, a window closing) keeps its keys.
-      // Open, not just focused: a click on its text drops the focus, and Esc must still be its own.
-      if (document.querySelector('.confirm-sheet, .confirm-pop')) return;
+      // A question over the sheet (Restart atelierd from About, a window closing), or the pairing sheet opened from
+      // Settings › iPhone, keeps its keys. Open, not just focused: a click on its text drops the focus, and Esc must
+      // still be its own.
+      if (document.querySelector('.confirm-sheet, .confirm-pop, .pair-sheet')) return;
       const inside = root.contains(document.activeElement);
       const target = e.target as HTMLElement | null;
       // ⌘[ on a connector's details page: back to the list, wherever the focus is.
@@ -986,6 +989,7 @@ export function Settings() {
             {section === 'ask' && <AskSettings s={s} />}
             {section === 'dictation' && <Dictation s={s} />}
             {section === 'notifications' && <Notifications s={s} />}
+            {section === 'iphone' && <Suspense fallback={null}><IphoneSettings s={s} /></Suspense>}
             {section === 'keyboard' && <Suspense fallback={null}><Keyboard /></Suspense>}
             {section === 'about' && <About />}
           </div>

@@ -912,7 +912,7 @@ export interface RenameRequest { id: string; at: 'row' | 'tab' | 'bar' }
 /** A comment box open under some lines: where, what they said, and the session it would go to. */
 export interface CommentDraft { path: string; start: number; end: number; snippet: string; target: string | null; ambiguous: boolean; nonce: number; text: string }
 
-export type SettingsSection = 'appearance' | 'terminal' | 'editor' | 'scm' | 'docker' | 'redis' | 'databases' | 'claude' | 'connectors' | 'ask' | 'automations' | 'dictation' | 'notifications' | 'keyboard' | 'about';
+export type SettingsSection = 'appearance' | 'terminal' | 'editor' | 'scm' | 'docker' | 'redis' | 'databases' | 'claude' | 'connectors' | 'ask' | 'automations' | 'dictation' | 'notifications' | 'iphone' | 'keyboard' | 'about';
 
 /** Dictation state for the pill (the logic lives in dictation/controller.ts). */
 export interface DictationUi { phase: 'idle' | 'listening' | 'transcribing' | 'inserted' | 'error'; startedAt: number; message?: string; canRetry?: boolean }

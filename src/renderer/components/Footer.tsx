@@ -23,6 +23,7 @@ import { dbFoot, liveConn } from '../databases/view';
 
 const NO_PANES: ServicePane[] = [];
 import { Icon } from './Icon';
+import { IphonePill } from '../iphone/marks';
 
 /**
  * Databases: with a database connected in this window, `pg · <the connection in use>` (the
@@ -115,6 +116,8 @@ export function Footer() {
       {!daemon.connected && !daemon.incompatible && <span className="footer-warn">{t.daemonDown}</span>}
       {daemon.mismatch && daemon.version && <span className="footer-warn">{t.daemonMismatch(daemon.version)}</span>}
       <span className="grow" />
+      {/* A phone connected now: its pill opens Settings › iPhone. */}
+      <IphonePill />
       {pill === 'ready' && (
         <button type="button" className="foot-update" data-tip={t.updateTip} onClick={applyUpdate}>
           <i />{t.updateReady}<b>{t.updateRestart}</b>

@@ -16,6 +16,7 @@ import { TREE_PATH_TYPE, dropText, endTreeDrag, treeDragPath } from './drop';
 import { profileShellKind } from '@shared/shell-kind';
 import { onTerminalFind, requestTerminalFind } from './find';
 import { PtySize } from './pty-size';
+import { SizeNote } from '../iphone/marks';
 
 // Find in the terminal: the card and xterm's search addon are a chunk of their own, never in the
 // first paint (the app's nor the live demo's), fetched once the first terminal is up and the page is idle. Kept here
@@ -198,5 +199,8 @@ export function TerminalView({ id, visible, focused = visible, place }: { id: st
   return <div ref={slot} className={`terminal-slot ${dropping ? 'is-drop' : ''}`} style={{ display: visible ? 'block' : 'none', ...place }} onContextMenu={(e) => void onMenu(e)}
     onDragOver={onDragOver} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false); }} onDrop={onDrop}>
     {find !== null && Find && <Find id={id} nonce={find} visible={visible} onClose={() => setFind(null)} />}
+    {/* Its size a phone's: said in the corner its smaller screen leaves free (Find's card takes that corner while
+        open), with the way back to this view's size. */}
+    {visible && find === null && <SizeNote id={id} />}
   </div>;
 }

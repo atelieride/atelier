@@ -71,6 +71,8 @@
   --ty-string: #93C5FD; --ty-hash: #C4B5FD; --ty-stream: #5EEAD4; --ty-list: #FCD34D; --ty-json: #86EFAC;
   --tint-teal: rgba(45,212,191,.12); --tint-indigo: rgba(129,140,248,.12); --tint-green: color-mix(in srgb, var(--done) 12%, transparent);
   --line-num: #3E3D5C;
+  /* The pairing QR code: dark modules on white in every theme (what a phone camera reads best). */
+  --qr-paper: #FFFFFF; --qr-ink: #0B0B16;
   /* JSON navigation: the editor's syntax colors for the tree and the table, the folded
      block's violet, a stronger violet tint on hover. */
   --syn-key: #A5B4FC; --syn-string: #86EFAC; --syn-number: #FDBA74; --syn-literal: #F472B6; --syn-punct: #8A88AD;

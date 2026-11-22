@@ -9,6 +9,7 @@ import { PinButton } from './PinButton';
 import { CwdChip } from './CwdChip';
 import { ProfileChip } from './ProfileChip';
 import { AccountChip } from './AccountChip';
+import { PhoneBadge } from '../iphone/marks';
 import { PortChips } from './PortChips';
 import { t } from '../i18n/en';
 import { commitRename, nameTip } from '../names';
@@ -144,6 +145,7 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
           <span className="session-line">
             <span className={`session-title ${strong ? 'is-strong' : ''}`}>{term.title}</span>
             {popped && <PoppedMarker />}
+            <PhoneBadge id={term.id} />
           </span>
         )}
         {/* What changes during the turn, always one line and always there (empty or not), so what comes and goes on it

@@ -1,0 +1,78 @@
+/* iPhone access: Settings › iPhone and the pairing sheet, loaded with them (out of the first paint). */
+
+/* Settings › iPhone */
+.iph-status { margin: 4px 0 8px; }
+.iph-status .upd-detail { font-size: 11px; color: var(--text-3); }
+.iph-empty { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--radius); background: var(--bg-field); box-shadow: inset 0 0 0 1px var(--line-soft); animation: atl-fade var(--t-med) var(--ease) both; }
+.iph-empty-glyph { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: var(--radius); color: var(--violet-light); background: var(--tint-violet-soft); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.iph-devices { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.iph-device { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 52px; padding: 8px 10px 8px 12px; border-radius: var(--radius); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--line); animation: atl-enter var(--t-med) var(--ease) both; transition: box-shadow var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease); }
+.iph-device:hover { box-shadow: inset 0 0 0 1px var(--line-strong); }
+.iph-device.is-connected { background: linear-gradient(90deg, var(--tint-violet-soft), transparent 70%), var(--bg-2); box-shadow: inset 0 0 0 1px var(--edge-violet-soft); }
+.iph-device.is-asking { background: var(--tint-error); box-shadow: inset 0 0 0 1px var(--edge-error-soft); }
+.iph-device-glyph { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: var(--radius); color: var(--text-3); background: var(--bg-3); }
+.iph-device.is-connected .iph-device-glyph { color: var(--violet-light); background: var(--tint-violet); box-shadow: 0 0 14px -4px var(--glow-pink); }
+.iph-device-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.iph-device-name { font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.iph-device-sub { font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.iph-chip { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 9px; border-radius: 999px; font-size: 11px; font-weight: 500; color: var(--text); background: var(--tint-done); box-shadow: inset 0 0 0 1px var(--edge-done); }
+.iph-chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--done); box-shadow: 0 0 6px var(--glow-done); }
+.iph-seen { flex: none; font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.iph-remove { flex: none; }
+/* Remove, asked: the question takes a line of its own under the phone's name, the whole row wide. */
+.iph-confirm { flex: 1 1 100%; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 2px 0 2px 46px; animation: atl-fade var(--t-fast) var(--ease) both; }
+.iph-confirm p { flex: 1; min-width: 0; margin: 0; font-size: 11.5px; line-height: 1.4; color: var(--text-3); }
+.iph-confirm b { font-weight: 600; color: var(--text); }
+.iph-confirm .confirm-actions { flex: none; }
+.iph-confirm .confirm-actions > button { height: 26px; font-size: 12px; }
+.iph-confirm.is-card { padding: 12px 12px 12px 14px; border-radius: var(--radius); background: var(--tint-error); box-shadow: inset 0 0 0 1px var(--edge-error); animation: atl-pop var(--t-med) var(--ease) both; }
+.iph-relay-row { flex-direction: column; align-items: stretch; gap: 10px; }
+.iph-relay { display: flex; align-items: center; gap: 8px; }
+.iph-relay .set-text-input { flex: 1; width: auto; min-width: 0; }
+.iph-relay .btn-ghost { flex: none; height: 30px; }
+.iph-relay .set-text-input[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--edge-waiting), 0 0 0 3px var(--tint-waiting); }
+
+/* The pairing sheet */
+.pair-sheet { width: min(600px, calc(100vw - 48px)); display: flex; flex-direction: column; border-radius: var(--r-lg); background: var(--bg-sheet); border: 1px solid var(--line-strong); box-shadow: var(--shadow-float), 0 0 80px -30px var(--glow-violet); overflow: hidden; outline: none; animation: atl-pop var(--t-med) var(--ease) both; }
+.pair-head { flex: none; display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--line-soft); }
+.pair-head h2 { margin: 0; font-size: 14px; font-weight: 600; color: var(--text); }
+.pair-head-glyph { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: var(--on-brand); background: var(--brand); box-shadow: 0 4px 14px -6px var(--glow-pink); }
+.pair-x { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: var(--r-sm); color: var(--text-3); }
+.pair-x:hover { background: var(--tint-violet); color: var(--text); }
+
+.pair-body { padding: 22px 24px 24px; }
+.pair-body.is-starting { display: grid; place-items: center; min-height: 268px; }
+.pair-spin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--violet-soft); animation: pair-turn 1s linear infinite; }
+@keyframes pair-turn { to { transform: rotate(360deg); } }
+
+.pair-code-body { display: flex; align-items: center; gap: 26px; min-height: 268px; animation: atl-fade var(--t-med) var(--ease) both; }
+.pair-qr { flex: none; width: 220px; height: 220px; padding: 6px; border-radius: var(--r-lg); background: var(--qr-paper); box-shadow: 0 0 0 1px var(--edge-violet), 0 18px 50px -18px var(--glow-pink), 0 0 0 6px var(--tint-violet-soft); transition: opacity var(--t-slow) var(--ease), filter var(--t-slow) var(--ease); }
+.pair-qr svg { display: block; width: 100%; height: 100%; }
+.pair-qr-paper { fill: var(--qr-paper); }
+.pair-qr-ink { fill: var(--qr-ink); }
+.pair-qr.is-spent { opacity: .35; filter: blur(1.5px) saturate(0); }
+.pair-side { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pair-steps { margin: 0 0 20px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.pair-steps li { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-2); }
+.pair-step-n { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 11px; font-weight: 600; color: var(--violet-light); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet); }
+.pair-code-label { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); margin-bottom: 6px; }
+.pair-code { font-size: 26px; font-weight: 600; letter-spacing: .06em; line-height: 1.2; color: var(--text); white-space: nowrap; user-select: text; cursor: text; animation: atl-swap var(--t-slow) var(--ease) both; transition: opacity var(--t-slow) var(--ease); }
+.pair-code::selection { background: color-mix(in srgb, var(--violet) 45%, transparent); }
+.pair-code.is-spent { opacity: .35; text-decoration: line-through; text-decoration-color: var(--text-4); }
+.pair-timer { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.pair-bar { flex: none; width: 92px; height: 4px; border-radius: 2px; overflow: hidden; background: var(--bg-3); }
+.pair-bar > span { display: block; height: 100%; border-radius: 2px; background: var(--brand-x); transform-origin: left center; transition: transform 1s linear; }
+.pair-left { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.pair-notice { display: flex; align-items: flex-start; gap: 7px; margin: 16px 0 0; padding: 9px 11px; border-radius: var(--radius); font-size: 12px; line-height: 1.45; color: var(--text-2); background: var(--tint-waiting); box-shadow: inset 0 0 0 1px var(--edge-waiting); animation: atl-fade var(--t-med) var(--ease) both; }
+.pair-notice svg { flex: none; margin-top: 1px; color: var(--waiting); }
+
+.pair-message { display: flex; flex-direction: column; align-items: center; text-align: center; min-height: 268px; justify-content: center; animation: atl-fade var(--t-med) var(--ease) both; }
+.pair-message h3 { margin: 14px 0 0; font-size: 16px; font-weight: 600; color: var(--text); }
+.pair-message p { max-width: 420px; margin: 8px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--text-2); text-wrap: balance; }
+.pair-hero { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 18px; color: var(--violet-light); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet), 0 12px 36px -12px var(--glow-pink); }
+.pair-hero.is-error { color: var(--error); background: var(--tint-error); box-shadow: inset 0 0 0 1px var(--edge-error-soft); }
+.pair-hero.is-asking { color: var(--on-brand); background: var(--brand); box-shadow: 0 0 0 6px var(--tint-violet-soft), 0 14px 40px -10px var(--glow-pink); animation: atl-pop var(--t-med) var(--ease) both; }
+.pair-ask-model { margin-top: 4px; font-size: 12px; color: var(--text-3); }
+.pair-ask .pair-left { margin-top: 12px; }
+.pair-actions { display: flex; justify-content: center; gap: 10px; margin-top: 20px; }
+.pair-actions > button { min-width: 112px; justify-content: center; }
