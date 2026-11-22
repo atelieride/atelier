@@ -65,6 +65,7 @@
     "hast-util-raw": "9.1.0",
     "hast-util-sanitize": "5.0.2",
     "hast-util-to-jsx-runtime": "2.3.6",
+    "lean-qr": "2.7.4",
     "mdast-util-from-markdown": "2.0.3",
     "mdast-util-frontmatter": "2.0.1",
     "mdast-util-gfm": "3.1.0",
