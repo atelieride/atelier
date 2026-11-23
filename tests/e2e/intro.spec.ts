@@ -172,6 +172,60 @@ for (const phase of ['morph', 'landing'] as const) {
   });
 }
 
+test('while the app rises in, the in-app transitions keep out of its way: no crown, no slide, no pane springing in', async () => {
+  // The mark holds 3 s: two terminals are opened under it, before the landing.
+  const { app, home, win } = await launch({ env: { ATELIER_TEST_INTRO_HOLD_MS: '3000' } });
+  const menu = (label: string) => app.evaluate(({ Menu, BrowserWindow }, l) => {
+    const walk = (items: Electron.MenuItem[]): Electron.MenuItem | undefined => {
+      for (const it of items) { if (it.label === l) return it; const sub = it.submenu ? walk(it.submenu.items) : undefined; if (sub) return sub; }
+      return undefined;
+    };
+    walk(Menu.getApplicationMenu()!.items)!.click(undefined, BrowserWindow.getAllWindows()[0]);
+  }, label);
+  try {
+    // From the landing's start: its rise held where it is (so it lasts until its deadline, the hold + 5.5 s), and the
+    // class of everything the page animates from then on.
+    await win.evaluate(() => {
+      const w = window as unknown as { landed: string[] | null };
+      w.landed = null;
+      const animate = Element.prototype.animate;
+      Element.prototype.animate = function (this: Element, kf: Keyframe[] | PropertyIndexedKeyframes | null, o?: number | KeyframeAnimationOptions) {
+        w.landed?.push(this.getAttribute('class') ?? '');
+        return animate.call(this, kf, o);
+      };
+      new MutationObserver((_, mo) => {
+        if (document.documentElement.dataset.intro !== 'landing') return;
+        mo.disconnect();
+        for (const a of document.getAnimations()) if (!(a as CSSAnimation).animationName) a.pause();
+        w.landed = [];
+      }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-intro'] });
+    });
+    // Under the mark (a menu's command is no click on the overlay: it skips nothing).
+    await expect(win.locator('.intro')).toBeAttached();
+    await menu('New Terminal');
+    await expect(win.locator('.workspace-body > .terminal-slot')).toHaveCount(1, { timeout: 10000 });
+    await menu('New Terminal');
+    await expect(win.locator('.workspace-body > .terminal-slot')).toHaveCount(2, { timeout: 10000 });
+    await expect(win.locator('html')).toHaveAttribute('data-intro', 'landing', { timeout: 10000 });
+
+    // While it lands: the next tab brought forward (its crown and its content would move), then a split (its new
+    // pane would spring in).
+    const front = await win.locator('.tabs .tab.is-active').getAttribute('data-key');
+    await menu('Next Tab');
+    await expect(win.locator('.tabs .tab.is-active')).not.toHaveAttribute('data-key', front!);
+    await menu('Split Right');
+    await expect(win.locator('.workspace-body > .pane-strip')).toHaveCount(2);
+    // Still landing: none of them played.
+    await expect(win.locator('html')).toHaveAttribute('data-intro', 'landing');
+    const moved = await win.evaluate(() => (window as unknown as { landed: string[] }).landed);
+    const transitions = ['tab-crown-fly', 'workspace-body', 'terminal-slot', 'pane-picker', 'pane-divider', 'motion-pill', 'motion-spark', 'motion-ring'];
+    expect(moved.filter((c) => c.split(/\s+/).some((x) => transitions.includes(x)))).toEqual([]);
+    await expect(win.locator('.tab-crown-fly, .pane-under, [data-crown-landing], [data-drawing]')).toHaveCount(0);
+  } finally {
+    await stop(app, home);
+  }
+});
+
 test('stalled mid-morph (its frames stop), the launch still ends by its deadline', async () => {
   const { app, home, win } = await launch();
   try {

@@ -1,5 +1,11 @@
 import { useRef, useState } from 'react';
 
+/** The script animations' curves, as WAAPI takes them: --ease (theme.css), a soft spring, an elastic one, an in-out. */
+export const EASE = 'cubic-bezier(.2,.8,.2,1)';
+export const SOFT_SPRING = 'cubic-bezier(.3,1.3,.5,1)';
+export const ELASTIC = 'cubic-bezier(.3,1.7,.45,1)';
+export const IN_OUT = 'cubic-bezier(.7,0,.2,1)';
+
 // Idle motion budget: at rest nothing moves. Attention cues are finite
 // (--cue-cycles in theme.css); these are the only animations allowed to loop, each bounded by a visible operation or
 // an open surface. They stop (animation: none, their rest state) while the window is inactive (layout.css).

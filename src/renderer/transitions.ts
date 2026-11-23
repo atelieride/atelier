@@ -1,18 +1,14 @@
-import { play, reducedMotion } from './motion';
+import { EASE, ELASTIC, IN_OUT, play, reducedMotion, SOFT_SPRING } from './motion';
 import { arc, crownKeyframes, revealOrigin, type Box, type Pt } from './motion-geometry';
 
 // The in-app transitions: short moves that show where something went. A session picked in the sidebar has the
 // selection glide to its row and the workspace rise in; a tab picked has the content slide in from its side; either
 // way the tab crown stretches over to the new tab. A new session has a spark fly from the + to its row and its
-// terminal open from there. A pane split off springs in from its side while its line draws. Each plays through play()
-// (none under Reduce motion), takes no pointer, moves the content by transform, opacity or clip-path only (a terminal
-// measures its box: no size ever changes), and leaves nothing behind once it ends or a newer one cuts it short.
+// terminal open from there. A pane split off springs in from its side while its line draws. Each plays through
+// play() (none under Reduce motion, none while the launch's landing plays), takes no pointer, moves the content by
+// transform, opacity or clip-path only (a terminal measures its box: no size ever changes), and leaves nothing behind
+// once it ends or a newer one cuts it short.
 
-/** --ease (theme.css), the soft spring, the elastic spring and the in-out curve, as WAAPI takes them. */
-const EASE = 'cubic-bezier(.2,.8,.2,1)';
-const SOFT_SPRING = 'cubic-bezier(.3,1.3,.5,1)';
-const ELASTIC = 'cubic-bezier(.3,1.7,.45,1)';
-const IN_OUT = 'cubic-bezier(.7,0,.2,1)';
 const GLIDE_MS = 380;
 const CROWN_MS = 420;
 const RISE_MS = 280;
@@ -51,6 +47,12 @@ export function takeNav(): NavOrigin | null {
 
 const px = (n: number) => `${n}px`;
 
+/**
+ * No transition now: under Reduce motion, or while the app's parts rise in at the end of the launch animation (the
+ * root's data-intro, intro.ts), whose rise they would play over.
+ */
+const still = () => reducedMotion() || !!document.documentElement.dataset.intro;
+
 interface Move { anim: Animation; end: () => void }
 /** Runs `end` once, when `anim` finishes or is cancelled, or when a newer move calls it first. */
 function move(anim: Animation, cleanup: () => void): Move {
@@ -85,7 +87,7 @@ function handOver(row: HTMLElement): void {
  */
 export function glideSelection(from: HTMLElement, to: HTMLElement): void {
   const sidebar = to.closest<HTMLElement>('.sidebar');
-  if (reducedMotion() || !sidebar || from === to) return;
+  if (still() || !sidebar || from === to) return;
   const now = glide?.pill.getBoundingClientRect();
   const start = now?.width ? now : from.getBoundingClientRect();
   cut(glide);
@@ -123,7 +125,7 @@ function spanIn(strip: HTMLElement, el: HTMLElement): { left: number; width: num
  * `to`'s own crown waits under it (`.is-crown-landing`) until it lands.
  */
 export function flyCrown(strip: HTMLElement, from: HTMLElement, to: HTMLElement): void {
-  if (reducedMotion() || from === to) return;
+  if (still() || from === to) return;
   const was = flights.get(strip);
   const start = was ? spanIn(strip, was.fly) : spanIn(strip, from);
   cut(was);
@@ -164,7 +166,7 @@ const RING_TO = 35;
  * changes), fully until the dot lands. Nothing plays when the + or the row is off screen; a newer spark cuts this one.
  */
 export function sparkTo(from: HTMLElement, row: HTMLElement, slot: HTMLElement | null): void {
-  if (reducedMotion() || !onScreen(from) || !onScreen(row, row.closest('.sidebar'))) return;
+  if (still() || !onScreen(from) || !onScreen(row, row.closest('.sidebar'))) return;
   const was = spark;
   if (was) { was.end(); for (const a of was.anims) a.cancel(); }
   const p0 = middle(from.getBoundingClientRect());
@@ -219,6 +221,7 @@ const entering = new WeakMap<HTMLElement, Animation>();
  * entrance of the same element replaces the one still playing.
  */
 export function enterView(target: HTMLElement, dir: 'up' | 'left' | 'right'): void {
+  if (still()) return;
   const offset = dir === 'up' ? 'translateY(6px)' : `translateX(${dir === 'right' ? 14 : -14}px)`;
   const was = entering.get(target);
   if (was?.playState === 'running') was.cancel();
@@ -308,7 +311,7 @@ function drawLine(el: HTMLElement): void {
  * the left or above for a pane put before its neighbour). Its strip, a session's bar and its frame stay where they are.
  */
 export function enterPane(body: HTMLElement, index: number): void {
-  if (reducedMotion()) return;
+  if (still()) return;
   const box = paneRect(body, index);
   if (!box) return;
   const line = splitLine(body, box);

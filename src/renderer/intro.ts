@@ -1,5 +1,5 @@
 import { markPaint } from './brand';
-import { play, reducedMotion } from './motion';
+import { EASE, IN_OUT, play, reducedMotion, SOFT_SPRING } from './motion';
 import { markPlates, plateTargets, type Box } from './motion-geometry';
 
 // The launch animation, in the first window of an app start: the mark's three plates leaf out and its Λ draws itself,
@@ -15,9 +15,6 @@ const MARK = 200;
 const OPACITY = [0.35, 0.6, 1];
 /** A plate's corner radius against its side, as in the mark (11 of 40). */
 const ROUND = 11 / 40;
-const EASE = 'cubic-bezier(.2,.8,.2,1)';
-const SPRING = 'cubic-bezier(.3,1.3,.5,1)';
-const IN_OUT = 'cubic-bezier(.7,0,.2,1)';
 /** How long after the hold the layout may take before the overlay gives up and fades away. */
 const CAP = 4000;
 /** Past the hold, CAP and this, the launch ends wherever it is: whatever went wrong, the overlay never stays. */
@@ -126,7 +123,7 @@ export function startIntro(doc: Document, win: Window, holdMs: number): void {
   const leaf = plates.map((p, i) => run(p, [
     { transform: `translate(${px(front.x - from[i]!.x)}, ${px(front.y - from[i]!.y)}) scale(.55)`, opacity: 0 },
     { transform: 'none', opacity: 1 }
-  ], { duration: 480, delay: (2 - i) * 70, easing: SPRING, fill: 'backwards' }));
+  ], { duration: 480, delay: (2 - i) * 70, easing: SOFT_SPRING, fill: 'backwards' }));
   const draw = run(lambda.firstElementChild!, [{ strokeDashoffset: '1', opacity: 0 }, { opacity: 1, offset: 0.15 }, { strokeDashoffset: '0', opacity: 1 }],
     { duration: 360, delay: 240, easing: IN_OUT, fill: 'backwards' });
   const start = win.performance.now();
@@ -216,7 +213,7 @@ export function startIntro(doc: Document, win: Window, holdMs: number): void {
 
   // 4 · The plates now look like the panels under them: the overlay goes, and the parts rise in. They rise as script
   // animations, which play over the parts' own CSS entrances (a row's) without restarting them. The root says the
-  // landing is on until they end, for other motion to stay out of its way.
+  // landing is on until they end (data-intro): the in-app transitions (transitions.ts) play none meanwhile.
   function land(): void {
     if (phase !== 'morph') return;
     phase = 'landing';
