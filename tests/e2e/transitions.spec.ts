@@ -2,7 +2,7 @@ import { _electron as electron, expect, test, type ElectronApplication, type Loc
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { e2eEnv } from './env';
+import { e2eEnv, writePrefs } from './env';
 import { look } from './shots';
 
 // In-app transitions. A session picked in the sidebar: the selection glides from its row to the new one, the tab crown
@@ -14,9 +14,10 @@ import { look } from './shots';
 
 type Played = { on: string; kf: string };
 
-async function launch(): Promise<{ app: ElectronApplication; home: string; win: Page }> {
+async function launch(prefs?: Record<string, unknown>): Promise<{ app: ElectronApplication; home: string; win: Page }> {
   const project = mkdtempSync(join(tmpdir(), 'atl-prj-'));
   const { env, home } = e2eEnv({ ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl') });
+  if (prefs) writePrefs(home, prefs);
   const app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env });
   const win = await app.firstWindow();
   await win.waitForLoadState('domcontentloaded');
@@ -216,6 +217,47 @@ const lineAt = (win: Page, dir: 'row' | 'column') => win.locator(`.workspace-bod
   const m = new DOMMatrixReadOnly(cs.transform);
   return { scale: d === 'row' ? m.d : m.a, across: d === 'row' ? m.a : m.d, opacity: Number(cs.opacity) };
 }, dir);
+type GlideFrame = { lands: number[]; rests: number[]; own: string; edge: string };
+/**
+ * From now until `stopGlideProbe`, at every frame a selection pill is on its way: where it lands (its last keyframe, in
+ * the window), where row `name` rests (its box without the transform of an entrance), the row's own edge (its
+ * box-shadow: none while the pill stands in for it) and the pill's.
+ */
+const probeGlide = (win: Page, name: string) => win.evaluate((title) => {
+  const w = window as unknown as { glides: GlideFrame[]; probing: boolean };
+  w.glides = [];
+  w.probing = true;
+  const tick = () => {
+    if (!w.probing) return;
+    const pill = document.querySelector<HTMLElement>('.motion-pill');
+    const anim = pill?.getAnimations()[0];
+    const row = [...document.querySelectorAll<HTMLElement>('.sidebar .session-row')].find((r) => r.querySelector('.session-title')?.textContent === title);
+    if (pill && anim && row) {
+      const lane = pill.parentElement!.getBoundingClientRect();
+      const last = (anim.effect as KeyframeEffect).getKeyframes().at(-1)!;
+      const r = row.getBoundingClientRect();
+      const m = new DOMMatrixReadOnly(getComputedStyle(row).transform);
+      w.glides.push({
+        lands: [lane.left + parseFloat(String(last.left)), lane.top + parseFloat(String(last.top))],
+        rests: [r.left - m.m41, r.top - m.m42], own: getComputedStyle(row).boxShadow, edge: getComputedStyle(pill).boxShadow
+      });
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}, name);
+const stopGlideProbe = (win: Page) => win.evaluate(() => { const w = window as unknown as { glides: GlideFrame[]; probing: boolean }; w.probing = false; return w.glides; });
+/** From now on, the class of every element a ResizeObserver of the page is asked to watch. */
+const watchObserved = (win: Page) => win.evaluate(() => {
+  const w = window as unknown as { observed: string[] };
+  w.observed = [];
+  const observe = ResizeObserver.prototype.observe;
+  ResizeObserver.prototype.observe = function (this: ResizeObserver, el: Element, o?: ResizeObserverOptions) {
+    w.observed.push(el.getAttribute('class') ?? '');
+    return observe.call(this, el, o);
+  };
+});
+const observed = (win: Page) => win.evaluate(() => (window as unknown as { observed: string[] }).observed.splice(0));
 
 test('a session picked in the sidebar: the selection glides to its row, the tab crown follows, the workspace rises in, a click mid-glide goes to the next row', async () => {
   test.setTimeout(120000);
@@ -236,15 +278,15 @@ test('a session picked in the sidebar: the selection glides to its row, the tab 
     expect(glide.some((p) => p.kf.includes('translateX'))).toBe(false);
     await expect(win.locator('.motion-pill')).toHaveCount(0, { timeout: 600 });
     await expect(win.locator('.motion-lane, .tab-crown-fly')).toHaveCount(0);
-    await expect(win.locator('.is-crown-landing')).toHaveCount(0);
+    await expect(win.locator('[data-crown-landing]')).toHaveCount(0);
     await expect(row(win, 'One')).toHaveClass(/is-selected/);
-    await expect(row(win, 'One')).not.toHaveClass(/is-gliding/);
+    await expect(row(win, 'One')).not.toHaveAttribute('data-gliding');
 
     // Mid-glide (held there to look at it): the pill between the rows, the new row's own highlight not drawn yet.
     await row(win, 'Two').click();
     const mid = await freeze(win, '.motion-pill', 60);
     expect(mid?.count).toBe(1);
-    await expect(row(win, 'Two')).toHaveClass(/is-gliding/);
+    await expect(row(win, 'Two')).toHaveAttribute('data-gliding');
     await look(win.locator('.sidebar'), 'test-results/transitions-glide.png');
     // Nothing of it takes the pointer: where only its lane lies (the sidebar's empty end), the sidebar's own gets it.
     const side = (await win.locator('.sidebar').boundingBox())!;
@@ -259,8 +301,62 @@ test('a session picked in the sidebar: the selection glides to its row, the tab 
     await expect(win.locator('.motion-pill')).toHaveCount(0, { timeout: 600 });
     await expect(row(win, 'Three')).toHaveClass(/is-selected/);
     await expect(row(win, 'Two')).not.toHaveClass(/is-selected/);
-    await expect(win.locator('.is-gliding')).toHaveCount(0);
+    await expect(win.locator('[data-gliding]')).toHaveCount(0);
     await settled(win);
+  } finally {
+    await stop(app, home);
+  }
+});
+
+test('a session ready for review picked: seen at once, its row moves to Idle mid-glide, and the selection never lands beside it nor shows twice', async () => {
+  test.setTimeout(120000);
+  // Ink: a theme whose selected row's edge is not --edge-sel (the pill wears the row's own edge all the way).
+  const { app, home, win } = await launch({ theme: 'ink' });
+  try {
+    await threeSessions(win);
+    await expect(row(win, 'Three')).toHaveClass(/is-selected/);
+    // Two works on; One finishes, not seen: grouped by state, One (Ready for review) sits between Three (Needs you)
+    // and Two (Working).
+    await typeInto(win, 'Two', 'hold\r');
+    await expect(row(win, 'Two')).toHaveClass(/state-running/, { timeout: 10000 });
+    await typeInto(win, 'One', '\r');
+    await expect(row(win, 'One')).toHaveClass(/is-unread/, { timeout: 10000 });
+    await expect(win.locator('.row-wave, .av-done-check')).toHaveCount(0, { timeout: 5000 });
+    await settled(win);
+    await played(win);
+    const before = (await row(win, 'One').boundingBox())!;
+
+    // Picked: it is seen at once, and leaves Ready for review for Idle, under Two, while the selection is on its way.
+    await probeGlide(win, 'One');
+    await row(win, 'One').click();
+    await expect(row(win, 'One')).not.toHaveClass(/is-unread/);
+    await expect.poll(async () => (await row(win, 'One').boundingBox())!.y).toBeGreaterThan(before.y + 20);
+    await settled(win);
+    const frames = await stopGlideProbe(win);
+    expect(on(await played(win), 'motion-pill')).toHaveLength(1);
+    // At every frame the pill was there, it was on its way to where the row rests, and the row's own highlight was
+    // not drawn under it (its edge none); the pill's edge is the one the row wears once it is selected.
+    const own = await shadow(row(win, 'One'));
+    expect(own).not.toBe('none');
+    for (const f of frames) {
+      expect(Math.abs(f.lands[0]! - f.rests[0]!), JSON.stringify(f)).toBeLessThan(1);
+      expect(Math.abs(f.lands[1]! - f.rests[1]!), JSON.stringify(f)).toBeLessThan(1);
+      expect(f.own, JSON.stringify(f)).toBe('none');
+    }
+    for (const f of frames) expect(f.edge).toBe(own);
+    await expect(win.locator('.motion-pill, .motion-lane, [data-gliding]')).toHaveCount(0);
+    await expect(row(win, 'One')).toHaveClass(/is-selected/);
+    await look(win.locator('.sidebar'), 'test-results/transitions-glide-review.png');
+
+    // A glide that stays put (Two, working, keeps its place): mid-way, the pill wears the selected row's edge.
+    await hold(win, true);
+    await row(win, 'Two').click();
+    await freeze(win, '.motion-pill', 120);
+    const edge = await shadow(win.locator('.motion-pill'));
+    await hold(win, false);
+    await resume(win);
+    await settled(win);
+    expect(edge).toBe(await shadow(row(win, 'Two')));
   } finally {
     await stop(app, home);
   }
@@ -281,7 +377,7 @@ test('a tab picked: the crown stretches to it and catches up, the content slides
     expect(mid?.count).toBe(1);
     const [one, three] = await Promise.all([tab(strip, 'One').boundingBox(), tab(strip, 'Three').boundingBox()]);
     expect(mid!.box.width).toBeGreaterThan(Math.max(one!.width, three!.width));
-    await expect(tab(strip, 'One')).toHaveClass(/is-crown-landing/);
+    await expect(tab(strip, 'One')).toHaveAttribute('data-crown-landing');
     expect(await hits(win, mid!.box.x + mid!.box.width / 2, mid!.box.y + 1)).toBe(false);
     await look(win.locator('.tabs'), 'test-results/transitions-crown.png');
     await resume(win);
@@ -293,14 +389,24 @@ test('a tab picked: the crown stretches to it and catches up, the content slides
     expect(on(left, 'motion-pill')).toHaveLength(0);
     await expect(win.locator('.tab-crown-fly')).toHaveCount(0, { timeout: 600 });
     await expect(tab(strip, 'One')).toHaveClass(/is-active/);
-    await expect(tab(strip, 'One')).not.toHaveClass(/is-crown-landing/);
+    await expect(tab(strip, 'One')).not.toHaveAttribute('data-crown-landing');
 
     // Right, to Two: from the right.
+    await hold(win, true);
     await tab(strip, 'Two').click();
     const right = await played(win);
     expect(on(right, 'tab-crown-fly')).toHaveLength(1);
     expect(on(right, 'workspace-body')[0]?.kf).toContain('translateX(14px)');
+    // Another tab picked while the crown is on its way (still held): the strip watches its tabs' sizes, never the
+    // crown in flight.
+    await watchObserved(win);
+    await tab(strip, 'Three').click();
+    await expect(tab(strip, 'Three')).toHaveClass(/is-active/);
+    expect((await observed(win)).some((c) => c.split(/\s+/).includes('tab-crown-fly'))).toBe(false);
+    await hold(win, false);
+    await resume(win);
     await settled(win);
+    await played(win);
 
     // Split: the left pane keeps the tabs; a tab picked there moves its own views, never the body or the other pane.
     await menu(app, 'Split Right');
@@ -477,7 +583,7 @@ test('a split: the layout is there at once, the new pane\'s content springs in f
     // At rest: nothing of it is left. The body's template was given once, already right on the first frame, and never
     // changed while the pane came in; the terminal on the left fitted once, to where it rests.
     expect((await pickerAt(win, 1)).transform).toBe('none');
-    await expect(win.locator('.pane-divider.is-drawing, .pane-under')).toHaveCount(0);
+    await expect(win.locator('.pane-divider[data-drawing], .pane-under')).toHaveCount(0);
     let layout = await layoutLog(win);
     expect(layout.columns).toHaveLength(1);
     expect(layout.first).toEqual([layout.columns[0], layout.rows[0]]);
@@ -507,7 +613,7 @@ test('a split: the layout is there at once, the new pane\'s content springs in f
     layout = await layoutLog(win);
     expect(layout.rows).toHaveLength(1);
     expect(layout.first).toEqual([layout.columns[0], layout.rows[0]]);
-    await expect(win.locator('.pane-divider.is-drawing, .pane-under')).toHaveCount(0);
+    await expect(win.locator('.pane-divider[data-drawing], .pane-under')).toHaveCount(0);
 
     // A divider moved: no pane is new, nothing springs in.
     const given = layout.columns.length;
@@ -616,7 +722,7 @@ test('Reduce motion: picking a row or a tab, a new session, a split play nothing
     await menu(app, 'Split Right');
     await expect(win.locator('.workspace-body > .pane-picker')).toHaveCount(1);
     expect(await played(win)).toEqual([]);
-    await expect(win.locator('.motion-pill, .motion-lane, .tab-crown-fly, .is-gliding, .is-crown-landing, .motion-fx, .motion-spark, .motion-ring, .is-drawing, .pane-under')).toHaveCount(0);
+    await expect(win.locator('.motion-pill, .motion-lane, .tab-crown-fly, [data-gliding], [data-crown-landing], .motion-fx, .motion-spark, .motion-ring, [data-drawing], .pane-under')).toHaveCount(0);
   } finally {
     await stop(app, home);
   }

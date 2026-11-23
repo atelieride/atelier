@@ -34,6 +34,7 @@ import { useRowClick, useRowDrag } from './WorkspaceGroup';
 import { bandAttr, sameBand, type Band } from '../row-order';
 import { useReorder } from '../reorder-drag';
 import { useArrivalKey, useCue } from '../motion';
+import { cutGlide } from '../transitions';
 
 /**
  * section: the row's section in the grouped list; when it changes, the row enters its new place with the motion.
@@ -98,6 +99,8 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
     const was = lastSection.current;
     lastSection.current = section;
     if (was === section || was === undefined || section === undefined) return;
+    // Moving to its new place: a selection on its way to the row would land where it was.
+    cutGlide(rowEl.current);
     setEnter('enter');
     // Already carrying the class: play the entrance again.
     for (const a of rowEl.current?.getAnimations() ?? []) if ((a as CSSAnimation).animationName === 'atl-enter') { a.cancel(); a.play(); }

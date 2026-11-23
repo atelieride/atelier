@@ -16,17 +16,19 @@
 .intro-seam { position: fixed; z-index: 451; background: var(--line-strong); opacity: 0; pointer-events: none; }
 
 /* The selection on its way to a session row (transitions.ts): a lane laid over the sidebar's visible box, first in the
-   sidebar so the rows paint over it and cut at its edges as they are, and in it a pill drawn as a selected row is.
-   Neither takes the pointer; both go once the pill lands. Contained, the pill's moves lay out nothing outside it. */
+   sidebar so the rows paint over it and cut at its edges as they are, and in it a pill drawn as a selected row is (the
+   same fill and edge as layout.css's selected row, in every theme: nothing changes as it lands). Neither takes the
+   pointer; both go once the pill lands. Contained, the pill's moves lay out nothing outside it. */
 .motion-lane { position: fixed; overflow: hidden; contain: strict; pointer-events: none; }
-.motion-pill { position: absolute; background: var(--bg-sel); box-shadow: inset 0 0 0 1px var(--edge-sel); pointer-events: none; }
-/* The row it glides to waits with its own fill and edge hidden until the pill lands; a keyboard focus ring stays. */
-.session-row.is-selected.is-gliding, .term-row.is-selected.is-gliding { background: transparent; }
-.session-row.is-selected.is-gliding:not(:has(> .row-main:focus-visible)), .term-row.is-selected.is-gliding:not(:has(> .row-main:focus-visible)) { box-shadow: none; }
+.motion-pill { position: absolute; background: var(--bg-sel); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--violet-soft) 28%, transparent); pointer-events: none; }
+/* The row it glides to (data-gliding) waits with its own fill and edge hidden until the pill lands; a keyboard focus
+   ring stays. */
+.session-row.is-selected[data-gliding], .term-row.is-selected[data-gliding] { background: transparent; }
+.session-row.is-selected[data-gliding]:not(:has(> .row-main:focus-visible)), .term-row.is-selected[data-gliding]:not(:has(> .row-main:focus-visible)) { box-shadow: none; }
 /* The tab crown on its way to the tab in front: as thin as the crown, its ends tapering as the crown's do along a tab's
-   rounded top; the tab's own crown waits under it, the tab's top plain, until it lands. */
+   rounded top; the tab's own crown waits under it (data-crown-landing), the tab's top plain, until it lands. */
 .tab-crown-fly { position: absolute; z-index: 2; height: 2px; border-radius: 9px 9px 0 0 / 2px 2px 0 0; background: var(--tab-crown); pointer-events: none; }
-.tab.is-active.is-crown-landing { background: var(--bg-2); }
+.tab.is-active[data-crown-landing] { background: var(--bg-2); }
 /* A new session's spark (transitions.ts): a lane over the whole window, above the panels and under every popover, sheet
    and toast, that takes no pointer; in it a small solid dot on its way from the header's + to the new row, and the thin
    ring that ripples out where it lands. Both are hidden without their animations; the lane goes once the ring has
@@ -51,10 +53,10 @@
 
 /* A pane split off (transitions.ts): the divider it was split off on draws its line along the gap from the middle, a
    plain neutral hairline while it draws (never the brand line of a hover or a drag), then fades into the gap's own
-   line. Only the line's pseudo-element moves; the class goes when it ends. Under the pane's content on its way in, its
-   own background fills its cell (the body behind is the colour of the lines between panes): first in the body, under
-   all the pane shows, taking no pointer, removed once the content rests. */
-.pane-divider.is-drawing::after { background: var(--text-4); transition: none; }
+   line. Only the line's pseudo-element moves; its mark (data-drawing) goes when it ends. Under the pane's content on
+   its way in, its own background fills its cell (the body behind is the colour of the lines between panes): first in
+   the body, under all the pane shows, taking no pointer, removed once the content rests. */
+.pane-divider[data-drawing]::after { background: var(--text-4); transition: none; }
 .pane-under { position: absolute; inset: 0; background: var(--bg-2); pointer-events: none; }
 
 /* A session waiting for you: besides its avatar's ring cue, its row keeps a calm amber edge for as long as it waits.

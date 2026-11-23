@@ -296,7 +296,8 @@ export const PaneStrip = memo(function PaneStrip({ pane, split, last, onNew }: {
       const left = revealLeft({ left: tab.offsetLeft, width: tab.offsetWidth }, { scrollLeft: el.scrollLeft, width: el.clientWidth }, REVEAL_PAD);
       if (left !== null) el.scrollTo({ left, behavior: 'instant' });
     }
-    if (el) for (const child of el.children) sizes.current?.observe(child);
+    // Its tabs, not a crown flying over them (transitions.ts): that one's width moves every frame and it soon goes.
+    if (el) for (const child of el.children) if (!child.classList.contains('tab-crown-fly')) sizes.current?.observe(child);
     fade();
   }, [front, order, fade, showClicked]);
   // Another tab in front, from one tab of this strip to another (however it was picked): the crown flies over to it.

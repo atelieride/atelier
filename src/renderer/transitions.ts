@@ -69,21 +69,34 @@ function cut(m: Move | null | undefined): void {
   m.anim.cancel();
 }
 
-let glide: (Move & { pill: HTMLElement }) | null = null;
+let glide: (Move & { pill: HTMLElement; to: HTMLElement }) | null = null;
 
-/** Takes `.is-gliding` off a row without its highlight's transition: the pill's fill and edge become the row's own. */
+/**
+ * Takes `data-gliding` off a row without its highlight's transition: the pill's fill and edge become the row's own. An
+ * attribute, not a class: the row's class is React's, rewritten whenever the row re-renders.
+ */
 function handOver(row: HTMLElement): void {
   row.style.transition = 'none';
-  row.classList.remove('is-gliding');
+  delete row.dataset.gliding;
   void getComputedStyle(row).boxShadow;
   row.style.removeProperty('transition');
 }
+
+/** Where `el` rests: its box without the translation it may have now (a row's entrance). */
+function restBox(el: Element): DOMRect {
+  const r = el.getBoundingClientRect();
+  const m = new DOMMatrixReadOnly(getComputedStyle(el).transform);
+  return new DOMRect(r.left - m.m41, r.top - m.m42, r.width, r.height);
+}
+const sameBox = (a: DOMRect, b: DOMRect) => Math.abs(a.left - b.left) < 0.5 && Math.abs(a.top - b.top) < 0.5
+  && Math.abs(a.width - b.width) < 0.5 && Math.abs(a.height - b.height) < 0.5;
 
 /**
  * The sidebar's selection glides from `from` (or from where a glide still on its way is) to `to` with a soft spring,
  * then becomes `to`'s own highlight. The pill moves in a lane laid over the sidebar's visible box, first in it so the
  * rows paint over the pill, and cut at its edges as the rows are; `to` keeps its own fill and edge hidden
- * (`.is-gliding`) until the pill lands.
+ * (`data-gliding`) until the pill lands. Should `to` move meanwhile (another section, the list re-sorted or
+ * scrolled), the pill would land beside it: the glide stops there and the row shows its own highlight at once.
  */
 export function glideSelection(from: HTMLElement, to: HTMLElement): void {
   const sidebar = to.closest<HTMLElement>('.sidebar');
@@ -91,7 +104,7 @@ export function glideSelection(from: HTMLElement, to: HTMLElement): void {
   const now = glide?.pill.getBoundingClientRect();
   const start = now?.width ? now : from.getBoundingClientRect();
   cut(glide);
-  const end = to.getBoundingClientRect();
+  const end = restBox(to);
   if (!start.width || !end.width) return;
   const s = sidebar.getBoundingClientRect();
   const x = s.left + sidebar.clientLeft;
@@ -107,9 +120,20 @@ export function glideSelection(from: HTMLElement, to: HTMLElement): void {
   sidebar.prepend(lane);
   const anim = play(pill, [at(start), at(end)], { duration: GLIDE_MS, easing: SOFT_SPRING });
   if (!anim) { lane.remove(); return; }
-  to.classList.add('is-gliding');
-  const m = { ...move(anim, () => { lane.remove(); handOver(to); if (glide === m) glide = null; }), pill };
+  to.dataset.gliding = '';
+  const m = { ...move(anim, () => { lane.remove(); handOver(to); if (glide === m) glide = null; }), pill, to };
   glide = m;
+  const watch = () => {
+    if (glide !== m) return;
+    if (!to.isConnected || !sameBox(restBox(to), end)) { cut(m); return; }
+    requestAnimationFrame(watch);
+  };
+  requestAnimationFrame(watch);
+}
+
+/** A row moving to another section: the selection on its way to it stops, and the row shows its own highlight now. */
+export function cutGlide(row: HTMLElement | null): void {
+  if (glide && glide.to === row) cut(glide);
 }
 
 const flights = new WeakMap<HTMLElement, Move & { fly: HTMLElement }>();
@@ -122,7 +146,7 @@ function spanIn(strip: HTMLElement, el: HTMLElement): { left: number; width: num
 
 /**
  * The tab crown leaves `from` (or where a crown still on its way is), stretches over to `to`, then catches up with it.
- * `to`'s own crown waits under it (`.is-crown-landing`) until it lands.
+ * `to`'s own crown waits under it (`data-crown-landing`: the tab's class is React's) until it lands.
  */
 export function flyCrown(strip: HTMLElement, from: HTMLElement, to: HTMLElement): void {
   if (still() || from === to) return;
@@ -135,8 +159,8 @@ export function flyCrown(strip: HTMLElement, from: HTMLElement, to: HTMLElement)
   strip.append(fly);
   const anim = play(fly, crownKeyframes(start, spanIn(strip, to)), { duration: CROWN_MS, easing: EASE });
   if (!anim) { fly.remove(); return; }
-  to.classList.add('is-crown-landing');
-  const m = { ...move(anim, () => { fly.remove(); to.classList.remove('is-crown-landing'); if (flights.get(strip) === m) flights.delete(strip); }), fly };
+  to.dataset.crownLanding = '';
+  const m = { ...move(anim, () => { fly.remove(); delete to.dataset.crownLanding; if (flights.get(strip) === m) flights.delete(strip); }), fly };
   flights.set(strip, m);
 }
 
@@ -287,8 +311,9 @@ function splitLine(body: HTMLElement, box: DOMRect): { el: HTMLElement; edge: Ed
 const lines = new WeakMap<HTMLElement, Move>();
 
 /**
- * A divider's line draws itself along the gap from its middle, a plain hairline (`.is-drawing`), then fades into the
- * gap's own line as the pane comes to rest. Only its pseudo-element moves: the grab area keeps its box.
+ * A divider's line draws itself along the gap from its middle, a plain hairline (`data-drawing`: the divider's class is
+ * React's), then fades into the gap's own line as the pane comes to rest. Only its pseudo-element moves: the grab area
+ * keeps its box.
  */
 function drawLine(el: HTMLElement): void {
   cut(lines.get(el));
@@ -299,8 +324,8 @@ function drawLine(el: HTMLElement): void {
     { transform: `${along}(1)`, opacity: 0 }
   ], { duration: PANE_MS, pseudoElement: '::after' });
   if (!anim) return;
-  el.classList.add('is-drawing');
-  const m = move(anim, () => { el.classList.remove('is-drawing'); if (lines.get(el) === m) lines.delete(el); });
+  el.dataset.drawing = '';
+  const m = move(anim, () => { delete el.dataset.drawing; if (lines.get(el) === m) lines.delete(el); });
   lines.set(el, m);
 }
 
