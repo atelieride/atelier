@@ -20,7 +20,9 @@ import { ALLOWED_TOOLS as JIRA_ALLOWED } from '../../src/main/connectors/jira/to
 //   with its own session and host allowlist). The one other http user is the OAuth loopback listener (loopback.ts): it
 //   only listens, on 127.0.0.1, and never makes a request (checked below). The Docker engine client
 //   (src/main/docker/engine.ts) imports node:http too, for GETs over the Unix socket only (its own guards:
-//   tests/integration/docker-readonly.test.ts).
+//   tests/integration/docker-readonly.test.ts). The relay link for iPhone access (src/main/remote/relay-link.ts) is
+//   the one WebSocket: it dials out to the relay only (never listens), to a URL relayBase accepted (https anywhere,
+//   http only to loopback and private addresses), and carries end-to-end encrypted Noise messages it can't read.
 const root = join(__dirname, '..', '..');
 // Six read tools since 2026-10-19: clickup_get_list (optional) gives the statuses' colors that compact replies lack.
 const READ_TOOLS = ['clickup_resolve_assignees', 'clickup_filter_tasks', 'clickup_get_task', 'clickup_get_workspace_hierarchy', 'clickup_search', 'clickup_get_list'];
@@ -43,7 +45,8 @@ const TOOLSETS: { dir: string; pattern: RegExp; allowed: string[]; ignored?: str
 ];
 const LOOPBACK_FILE = 'src/main/connectors/oauth/loopback.ts';
 const DOCKER_ENGINE = 'src/main/docker/engine.ts';
-const HTTP_ALLOWED = new Set(['src/main/update-net.ts', 'src/main/connectors/net.ts', LOOPBACK_FILE, DOCKER_ENGINE]);
+const RELAY_LINK = 'src/main/remote/relay-link.ts';
+const HTTP_ALLOWED = new Set(['src/main/update-net.ts', 'src/main/connectors/net.ts', LOOPBACK_FILE, DOCKER_ENGINE, RELAY_LINK]);
 
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => {
@@ -118,6 +121,13 @@ describe('Connectors stay read-only', () => {
   test('only update-net.ts and connectors/net.ts make HTTP requests (and the Docker client, to its Unix socket)', () => {
     expect(rules.http(all())).toEqual([]);
     expect(readFileSync(join(root, DOCKER_ENGINE), 'utf8')).toMatch(/request\(\{ socketPath: socket, path, method: 'GET'/);
+  });
+
+  test('the relay link dials only a WebSocket, only to a URL relayBase accepted, and nothing else on the network', () => {
+    const text = readFileSync(join(root, RELAY_LINK), 'utf8');
+    expect([...text.matchAll(/new WebSocket\(([^)]*\))\)/g)].map((m) => m[1])).toEqual(['relayEndpoint(base, this.o.roomId)']);
+    expect(text).toMatch(/const base = relayBase\(this\.o\.base\);\n\s*if \(!base\)/);
+    expect(text).not.toMatch(/\bfetch\s*\(|XMLHttpRequest|EventSource|\bnet\.request\b|from\s+['"](node:)?(https?|http2|undici|net|tls)['"]|createServer|\.listen\(/);
   });
 
   test('the OAuth loopback listener only listens, on 127.0.0.1, and never makes a request', () => {

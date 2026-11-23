@@ -59,6 +59,8 @@ const strings = {
   daemonMismatch: (v: string) => `atelierd from ${v} is out of date: restart it to update.`,
   footerVersion: (v: string) => `v${v}`,
   comingSoon: 'Coming in the next phase.',
+  /** The chip beside the title of a feature still in beta (Settings › iPhone, the pairing sheet). */
+  beta: 'Beta',
   footerTerm: (cols: number, rows: number) => `${cols}×${rows}`,
   legend: { waiting: 'waiting', running: 'working', done: 'done', error: 'error' },
   /** Subtitle of a session whose only activity is background work (agents, shells, monitors). */
@@ -2452,12 +2454,20 @@ const strings = {
     copyText: 'Copy Text',
     linesWouldRun: `This terminal would run each line as it arrives: ${kbd('⌘↵')} runs them all.`
   },
+  // iPhone access in the first paint: the footer pill, the phone badges, the size note, the command. The rest (Settings ›
+  // iPhone, the pairing sheet) comes with their chunk (i18n/iphone.ts).
+  iphone: {
+    pill: (n: number) => (n === 1 ? 'iPhone' : `${n} iPhones`), pillTip: (names: string[]) => `Connected now: ${names.join(', ')}`,
+    badge: 'Open on iPhone',
+    sized: 'Sized for iPhone', sizedTip: 'An iPhone set this terminal\'s size. Any key pressed here takes it back too.', fit: 'Fit to Window',
+    command: 'Pair iPhone…'
+  },
   set: {
     title: 'Settings',
     close: 'Close settings',
     sectionsLabel: 'Settings sections',
     restore: 'Restore Defaults',
-    sections: { appearance: 'Appearance', terminal: 'Terminal', editor: 'Editor', scm: 'Source Control', docker: 'Docker', redis: 'Redis', databases: 'Databases', claude: 'Claude', connectors: 'Connectors', ask: 'Ask', automations: 'Automations', dictation: 'Dictation', notifications: 'Notifications', keyboard: 'Keyboard', about: 'About' },
+    sections: { appearance: 'Appearance', terminal: 'Terminal', editor: 'Editor', scm: 'Source Control', docker: 'Docker', redis: 'Redis', databases: 'Databases', claude: 'Claude', connectors: 'Connectors', ask: 'Ask', automations: 'Automations', dictation: 'Dictation', notifications: 'Notifications', iphone: 'iPhone', keyboard: 'Keyboard', about: 'About' },
     // Settings › Ask.
     askModels: { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus' },
     askModel: 'Model', askModelHint: 'Explaining code you have is lighter work than writing it.',

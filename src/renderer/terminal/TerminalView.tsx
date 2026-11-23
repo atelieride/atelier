@@ -16,6 +16,8 @@ import { TREE_PATH_TYPE, dropText, endTreeDrag, treeDragPath } from './drop';
 import { profileShellKind } from '@shared/shell-kind';
 import { onTerminalFind, requestTerminalFind } from './find';
 import { PtySize } from './pty-size';
+import { SizeNote } from '../iphone/marks';
+import { useIphone } from '../iphone/store';
 
 // Find in the terminal: the card and xterm's search addon are a chunk of their own, never in the
 // first paint (the app's nor the live demo's), fetched once the first terminal is up and the page is idle. Kept here
@@ -58,12 +60,13 @@ export function TerminalView({ id, visible, focused = visible, place }: { id: st
       e.preventDefault();
       e.stopImmediatePropagation();
       const files = copiedFilesText([...(e.clipboardData?.files ?? [])], (f) => window.atelier.pathForFile(f), shellKindOf(id));
+      // A paste here is the user's, like a key pressed (it takes the terminal's size back from a phone).
       if (files) {
-        for (const part of pasteSequence(files, bracketedPaste(id), 512 * 1024)) sendInput(id, part);
+        for (const part of pasteSequence(files, bracketedPaste(id), 512 * 1024)) sendInput(id, part, true);
         return;
       }
       void clipboardPayload(text, () => window.atelier.clipboard.saveImage(), () => useApp.getState().showToast(t.imageTooLarge)).then((out) => {
-        for (const part of pasteSequence(out ?? '', bracketedPaste(id), 512 * 1024)) sendInput(id, part);
+        for (const part of pasteSequence(out ?? '', bracketedPaste(id), 512 * 1024)) sendInput(id, part, true);
       });
     };
     lt.host.addEventListener('paste', onPaste, true);
@@ -109,6 +112,19 @@ export function TerminalView({ id, visible, focused = visible, place }: { id: st
     refit.current = now;
     return () => { ro.disconnect(); pty.flush(); refit.current = null; };
   }, [id, visible, setSize]);
+  // A phone owns the terminal's size: drawn at it, the terminal's one size, so what the program draws for it (a shell
+  // redrawing its prompt, a full-screen app) lands where it does on the phone; drawn at the pane's size it went a line
+  // too high and wiped the output above. Only this view changes: the program has that size already. Taken back (a key
+  // pressed or typing here, a resize, Fit to Window) or the phone gone, main gives the program this window's size: the
+  // pane's here.
+  const phone = useIphone((x) => { const s = x.status?.enabled && x.status.sized.find((v) => v.id === id); return s ? `${s.cols}x${s.rows}` : ''; });
+  useEffect(() => {
+    if (!visible) return;
+    const lt = getLiveTerminal(id);
+    if (phone) { const [cols, rows] = phone.split('x').map(Number); lt.term.resize(cols!, rows!); }
+    else try { lt.fit.fit(); } catch { return; }
+    setSize(lt.term.cols, lt.term.rows);
+  }, [id, visible, phone, setSize]);
   // The keyboard goes to the shown terminal; in the split view only to the focused pane's.
   useEffect(() => { if (visible && focused) getLiveTerminal(id).term.focus(); }, [id, visible, focused]);
 
@@ -186,7 +202,7 @@ export function TerminalView({ id, visible, focused = visible, place }: { id: st
       // In chunks: a single oversized send would be rejected by term:input.
       paste: () => void window.atelier.clipboard.read().then((raw) => clipboardPayload(raw, () => window.atelier.clipboard.saveImage(), () => useApp.getState().showToast(t.imageTooLarge))).then((text) => {
         if (text === null) { useApp.getState().showToast(t.clipboardTooLarge); return; }
-        for (const part of pasteSequence(text, bracketedPaste(id), 512 * 1024)) sendInput(id, part);
+        for (const part of pasteSequence(text, bracketedPaste(id), 512 * 1024)) sendInput(id, part, true);
         lt.term.focus();
       }),
       selectAll: () => lt.term.selectAll(),
@@ -198,5 +214,8 @@ export function TerminalView({ id, visible, focused = visible, place }: { id: st
   return <div ref={slot} className={`terminal-slot ${dropping ? 'is-drop' : ''}`} style={{ display: visible ? 'block' : 'none', ...place }} onContextMenu={(e) => void onMenu(e)}
     onDragOver={onDragOver} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false); }} onDrop={onDrop}>
     {find !== null && Find && <Find id={id} nonce={find} visible={visible} onClose={() => setFind(null)} />}
+    {/* Its size a phone's: said where it covers none of the text, the corner its smaller screen leaves free or under
+        its rows (Find's card takes that corner while open), with the way back to this view's size. */}
+    {visible && find === null && <SizeNote id={id} />}
   </div>;
 }

@@ -23,6 +23,7 @@ import { TriggerHighlights } from './trigger-view';
 import { SnapshotFit } from './snapshot-fit';
 import { withMouseEncoding } from './mouse-encoding';
 import { sendInput } from './drafts';
+import { followPressedKeys } from './pressed-keys';
 import { setTerminalSelection } from '../search/open';
 
 /**
@@ -170,8 +171,9 @@ export function getLiveTerminal(id: string): LiveTerminal {
       term.loadAddon(webgl);
     } catch { /* without WebGL the DOM renderer is used */ }
   }
-  // The user's keys and pastes: followed for drafts (drafts.ts, the Session panel's guard), then sent.
-  term.onData((data) => { blink.wake(); sendInput(id, data); });
+  // The user's keys and the terminal's answers to its program: followed for drafts (drafts.ts, the Session panel's
+  // guard), then sent, each key said to be one (pressed-keys.ts).
+  followPressedKeys(term, (data, pressed) => { blink.wake(); sendInput(id, data, pressed); });
   // Wheel with the mouse captured by a program: one event per line (see wheel.ts). Events created here
   // (isTrusted false) pass to xterm as they are, one per line.
   let wheelRest = 0;
@@ -217,7 +219,7 @@ export function getLiveTerminal(id: string): LiveTerminal {
     }
     const o = keyOverride(!!info && claudeTakesKeys({ foreground: info.foreground, session: !!info.session }), e, term.modes.applicationCursorKeysMode);
     if (!o) return true;
-    if (o.send) { e.preventDefault(); sendInput(id, o.send); }
+    if (o.send) { e.preventDefault(); sendInput(id, o.send, true); }
     return false;
   });
   lt = { term, fit, host, attached: false, blocks, highlights: new TriggerHighlights(term), snapshotFit: new SnapshotFit(), blink, unlink };

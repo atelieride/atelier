@@ -37,6 +37,7 @@ import type { Run } from './automation-run';
 import type { IfBusy, ScheduledPrompt } from './scheduled-prompts';
 import type { ScheduleNotice } from './schedule-notices';
 import type { Binding, CompanionEvent, CompanionModel, Thread } from './companion/types';
+import type { RemoteLayout, RemotePairingEvent, RemotePairingStart, RemotePlaceDone, RemotePlaceRequest, RemoteRowsEvent, RemoteStatus } from './remote';
 import type { SignalBookView } from './claude-signals';
 import type { SearchEvent, SearchRequest } from './search';
 
@@ -48,7 +49,7 @@ export interface AutomationsState { automations: AutomationView[] }
 /** What main tells a window as a toast. */
 export type AppNotice = { kind: 'restart-failed' };
 
-export type MenuCommand = 'new-session' | `new-session-account:${string}` | 'new-terminal' | `new-terminal-profile:${ProfileKey}` | 'reload-shell-env' | 'new-session-in-folder' | 'new-terminal-in-folder' | 'resume-session' | 'start-from-task' | 'new-file' | 'open-file' | 'install-shell-command' | 'uninstall-shell-command' | 'save' | 'save-all' | 'save-all-and-close' | 'close-tab' | 'move-tab-window' | 'move-tab-back' | 'show-terminal' | 'redraw-terminal' | 'view-sessions' | 'view-files' | 'find-in-files' | 'next-search-result' | 'prev-search-result' | 'view-services' | 'view-scm' | 'view-docker' | 'view-redis' | 'view-databases' | 'view-automations' | 'show-history' | 'show-background' | 'fetch' | 'fetch-all' | 'git-commit' | 'git-commit-all' | 'git-write-message' | 'git-undo-commit' | 'git-push' | 'git-pull' | 'git-sync' | 'git-sync-all' | 'git-new-branch' | 'git-switch-branch' | 'git-stash' |'toggle-changes' | 'toggle-sidebar' | 'swap-side-panels' | 'change-theme' | 'project-color' | 'change-terminal-font' | 'open-palette' | 'open-settings' | 'open-about' | 'whats-new' | 'open-connectors' | `open-connector:${ConnectorId}` | 'next-attention' | 'toggle-group-by-state' | 'show-notifications' | 'session-panel' | 'ask-session' | 'restart-session' | 'context-usage' | 'schedule-prompt' | 'scheduled-prompts' | 'md-toggle-preview' | 'md-split' | 'md-outline' | 'toggle-word-wrap' | 'review-all' | 'review-session' | 'comment-selection' | 'next-change' | 'prev-change' | 'reveal-in-finder' | 'send-review' | 'next-tab' | 'prev-tab' | 'split-right' | 'split-down' | 'focus-pane-left' | 'focus-pane-right' | 'focus-pane-up' | 'focus-pane-down' | 'move-tab-left' | 'move-tab-right' | 'move-tab-up' | 'move-tab-down' | 'close-pane' | 'close-other-panes' | `tab-${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}` | 'new-workspace' | 'toggle-workspaces' | 'next-workspace' | 'prev-workspace' | `workspace-${number}` | 'new-ws-activity' | 'toggle-ws-activities';
+export type MenuCommand = 'new-session' | `new-session-account:${string}` | 'new-terminal' | `new-terminal-profile:${ProfileKey}` | 'reload-shell-env' | 'new-session-in-folder' | 'new-terminal-in-folder' | 'resume-session' | 'start-from-task' | 'new-file' | 'open-file' | 'install-shell-command' | 'uninstall-shell-command' | 'save' | 'save-all' | 'save-all-and-close' | 'close-tab' | 'move-tab-window' | 'move-tab-back' | 'show-terminal' | 'redraw-terminal' | 'view-sessions' | 'view-files' | 'find-in-files' | 'next-search-result' | 'prev-search-result' | 'view-services' | 'view-scm' | 'view-docker' | 'view-redis' | 'view-databases' | 'view-automations' | 'show-history' | 'show-background' | 'fetch' | 'fetch-all' | 'git-commit' | 'git-commit-all' | 'git-write-message' | 'git-undo-commit' | 'git-push' | 'git-pull' | 'git-sync' | 'git-sync-all' | 'git-new-branch' | 'git-switch-branch' | 'git-stash' |'toggle-changes' | 'toggle-sidebar' | 'swap-side-panels' | 'change-theme' | 'project-color' | 'change-terminal-font' | 'open-palette' | 'open-settings' | 'open-about' | 'whats-new' | 'open-connectors' | `open-connector:${ConnectorId}` | 'pair-iphone' | 'next-attention' | 'toggle-group-by-state' | 'show-notifications' | 'session-panel' | 'ask-session' | 'restart-session' | 'context-usage' | 'schedule-prompt' | 'scheduled-prompts' | 'md-toggle-preview' | 'md-split' | 'md-outline' | 'toggle-word-wrap' | 'review-all' | 'review-session' | 'comment-selection' | 'next-change' | 'prev-change' | 'reveal-in-finder' | 'send-review' | 'next-tab' | 'prev-tab' | 'split-right' | 'split-down' | 'focus-pane-left' | 'focus-pane-right' | 'focus-pane-up' | 'focus-pane-down' | 'move-tab-left' | 'move-tab-right' | 'move-tab-up' | 'move-tab-down' | 'close-pane' | 'close-other-panes' | `tab-${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}` | 'new-workspace' | 'toggle-workspaces' | 'next-workspace' | 'prev-workspace' | `workspace-${number}` | 'new-ws-activity' | 'toggle-ws-activities';
 
 /**
  * What a window tells main for the application menu (menu-spec's conditions it owns): an Undo on
@@ -114,6 +115,37 @@ export interface CompanionApi {
   newThread(sessionId: string): Promise<Thread>;
   /** The thread's latest outcome was looked at: its unseen mark goes. */
   seen(sessionId: string): Promise<void>;
+}
+
+/**
+ * iPhone access (Settings › iPhone): any trusted app page, the welcome window included. `status` is what Settings,
+ * the footer pill and the phone badges show (on.remote pushes it when it changes). `startPairing` gives the code on
+ * screen (the same one while it lives; on.remotePairing brings a fresh one, a phone asking to pair, the outcome);
+ * `stopPairing` when the sheet closes; `decide` answers the request on screen by its id (false: it is no longer the
+ * one waiting). `removeDevice` unpairs a phone and ends its connection at once; `reset` makes a new identity, which
+ * unpairs every phone.
+ */
+export interface RemoteApi {
+  /**
+   * Whether this page offers iPhone access at all: the app always does; the website's live demo doesn't, and there
+   * nothing of it shows (no Settings › iPhone, no Pair iPhone…).
+   */
+  readonly offered: boolean;
+  status(): Promise<RemoteStatus>;
+  startPairing(): Promise<RemotePairingStart>;
+  stopPairing(): Promise<void>;
+  decide(requestId: string, allow: boolean): Promise<boolean>;
+  removeDevice(id: string): Promise<boolean>;
+  reset(): Promise<void>;
+  /** A project's main window: its sidebar's arrangement now, while iPhone access is on (phones group rows by it). */
+  layout(l: RemoteLayout): Promise<void>;
+  /**
+   * A project's main window is ready for a paired phone's changes to its workspaces and activities: the ones that
+   * waited for it (a window opened for one), in order; later ones come through on.remotePlaces.
+   */
+  placesReady(): Promise<RemotePlaceRequest[]>;
+  /** The window's answer to one of them, with its sidebar's arrangement right after it. */
+  placeDone(d: RemotePlaceDone): Promise<void>;
 }
 
 /** Install / Uninstall 'atelier' Command. */
@@ -438,6 +470,30 @@ export const IPC = {
    */
   searchStart: 'search:start',
   searchStop: 'search:stop',
+  /**
+   * iPhone access: a trusted app page (any window), strict schemas. ev:remote (RemoteStatus) and ev:remote-pairing
+   * (RemotePairingEvent) go to every window.
+   *   remote:status, remote:start-pairing, remote:stop-pairing, remote:reset   no argument
+   *   remote:decide          { requestId, allow }
+   *   remote:remove-device   { id }
+   *   remote:layout          RemoteLayout   (a project's main window only: its sidebar's arrangement, for the phones)
+   *   remote:places-ready    no argument → RemotePlaceRequest[]   (a project's main window, ready for a phone's
+   *                          changes to its workspaces: the ones that waited for it; later ones come as ev:remote-places)
+   *   remote:place-done      RemotePlaceDone   (that window's answer to one, with its sidebar's arrangement after it)
+   */
+  remoteStatus: 'remote:status',
+  remoteStartPairing: 'remote:start-pairing',
+  remoteStopPairing: 'remote:stop-pairing',
+  remoteDecide: 'remote:decide',
+  remoteRemoveDevice: 'remote:remove-device',
+  remoteReset: 'remote:reset',
+  remoteLayout: 'remote:layout',
+  evRemote: 'ev:remote',
+  evRemotePairing: 'ev:remote-pairing',
+  evRemoteRows: 'ev:remote-rows',
+  remotePlacesReady: 'remote:places-ready',
+  remotePlaceDone: 'remote:place-done',
+  evRemotePlaces: 'ev:remote-places',
   // main → renderer events
   evTerminals: 'ev:terminals',
   evBackgroundFeed: 'ev:background-feed',
@@ -977,7 +1033,8 @@ export interface AtelierApi {
     kill(id: string): Promise<void>;
     /** Stops these terminals of the window's project as a window close does: Claude sessions come back under Resume. */
     stop(ids: string[]): Promise<void>;
-    input(id: string, data: string): void;
+    /** `pressed`: a key the user pressed in that terminal (or their paste there) sent it. */
+    input(id: string, data: string, pressed?: boolean): void;
     resize(id: string, cols: number, rows: number): void;
     /** A "notify" output trigger matched in this terminal: main may show an OS banner. */
     triggerMatched(id: string, rule: string, line: string): void;
@@ -1074,6 +1131,8 @@ export interface AtelierApi {
   };
   /** Ask, the read-only companion of a session. */
   companion: CompanionApi;
+  /** iPhone access: status, pairing, paired phones. */
+  remote: RemoteApi;
   /**
    * Find in Files over the window's project. `start` stops the window's search before it; every event carries the id
    * the page gave its search, so a late event of an older one is told apart.
@@ -1162,6 +1221,14 @@ export interface AtelierApi {
     scmMessage(cb: (e: ScmMessageEvent) => void): () => void;
     /** An Ask run queued, started, streamed or traced, or a thread saved (any session's: every window gets them). */
     companion(cb: (e: CompanionEvent) => void): () => void;
+    /** iPhone access's status, whenever it changes (every window). */
+    remote(cb: (s: RemoteStatus) => void): () => void;
+    /** A pairing's news: a fresh code, a phone asking (Allow / Deny), paired, denied, stopped (every window). */
+    remotePairing(cb: (e: RemotePairingEvent) => void): () => void;
+    /** What a paired phone did to this project's rows that the sidebar follows (the project's main window only). */
+    remoteRows(cb: (e: RemoteRowsEvent) => void): () => void;
+    /** A paired phone's change to this project's workspaces and activities (its main window only, once ready). */
+    remotePlaces(cb: (r: RemotePlaceRequest) => void): () => void;
     /** The keys of the tabs in pop-outs changed. */
     popouts(cb: (keys: string[]) => void): () => void;
     /** A pop-out's tab is moved back here. */

@@ -19,6 +19,9 @@ import { devEnv, testMs } from './dev-env';
 import type { NoteEntry } from '@shared/notifications';
 import type { DaemonClient } from './daemon-client';
 import { Attachments } from './attachments';
+import { TerminalSizes, type Size } from './terminal-sizes';
+import { typesSomething } from '@shared/drafts';
+import type { RemoteSized } from '@shared/remote';
 import { IPC, type CheckedFile, type DaemonState, type ShellEnvAuto } from '@shared/api';
 import { pathListSplit } from '@shared/env';
 import { neverSent } from '@shared/daemon-errors';
@@ -32,7 +35,7 @@ import type { ScheduledPrompt } from '@shared/scheduled-prompts';
 import { noArgsSchema, scheduleAddSchema, scheduleFireSchema, scheduleIdSchema, scheduleRestoreSchema, scheduleSnoozeSchema, scheduleUpdateSchema } from './ipc-schemas';
 import type { SignalBookView } from '@shared/claude-signals';
 import { attributionResolveSchema, attributionUndoSchema, backgroundLoopSchema, backgroundWatchSchema, claudeConfigSchema, claudeRestartSchema, claudeLaunchPreviewSchema, claudeResumeSchema, termResumeSchema, idSchema, termCreateSchema, termCreateSessionSchema, termInputSchema, termRenameSchema, termResizeSchema, termStopSchema, triggerNotifySchema } from './ipc-schemas';
-import { claudeResumeCommand } from '@shared/shell';
+import { claudeResumeCommand, cleanName } from '@shared/shell';
 import { isShell } from '@shared/shells';
 import { keptOnClose } from '@shared/close-plan';
 import { accountDirOf, accountsOf, defaultConfigDirNow, historyResume, historyRoots, isRegularFile, launchFlags, restartCommand, resumeConfigDir, resumeFields, sessionCommand } from './claude-accounts';
@@ -53,19 +56,46 @@ import { join, toOut } from './cpath';
 import { atelierHome } from '@shared/paths.node';
 import { Osc7Tracker } from './osc7';
 import { SessionTray, type TrayActions, type TrayHost } from './tray';
+import { screenLines } from './remote/prompt';
 
 interface WindowEntry { wc: WebContents; project: string }
+
+/**
+ * A viewer that is not a window (a paired phone): it gets a terminal's screen, then its output in order, nothing lost
+ * or duplicated, as a window does; the size changes it doesn't own; the terminal's end.
+ */
+export interface RemoteViewer {
+  /** The screen, as escape sequences, at the terminal's size (null: not known). */
+  snapshot(id: string, data: string, size: Size | null): void;
+  data(id: string, data: string): void;
+  /** Another view took the terminal's size. */
+  size(id: string, cols: number, rows: number): void;
+  exit(id: string): void;
+}
+
+/** Remote viewers share the windows' attachments under negative keys, which no webContents id ever is. */
+const isRemote = (viewer: number) => viewer < 0;
 
 const inProject = (t: TerminalInfo, root: string) => t.projectRoot === root;
 /** `p` under a `…/` prefix (projectPrefix): `p.startsWith(prefix)` on macOS; any case and separator on Windows. */
 export const underPrefix = (prefix: string, p: string) => isBelow(trimOneSep(prefix), p);
 const isDir = (p: string) => { try { return statSync(p).isDirectory(); } catch { return false; } };
+/** A terminal launched as a Claude session without a session this long after: Claude didn't start (the renderer's own window). */
+const STARTING_MS = 30_000;
+/** atelierd sends a screen on attach within this long, or it isn't coming. */
+const SCREEN_MS = 5000;
 
 export class TerminalHub {
   private windows = new Map<number, WindowEntry>();
   /** What each window last got, the Dock badge, the usage: an equal value is not sent again. */
   private readonly sent = new LastSent();
   private attachments = new Attachments();
+  /** Each terminal's one size, and which view owns it (windows and remote viewers alike). */
+  private readonly sizes = new TerminalSizes();
+  private readonly remotes = new Map<number, RemoteViewer>();
+  private nextRemote = -1;
+  /** Which terminals a remote viewer owns the size of may have changed (index.ts: the iPhone status). */
+  onRemoteSized: () => void = () => {};
   /** What windows get: atelierd's list (capabilities applied) with each session's background work and artifacts attached. */
   private terminals: TerminalInfo[] = [];
   /** atelierd's list, capabilities applied, before the work is attached. */
@@ -96,6 +126,7 @@ export class TerminalHub {
   /** The automations' runner: whether atelierd's first list is in, and who to call after each list. */
   private listedOnce = false;
   private readonly terminalListeners = new Set<() => void>();
+  private readonly shownListeners = new Set<() => void>();
   private attributions: Attribution[] = [];
   private resumables: Resumable[] = [];
   /** Which of atelierd's lists arrived since it connected: until both did, the sessions it keeps aren't known. */
@@ -106,6 +137,8 @@ export class TerminalHub {
   /** Conversations from Claude's history resumed here (sessionId → terminal), hidden before Claude reports them. */
   private resumed = new Map<string, string>();
   private resuming = new Set<string>();
+  /** Terminals launched as Claude sessions, still waiting for Claude to start: terminal id → when (startingIds). */
+  private readonly launching = new Map<string, number>();
   /** New MCP servers: each live session's baseline, and the poll while sessions are open. */
   private mcp = new McpWatch({
     pairOf: (t) => this.mcpPair(t),
@@ -152,6 +185,11 @@ export class TerminalHub {
   /** Opens a project's window (provided by index.ts): for notifications and Dock entries of projects with no window. */
   openProject: (root: string) => void = () => {};
   newWindow: () => void = () => {};
+  /**
+   * Sessions just started waiting, or finished (past Settings' "only after working for") or stopped with an error, as
+   * the trackers decided them for the Mac's own notices (index.ts: a paired phone's push notifications).
+   */
+  onAttention: (news: { waiting: TerminalInfo[]; done: TerminalInfo[]; error: TerminalInfo[] }) => void = () => {};
   /** Windows: the sessions to look at changed (the Jump List's "Waiting for you"). */
   onDockEntries: (entries: { id: string; label: string }[]) => void = () => {};
   /** The session icons in the menu bar / notification area (spec session tray icons), from startTray. */
@@ -224,13 +262,19 @@ export class TerminalHub {
       this.osc7?.feed(id, data);
       if (this.interrupts.output(id, data, Date.now())) this.publish(true);
       for (const wcId of this.attachments.watchers(id)) {
+        if (isRemote(wcId)) { this.remotes.get(wcId)?.data(id, data); continue; }
         const w = this.windows.get(wcId);
         if (w) this.emit(w, IPC.evData, id, data);
       }
     });
     client.on('exit', (id: string) => {
       this.osc7?.forget(id);
+      const remotes = this.attachments.watchers(id).filter(isRemote);
       this.attachments.forgetTerminal(id);
+      const sized = this.sizes.owner(id);
+      this.sizes.forgetTerminal(id);
+      for (const key of remotes) this.remotes.get(key)?.exit(id);
+      if (sized !== undefined && isRemote(sized)) this.onRemoteSized();
       this.interrupts.forget(id);
       this.endQuietCheck(id);
       for (const w of this.windows.values()) this.emit(w, IPC.evExit, id);
@@ -246,6 +290,8 @@ export class TerminalHub {
       for (const w of this.windows.values()) this.emit(w, IPC.evResumables, list.filter((r) => r.projectRoot === w.project));
       this.keptKnown.resumables = true;
       this.keptChanged();
+      // A paired phone lists them too.
+      this.shownChanged();
     });
     client.on('usageByConfigDir', (list: UsageEntry[]) => {
       this.usage = list;
@@ -268,7 +314,7 @@ export class TerminalHub {
       this.listed = false;
       this.keptKnown = { terminals: false, resumables: false };
       // The next atelierd may be another one: its own capture and notebook arrive after its welcome.
-      if (s !== 'connected') { this.shellEnv = null; this.signals = null; }
+      if (s !== 'connected') { this.shellEnv = null; this.signals = null; this.sizes.unknown(); }
       if (s === 'connected') { this.waiting.reset(); this.done.reset(); this.failed.reset(); this.turns = new TurnClock(); }
       // Service lost: the Dock menu and badge must not point to sessions that may no longer exist.
       if (s !== 'connected') {
@@ -285,6 +331,15 @@ export class TerminalHub {
         for (const id of this.attachments.terminalsOf(wcId)) {
           this.attachments.remove(wcId, id);
           void this.attachFor(w, wcId, id).catch(() => {});
+        }
+      }
+      // A phone too, with a new screen; its size only if it owned it (a reconnection is nobody taking the size).
+      for (const [key, v] of this.remotes) {
+        for (const id of this.attachments.terminalsOf(key)) {
+          const size = this.sizes.asked(key, id);
+          this.attachments.remove(key, id);
+          if (!size) continue;
+          void this.remoteAttach(key, id, size.cols, size.rows, this.sizes.owner(id) === key).catch(() => v.exit(id));
         }
       }
     });
@@ -305,7 +360,10 @@ export class TerminalHub {
     this.sent.forget(`terminals:${wcId}`);
     this.sent.forget(`mcp:${wcId}`);
     this.bg?.windowGone(wcId);
+    const shown = this.attachments.terminalsOf(wcId);
     for (const id of this.attachments.removeWindow(wcId)) void this.client.request({ t: 'detach', id }).catch(() => {});
+    for (const id of shown) this.leaveSize(wcId, id);
+    this.sizes.forgetViewer(wcId);
   }
 
   /**
@@ -320,6 +378,8 @@ export class TerminalHub {
    */
   rehomed(id: string, to: string): void {
     for (const wcId of this.attachments.watchers(id)) {
+      // A phone follows the terminal wherever it goes.
+      if (isRemote(wcId)) continue;
       if (this.windows.get(wcId)?.project !== to) this.attachments.remove(wcId, id);
     }
   }
@@ -391,6 +451,7 @@ export class TerminalHub {
     }
     this.workTimer.arm(nextChange, now);
     if (!changed) { this.revealPending(list, fromDaemon); return; }
+    this.shownChanged();
     this.notifyWaiting(list, now, count);
     for (const [wcId, w] of this.windows) {
       const mine = list.filter((t) => inProject(t, w.project));
@@ -499,14 +560,11 @@ export class TerminalHub {
       const r = this.resumables.find((x) => x.id === o.id);
       if (!r || r.projectRoot !== w.project) throw new Error('session of another project');
       await this.freshEnv(w, sessionProfile(this.settings().terminalProfile, this.profilesAvailable()));
-      // The account it ran with: main picks the dir, null for the default one; sent only to an
-      // atelierd that uses it (the request is built once connected, so the capability is the connected one's).
-      const configDir = await resumeConfigDir(r, accountsOf(this.settings(), defaultConfigDirNow()), defaultConfigDirNow(), isRegularFile);
-      const dir = () => resumeFields(this.client.hasCapability('resume-config-dir'), configDir);
+      const dir = await this.resumeDirOf(r);
       // Known at once, like create: the window shows it from the reply and attaches before atelierd's next list.
       // A terminal moved to another project's window: the new one keeps its home.
       const info = await this.client.request<TerminalInfo>(() => ({ t: 'resume', id: o.id, cols: o.cols, rows: o.rows, ...this.sessionProfile(), ...dir() }));
-      return this.created(this.onResumed(o.id, info));
+      return this.launched(this.created(this.onResumed(o.id, info)));
     });
     // Claude Code's own history of the project: listed and resumed only as the main process reads it.
     handle(IPC.claudeHistory, (w) => this.history.list(this.historyQuery(w)));
@@ -544,7 +602,7 @@ export class TerminalHub {
         const title = historyResumeTitle(c.title, this.client.hasCapability('names'));
         // Its new session starts with the conversation's last message time, for an atelierd that keeps it.
         const last = this.client.hasCapability('lastmessage') ? { lastMessageAt: c.at } : {};
-        const info = this.created(await this.client.request<TerminalInfo>(() => ({ t: 'create', projectRoot: w.project, cwd, cols: o.cols, rows: o.rows, ...title, command, ...last, ...this.sessionProfile() })));
+        const info = this.launched(this.created(await this.client.request<TerminalInfo>(() => ({ t: 'create', projectRoot: w.project, cwd, cols: o.cols, rows: o.rows, ...title, command, ...last, ...this.sessionProfile() }))));
         this.resumed.set(c.sessionId, info.id);
         return info;
       } finally {
@@ -580,7 +638,7 @@ export class TerminalHub {
       // The account's dir, resolved here from its id; the default account starts as before.
       const command = sessionCommand(this.settings(), defaultConfigDirNow(), o.account, o.name, { noFlags: o.noFlags });
       await this.freshEnv(w, sessionProfile(this.settings().terminalProfile, this.profilesAvailable()));
-      return this.created(await this.client.request<TerminalInfo>(() => ({ t: 'create', projectRoot: w.project, cwd, cols: o.cols, rows: o.rows, name: o.name, command, ...this.sessionProfile() })));
+      return this.launched(this.created(await this.client.request<TerminalInfo>(() => ({ t: 'create', projectRoot: w.project, cwd, cols: o.cols, rows: o.rows, name: o.name, command, ...this.sessionProfile() }))));
     });
     handle(IPC.termRename, async (w, _wcId, arg) => {
       const o = termRenameSchema.parse(arg);
@@ -652,20 +710,15 @@ export class TerminalHub {
     handle(IPC.termAttach, (w, wcId, arg) => this.attachFor(w, wcId, idSchema.parse(arg)));
     handle(IPC.termDetach, async (_w, wcId, arg) => {
       const id = idSchema.parse(arg);
-      if (this.attachments.remove(wcId, id)) await this.client.request({ t: 'detach', id });
+      const was = this.attachments.has(wcId, id);
+      const last = this.attachments.remove(wcId, id);
+      if (was) this.leaveSize(wcId, id);
+      if (last) await this.client.request({ t: 'detach', id });
     });
     // The page asked already, in the row or the popover where the close was asked. With
     // "Keep closed sessions under Resume" the session comes back there: main decides.
     handle(IPC.termClose, async (w, _wcId, arg) => {
-      const id = this.ownedBy(w, idSchema.parse(arg));
-      const term = this.terminals.find((t) => t.id === id);
-      const keep = this.settings().keepClosedSessions && this.canStopResumable();
-      let resumable = !!term && keptOnClose(term, keep);
-      // No message yet by atelierd's count, but a conversation resumed in place (Restart Session, /resume, claude -c)
-      // starts again that way: Claude's own history says whether there is one. Unreadable: not kept.
-      const s = term?.session;
-      if (keep && !resumable && s && s.lastMessageAt === null) resumable = await this.history.hasConversation(this.historyQuery(w), s.sessionId).catch(() => false);
-      await this.killOnce(id, resumable);
+      await this.closeAsTab(this.ownedBy(w, idSchema.parse(arg)));
     });
     handle(IPC.termKill, async (w, _wcId, arg) => {
       await this.killOnce(this.ownedBy(w, idSchema.parse(arg)));
@@ -685,6 +738,10 @@ export class TerminalHub {
       // Typed while this window's attach is still on its way (the terminal is on screen, its screen not yet): held
       // and sent once attached, never dropped (it was: a lost first keystroke right after opening a terminal).
       if (!this.attachments.has(wcId, o.data.id)) { this.attachments.hold(wcId, o.data.id, o.data.data); return; }
+      // A key pressed in a window (the renderer tells), or anything typing there (dictation, a drop…), takes the size
+      // back from a phone; never from another window: there only a resize does. The terminal's own answers to its
+      // program (device attributes, cursor and mode reports, colors, focus reports) are neither.
+      if (o.data.pressed || typesSomething(o.data.data)) this.applySize(o.data.id, this.sizes.takeBack(wcId, o.data.id, isRemote), wcId);
       this.typed(o.data.id, o.data.data);
       this.client.send({ t: 'input', id: o.data.id, data: o.data.data });
     });
@@ -694,7 +751,12 @@ export class TerminalHub {
       const deliver = this.attachments.has(wcId, o.data.id) && this.client.connected;
       // One that can't be sent now goes when the attach that comes next completes (see Attachments.sized).
       this.attachments.sized(wcId, o.data.id, o.data.cols, o.data.rows, deliver);
+      // A window's resize always goes as before; the views that don't own the size any more learn it.
+      const hadRemote = this.remoteOwns(o.data.id);
+      const changed = this.sizes.ask(wcId, o.data.id, { cols: o.data.cols, rows: o.data.rows });
       if (deliver) this.client.send({ t: 'resize', id: o.data.id, cols: o.data.cols, rows: o.data.rows });
+      if (changed) this.tellSize(o.data.id, changed, wcId);
+      if (hadRemote) this.onRemoteSized();
     });
     // A "notify" trigger matched: the window made its center entry; the OS banner is decided here, for a
     // terminal of its project it is attached to, with main's own setting, focus and 30 s checks.
@@ -721,6 +783,34 @@ export class TerminalHub {
     return this.terminals;
   }
 
+  /** Every project's sessions offered to resume, as atelierd last listed them. */
+  allResumables(): readonly Resumable[] {
+    return this.resumables;
+  }
+
+  /** The Claude accounts' limits per config dir, as the status line last reported them. */
+  usageList(): readonly UsageEntry[] {
+    return this.usage;
+  }
+
+  /**
+   * Terminals launched as Claude sessions (New Session, Resume, a conversation from the history, a phone's new
+   * session) whose Claude hasn't reported its session yet: they read as sessions already, for STARTING_MS at most.
+   */
+  startingIds(now = Date.now()): ReadonlySet<string> {
+    for (const [id, at] of this.launching) {
+      const t = this.terminals.find((x) => x.id === id);
+      if (t?.session || now - at >= STARTING_MS) this.launching.delete(id);
+    }
+    return new Set(this.launching.keys());
+  }
+
+  /** A terminal just launched as a Claude session: starting until its session arrives. */
+  private launched(info: TerminalInfo): TerminalInfo {
+    if (!info.session) this.launching.set(info.id, Date.now());
+    return info;
+  }
+
   /** atelierd's first list is in (before it, an empty list means nothing). */
   daemonListed(): boolean {
     return this.listedOnce;
@@ -730,6 +820,21 @@ export class TerminalHub {
   onTerminals(cb: () => void): () => void {
     this.terminalListeners.add(cb);
     return () => { this.terminalListeners.delete(cb); };
+  }
+
+  /**
+   * Called whenever the list windows are shown may have changed: atelierd's lists, and the work, interrupts and
+   * artifacts recomputed between them, or a terminal just created.
+   */
+  onShown(cb: () => void): () => void {
+    this.shownListeners.add(cb);
+    return () => { this.shownListeners.delete(cb); };
+  }
+
+  private shownChanged(): void {
+    for (const cb of [...this.shownListeners]) {
+      try { cb(); } catch { /* a listener's failure never stops the windows' list */ }
+    }
   }
 
   /**
@@ -881,11 +986,276 @@ export class TerminalHub {
     return this.created(await this.client.request<TerminalInfo>(() => ({ t: 'create', projectRoot: o.project, cwd, cols: 120, rows: 36, name: o.name, command: o.command, ...this.sessionProfile() })));
   }
 
+  // ── Remote viewers: a paired phone, through the remote hub ─────────────────────────────
+
+  /** A viewer that is not a window; its key, for the calls below. */
+  addRemoteViewer(v: RemoteViewer): number {
+    const key = this.nextRemote--;
+    this.remotes.set(key, v);
+    return key;
+  }
+
+  /** The viewer is gone (its phone's channel ended): it leaves every terminal it watched, sizes given back. */
+  removeRemoteViewer(key: number): void {
+    if (!this.remotes.delete(key)) return;
+    const shown = this.attachments.terminalsOf(key);
+    for (const id of this.attachments.removeWindow(key)) void this.client.request({ t: 'detach', id }).catch(() => {});
+    for (const id of shown) this.leaveSize(key, id);
+    this.sizes.forgetViewer(key);
+    for (const k of [...this.detachAfter]) if (k.startsWith(`${key} `)) this.detachAfter.delete(k);
+    this.onRemoteSized();
+  }
+
+  /** Detaches asked for while their attach was still on its way, by `key id`: done once it completes. */
+  private readonly detachAfter = new Set<string>();
+
+  /**
+   * The viewer starts watching a listed terminal at its size (taking the size unless `take` is false): the terminal is
+   * resized first, then atelierd sends its screen (the viewer's snapshot), then output. Resolves once the screen is in.
+   * A terminal already watched is asked again: atelierd keeps one listener per terminal, and the stream the windows get
+   * goes on without a gap.
+   */
+  remoteAttach(key: number, id: string, cols: number, rows: number, take = true): Promise<void> {
+    if (!this.remotes.has(key)) return Promise.reject(new Error('viewer gone'));
+    if (!this.terminals.some((t) => t.id === id)) return Promise.reject(new Error('no such terminal'));
+    this.detachAfter.delete(`${key} ${id}`);
+    this.applySize(id, this.sizes.ask(key, id, { cols, rows }, take), key);
+    this.attachments.begin(key, id);
+    return new Promise<void>((resolve, reject) => {
+      let done = false;
+      const onSnap = (sid: string, data: string) => {
+        if (sid !== id) return;
+        done = true;
+        this.client.off('snapshot', onSnap);
+        const held = this.attachments.complete(key, id);
+        const cancelled = this.detachAfter.delete(`${key} ${id}`);
+        if (held === null || cancelled) {
+          if (cancelled) { this.attachments.remove(key, id); this.leaveSize(key, id); }
+          if (this.attachments.watchers(id).length === 0) this.client.request({ t: 'detach', id }).catch(() => {});
+          resolve();
+          return;
+        }
+        this.remotes.get(key)?.snapshot(id, data, this.sizeOf(id));
+        for (const d of held) this.remoteType(key, id, d);
+        resolve();
+      };
+      this.client.on('snapshot', onSnap);
+      this.client.request({ t: 'attach', id }).catch((err: Error) => {
+        if (done) return;
+        this.client.off('snapshot', onSnap);
+        this.attachments.abort(key, id);
+        reject(err);
+      });
+    });
+  }
+
+  remoteDetach(key: number, id: string): void {
+    if (!this.attachments.has(key, id)) {
+      if (this.attachments.attaching(key, id)) this.detachAfter.add(`${key} ${id}`);
+      return;
+    }
+    const last = this.attachments.remove(key, id);
+    this.leaveSize(key, id);
+    if (last) void this.client.request({ t: 'detach', id }).catch(() => {});
+  }
+
+  /** Input from the viewer: false (refused) unless it watches the terminal or its attach is on its way. */
+  remoteInput(key: number, id: string, data: string): boolean {
+    if (!this.remotes.has(key)) return false;
+    if (!this.attachments.has(key, id)) return this.attachments.hold(key, id, data);
+    this.remoteType(key, id, data);
+    return true;
+  }
+
+  /** The viewer's own size changed: it takes the terminal's size. False unless it watches the terminal. */
+  remoteResize(key: number, id: string, cols: number, rows: number): boolean {
+    if (!this.attachments.has(key, id) && !this.attachments.attaching(key, id)) return false;
+    this.applySize(id, this.sizes.ask(key, id, { cols, rows }), key);
+    this.onRemoteSized();
+    return true;
+  }
+
+  /** The terminals whose size a remote viewer owns now, with that size (windows draw them at it). */
+  remoteSized(): RemoteSized[] {
+    return this.sizes.owned(isRemote).flatMap((id) => {
+      const size = this.sizeOf(id);
+      return size ? [{ id, cols: size.cols, rows: size.rows }] : [];
+    });
+  }
+
+  /** Typing from a phone takes the size back for it, from whichever view had it. */
+  private remoteType(key: number, id: string, data: string): void {
+    if (typesSomething(data)) this.applySize(id, this.sizes.takeBack(key, id, () => true), key);
+    this.typed(id, data);
+    this.client.send({ t: 'input', id, data });
+  }
+
+  /** The size the terminal has: what atelierd was sent, else the owner's own (unknown after a reconnection). */
+  private sizeOf(id: string): Size | null {
+    const owner = this.sizes.owner(id);
+    return this.sizes.current(id) ?? (owner === undefined ? undefined : this.sizes.asked(owner, id)) ?? null;
+  }
+
+  /** A new size for atelierd (null: nothing to send); the remote viewers but `by` are told. */
+  private applySize(id: string, size: Size | null, by: number | null): void {
+    if (!size) return;
+    if (this.client.connected) this.client.send({ t: 'resize', id, cols: size.cols, rows: size.rows });
+    this.tellSize(id, size, by);
+    this.onRemoteSized();
+  }
+
+  private tellSize(id: string, size: Size, by: number | null): void {
+    for (const key of this.attachments.watchers(id)) if (isRemote(key) && key !== by) this.remotes.get(key)?.size(id, size.cols, size.rows);
+  }
+
+  private remoteOwns(id: string): boolean {
+    const owner = this.sizes.owner(id);
+    return owner !== undefined && isRemote(owner);
+  }
+
+  /** `viewer` stopped showing the terminal: when it owned the size, the most recent view still showing it takes it back. */
+  private leaveSize(viewer: number, id: string): void {
+    const owned = this.sizes.owner(id) === viewer;
+    const next = this.sizes.leave(viewer, id, this.attachments.watchers(id));
+    if (next) this.applySize(id, next, null);
+    else if (owned && isRemote(viewer)) this.onRemoteSized();
+  }
+
+  /**
+   * A session a phone starts in a listed project: exactly New Session (the command for the account the phone chose or
+   * the one set for new sessions, its launch flags, the session profile) or New Terminal (the default profile), at the
+   * project's root, at the phone's size. The shell environment is checked first, as for any Atelier terminal.
+   */
+  async createRemoteSession(o: { project: string; kind: 'claude' | 'terminal'; cols: number; rows: number; account?: string }): Promise<TerminalInfo> {
+    const cwd = terminalCwd(o.project, o.project);
+    if (!cwd) throw new Error('project folder not found');
+    const at = (info: TerminalInfo) => { const t = this.created(info); this.sizes.known(t.id, { cols: o.cols, rows: o.rows }); return t; };
+    const s = this.settings();
+    if (o.kind === 'claude') {
+      // The account the phone chose (an id it was listed), else the one set for new sessions.
+      const command = sessionCommand(s, defaultConfigDirNow(), o.account, undefined);
+      await this.freshEnvQuietly(sessionProfile(s.terminalProfile, this.profilesAvailable()));
+      return this.launched(at(await this.client.request<TerminalInfo>(() => ({ t: 'create', projectRoot: o.project, cwd, cols: o.cols, rows: o.rows, command, ...this.sessionProfile() }))));
+    }
+    const shells = () => this.shells().map((x) => x.path);
+    let likely: TerminalProfile | undefined;
+    try { likely = terminalProfile(undefined, s.terminalProfile, shells(), this.profilesAvailable()); } catch { likely = undefined; }
+    await this.freshEnvQuietly(likely);
+    return at(await this.client.request<TerminalInfo>(() => {
+      const profile = terminalProfile(undefined, this.settings().terminalProfile, shells(), this.profilesAvailable());
+      return { t: 'create', projectRoot: o.project, cwd, cols: o.cols, rows: o.rows, ...(profile ? { profile } : {}), ...this.aliases() };
+    }));
+  }
+
+  /**
+   * The account a session to resume ran with: main picks the dir, null for the default one; sent only to an atelierd
+   * that uses it (the request is built once connected, so the capability is the connected one's).
+   */
+  private async resumeDirOf(r: Resumable): Promise<() => ReturnType<typeof resumeFields>> {
+    const configDir = await resumeConfigDir(r, accountsOf(this.settings(), defaultConfigDirNow()), defaultConfigDirNow(), isRegularFile);
+    return () => resumeFields(this.client.hasCapability('resume-config-dir'), configDir);
+  }
+
+  /**
+   * Closes a terminal as closing its tab does: with "Keep closed sessions under Resume" a session with a conversation
+   * comes back there (atelierd decides which terminal has one); once, whoever asks.
+   */
+  private async closeAsTab(id: string): Promise<void> {
+    const term = this.terminals.find((t) => t.id === id);
+    const keep = this.settings().keepClosedSessions && this.canStopResumable();
+    let resumable = !!term && keptOnClose(term, keep);
+    // No message yet by atelierd's count, but a conversation resumed in place (Restart Session, /resume, claude -c)
+    // starts again that way: Claude's own history says whether there is one. Unreadable: not kept.
+    const s = term?.session;
+    if (term && keep && !resumable && s && s.lastMessageAt === null) resumable = await this.history.hasConversation(this.historyQueryFor(term.projectRoot), s.sessionId).catch(() => false);
+    await this.killOnce(id, resumable);
+  }
+
+  // ── A paired phone's actions on rows (the remote hub checked them first) ──
+
+  /** A key pressed in a session's permission dialog (an option's digit, or Esc), seen by the interrupt watch as typed. */
+  answerKey(id: string, key: string): void {
+    // Esc ends the turn without a Stop: the interrupt watch brings the session back as for a key typed in a window.
+    this.typed(id, key);
+    this.client.send({ t: 'input', id, data: key });
+  }
+
+  /**
+   * A session's screen as text rows, for reading the dialog it shows: atelierd's screen through an attach of its own
+   * (a terminal windows watch keeps its stream; one nobody watches is detached again).
+   */
+  async permissionScreen(id: string): Promise<string[]> {
+    if (!this.terminals.some((t) => t.id === id)) throw new Error('no such terminal');
+    // A viewer key of its own: the attach's place among the windows' and the phones', then gone.
+    const key = this.nextRemote--;
+    this.attachments.begin(key, id);
+    let attached = false;
+    try {
+      const data = await new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(() => { this.client.off('snapshot', onSnap); reject(new Error('no screen')); }, SCREEN_MS);
+        timer.unref?.();
+        const onSnap = (sid: string, snap: string) => {
+          if (sid !== id) return;
+          clearTimeout(timer);
+          this.client.off('snapshot', onSnap);
+          resolve(snap);
+        };
+        this.client.on('snapshot', onSnap);
+        this.client.request({ t: 'attach', id }).catch((err: Error) => { clearTimeout(timer); this.client.off('snapshot', onSnap); reject(err); });
+      });
+      attached = this.attachments.complete(key, id) !== null;
+      return await screenLines(data, this.sizeOf(id));
+    } finally {
+      if (!attached) this.attachments.abort(key, id);
+      else if (this.attachments.remove(key, id)) void this.client.request({ t: 'detach', id }).catch(() => {});
+    }
+  }
+
+  /** Rename, as a row's: trimmed, control characters out, "" gives the automatic name back, the shown name is nothing. */
+  async renameRemote(id: string, name: string): Promise<void> {
+    const term = this.terminals.find((t) => t.id === id);
+    if (!term) throw new Error('no such terminal');
+    const v = cleanName(name);
+    if (v === term.title) return;
+    await this.client.request({ t: 'rename', id, name: v || null });
+  }
+
+  /** Close, as its tab's. */
+  async closeRemote(id: string): Promise<void> {
+    if (!this.terminals.some((t) => t.id === id)) throw new Error('no such terminal');
+    await this.closeAsTab(id);
+  }
+
+  /** Resume, for a listed resumable of any project, at the phone's size; nothing to show the shell's reload to. */
+  async resumeRemote(id: string, cols: number, rows: number): Promise<TerminalInfo> {
+    const r = this.resumables.find((x) => x.id === id);
+    if (!r) throw new Error('no such session to resume');
+    await this.freshEnvQuietly(sessionProfile(this.settings().terminalProfile, this.profilesAvailable()));
+    const dir = await this.resumeDirOf(r);
+    const info = await this.client.request<TerminalInfo>(() => ({ t: 'resume', id, cols, rows, ...this.sessionProfile(), ...dir() }));
+    const t = this.launched(this.created(this.onResumed(id, info)));
+    this.sizes.known(t.id, { cols, rows });
+    return t;
+  }
+
+  /** Dismiss, as Resume's own. */
+  async dismissRemote(id: string): Promise<void> {
+    if (!this.resumables.some((x) => x.id === id)) throw new Error('no such session to resume');
+    await this.client.request({ t: 'dismiss', id });
+  }
+
+  /** freshEnv for a terminal no window asked for: nobody to show the reload to. */
+  private async freshEnvQuietly(profile: TerminalProfile | undefined): Promise<void> {
+    if (!checkApplies(profile, this.settings().shellEnvAutoReload, this.client.connected)) return;
+    await this.freshness.ensure(this.checkedFiles(), { reloading: () => {}, failed: () => {} });
+  }
+
   private created(raw: TerminalInfo): TerminalInfo {
     const info = wellFormedTerminal(raw);
     this.terminals = withTerminal(this.terminals, info);
     // Kept by a recomputation of the work before atelierd's list arrives.
     this.raw = withTerminal(this.raw, info);
+    this.shownChanged();
     return info;
   }
 
@@ -1001,6 +1371,7 @@ export class TerminalHub {
     this.turns.update(next, now);
     this.publishEntries(centerEntries(waitingNow, [], now, randomUUID));
     this.showNotes(notesFor(this.settings(), waitingNow, []));
+    if (waitingNow.length) this.onAttention({ waiting: waitingNow, done: [], error: [] });
     this.finishes.push(finished);
   }
 
@@ -1014,7 +1385,10 @@ export class TerminalHub {
     const items = longFinishes(settled, this.settings().notifyDoneAfter);
     const seen = new Set(this.lastList.filter((x) => x.session && !x.session.unread).map((x) => x.id));
     this.publishEntries(centerEntries([], items, Date.now(), randomUUID, seen));
-    this.showNotes(notesFor(this.settings(), [], items.filter((f) => f.kind === 'done').map((f) => f.term), items.filter((f) => f.kind === 'error').map((f) => f.term)));
+    const done = items.filter((f) => f.kind === 'done').map((f) => f.term);
+    const error = items.filter((f) => f.kind === 'error').map((f) => f.term);
+    this.showNotes(notesFor(this.settings(), [], done, error));
+    if (done.length || error.length) this.onAttention({ waiting: [], done, error });
   }
 
   /** Each window gets its project's entries (those of a session shown in a focused pop-out arrive seen). */
@@ -1156,9 +1530,13 @@ export class TerminalHub {
   }
 
   private historyQuery(w: WindowEntry): HistoryQuery {
-    let realRoot = w.project;
-    try { realRoot = toOut(realpathSync(w.project)); } catch { /* folder gone: nothing will match */ }
-    return { root: w.project, realRoot, exclude: runningSessions(this.terminals, this.resumed) };
+    return this.historyQueryFor(w.project);
+  }
+
+  private historyQueryFor(project: string): HistoryQuery {
+    let realRoot = project;
+    try { realRoot = toOut(realpathSync(project)); } catch { /* folder gone: nothing will match */ }
+    return { root: project, realRoot, exclude: runningSessions(this.terminals, this.resumed) };
   }
 
   /** Sends every window its project's attributions again (atelierd's or the app-side Bash ones changed). */

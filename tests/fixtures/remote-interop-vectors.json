@@ -1,0 +1,178 @@
+{
+ "about": "Atelier Remote v1 interop vectors: pairing codes and their PBKDF2 derivation, the room id, and one Noise handshake per channel kind followed by transport messages (each plaintext starts with the fragment byte). Raw bytes in hex; lookup and room id in base64url, as on the wire.",
+ "room": {
+  "secret": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "id": "tePv3qc7UvemGbP5ji-8dsrSNDJbpd03BtchrG1l8Xs"
+ },
+ "codes": [
+  {
+   "code": "7K4Q9MXD2HTR",
+   "formatted": "7K4Q-9MXD-2HTR",
+   "lookup": "uoP6mye2nmGnt6uEGmnvZpmetBsCNGqgrnofKZvN5og",
+   "psk": "79aaa63ffa30256213d1ba537d00bf9d8df3b55eecc0d97260b62e72ebd6df3f"
+  },
+  {
+   "code": "000000000000",
+   "formatted": "0000-0000-0000",
+   "lookup": "W8QO4U65TIQwUU2HN4gb6q_EVglZRojPnIA7rEuYlEg",
+   "psk": "7b6c5bc30add5c5533ed5dbada970d278c51bc2982aecaba94dffde102a80fd3"
+  },
+  {
+   "code": "ZZZZZZZZZZZZ",
+   "formatted": "ZZZZ-ZZZZ-ZZZZ",
+   "lookup": "fNJFCYEIW6o4DOJMZN0LZTdYY6etrKaTadXHfJ46ado",
+   "psk": "d918e7a6315b63e69727199e2c71ef72e071e3bb72d2267aabcd846e0352b904"
+  },
+  {
+   "code": "ABCDEFGHJKMN",
+   "formatted": "ABCD-EFGH-JKMN",
+   "lookup": "qHUB_z2Sz5eMR6elcPM8EiAVARa2lg-vHcFTQw4oelQ",
+   "psk": "7a4f66db859ac8e94f8f34588a838a4aefcc1ebbf47989d198c6856ae2c78b22"
+  }
+ ],
+ "normalize": [
+  {
+   "input": "7k4q-9mxd-2htr",
+   "code": "7K4Q9MXD2HTR"
+  },
+  {
+   "input": " 7K4Q 9MXD 2HTR ",
+   "code": "7K4Q9MXD2HTR"
+  },
+  {
+   "input": "OIL0-OIL0-OIL0",
+   "code": "011001100110"
+  },
+  {
+   "input": "7K4Q-9MXD-2HTU",
+   "code": null
+  },
+  {
+   "input": "7K4Q-9MXD-2HT",
+   "code": null
+  },
+  {
+   "input": "7K4Q_9MXD_2HTR",
+   "code": null
+  }
+ ],
+ "handshakes": [
+  {
+   "kind": "device",
+   "protocol": "Noise_XX_25519_AESGCM_SHA256",
+   "prologue": "6174656c6965722d72656d6f74652d7631006465766963650074655076337163375576656d476250356a692d38647372534e444a6270643033427463687247316c385873",
+   "initiatorStatic": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+   "initiatorStaticPublic": "493e82fc74464a59268817623d2053c5eb8e2cc4a988b4fee179ec6b010d531d",
+   "initiatorEphemeral": "1111111111111111111111111111111111111111111111111111111111111111",
+   "responderStatic": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+   "responderStaticPublic": "79a631eede1bf9c98f12032cdeadd0e7a079398fc786b88cc846ec89af85a51a",
+   "responderEphemeral": "1212121212121212121212121212121212121212121212121212121212121212",
+   "messages": [
+    {
+     "from": "initiator",
+     "payload": "",
+     "ciphertext": "7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13"
+    },
+    {
+     "from": "responder",
+     "payload": "7b2276223a312c226e616d65223a2253747564696f204d6163222c22617070223a22302e332e30222c22706c6174666f726d223a2264617277696e227d",
+     "ciphertext": "052a50773ac8d91773f2dc9662e12f0defe915e415b8a1c8e20a5a3d6ab2b843dfd29437c6ce3c6397dece394aa035ccecb3540eec76edb412e214ab33c9496951a6dab6a36dd058464de1e9120974486c95e136a8c4e2058705e5f178b3c2f2c55bc1fbd8ccb2b09b80d013ad809c869170f172f50faac5b59b3ff6f217d7bc04424cb7312089fbdf2e31980a65fc27aed2d813ff60d3f45cb3fcce31",
+     "text": "{\"v\":1,\"name\":\"Studio Mac\",\"app\":\"0.3.0\",\"platform\":\"darwin\"}"
+    },
+    {
+     "from": "initiator",
+     "payload": "7b2276223a312c226e616d65223a2254657374206950686f6e65222c226d6f64656c223a226950686f6e6531372c31222c22617070223a22312e302e30227d",
+     "ciphertext": "88d8a6c85b8e1b7862e9e5c5fe0f094fcd2944b30751f44be1bbc235a4941723e0ae384568a6e211e0f59aacd5bc05acb38df7b6971c2ed2d787366e0e3956d4c4ce9e1d0e541ad6f727eb3e09b6d06b90beaaab477f1671ddd486955ffd5da1596533cb646dcf99efd94b9a1bcb45fb1448b11b72d1a6cb4fb9b70d9d9408",
+     "text": "{\"v\":1,\"name\":\"Test iPhone\",\"model\":\"iPhone17,1\",\"app\":\"1.0.0\"}"
+    },
+    {
+     "from": "responder",
+     "payload": "007b2274223a2277656c636f6d65222c22686f7374223a7b226e616d65223a2253747564696f204d6163222c22706c6174666f726d223a2264617277696e227d7d",
+     "ciphertext": "efbcdefe2c5a684f1a9eb6193a2d5e652b99d0bab9d235b6e4d44347f7fd4c4a95540ab464fe8b43382caef0fd0a16f9dab65cd72ad51e1c6a291d04a7c56bc06944baf6746d6568442a32ad9331389247",
+     "text": "{\"t\":\"welcome\",\"host\":{\"name\":\"Studio Mac\",\"platform\":\"darwin\"}}"
+    },
+    {
+     "from": "initiator",
+     "payload": "007b2274223a22617474616368222c22726964223a312c226964223a227431222c22636f6c73223a38302c22726f7773223a32347d",
+     "ciphertext": "e032d8d0ce3315b1c8ba811be83c626e797100ded91573825202aebad7098146d78507f5810c7dafaec3fdca9847a7f786b291428883c80ffb1549d89f14422f0f2e01d275",
+     "text": "{\"t\":\"attach\",\"rid\":1,\"id\":\"t1\",\"cols\":80,\"rows\":24}"
+    },
+    {
+     "from": "responder",
+     "payload": "007b2274223a226f7574222c226964223a227431222c2264617461223a226c735c725c6e227d",
+     "ciphertext": "5899bc3b1091f52f88144be003a60c3c4322f6e1ab87d559ed390e852e3b194a3b5399dbcac34616ed2ce27f16a85f99d00c1714437f",
+     "text": "{\"t\":\"out\",\"id\":\"t1\",\"data\":\"ls\\r\\n\"}"
+    },
+    {
+     "from": "initiator",
+     "payload": "007b2274223a22696e707574222c226964223a227431222c2264617461223a226563686f2068695c72227d",
+     "ciphertext": "b7616e613a04c14c7b876e24696a2769cf99d333446c617ca321c5f0aa80cb5e5ec27dd71d6ed452c816dcd09970c3ca7070e1eb1e1755c8ca19aa",
+     "text": "{\"t\":\"input\",\"id\":\"t1\",\"data\":\"echo hi\\r\"}"
+    }
+   ],
+   "handshakeHash": "dbfcd5773ce734260a3437ac31fd1bf11e1503bf6bb3b32e658c884e4c8add9e"
+  },
+  {
+   "kind": "pair",
+   "protocol": "Noise_XXpsk3_25519_AESGCM_SHA256",
+   "prologue": "6174656c6965722d72656d6f74652d7631007061697200756f50366d7965326e6d476e74367545476d6e765a706d65744273434e477167726e6f664b5a764e356f67",
+   "initiatorStatic": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+   "initiatorStaticPublic": "493e82fc74464a59268817623d2053c5eb8e2cc4a988b4fee179ec6b010d531d",
+   "initiatorEphemeral": "2121212121212121212121212121212121212121212121212121212121212121",
+   "responderStatic": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+   "responderStaticPublic": "79a631eede1bf9c98f12032cdeadd0e7a079398fc786b88cc846ec89af85a51a",
+   "responderEphemeral": "2222222222222222222222222222222222222222222222222222222222222222",
+   "psk": "79aaa63ffa30256213d1ba537d00bf9d8df3b55eecc0d97260b62e72ebd6df3f",
+   "messages": [
+    {
+     "from": "initiator",
+     "payload": "",
+     "ciphertext": "7d34a4815fa6b982535e60af3bd9b49556816080f1641ff81d2b7c8ae8268a447054a00cda9c5be06386d3f2fa1e022e"
+    },
+    {
+     "from": "responder",
+     "payload": "7b2276223a312c226e616d65223a2253747564696f204d6163222c22617070223a22302e332e30222c22706c6174666f726d223a2264617277696e227d",
+     "ciphertext": "0faa684ed28867b97f4a6a2dee5df8ce974e76b7018e3f22a1c4cf2678570f201d8628de7c0a0e172a897739aca09431cf3c11407f37fc6ddba7ad10dec0e7b7baeb550ea83fe79b2a307860dfebdf047aeb7fa453493901c72d3590ec849be9af751c9898aaaa199eb2804b8159e106db2ce020c4da5393cd5d956577c106ef4d182beafd2876f5eb88cad9f762b54c1da501ac6ea4d9a205b0df0cd5",
+     "text": "{\"v\":1,\"name\":\"Studio Mac\",\"app\":\"0.3.0\",\"platform\":\"darwin\"}"
+    },
+    {
+     "from": "initiator",
+     "payload": "7b2276223a312c226e616d65223a2254657374206950686f6e65222c226d6f64656c223a226950686f6e6531372c31222c22617070223a22312e302e30227d",
+     "ciphertext": "fd83f8a01316e5407f664725aea7b91e56b4accca043e0b93cf5d71bcd5f735fed20443ed3f8dc6606e9ab7d6f71027cb37bef8c523c444eff2011fa07248c9c5469143823247060decc7c4f322b2a4e087909ef7509c94423223aac80523573e0ccb65b249757f21869f8b4ad3203af806b2e5ce8b7ee62e30b568b090f80",
+     "text": "{\"v\":1,\"name\":\"Test iPhone\",\"model\":\"iPhone17,1\",\"app\":\"1.0.0\"}"
+    },
+    {
+     "from": "responder",
+     "payload": "007b2274223a2277656c636f6d65222c22686f7374223a7b226e616d65223a2253747564696f204d6163222c22706c6174666f726d223a2264617277696e227d2c22726f6f6d223a2274655076337163375576656d476250356a692d38647372534e444a6270643033427463687247316c385873227d",
+     "ciphertext": "357ec19155edcd2baa157cf776003d58600f2c41ab767a87e596a55ce8216657991147363b1e028ae2c3f970dacdb497b4c135079a09c06329cd60ee2b3c31fbc6e338e3705631c1e4e208abe351b9a325d111d13e31638f6e86f3660328e70ae8e5b229d0a32521ecb0135a2d6e780f007fba262bf16844ba0f44df6cb4535c38c080b44581",
+     "text": "{\"t\":\"welcome\",\"host\":{\"name\":\"Studio Mac\",\"platform\":\"darwin\"},\"room\":\"tePv3qc7UvemGbP5ji-8dsrSNDJbpd03BtchrG1l8Xs\"}"
+    },
+    {
+     "from": "initiator",
+     "payload": "007b2274223a22617474616368222c22726964223a312c226964223a227431222c22636f6c73223a38302c22726f7773223a32347d",
+     "ciphertext": "980d0191a5064ec2f0519cee534ecf41fd5dd632f68d47de43178006cf57e7d0018938bc1c6eba18908f6f5223bc97a929a67cf1a2c3e503ef5e9ed2e29329394a4a4eff29",
+     "text": "{\"t\":\"attach\",\"rid\":1,\"id\":\"t1\",\"cols\":80,\"rows\":24}"
+    },
+    {
+     "from": "responder",
+     "payload": "017b2274223a22736e617073686f74222c226964223a227431222c22636f6c73223a38302c22726f777322",
+     "ciphertext": "a4e0ce4f47ad2f4977a5c07768a02d509fe4c4797e8b055c360c32fcae016966c253636f48c50d70676c3cb94ea0d8e6eaac96f59dfb3594447ad2",
+     "text": "{\"t\":\"snapshot\",\"id\":\"t1\",\"cols\":80,\"rows\""
+    },
+    {
+     "from": "responder",
+     "payload": "003a32342c2264617461223a225c75303031625b316d68656c6c6f5c75303031625b306d5c725c6e2420227d",
+     "ciphertext": "ef96c598376f4105c6b97018185483e5141a914e586619ca3bcab4e14915cdf105a97dbb5e471c08e5c61f15466bb5e8b78f7b7dc85e9631530fcf0c",
+     "text": ":24,\"data\":\"\\u001b[1mhello\\u001b[0m\\r\\n$ \"}"
+    },
+    {
+     "from": "initiator",
+     "payload": "007b2274223a22696e707574222c226964223a227431222c2264617461223a226563686f2068695c72227d",
+     "ciphertext": "119512cbc57a5fe46c2a5d660a14e1c30261d4104d2aa091e79be3db064c108cfcf251999645f96414841ab6d3973d5f7a46c15da632eb4a8ecbee",
+     "text": "{\"t\":\"input\",\"id\":\"t1\",\"data\":\"echo hi\\r\"}"
+    }
+   ],
+   "handshakeHash": "046119236ae50301ec2bbda40330e9c495bda05e1d30f5243e6cf3d3b7110603"
+  }
+ ]
+}

@@ -1,4 +1,5 @@
 import type { MenuCondition, MenuItemRole, MenuSpecItem, MenuSpecMenu } from '@shared/menu-spec';
+import type { MenuCommand } from '@shared/api';
 import type { Settings } from '@shared/settings';
 import { keysOf } from '../../renderer/kbd';
 import { isReservedAccel } from './accelerators';
@@ -33,6 +34,9 @@ export interface MenuEnv {
 export const DOWNLOAD_HREF = '/download/mac?from=demo';
 
 const reservedTip = (keys: string) => `Your browser keeps ${keys}: choose it here instead.`;
+
+/** The commands of features the demo doesn't offer (iPhone access: its bridge says so): left out of its menus. */
+const NOT_OFFERED: ReadonlySet<MenuCommand> = new Set(['pair-iphone']);
 
 const item = (label: string, effect: MenuEffect, accel?: string, extra: { disabled?: boolean } = {}): DemoMenuEntry => {
   const keys = accel ? keysOf(accel) : undefined;
@@ -116,7 +120,7 @@ function entry(i: MenuSpecItem, env: MenuEnv): DemoMenuEntry | null {
     return { kind: 'submenu', label: i.label, items: off ? [] : [item('Default', { kind: 'command', command: 'new-terminal' })], ...(off && { disabled: true }) };
   }
   if ('command' in i) {
-    if (i.visible === false) return null;
+    if (i.visible === false || NOT_OFFERED.has(i.command)) return null;
     // 'git-undo': the demo never commits (it asks to download), so there is never one to undo.
     const e = item(i.label, { kind: 'command', command: i.command }, i.accelerator, { disabled: (i.enabledWhen === 'profiles' && !env.profiles) || i.enabledWhen === 'git-undo' });
     // A checkbox (View › Word Wrap): its ✓ follows the demo's settings, as main's menu follows the app's.

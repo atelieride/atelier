@@ -9,7 +9,7 @@
 
 export const AREAS = [
   'editor', 'files', 'changes', 'scm', 'review', 'terminal', 'sessions', 'accounts', 'workspace', 'settings',
-  'background', 'services', 'dictation', 'connectors', 'notifications', 'updates', 'companion', 'databases'
+  'background', 'services', 'dictation', 'connectors', 'notifications', 'updates', 'companion', 'databases', 'iphone'
 ] as const;
 export type Area = (typeof AREAS)[number];
 
@@ -176,6 +176,12 @@ export const SPECS: Record<string, Area[]> = {
   'wheel.spec.ts': ['terminal'],
   'themes.spec.ts': ['settings', 'workspace', 'terminal'],
   'project-color.spec.ts': ['settings', 'workspace'],
+  // iPhone access through the test relay and a fake phone: Settings › iPhone, pairing, a phone typing, the marks.
+  'iphone-remote.spec.ts': ['iphone', 'settings', 'terminal'],
+  // What the sidebar shows, on the phone: layouts, actions on rows, push notifications.
+  'iphone-sidebar.spec.ts': ['iphone', 'sessions', 'workspace', 'notifications'],
+  // Workspaces and activities from the phone: made, renamed, a row moved in, a closed window opened for a change.
+  'iphone-places.spec.ts': ['iphone', 'workspace'],
   'terminal-font.spec.ts': ['settings', 'terminal'],
   'window.spec.ts': ['workspace'],
   'word-wrap.spec.ts': ['editor', 'settings'],
@@ -242,6 +248,15 @@ export const SOURCES: Record<string, Area[]> = {
   // Ask companion: its pure rules, main's runs and threads, the renderer's state and panel.
   'src/shared/companion/': ['companion'],
   'src/main/companion/': ['companion'],
+  // iPhone access: Noise, pairing, the relay link, the phones' channels and their terminals; the renderer's Settings ›
+  // iPhone, pairing sheet, pill, badges and size note; the test relay and the fake phone the spec drives them with.
+  'src/main/remote/': ['iphone', 'terminal', 'sessions', 'settings'],
+  'src/renderer/iphone/': ['iphone'],
+  // A phone's changes to the places go through the workspaces' own store actions.
+  'src/renderer/iphone/phone-places': ['iphone', 'workspace'],
+  'tests/support/test-relay.ts': ['iphone'],
+  'tests/support/fake-phone.ts': ['iphone'],
+  'src/shared/remote.ts': ['iphone', 'settings'],
   'src/renderer/companion/': ['companion'],
   'src/renderer/components/companion/': ['companion'],
   // Renderer: folders
@@ -492,6 +507,7 @@ export const SOURCES: Record<string, Area[]> = {
   'src/main/about.ts': ['workspace'],
   'src/main/app-log.ts': ['workspace'],
   'src/main/attachments.ts': ['terminal'],
+  'src/main/terminal-sizes.ts': ['terminal'],
   'src/main/attention.ts': ['sessions'],
   'src/main/auto-update.ts': ['updates'],
   'src/main/store-': ['updates'],

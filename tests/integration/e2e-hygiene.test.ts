@@ -211,11 +211,21 @@ test('specs save screenshots only through look() or behind ATELIER_E2E_SHOTS', (
 
 // The e2e shorten a few production timings; only through devEnv (inert in the packaged app), each
 // passed to its hub in index.ts.
-test('test timings (ports poll, server threshold, missing output, outside-file grace) are devEnv variables wired in main', () => {
+test('test timings (ports poll, server threshold, missing output, outside-file grace, iPhone pairing) are devEnv variables wired in main', () => {
   const devEnvText = readFileSync(join(__dirname, '../../src/main/dev-env.ts'), 'utf8');
   const index = readFileSync(join(__dirname, '../../src/main/index.ts'), 'utf8');
-  for (const name of ['ATELIER_TEST_PORTS_POLL_MS', 'ATELIER_TEST_SERVER_LISTEN_MS', 'ATELIER_TEST_BG_MISSING_MS', 'ATELIER_TEST_OUTSIDE_GRACE_MS', 'ATELIER_TEST_DB_OVERVIEW_MS']) {
+  for (const name of ['ATELIER_TEST_PORTS_POLL_MS', 'ATELIER_TEST_SERVER_LISTEN_MS', 'ATELIER_TEST_BG_MISSING_MS', 'ATELIER_TEST_OUTSIDE_GRACE_MS', 'ATELIER_TEST_DB_OVERVIEW_MS', 'ATELIER_TEST_REMOTE_DECIDE_MS', 'ATELIER_TEST_REMOTE_CODE_MS']) {
     expect(devEnvText).toContain(`'${name}'`);
     expect(index).toContain(`testMs('${name}')`);
   }
+});
+
+test('e2eEnv never lets the app reach the real iPhone relay: a closed loopback port unless a test passes its test relay', () => {
+  expect(e2eEnv().env.ATELIER_TEST_RELAY_URL).toBe('http://127.0.0.1:9');
+  expect(e2eEnv({ ATELIER_TEST_RELAY_URL: 'http://127.0.0.1:4567' }).env.ATELIER_TEST_RELAY_URL).toBe('http://127.0.0.1:4567');
+});
+
+test('main dials the relay the setting names, a test relay standing in for the default one only', () => {
+  const index = readFileSync(join(__dirname, '../../src/main/index.ts'), 'utf8');
+  expect(index).toContain("relayUrl: () => relayToDial(settings.get().remoteRelay, devEnv('ATELIER_TEST_RELAY_URL'))");
 });

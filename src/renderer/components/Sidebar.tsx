@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type { Resumable, TerminalInfo } from '@shared/protocol';
 import { Icon } from './Icon';
 import { PoppedMarker, SessionRow } from './SessionRow';
+import { PhoneBadge } from '../iphone/marks';
 import { PinButton } from './PinButton';
 import { PinBadge } from './PinBadge';
 import { CwdChip } from './CwdChip';
@@ -189,6 +190,7 @@ function TermRow({ term, selected, pinned, popped, onSelect, band }: { term: Ter
         ? <RenameInput value={term.title} onCommit={(v) => { stop(); commitRename(term, v); }} onCancel={stop} />
         : <span className="term-name">{term.title}</span>}
       {!editing && popped && <PoppedMarker />}
+      {!editing && <PhoneBadge id={term.id} />}
       {!editing && <CwdChip term={term} />}
       {!editing && <ProfileChip term={term} />}
       <span className={shutting ? 'term-cmd' : 'term-cmd mono'}>{shutting ? t.closingRow : displayCommand(term)}</span>

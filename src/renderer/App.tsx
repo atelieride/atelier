@@ -95,6 +95,7 @@ import { fetchAll, fetchSelected, showHistory } from './scm/actions';
 import { installDocker } from './docker/install';
 import { DockerView } from './docker/DockerView';
 import { installRedis } from './redis/install';
+import { installIphone, openPairing, useIphone } from './iphone/store';
 import { installDatabases } from './databases/install';
 import { DbSheetsHost } from './databases/DbSheetsHost';
 import { RedisView } from './redis/RedisView';
@@ -132,6 +133,8 @@ import { sheetIn } from './companion/view';
 const FontSheet = lazy(() => import('./components/FontSheet').then((m) => ({ default: m.FontSheet })));
 // Context usage: lazy, with its own CSS, out of the first paint (the live demo's budget).
 const ContextSheet = lazy(() => import('./components/ContextSheet').then((m) => ({ default: m.ContextSheet })));
+// Pair iPhone…: the sheet and its QR encoder, fetched when it opens.
+const PairingSheet = lazy(() => import('./iphone/PairingSheet').then((m) => ({ default: m.PairingSheet })));
 // Automations are opt-in (2026-11-02): their view and sheets load on first use, out of the first paint (the live
 // demo's budget, tests/integration/demo-build.test.ts).
 const AutomationsView = lazy(() => import('./automations/AutomationsView').then((m) => ({ default: m.AutomationsView })));
@@ -241,6 +244,7 @@ export function App() {
   const panels = useApp((s) => s.panels);
   const swapSides = useApp((s) => s.settings.swapSidePanels);
   const settingsOpen = useApp((s) => s.settingsOpen);
+  const pairOpen = useIphone((s) => s.pairOpen);
   const whatsNew = useApp((s) => s.whatsNew);
   // The panes and the focus, not the sizes: a divider drag re-renders none of the views (they are placed by pane).
   const split = useApp(useShallow((s) => paneView(s.split)));
@@ -506,6 +510,8 @@ export function App() {
       installGit(),
       installDocker(),
       installRedis(),
+      // iPhone access: the status main pushes (the footer pill, the phone badges, the size note).
+      installIphone(),
       installDatabases(),
       // Open any file: Finder drops outside the terminals, Open File…, Open With.
       installFileDrop(),
@@ -529,6 +535,8 @@ export function App() {
           // Check for Updates… with Settings open: its progress is in About.
           if (cmd === 'open-about') { st.setSettingsOpen('about'); return; }
           if (cmd === 'open-connectors') { st.setSettingsOpen('connectors'); return; }
+          // Pair iPhone… opens its sheet over Settings: the paired phone shows up in Settings › iPhone behind it.
+          if (cmd === 'pair-iphone') { openPairing(); return; }
           // Word wrap is a setting: the sheet stays and shows Editor, where its toggle and preview change in front of you.
           if (cmd === 'toggle-word-wrap') { st.setSettingsOpen('editor'); toggleWordWrap(); return; }
           // So is Activities Inside Workspaces: Appearance shows its switch change.
@@ -589,6 +597,7 @@ export function App() {
           case 'open-about': st.setSettingsOpen('about'); break;
           case 'whats-new': st.setWhatsNew({ since: null }); break;
           case 'open-connectors': st.setSettingsOpen('connectors'); break;
+          case 'pair-iphone': openPairing(); break;
           case 'review-all': st.openReview('all'); break;
           case 'review-session': reviewSelected(); break;
           case 'comment-selection': commentOnSelection(); break;
@@ -746,6 +755,8 @@ export function App() {
       <UndoPill />
       <RedisSheets />
       {settingsOpen && <Settings />}
+      {/* Over Settings when opened from Settings › iPhone. */}
+      {pairOpen && <Suspense fallback={null}><PairingSheet /></Suspense>}
       {automationSheet && <Suspense fallback={null}><AutomationEditor /><TurnOnSheet /><CloseRunSheet /></Suspense>}
       {whatsNew && !settingsOpen && <Suspense fallback={null}><WhatsNew since={whatsNew.since} /></Suspense>}
       {/* Keyed by the account asked for: New Session with Account while the sheet is open reopens it on that account. */}

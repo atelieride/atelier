@@ -17,7 +17,7 @@ import { createEmitter, type Emitter } from './events';
 import { createFiles } from './files';
 import { createGit, createScm } from './git';
 import { createBackground } from './background';
-import { createClaude, createClaudeSignals, createNotifications, createPorts, createPrs, createSchedules, createServices, createShellCommand, createShellEnv } from './inert';
+import { createClaude, createClaudeSignals, createNotifications, createPorts, createPrs, createRemote, createSchedules, createServices, createShellCommand, createShellEnv } from './inert';
 import { createCompanion } from './companion';
 import { createDatabases } from './databases';
 import type { AskPlayer } from '../engine/ask';
@@ -173,6 +173,7 @@ export function createDemo(compiled: DemoWorld, opts: DemoBridgeOptions): DemoBr
     tasks: createTasks(ctx),
     background: createBackground(ctx),
     companion: createCompanion(ctx, opts.askPlayer ? { load: opts.askPlayer } : {}),
+    remote: createRemote(),
     search: createSearch(ctx),
     on: events.on
   } satisfies AtelierApi;

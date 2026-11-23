@@ -17,7 +17,7 @@ const BOOT_AT = Date.now();
 /** Terminals this window has seen in a list (each is judged once, when it first shows up). */
 const seen = new Set<string>();
 /** Input held for a terminal while a Session panel command waits for its Enter (holdInput), in order. */
-const held = new Map<string, string[]>();
+const held = new Map<string, { data: string; pressed: boolean }[]>();
 
 /**
  * Follows input sent to a terminal (every write but the Session panel's own commands). `inDialog`: Claude shows a
@@ -68,7 +68,7 @@ export function releaseInput(id: string, first = ''): void {
   const parts = held.get(id) ?? [];
   held.delete(id);
   if (first) sendInput(id, first);
-  for (const p of parts) sendInput(id, p);
+  for (const p of parts) sendInput(id, p.data, p.pressed);
 }
 
 /** The command's Enter will never go (its terminal closed): what was held goes with it. */
@@ -85,11 +85,13 @@ export function setDialogProbe(fn: (id: string) => boolean): void {
 
 /**
  * Every write to a terminal goes through here (but the Session panel's own commands), so drafts are followed; held
- * while a panel command waits for its Enter (holdInput).
+ * while a panel command waits for its Enter (holdInput). `pressed`: a key the user pressed in that terminal, or their
+ * paste there, sent it (it takes the terminal's size back from a phone, main decides).
  */
-export function sendInput(id: string, data: string): void {
+export function sendInput(id: string, data: string, pressed = false): void {
   const wait = held.get(id);
-  if (wait) { wait.push(data); return; }
+  if (wait) { wait.push({ data, pressed }); return; }
   noteInput(id, data, dialogProbe(id));
-  window.atelier.terminals.input(id, data);
+  if (pressed) window.atelier.terminals.input(id, data, true);
+  else window.atelier.terminals.input(id, data);
 }

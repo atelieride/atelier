@@ -114,9 +114,9 @@ export function windowsMenu(spec: readonly MenuSpecMenu[], env: WinMenuEnv): Win
     if (m.visibleWhen && !holds[m.visibleWhen]) continue;
     if (m.app) { appItems = [...m.submenu]; continue; }
     let items = m.submenu.flatMap(expand).filter((i): i is WinMenuItem => i !== null);
-    // File: Settings and Connectors from the app menu, Exit last.
+    // File: Settings, Connectors and Pair iPhone… from the app menu, Exit last.
     if (m.label === 'File') {
-      const settings = appItems.filter((i) => 'command' in i && (i.command === 'open-settings' || i.command === 'open-connectors')).flatMap(expand).filter((i): i is WinMenuItem => i !== null);
+      const settings = appItems.filter((i) => 'command' in i && (i.command === 'open-settings' || i.command === 'open-connectors' || i.command === 'pair-iphone')).flatMap(expand).filter((i): i is WinMenuItem => i !== null);
       items = [...items, SEP, ...settings, SEP, ROLES.quit!];
     }
     out.push({ label: m.label, items: tidy(items) });

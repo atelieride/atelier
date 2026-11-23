@@ -1,0 +1,19 @@
+{
+  "description": "Push sealing: keyId = b64url(SHA-256(\"atelier-push-v1\" ‖ pushKey)[0..8]); p = b64url(nonce ‖ AES-256-GCM(pushKey, nonce, plaintext, aad = \"atelier-push-v1\" ‖ keyId ASCII)) with the 16-byte tag appended to the ciphertext.",
+  "vectors": [
+    {
+      "pushKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "keyId": "42-N7Lr62yQ",
+      "nonce": "oKGio6Slpqeoqaqr",
+      "plaintext": "{\"v\":1,\"kind\":\"waiting\",\"title\":\"Refactor auth\",\"subtitle\":\"atelier\",\"body\":\"Needs permission · Bash npm test\",\"project\":\"Zk3x9QmPa1bC2dE4\",\"id\":\"0b7e6d1c-4f2a-4c3e-9a8b-1d2e3f4a5b6c\",\"at\":1795400000000}",
+      "p": "oKGio6SlpqeoqaqrnToKD3_6Lp0JDOm3JUDiqRHFLXn80GBAvnpP8hPOVzvwJCKZzkEnUi28Zb19EqHVZWgzKha5bhIkfDF8xQTg3N3Z900ch4aPkJvdIq2Aqd-peIvUoLP0E50GV_Xfuo8jr8ZK2GuO4evz-3I19vzPBAYgE8G0UPhIDfX8_t9minSUfOAe4iDDJVMcyqk-aPiyquOPW9znn7qZ_N7Ym6EGSussfILTR3l3umgGEwvg09IREpytYFDNHK6gF01-uC5gDQN4-VDhi93DbXCy8LmVBi3jG5SH11fTszrALA"
+    },
+    {
+      "pushKey": "8OHSw7Sllod4aVpLPC0eDwARIjNEVWZ3iJmqu8zd7v8",
+      "keyId": "aZp-Zl1hXDs",
+      "nonce": "AAAAAAAAAAAAAAAB",
+      "plaintext": "{\"v\":1,\"kind\":\"done\",\"title\":\"Docs pass ✦ émoji 🚀\",\"subtitle\":\"site\",\"body\":\"Finished\",\"project\":\"AbCdEfGhIjKlMnOp\",\"id\":\"7c1b2a3d-0000-4000-8000-000000000001\",\"at\":1795400123456}",
+      "p": "AAAAAAAAAAAAAAABxF4-c-ou82_F3JZ2bQs7t2D2cYESwuHY1EBRo3jniReTSlzGCY5L0-a_XheLVKEbzbUwNCrnTkY_tLxWPc9QqJrtiBXa8DtOG-mCi4oYE1l7A-oE-G4njwGL87aUTTj-JYLz28xkO-jx4ChapY_OnV8KsPCcKZWCXVvuMPvDe1jB9nu7H9Ijxj-yp0kf4LVa4ngV93Nmoz1_-s3TLjGrUKlxsHOXjiSVaKslfvQHXkTUF_NijD3gXQ1mV5CO-zccFo31x4CjW47v"
+    }
+  ]
+}

@@ -600,3 +600,18 @@ test('ask settings patch: too long text falls back to empty, and the schema reje
   expect(settingsPatchSchema.safeParse({ askAccount: 'Work!' }).success).toBe(false);
   expect(settingsPatchSchema.safeParse({ askAccount: 'session', askModel: 'haiku' }).success).toBe(true);
 });
+
+test('iPhone access: off by default, the default relay; a relay URL Atelier may dial, anything else back to the default', () => {
+  expect(DEFAULT_SETTINGS.remoteAccess).toBe(false);
+  expect(DEFAULT_SETTINGS.remoteRelay).toBe('https://relay.useatelier.dev');
+  expect(normalizeSettings({ remoteAccess: true, remoteRelay: 'http://192.168.1.20:8787' })).toMatchObject({ remoteAccess: true, remoteRelay: 'http://192.168.1.20:8787' });
+  // Kept as typed when valid (a trailing slash is the user's): what is dialed is normalised separately.
+  expect(normalizeSettings({ remoteRelay: 'https://relay.test/' }).remoteRelay).toBe('https://relay.test/');
+  for (const bad of ['http://relay.test', 'ftp://x', 'https://u:p@relay.test', 42, '']) {
+    expect(normalizeSettings({ remoteRelay: bad }).remoteRelay, String(bad)).toBe('https://relay.useatelier.dev');
+  }
+  expect(normalizeSettings({ remoteAccess: 'yes' }).remoteAccess).toBe(false);
+  expect(settingsPatchSchema.safeParse({ remoteRelay: 'http://127.0.0.1:8787' }).success).toBe(true);
+  expect(settingsPatchSchema.safeParse({ remoteRelay: 'http://relay.test' }).success).toBe(false);
+  expect(settingsPatchSchema.safeParse({ remoteAccess: true }).success).toBe(true);
+});

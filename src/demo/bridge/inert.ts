@@ -66,3 +66,24 @@ export function createNotifications(): AtelierApi['notifications'] {
   const mac = () => { notInDemo('Notifications'); return noop(); };
   return { test: mac, openSettings: mac };
 }
+
+/**
+ * iPhone access needs this computer and a phone, and its app isn't out for everyone yet: not offered, so the demo shows
+ * nothing of it. Off, should anything ask; pairing explains it runs on the Mac.
+ */
+export function createRemote(): AtelierApi['remote'] {
+  return {
+    offered: false,
+    status: () => resolved({ enabled: false, available: true, relay: { state: 'offline' as const }, devices: [], sized: [] }),
+    startPairing: () => { notInDemo('iPhone access'); return resolved({ ok: false as const, reason: 'unavailable' as const, message: 'iPhone access runs on your Mac.' }); },
+    stopPairing: noop,
+    decide: () => resolved(false),
+    removeDevice: () => resolved(false),
+    reset: noop,
+    // Access is off in the demo: no window ever sends its layout; one that did would go nowhere. No phone either, so
+    // no change to the places ever waits for a window.
+    layout: noop,
+    placesReady: () => resolved([]),
+    placeDone: noop
+  };
+}

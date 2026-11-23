@@ -313,7 +313,7 @@ const api: AtelierApi = {
     detach: (id) => ipcRenderer.invoke(IPC.termDetach, id),
     kill: (id) => ipcRenderer.invoke(IPC.termKill, id),
     stop: (ids) => ipcRenderer.invoke(IPC.termStop, ids),
-    input: (id, data) => ipcRenderer.send(IPC.termInput, { id, data }),
+    input: (id, data, pressed) => ipcRenderer.send(IPC.termInput, pressed ? { id, data, pressed: true } : { id, data }),
     resize: (id, cols, rows) => ipcRenderer.send(IPC.termResize, { id, cols, rows }),
     triggerMatched: (id, rule, line) => ipcRenderer.send(IPC.triggerNotify, { id, rule, line })
   },
@@ -380,6 +380,19 @@ const api: AtelierApi = {
     newThread: (sessionId) => ipcRenderer.invoke(IPC.companionNew, { sessionId }),
     seen: (sessionId) => ipcRenderer.invoke(IPC.companionSeen, { sessionId })
   },
+  // Arguments rebuilt field by field: main's schemas are strict.
+  remote: {
+    offered: true,
+    status: () => ipcRenderer.invoke(IPC.remoteStatus),
+    startPairing: () => ipcRenderer.invoke(IPC.remoteStartPairing),
+    stopPairing: () => ipcRenderer.invoke(IPC.remoteStopPairing),
+    decide: (requestId, allow) => ipcRenderer.invoke(IPC.remoteDecide, { requestId, allow }),
+    removeDevice: (id) => ipcRenderer.invoke(IPC.remoteRemoveDevice, { id }),
+    reset: () => ipcRenderer.invoke(IPC.remoteReset),
+    layout: (l) => ipcRenderer.invoke(IPC.remoteLayout, l),
+    placesReady: () => ipcRenderer.invoke(IPC.remotePlacesReady),
+    placeDone: (d) => ipcRenderer.invoke(IPC.remotePlaceDone, d)
+  },
   // The request's fields one by one, as for companion: main's schema is strict.
   search: {
     start: (r) => ipcRenderer.invoke(IPC.searchStart, {
@@ -442,6 +455,10 @@ const api: AtelierApi = {
     gitOp: (cb) => listen(IPC.evGitOp, cb),
     scmMessage: (cb) => listen(IPC.evScmMessage, cb),
     companion: (cb) => listen(IPC.evCompanion, cb),
+    remote: (cb) => listen(IPC.evRemote, cb),
+    remotePairing: (cb) => listen(IPC.evRemotePairing, cb),
+    remoteRows: (cb) => listen(IPC.evRemoteRows, cb),
+    remotePlaces: (cb) => listen(IPC.evRemotePlaces, cb),
     popouts: (cb) => listen(IPC.evPopouts, cb),
     dock: (cb) => listen(IPC.evDock, cb),
     dockHover: (cb) => listen(IPC.evDockHover, cb),

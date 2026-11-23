@@ -79,6 +79,11 @@ export class Attachments {
     return held;
   }
 
+  /** An attach of this terminal by this window (or remote viewer) is on its way. */
+  attaching(wcId: number, id: string): boolean {
+    return this.pending.has(`${wcId} ${id}`);
+  }
+
   /** An attach failed: once the last one of this window ends, what was held goes. */
   abort(wcId: number, id: string): void {
     const key = `${wcId} ${id}`;

@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, p
 import { AppLog } from './app-log';
 import { installErrorLog } from './error-log';
 import { basename, join } from 'node:path';
-import { homedir, tmpdir } from 'node:os';
+import { homedir, hostname, tmpdir } from 'node:os';
 import { appendFileSync, existsSync, realpathSync, statSync } from 'node:fs';
 import { daemonPaths } from '@shared/paths.node';
 import { daemonVersionArg } from '@shared/daemon-build';
@@ -128,6 +128,10 @@ import { installSearchIpc } from './search/ipc';
 import { branchAt, companionAccountDir, companionFacts, sessionFiles } from './companion/wiring';
 import { randomUUID } from 'node:crypto';
 import { installMedia, registerMediaScheme } from './media-ipc';
+import { RemoteHub } from './remote/remote-hub';
+import { PlaceRequests } from './remote/places';
+import { installRemoteIpc } from './remote/ipc';
+import { relayToDial } from '@shared/remote';
 
 // atelier-media: must be privileged before the app is ready.
 registerMediaScheme();
@@ -150,6 +154,10 @@ let uiState: UiState = loadUiState(paths.uiState);
 const shells = readShells();
 const settings = new SettingsStore(paths.preferences, { shells: () => shells().map((s) => s.path), log: (message) => { appLog.write({ source: 'main:settings', message }); } });
 let quitting = false;
+/** iPhone access, made once the app is ready (safeStorage needs it). */
+let remote: RemoteHub | null = null;
+/** A paired phone's changes to a project's workspaces and activities, on their way to its main window. */
+let remotePlaces: PlaceRequests | null = null;
 
 function isDir(p: string): boolean {
   try { return existsSync(p) && statSync(p).isDirectory(); } catch { return false; }
@@ -345,7 +353,8 @@ if (!app.requestSingleInstanceLock()) {
     // Tests only: a server that starts later is found within this many ms instead of 30 s.
     ...(Number(devEnv('ATELIER_TEST_REDIS_PROBE_MS')) > 0 ? { timing: { probeMs: Number(devEnv('ATELIER_TEST_REDIS_PROBE_MS')), tickMs: 250 } } : {})
   });
-  portsHub.onChange = () => redisHub.sourcesChanged();
+  // The Redis view's servers started in a terminal; a paired phone's rows show the ports too.
+  portsHub.onChange = () => { redisHub.sourcesChanged(); remote?.stateChanged(); };
   app.on('browser-window-focus', () => redisHub.onFocus());
   app.on('will-quit', () => redisHub.dispose());
   // Databases view: saved connections, added by hand (nothing is looked for),
@@ -382,6 +391,8 @@ if (!app.requestSingleInstanceLock()) {
     ...(prInterval > 0 ? { intervals: { tick: prInterval, focus: prInterval, poll: prInterval, pending: prInterval, rest: prInterval } } : {})
   });
   client.on('terminals', (list: TerminalInfo[]) => prHub.setTerminals(list));
+  // A paired phone's rows show the pull requests too.
+  prHub.onChange = () => remote?.stateChanged();
   client.on('status', (s: string) => { if (s !== 'connected') prHub.setTerminals([]); });
   app.on('browser-window-focus', () => prHub.refresh());
   hub.onTouched = (path) => gitHub.touched(path);
@@ -519,6 +530,9 @@ if (!app.requestSingleInstanceLock()) {
     if (s.countBackgroundWork !== prevSettings.countBackgroundWork) hub.workSettingsChanged();
     if (s.claudeMcpNotice !== prevSettings.claudeMcpNotice) hub.mcpSettingsChanged();
     if (s.prStatus !== prevSettings.prStatus) prHub.settingsChanged();
+    // iPhone access: on/off and the relay; project colors, accounts, ports and background work change what phones show.
+    if (s.remoteAccess !== prevSettings.remoteAccess || s.remoteRelay !== prevSettings.remoteRelay || s.projectTint !== prevSettings.projectTint || s.projectColors !== prevSettings.projectColors
+      || s.claudeAccounts !== prevSettings.claudeAccounts || s.showPorts !== prevSettings.showPorts || s.showEphemeralPorts !== prevSettings.showEphemeralPorts) remote?.settingsChanged();
     if (s.autoFetch !== prevSettings.autoFetch) scmHub.fetchSettingsChanged();
     if (s.repoSearchDepth !== prevSettings.repoSearchDepth) gitHub.settingsChanged();
     if (s.showServices !== prevSettings.showServices) servicesHub.settingsChanged();
@@ -676,6 +690,7 @@ if (!app.requestSingleInstanceLock()) {
       windowKinds.delete(wcId);
       focusedAt.delete(wcId);
       opener.forget(wcId);
+      remotePlaces?.closed(wcId);
       announceWindows();
       if (root) lastWindowGone(root);
       // Really gone: its terminals stop when that was the answer (on a quit too).
@@ -688,7 +703,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     // A reload: the page asks for what was held for it again once it listens. A tab drag it had going ends (its ghost
     // goes), as when its page crashes.
-    win.webContents.on('did-start-loading', () => opener.pageLoading(wcId));
+    win.webContents.on('did-start-loading', () => { opener.pageLoading(wcId); remotePlaces?.pageLoading(wcId); });
     win.webContents.on('did-start-navigation', (d) => { if (root && pageReloading(d)) tear.end(root); });
     win.webContents.on('render-process-gone', () => { if (root) tear.end(root); });
     focusedAt.set(wcId, Date.now());
@@ -848,6 +863,8 @@ if (!app.requestSingleInstanceLock()) {
   const projectWindowsInfo = (): ProjectWindowInfo[] => openProjectRoots(windowsView).map((root) => ({ root, name: basename(root) }));
   let windowsKey = '';
   const announceWindows = () => {
+    // The projects a paired phone sees follow the open windows (and the recent list a new window adds to).
+    remote?.projectsChanged();
     const list = projectWindowsInfo();
     const key = JSON.stringify(list);
     if (key === windowsKey) return;
@@ -1406,6 +1423,78 @@ if (!app.requestSingleInstanceLock()) {
       projectOf: (id) => windowProjects.get(id) ?? null,
       isTrusted: trusted,
       handle: (channel, fn) => ipcMain.handle(channel, fn)
+    });
+    // iPhone access: off until Settings › iPhone turns it on (no relay connection, safeStorage untouched). Keys through
+    // the secret store (the e2e stand-in with ATELIER_TEST_FAKE_SAFE_STORAGE); ATELIER_TEST_RELAY_URL stands in for the
+    // default relay (a relay typed in Settings › iPhone is dialed as it is). Tests shorten the Allow wait and the code's life.
+    const pairDecideMs = testMs('ATELIER_TEST_REMOTE_DECIDE_MS');
+    // A row's folder is named only when it isn't the project root under another name: real paths, a few hundred kept.
+    const realPaths = new Map<string, string>();
+    const remoteRealOf = (p: string): string => {
+      let r = realPaths.get(p);
+      if (r === undefined) {
+        try { r = toOut(realpathSync(p)); } catch { r = p; }
+        if (realPaths.size > 500) realPaths.clear();
+        realPaths.set(p, r);
+      }
+      return r;
+    };
+    const pairCodeMs = testMs('ATELIER_TEST_REMOTE_CODE_MS');
+    // A phone's changes to a project's places go to its main window, opened first when it is closed (as a recent
+    // project opens, without taking the welcome window's place).
+    const places = new PlaceRequests({
+      windowOf: (root) => projectWindow(root)?.webContents.id ?? null,
+      open: (root) => {
+        if (!isDir(root)) return null;
+        const w = openWindow(root);
+        return w && !w.isDestroyed() ? w.webContents.id : null;
+      },
+      send: (wcId, req) => { const b = windowById(wcId); if (b) sendTo(b, IPC.evRemotePlaces, req); }
+    });
+    remotePlaces = places;
+    remote = new RemoteHub({
+      home: paths.home,
+      secrets: secretStoreFor(paths.home, safeStorage),
+      settings: () => settings.get(),
+      relayUrl: () => relayToDial(settings.get().remoteRelay, devEnv('ATELIER_TEST_RELAY_URL')),
+      ...(pairDecideMs || pairCodeMs ? { timing: { ...(pairDecideMs ? { decideMs: pairDecideMs } : {}), ...(pairCodeMs ? { codeTtlMs: pairCodeMs } : {}) } } : {}),
+      terminals: hub,
+      projects: () => ({ open: openProjectRoots(windowsView), recent: recentForWelcome(uiState, isDir) }),
+      // The name phones show: the host name without its local-network suffix.
+      host: { name: hostname().replace(/\.local$/i, ''), app: app.getVersion(), platform: currentPlatform() === 'win32' ? 'win32' : 'darwin' },
+      defaultDir: () => defaultConfigDirNow(),
+      // What a phone's rows show besides the terminals: their ports (with Show listening ports on) and pull requests.
+      ports: (root) => (settings.get().showPorts ? portsHub.portsOf(root) : {}),
+      prs: (root) => prHub.stateOf(root).terminals,
+      realOf: remoteRealOf,
+      // What a phone did to a project's rows: its main window follows (a new row's place, a resume's pin and place).
+      rows: (root, e) => { const b = projectWindow(root); if (b) sendTo(b, IPC.evRemoteRows, e); },
+      // What a phone does to a project's workspaces and activities: applied in its main window.
+      places: (root, op) => places.apply(root, op),
+      // Away from this computer: idle for 2 minutes, or its screen locked (tests: ATELIER_TEST_REMOTE_AWAY 1 or 0).
+      away: () => {
+        const test = devEnv('ATELIER_TEST_REMOTE_AWAY');
+        if (test !== undefined) return test === '1';
+        const idle = powerMonitor.getSystemIdleState(120);
+        return idle === 'idle' || idle === 'locked';
+      },
+      emitStatus: (st) => { for (const b of BrowserWindow.getAllWindows()) sendTo(b, IPC.evRemote, st); },
+      emitPairing: (ev) => { for (const b of BrowserWindow.getAllWindows()) sendTo(b, IPC.evRemotePairing, ev); },
+      log: (message) => { appLog.write({ source: 'main:remote', message }); }
+    });
+    hub.onRemoteSized = () => remote?.statusChanged();
+    hub.onAttention = (news) => remote?.attention(news);
+    client.on('usageByConfigDir', () => remote?.usageChanged());
+    installRemoteIpc(remote, { isTrusted: trusted, handle: (channel, fn) => ipcMain.handle(channel, fn), projectOf: (id) => (isPopoutWindow(windowsView, id) ? null : windowProjects.get(id) ?? null), places });
+    remote.start();
+    // Quitting: every phone is told (`bye`), then the relay connection closes; the quit goes on right after.
+    let remoteClosed = false;
+    app.on('will-quit', (e) => {
+      if (remoteClosed || !remote) return;
+      remoteClosed = true;
+      if (!remote.hasPhones()) { void remote.dispose(); return; }
+      e.preventDefault();
+      void remote.dispose().finally(() => app.quit());
     });
     // Ask: a project window's pages, pop-outs included (a popped-out session has its panel too).
     // A binding's session and account come from main's own terminal list (and the session's transcript), never the page.

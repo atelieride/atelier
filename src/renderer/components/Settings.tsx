@@ -6,6 +6,7 @@ import { t } from '../i18n/en';
 import { currentPlatform } from '@shared/platform';
 import { trayCopy } from '../tray-copy';
 import { useApp, type SettingsSection } from '../store';
+import { iphoneOffered } from '../iphone/store';
 import { kbd } from '../kbd';
 import { Notes } from './Notes';
 import { CHANGELOG_URL } from '@shared/whats-new';
@@ -53,8 +54,10 @@ const zshEnv = shellEnv();
 
 const SECTIONS: { id: SettingsSection; icon: IconName }[] = [
   { id: 'appearance', icon: 'appearance' }, { id: 'terminal', icon: 'terminal' }, { id: 'editor', icon: 'code' }, { id: 'scm', icon: 'git' }, { id: 'docker', icon: 'whale' }, { id: 'redis', icon: 'redis' }, { id: 'databases', icon: 'databases' },
-  { id: 'claude', icon: 'sparkle' }, { id: 'connectors', icon: 'plug' }, { id: 'ask', icon: 'ask' }, { id: 'automations', icon: 'automation' }, { id: 'dictation', icon: 'mic' }, { id: 'notifications', icon: 'bell' }, { id: 'keyboard', icon: 'keyboard' }, { id: 'about', icon: 'info' }
+  { id: 'claude', icon: 'sparkle' }, { id: 'connectors', icon: 'plug' }, { id: 'ask', icon: 'ask' }, { id: 'automations', icon: 'automation' }, { id: 'dictation', icon: 'mic' }, { id: 'notifications', icon: 'bell' }, { id: 'iphone', icon: 'phone' }, { id: 'keyboard', icon: 'keyboard' }, { id: 'about', icon: 'info' }
 ];
+/** The sections of features still in beta: a Beta chip beside their title. */
+const BETA: ReadonlySet<SettingsSection> = new Set(['iphone']);
 
 // Main validates, saves and sends the settings back to all windows: the view updates from there.
 const set = (patch: Partial<S>) => void window.atelier.settings.set(patch);
@@ -768,6 +771,8 @@ function Notifications({ s }: { s: S }) {
 // list and details pages, with Jira's and Notion's options. The header's "‹ Connectors" is ConnectorsBack.
 const Keyboard = lazy(() => import('./SettingsKeyboard').then((m) => ({ default: m.Keyboard })));
 const Connectors = lazy(() => import('./Connectors').then((m) => ({ default: m.Connectors })));
+// iPhone access: its rows and the paired phones, with its section too.
+const IphoneSettings = lazy(() => import('../iphone/IphoneSettings').then((m) => ({ default: m.IphoneSettings })));
 
 /** What the app and the site send (site/src/pages/privacy.astro). */
 const PRIVACY_URL = 'https://useatelier.dev/privacy';
@@ -884,7 +889,10 @@ function About() {
 
 /** Settings: modal sheet with the sections on the left; every change applies immediately, in all windows. */
 export function Settings() {
-  const section = useApp((s) => s.settingsOpen) ?? 'appearance';
+  // Settings › iPhone only where iPhone access is offered (not in the website's live demo); asked for there, Appearance.
+  const sections = iphoneOffered() ? SECTIONS : SECTIONS.filter((x) => x.id !== 'iphone');
+  const asked = useApp((s) => s.settingsOpen) ?? 'appearance';
+  const section = sections.some((x) => x.id === asked) ? asked : 'appearance';
   const s = useApp((st) => st.settings);
   const close = () => useApp.getState().setSettingsOpen(null);
   // Connectors in the sidebar from one of its details pages: back to the list.
@@ -904,9 +912,10 @@ export function Settings() {
       if (!root) return;
       // A menu opened from the sheet (Default profile) or the terminal font's popover handles its own keys, Esc included.
       if ((document.activeElement as HTMLElement | null)?.closest('.ctx-menu, .font-pop')) return;
-      // A question over the sheet (Restart atelierd from About, a window closing) keeps its keys.
-      // Open, not just focused: a click on its text drops the focus, and Esc must still be its own.
-      if (document.querySelector('.confirm-sheet, .confirm-pop')) return;
+      // A question over the sheet (Restart atelierd from About, a window closing), or the pairing sheet opened from
+      // Settings › iPhone, keeps its keys. Open, not just focused: a click on its text drops the focus, and Esc must
+      // still be its own.
+      if (document.querySelector('.confirm-sheet, .confirm-pop, .pair-sheet')) return;
       const inside = root.contains(document.activeElement);
       const target = e.target as HTMLElement | null;
       // ⌘[ on a connector's details page: back to the list, wherever the focus is.
@@ -947,8 +956,8 @@ export function Settings() {
   const onNavKey = (e: React.KeyboardEvent) => {
     if (!(e.target as HTMLElement).classList.contains('set-nav-item') || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
     e.preventDefault();
-    const i = SECTIONS.findIndex((x) => x.id === section);
-    go(SECTIONS[(i + (e.key === 'ArrowDown' ? 1 : SECTIONS.length - 1)) % SECTIONS.length]!.id);
+    const i = sections.findIndex((x) => x.id === section);
+    go(sections[(i + (e.key === 'ArrowDown' ? 1 : sections.length - 1)) % sections.length]!.id);
     requestAnimationFrame(() => sheet.current?.querySelector<HTMLElement>('.set-nav-item.is-active')?.focus());
   };
 
@@ -958,7 +967,7 @@ export function Settings() {
         onMouseDown={(e) => { e.stopPropagation(); if (!(e.target as HTMLElement).closest('button, input, textarea')) e.preventDefault(); }}>
         <nav className="set-nav" aria-label={t.set.sectionsLabel} onKeyDown={onNavKey}>
           <div className="set-nav-title">{t.set.title}</div>
-          {SECTIONS.map((x) => (
+          {sections.map((x) => (
             <button key={x.id} type="button" className={`set-nav-item ${x.id === section ? 'is-active' : ''}`} aria-current={x.id === section ? 'page' : undefined} onClick={() => go(x.id)}>
               <Icon name={x.icon} size={15} />{t.set.sections[x.id]}
               {x.id === 'connectors' && connectorsAttention && <span className="set-nav-dot" role="img" aria-label={t.conn.attention(connectorsAttention)} />}
@@ -970,6 +979,7 @@ export function Settings() {
         <section className="set-body">
           <header className="set-head">
             {section === 'connectors' && connectorDetail ? <ConnectorsBack /> : <h2>{t.set.sections[section]}</h2>}
+            {BETA.has(section) && <span className="beta-chip">{t.beta}</span>}
             <button type="button" className="icon-btn" aria-label={t.set.close} onClick={close}><Icon name="x" size={14} /></button>
           </header>
           <div className="set-content" key={section}>
@@ -986,6 +996,7 @@ export function Settings() {
             {section === 'ask' && <AskSettings s={s} />}
             {section === 'dictation' && <Dictation s={s} />}
             {section === 'notifications' && <Notifications s={s} />}
+            {section === 'iphone' && <Suspense fallback={null}><IphoneSettings s={s} /></Suspense>}
             {section === 'keyboard' && <Suspense fallback={null}><Keyboard /></Suspense>}
             {section === 'about' && <About />}
           </div>

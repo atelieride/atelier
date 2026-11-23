@@ -14,6 +14,7 @@ import { useRedis } from '../redis/store';
 import { isMarkdownTab } from '../markdown-views';
 import { ProfileChip } from './ProfileChip';
 import { AccountChip } from './AccountChip';
+import { PhoneBadge } from '../iphone/marks';
 import { RenameInput } from './RenameInput';
 import { t } from '../i18n/en';
 import { commitRename, nameTip, syncTip } from '../names';
@@ -130,6 +131,7 @@ const Tab = memo(function Tab({ k, active, front, drop, lifted, leaving, term, s
       {wt && <span className="tab-wt" aria-label={t.wt.inWorktree(wt.split('/')[0]!)}><Icon name="branchOff" size={12} stroke={1.9} /></span>}
       {term && !renaming && <ProfileChip term={term} />}
       {term && !renaming && <AccountChip configDir={term.configDir} />}
+      {term && !renaming && <PhoneBadge id={term.id} />}
       {dirty && <span className="tab-dirty" aria-label={t.modified} />}
       {/* Every tab's X closes the tab only: a terminal keeps running and stays in the sidebar (its row's X closes it). */}
       <button type="button" className="tab-close" aria-label={t.closeTab}
