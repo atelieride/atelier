@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import WebSocket from 'ws';
+import WebSocket, { WebSocketServer } from 'ws';
 import { startTestRelay, type TestRelay } from '../../../tests/support/test-relay';
 import { roomIdOf } from './identity';
 import { RelayLink, relayEndpoint, type RelayLinkOptions, type RelayState } from './relay-link';
@@ -128,6 +128,45 @@ describe('channels', () => {
     await until(() => d.got.close !== null);
     expect(d.got.binary).toEqual(['one', 'two', 'bye']);
     expect(d.got.close).toBe(4401);
+  });
+
+  test('a channel id the relay opens again starts empty: nothing queued for the earlier channel, nor its close, goes to the new one', async () => {
+    // A relay at the byte level, to open the same id twice (the test relay never reuses one).
+    const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+    await new Promise<void>((r) => wss.once('listening', () => r()));
+    const got: { ch: number; data?: string; close?: number }[] = [];
+    let host: WebSocket | null = null;
+    wss.on('connection', (ws) => {
+      host = ws;
+      ws.on('message', (d, bin) => {
+        const buf = d as Buffer;
+        if (bin) { got.push({ ch: buf.readUInt32BE(0), data: buf.subarray(4).toString() }); return; }
+        const f = JSON.parse(buf.toString()) as { t: string; ch?: number; code?: number };
+        if (f.t === 'auth') ws.send(JSON.stringify({ t: 'ready' }));
+        else if (f.t === 'close') got.push({ ch: f.ch!, close: f.code! });
+      });
+    });
+    try {
+      const { port } = wss.address() as { port: number };
+      // One frame at once, then one every half second: what follows the first stays queued.
+      const { link, opened } = makeLink({ base: `http://127.0.0.1:${port}`, budget: { frames: { burst: 1, perSec: 2 }, bytes: { burst: 64 * 1024, perSec: 512 * 1024 } } });
+      link.start();
+      await until(() => link.state === 'online');
+      host!.send(JSON.stringify({ t: 'open', ch: 5, kind: 'device' }));
+      await until(() => opened.length === 1);
+      for (const m of ['old1', 'old2', 'old3']) link.send(5, Buffer.from(m));
+      link.closeChannel(5, 4401);
+      // The relay saw that phone go and gives its id to another one.
+      host!.send(JSON.stringify({ t: 'open', ch: 5, kind: 'device' }));
+      await until(() => opened.length === 2);
+      link.send(5, Buffer.from('new'));
+      await until(() => got.some((g) => g.data === 'new'), 4000);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(got).toEqual([{ ch: 5, data: 'old1' }, { ch: 5, data: 'new' }]);
+    } finally {
+      for (const c of wss.clients) c.terminate();
+      await new Promise<void>((r) => wss.close(() => r()));
+    }
   });
 
   test('a close that drops what is queued goes at once', async () => {
