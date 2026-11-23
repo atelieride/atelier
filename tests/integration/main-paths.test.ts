@@ -16,7 +16,7 @@ const NODE_PATH = new Set([
   'src/main/updates.ts', 'src/main/updates-ipc.ts', 'src/main/auto-update.ts', 'src/main/store-updates-ipc.ts', 'src/main/connectors/secret-store.ts', 'src/main/windows.ts',
   'src/main/dictation/ipc.ts', 'src/main/dictation/model.ts', 'src/main/dictation/polish.ts', 'src/main/dictation/service.ts',
   'src/main/shell-command.ts', 'src/main/shell-command-exec.ts', 'src/main/shell-env-fresh.ts', 'src/main/shells.ts', 'src/main/win-shell.ts',
-  'src/main/index.ts', 'src/main/app-icon-exec.ts', 'src/main/remote/devices.ts', 'src/main/automations/guard.ts', 'src/main/automations/store.ts', 'src/main/companion/store.ts', 'src/main/automations/launcher.ts',
+  'src/main/index.ts', 'src/main/app-icon-exec.ts', 'src/main/remote/devices.ts', 'src/main/remote/layouts.ts', 'src/main/automations/guard.ts', 'src/main/automations/store.ts', 'src/main/companion/store.ts', 'src/main/automations/launcher.ts',
   // Claude's config and history read in place; programs found and spawned.
   'src/main/claude-accounts.ts', 'src/main/claude-config.ts', 'src/main/claude-bin.ts', 'src/main/scm/message.ts', 'src/main/github/exec.ts', 'src/main/links.ts',
   'src/main/tmux/exec.ts', 'src/main/tmux/panes.ts',

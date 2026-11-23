@@ -1,8 +1,11 @@
 // iPhone access in the main process: with Settings › iPhone on, this computer keeps one connection to the relay and
-// serves each paired phone that connects through it — the state of its projects and sessions, a terminal's screen and
-// output, typing, sizes, new sessions — and runs pairing (the code, the Allow/Deny question to the windows). Off, no
-// relay connection exists at all. A phone only names what the state listed: opaque project ids and terminal ids, never
-// paths, commands, accounts or profiles.
+// serves each paired phone that connects through it — the state of its projects and sessions as their sidebar rows
+// show them, each project's sidebar arrangement, the accounts' limits, a terminal's screen and output, typing, sizes,
+// new sessions and the actions on rows (Allow / Deny, rename, close, resume, dismiss) — sends the push notifications
+// phones registered for, and runs pairing (the code, the Allow/Deny question to the windows). Off, no relay connection
+// exists at all. A phone only names what the state listed: opaque project ids, terminal, place and account ids, never
+// paths, commands, directories or profiles.
+import { randomBytes } from 'node:crypto';
 import type { RemoteDeviceInfo, RemoteLayout, RemotePairingEvent, RemotePairingStart, RemoteRelayState, RemoteRowsEvent, RemoteSized, RemoteStatus } from '@shared/remote';
 import { accountsFor } from '@shared/claude-accounts';
 import { waitKind } from '@shared/session-view';
@@ -25,7 +28,6 @@ import { PushStore } from './push-store';
 import { CLOSE, type ByeReason, type DeviceMessage, type HostMessage, type RemoteAccount } from './messages';
 import { Pairing } from './pairing';
 import { RelayLink, type RelayLinkOptions } from './relay-link';
-import { randomBytes } from 'node:crypto';
 import { isPlanApproval, waitKeyOf } from './rows';
 import { remoteState, remoteUsage, type RemoteState } from './state';
 import { MAX_APP_MESSAGE, type ChannelKind } from './wire';

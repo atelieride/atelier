@@ -34,6 +34,11 @@ test('a session a phone starts checks the shell environment before each request 
   expect(checks[0]!).toBeLessThan(requests[0]!);
   expect(checks[1]!).toBeGreaterThan(requests[0]!);
   expect(checks[1]!).toBeLessThan(requests[1]!);
+  // A session a phone resumes too: checked before its request.
+  const resume = hub.slice(hub.indexOf('  async resumeRemote('));
+  const resumeBody = resume.slice(0, resume.indexOf('\n  }\n'));
+  expect(resumeBody.indexOf('await this.freshEnvQuietly(')).toBeGreaterThan(-1);
+  expect(resumeBody.indexOf('await this.freshEnvQuietly(')).toBeLessThan(resumeBody.search(/this\.client\.request</));
   const quiet = hub.slice(hub.indexOf('  private async freshEnvQuietly('));
   expect(quiet.slice(0, quiet.indexOf('\n  }\n'))).toMatch(/await this\.freshness\.ensure\(this\.checkedFiles\(\)/);
 });

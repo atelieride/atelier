@@ -1,8 +1,9 @@
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
 import type { RemoteLayout } from '@shared/remote';
+import { expectMode } from '../../../tests/support/platform';
 import { LayoutStore, MAX_LAYOUTS } from './layouts';
 
 const layout = (o: Partial<RemoteLayout> = {}): RemoteLayout => ({ groupByState: true, pins: ['t1'], order: { sessions: ['t2', 't1'], terminals: [] }, ...o });
@@ -16,9 +17,8 @@ test('a project\'s last layout, kept across restarts in ATELIER_HOME/remote/layo
   // The same again changes nothing (and writes nothing).
   expect(a.set('/p', layout())).toBe(false);
   expect(a.get('/p')).toEqual(layout());
-  const file = join(h, 'remote', 'layouts.json');
-  expect(statSync(file).mode & 0o777).toBe(0o600);
-  expect(statSync(join(h, 'remote')).mode & 0o777).toBe(0o700);
+  expectMode(join(h, 'remote', 'layouts.json'), 0o600);
+  expectMode(join(h, 'remote'), 0o700);
   const b = new LayoutStore(h);
   expect(b.get('/p')).toEqual(layout());
   expect(b.get('/other')).toBeNull();

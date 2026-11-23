@@ -556,7 +556,12 @@ export class TerminalHub {
       const o = termResumeSchema.parse(arg);
       const r = this.resumables.find((x) => x.id === o.id);
       if (!r || r.projectRoot !== w.project) throw new Error('session of another project');
-      return this.resumeOf(r, o.cols, o.rows, (profile) => this.freshEnv(w, profile));
+      await this.freshEnv(w, sessionProfile(this.settings().terminalProfile, this.profilesAvailable()));
+      const dir = await this.resumeDirOf(r);
+      // Known at once, like create: the window shows it from the reply and attaches before atelierd's next list.
+      // A terminal moved to another project's window: the new one keeps its home.
+      const info = await this.client.request<TerminalInfo>(() => ({ t: 'resume', id: o.id, cols: o.cols, rows: o.rows, ...this.sessionProfile(), ...dir() }));
+      return this.launched(this.created(this.onResumed(o.id, info)));
     });
     // Claude Code's own history of the project: listed and resumed only as the main process reads it.
     handle(IPC.claudeHistory, (w) => this.history.list(this.historyQuery(w)));
@@ -1138,18 +1143,12 @@ export class TerminalHub {
   }
 
   /**
-   * Resumes a session left without a process, with the account it ran with, in a new terminal known at once (the
-   * window shows it from the reply and attaches before atelierd's next list).
+   * The account a session to resume ran with: main picks the dir, null for the default one; sent only to an atelierd
+   * that uses it (the request is built once connected, so the capability is the connected one's).
    */
-  private async resumeOf(r: Resumable, cols: number, rows: number, fresh: (profile: TerminalProfile | undefined) => Promise<void>): Promise<TerminalInfo> {
-    await fresh(sessionProfile(this.settings().terminalProfile, this.profilesAvailable()));
-    // The account it ran with: main picks the dir, null for the default one; sent only to an
-    // atelierd that uses it (the request is built once connected, so the capability is the connected one's).
+  private async resumeDirOf(r: Resumable): Promise<() => ReturnType<typeof resumeFields>> {
     const configDir = await resumeConfigDir(r, accountsOf(this.settings(), defaultConfigDirNow()), defaultConfigDirNow(), isRegularFile);
-    const dir = () => resumeFields(this.client.hasCapability('resume-config-dir'), configDir);
-    // A terminal moved to another project's window: the new one keeps its home.
-    const info = await this.client.request<TerminalInfo>(() => ({ t: 'resume', id: r.id, cols, rows, ...this.sessionProfile(), ...dir() }));
-    return this.launched(this.created(this.onResumed(r.id, info)));
+    return () => resumeFields(this.client.hasCapability('resume-config-dir'), configDir);
   }
 
   /**
@@ -1199,9 +1198,12 @@ export class TerminalHub {
   async resumeRemote(id: string, cols: number, rows: number): Promise<TerminalInfo> {
     const r = this.resumables.find((x) => x.id === id);
     if (!r) throw new Error('no such session to resume');
-    const info = await this.resumeOf(r, cols, rows, (profile) => this.freshEnvQuietly(profile));
-    this.sizes.known(info.id, { cols, rows });
-    return info;
+    await this.freshEnvQuietly(sessionProfile(this.settings().terminalProfile, this.profilesAvailable()));
+    const dir = await this.resumeDirOf(r);
+    const info = await this.client.request<TerminalInfo>(() => ({ t: 'resume', id, cols, rows, ...this.sessionProfile(), ...dir() }));
+    const t = this.launched(this.created(this.onResumed(id, info)));
+    this.sizes.known(t.id, { cols, rows });
+    return t;
   }
 
   /** Dismiss, as Resume's own. */
