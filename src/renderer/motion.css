@@ -72,9 +72,11 @@
 .session-row.state-waiting:not(.is-selected, .is-asking, :has(> .row-main:focus-visible)) { box-shadow: inset 0 0 0 1px var(--edge-waiting); }
 
 /* A session that finished just now (SessionRow): a flat green layer is revealed across its row from the left in
-   520 ms, then fades by 900 ms, under the row's content (the row, a size container, stacks on its own); a check takes
+   520 ms, then fades by 900 ms, under the row's content and over its own fill (selected, hovered): the row stacks on
+   its own while the cue plays (is-finishing; its size container does not make it a stacking context). A check takes
    its avatar's place a moment, on a cover of the avatar's own tile, and hands it back by 1100 ms. Both take no pointer,
    rest unseen (their last frame holds) and are removed once the last of them has played. */
+.session-row.is-finishing { isolation: isolate; }
 @keyframes atl-row-wave {
   0% { clip-path: inset(0 100% 0 0); opacity: 1; animation-timing-function: cubic-bezier(.7, 0, .2, 1); }
   57.8% { clip-path: inset(0 0% 0 0); opacity: 1; animation-timing-function: ease-out; }

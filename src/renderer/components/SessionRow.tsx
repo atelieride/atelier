@@ -238,7 +238,7 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
   // List item with side-by-side buttons (select, pin, close): never a button inside another. While
   // renaming, the field is not inside a button.
   return (
-    <div ref={rowEl} role="listitem" data-term-row={term.id} className={`session-row ${enter} ${s ? `state-${state}` : 'is-starting'} ${selected ? 'is-selected' : ''} ${s?.unread ? 'is-unread' : ''} ${popped ? 'is-popped' : ''} ${shutting ? 'is-closing' : ''} ${closing ? 'is-asking' : ''} ${askMark ? 'has-ask' : ''}${avatars ? '' : ' no-avatar'}${dragged ? ' is-dragging' : ''}${caret ? ` is-caret-${caret}` : ''}`}
+    <div ref={rowEl} role="listitem" data-term-row={term.id} className={`session-row ${enter} ${s ? `state-${state}` : 'is-starting'} ${selected ? 'is-selected' : ''} ${s?.unread ? 'is-unread' : ''} ${popped ? 'is-popped' : ''} ${shutting ? 'is-closing' : ''} ${closing ? 'is-asking' : ''} ${askMark ? 'has-ask' : ''}${finish.on ? ' is-finishing' : ''}${avatars ? '' : ' no-avatar'}${dragged ? ' is-dragging' : ''}${caret ? ` is-caret-${caret}` : ''}`}
       data-tip={nameTip(term.title)} {...bandAttr(band)} onContextMenu={(e) => useApp.getState().openMenu(e, sessionRowMenu(term, shutting ? undefined : band))} {...(editing ? {} : drag)}>
       {/* Without the avatar's check, the wave is the last to end. */}
       {finish.on && <i key={doneKey} className="row-wave" aria-hidden="true" ref={avatars ? undefined : finish.ender} />}

@@ -888,11 +888,17 @@ test('a session that finishes: a flat wave crosses its row, a check takes its av
     expect(mid.check).toBeGreaterThan(0.9);
     expect(mid.hit).toBe(false);
     expect(mid.onCheck).toBe(false);
+    // Over the row's own fill (hovered here; selected alike), not under it: the row stacks on its own while the cue
+    // plays (a size container does not), and only then.
+    await row(win, 'One').hover();
+    expect(await row(win, 'One').evaluate((el) => getComputedStyle(el).isolation)).toBe('isolate');
     await look(win.locator('.sidebar'), 'test-results/transitions-done-wave.png');
+    await win.mouse.move(1, 1);
     await resume(win);
 
     // Then both have played to their end and are gone.
     await expect(win.locator('.row-wave, .av-done-check')).toHaveCount(0, { timeout: 3000 });
+    expect(await row(win, 'One').evaluate((el) => getComputedStyle(el).isolation)).toBe('auto');
     let log = await cues(win);
     expect(log.added.map((a) => `${a.cls} on ${a.row}`).sort()).toEqual(['av-done-check on One', 'row-wave on One']);
     expect(log.added.every((a) => /\bstate-done\b/.test(a.rowCls))).toBe(true);
