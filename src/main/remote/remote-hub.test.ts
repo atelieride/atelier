@@ -24,6 +24,9 @@ const term = (id: string, projectRoot: string, o: Partial<TerminalInfo> = {}): T
   id, projectRoot, cwd: projectRoot, title: `T ${id}`, name: null, color: '#fff', foreground: 'zsh', createdAt: 1, session: null, ...o
 });
 
+/** Claude Code's permission dialog for a command (`npm test` unless named) with these options, as a screen shows it. */
+const npmDialog = (options: string[], command = 'npm test') => ['Bash command', '', `  ${command}`, '  Run the test suite', '', 'Do you want to proceed?', ...options, '', 'Esc to cancel · Tab to amend'];
+
 /** TerminalHub's remote side, in memory: a screen per terminal, input echoed back as output. */
 class FakeTerminals implements RemoteTerminals {
   list: TerminalInfo[] = [];
@@ -70,9 +73,12 @@ class FakeTerminals implements RemoteTerminals {
     return true;
   }
   remoteSized() { return this.sized; }
+  /** While set, screen reads wait for it (an answer still on its way). */
+  screenGate: Promise<void> | null = null;
   async permissionScreen(id: string) {
     if (!this.list.some((t) => t.id === id)) throw new Error('gone');
-    return this.screens.get(id) ?? ['Do you want to proceed?', '❯ 1. Yes', '  2. Yes, and don\'t ask again for npm test commands', '  3. No, and tell Claude what to do differently (esc)', '', 'Esc to cancel · Tab to amend'];
+    if (this.screenGate) await this.screenGate;
+    return this.screens.get(id) ?? npmDialog(['❯ 1. Yes', '  2. Yes, and don\'t ask again for npm test commands', '  3. No, and tell Claude what to do differently (esc)']);
   }
   answerKey(id: string, key: string) { this.answers.push([id, key]); }
   async renameRemote(id: string, name: string) { if (!this.list.some((t) => t.id === id)) throw new Error('gone'); this.renames.push([id, name]); }
@@ -773,18 +779,64 @@ describe('actions on rows', () => {
   test('allow picks the screen\'s own "Yes"; with none to pick (or the cursor in a feedback field), refused and nothing typed', async () => {
     const t = setup();
     t.terms.list = [term('a', '/work/app', { session: waitingSession() }), term('b', '/work/app', { session: waitingSession() }), term('c', '/work/app', { session: waitingSession() })];
-    t.terms.screens.set('a', ['Do you want to proceed?', '❯ 1. No', '  2. Yes']);
-    t.terms.screens.set('b', ['Do you want to proceed?', '❯ 1. Yes, and don\'t ask again for this session', '  2. No']);
-    t.terms.screens.set('c', ['Do you want to proceed?', '❯ 1. Yes, and tell Claude what to do next', '  2. No']);
+    t.terms.screens.set('a', npmDialog(['❯ 1. No', '  2. Yes']));
+    t.terms.screens.set('b', npmDialog(['❯ 1. Yes, and don\'t ask again for this session', '  2. No']));
+    t.terms.screens.set('c', npmDialog(['❯ 1. Yes, and tell Claude what to do next', '  2. No']));
     const { phone } = await paired(t);
     const rows = (await phone.state((s) => (s.sessions as Msg[]).filter((x) => x.wait).length === 3)).sessions as Msg[];
     const waitOf = (id: string) => rows.find((x) => x.id === id)!.wait as string;
     expect(await phone.answer('a', waitOf('a'), 'allow')).toMatchObject({ t: 'ok' });
     expect(await phone.answer('b', waitOf('b'), 'allow')).toMatchObject({ t: 'error', code: 'invalid', message: 'Open the session to answer' });
     expect(await phone.answer('c', waitOf('c'), 'allow')).toMatchObject({ t: 'error', code: 'invalid', message: 'Open the session to answer' });
-    // Deny needs no screen: Esc declines whatever the dialog lists.
+    // Deny: Esc declines whatever the dialog lists.
     expect(await phone.answer('b', waitOf('b'), 'deny')).toMatchObject({ t: 'ok' });
     expect(t.terms.answers).toEqual([['a', '2'], ['b', '\x1b']]);
+  });
+
+  test('only the request the phone showed: another one in the dialog (another agent\'s, asked first) is refused, Allow and Deny alike', async () => {
+    const t = setup();
+    t.terms.list = [term('w', '/work/app', { session: waitingSession() })];
+    // The phone shows the latest request (npm test); Claude Code shows the oldest first (rm -rf build).
+    t.terms.screens.set('w', npmDialog(['❯ 1. Yes', '  2. No'], 'rm -rf build'));
+    const { phone } = await paired(t);
+    const wait = ((await phone.state((s) => (s.sessions as Msg[]).some((x) => x.id === 'w' && x.wait))).sessions as Msg[]).find((x) => x.id === 'w')!.wait as string;
+    expect(await phone.answer('w', wait, 'allow')).toMatchObject({ t: 'error', code: 'invalid', message: 'Open the session to answer' });
+    expect(await phone.answer('w', wait, 'deny')).toMatchObject({ t: 'error', code: 'invalid', message: 'Open the session to answer' });
+    // The request answered at the Mac: the tool runs, no dialog any more. Deny would interrupt it: refused.
+    t.terms.screens.set('w', ['⏺ Bash(npm test)', '  ⎿  Running…', '', '✻ Testing… (esc to interrupt)']);
+    expect(await phone.answer('w', wait, 'deny')).toMatchObject({ t: 'error', code: 'invalid' });
+    expect(t.terms.answers).toEqual([]);
+    // Its own dialog on screen now: refused answers didn't count, this one goes.
+    t.terms.screens.delete('w');
+    expect(await phone.answer('w', wait, 'allow')).toMatchObject({ t: 'ok' });
+    expect(t.terms.answers).toEqual([['w', '1']]);
+  });
+
+  test('a wait is answered once, one answer at a time: a double tap, or a Deny while the allowed tool runs, is refused; the next wait is answered', async () => {
+    const t = setup();
+    t.terms.list = [term('w', '/work/app', { session: waitingSession() })];
+    const { phone } = await paired(t);
+    const waitNow = async (not?: string) => ((await phone.state((s) => (s.sessions as Msg[]).some((x) => x.id === 'w' && x.wait && x.wait !== not))).sessions as Msg[]).find((x) => x.id === 'w')!.wait as string;
+    const wait = await waitNow();
+    // Two taps: both arrive while the first still reads the screen.
+    let open!: () => void;
+    t.terms.screenGate = new Promise<void>((r) => { open = r; });
+    const first = phone.answer('w', wait, 'allow');
+    const second = phone.answer('w', wait, 'allow');
+    expect(await second).toMatchObject({ t: 'error', code: 'busy' });
+    open();
+    t.terms.screenGate = null;
+    expect(await first).toMatchObject({ t: 'ok' });
+    // After "Yes" the session waits under the same key until the tool has run: answered already.
+    expect(await phone.answer('w', wait, 'allow')).toMatchObject({ t: 'error', code: 'busy', message: 'This request was answered already' });
+    expect(await phone.answer('w', wait, 'deny')).toMatchObject({ t: 'error', code: 'busy', message: 'This request was answered already' });
+    expect(t.terms.answers).toEqual([['w', '1']]);
+    // The tool ran; the very same request comes again: a new wait, answered too.
+    t.terms.set([term('w', '/work/app', { session: waitingSession({ state: 'running', waitingFor: null, activity: 'Bash npm test', updatedAt: 3 }) })]);
+    t.terms.set([term('w', '/work/app', { session: waitingSession({ updatedAt: 4 }) })]);
+    const again = await waitNow(wait);
+    expect(await phone.answer('w', again, 'allow')).toMatchObject({ t: 'ok' });
+    expect(t.terms.answers).toEqual([['w', '1'], ['w', '1']]);
   });
 
   test('answer: a question or a plan has no wait key and is answered in the session, never from the row', async () => {
@@ -844,6 +896,21 @@ describe('actions on rows', () => {
     expect(await phone.create(app, 'claude', { account: 'nobody' })).toMatchObject({ t: 'error', code: 'not-found' });
     expect(await phone.create(app, 'terminal', { account: 'work' })).toMatchObject({ t: 'error', code: 'invalid' });
     expect(t.terms.created).toHaveLength(2);
+  });
+
+  test('create in a place of a project whose window is closed: the window opens for it and moves the new row there', async () => {
+    const calls: [string, RemotePlaceOp][] = [];
+    const t = setup({ deps: { places: async (root, op) => { calls.push([root, op]); return { ok: true }; } } });
+    // A recent project, its window closed; its layout as its window last showed it.
+    t.hub.layoutChanged('/work/old', { groupByState: true, pins: [], order: { sessions: [], terminals: [] }, workspaces: { active: 'w9', activities: false, places: [{ id: 'w9', name: 'Other', color: 4, open: true }, { id: 'w8', name: 'Release', color: 2, open: true }], members: {} } });
+    const { phone } = await paired(t);
+    await phone.state();
+    expect(await phone.create(projectIdOf('/work/old'), 'claude', { place: 'w8' })).toMatchObject({ t: 'created', id: 'new1' });
+    expect(t.terms.created.at(-1)).toMatchObject({ project: '/work/old', kind: 'claude' });
+    await until(() => calls.length === 1);
+    expect(calls).toEqual([['/work/old', { kind: 'move', id: 'new1', place: 'w8' }]]);
+    // Nothing for a window that isn't there.
+    expect(t.rows).toEqual([]);
   });
 });
 

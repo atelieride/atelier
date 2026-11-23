@@ -536,6 +536,8 @@ export const SOURCES: Record<string, Area[]> = {
   'src/main/media-ipc.ts': ['files', 'editor'],
   'src/main/ask.ts': ['workspace', 'files', 'settings'],
   'src/main/close-guard.ts': ['sessions', 'workspace'],
+  // What the quit waits for: the windows' stops, the phones' goodbye.
+  'src/main/quit-waits.ts': ['sessions', 'workspace', 'iphone'],
   'src/main/foreground.ts': ['sessions', 'workspace'],
   'src/main/fs/': ['files', 'editor'],
   'src/main/ghost-window.ts': ['workspace'],

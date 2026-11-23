@@ -156,8 +156,11 @@ test('Allow and Deny from the phone answer a session\'s permission request with 
     // A wait the session is no longer in: refused, nothing typed.
     expect(await phone.answer(ids[0]!, 'AAAAAAAAAAAAAAAAAAAAAA', 'allow')).toMatchObject({ t: 'error', code: 'busy', message: 'The request changed' });
 
-    // Allow: the digit of the dialog's own "Yes" (here the first); the tool runs and the turn finishes.
-    expect(await phone.answer(ids[0]!, row(ids[0]!).wait!, 'allow')).toMatchObject({ t: 'ok' });
+    // Allow: the digit of the dialog's own "Yes" (here the first); the tool runs and the turn finishes. Tapped twice:
+    // one answer goes, the other is refused.
+    const taps = await Promise.all([phone.answer(ids[0]!, row(ids[0]!).wait!, 'allow'), phone.answer(ids[0]!, row(ids[0]!).wait!, 'allow')]);
+    expect(taps.map((m) => m.t).sort()).toEqual(['error', 'ok']);
+    expect(taps.find((m) => m.t === 'error')).toMatchObject({ code: 'busy' });
     // Deny: Esc declines; the session is back at its prompt.
     expect(await phone.answer(ids[1]!, row(ids[1]!).wait!, 'deny')).toMatchObject({ t: 'ok' });
     const after = await phone.state((s) => rowsOf(s).find((x) => x.id === ids[0])?.state === 'done' && rowsOf(s).find((x) => x.id === ids[1])?.state === 'idle', 20000);
@@ -187,8 +190,8 @@ async function oneWaiting(mode: string): Promise<{ l: Launched; id: string; wait
   return { l, id, wait: row.wait! };
 }
 
-test('Allow picks the dialog\'s own "Yes" wherever it is listed; with only "don\'t ask again" offered, it is refused and nothing is typed', async () => {
-  test.setTimeout(240_000);
+test('Allow picks the dialog\'s own "Yes" wherever it is listed; with only "don\'t ask again" offered, or another request in the dialog, it is refused and nothing is typed', async () => {
+  test.setTimeout(330_000);
   // "No" listed first: Allow presses "2".
   const first = await oneWaiting('no-first');
   try {
@@ -208,6 +211,19 @@ test('Allow picks the dialog\'s own "Yes" wherever it is listed; with only "don\
     await only.l.phone.sees(only.id, 'FAKE-CLAUDE denied', 10000);
   } finally {
     await close(only.l);
+  }
+  // The dialog shows another agent's request (asked first) than the one the row named: Allow and Deny are both
+  // refused, nothing is typed.
+  const other = await oneWaiting('other-request');
+  try {
+    await other.l.phone.sees(other.id, 'rm -rf build', 10000);
+    expect(await other.l.phone.answer(other.id, other.wait, 'allow')).toMatchObject({ t: 'error', code: 'invalid', message: 'Open the session to answer' });
+    expect(await other.l.phone.answer(other.id, other.wait, 'deny')).toMatchObject({ t: 'error', code: 'invalid', message: 'Open the session to answer' });
+    await new Promise((r) => setTimeout(r, 500));
+    expect(other.l.phone.screen(other.id)).not.toMatch(/FAKE-CLAUDE (allowed|denied|key=)/);
+    await look(other.l.win, `${SHOTS}/other-request.png`, { settle: 300 });
+  } finally {
+    await close(other.l);
   }
 });
 

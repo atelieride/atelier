@@ -104,9 +104,12 @@ test('a wait\'s key: only for a permission the row can answer, the same for the 
   const again = book.keyOf({ id: 't1', session: { ...waiting, updatedAt: 30 } });
   expect(again).not.toBeNull();
   expect(again).not.toBe(key);
-  // No key for what the row can't answer: a question, a plan, the idle notice, a usage-limit pause, no session.
+  // No key for what the row can't answer: a question, a plan, a permission that names no request (an answer is only
+  // given to the request the dialog shows), the idle notice, a usage-limit pause, no session.
   expect(book.keyOf({ id: 't1', session: { ...waiting, waitingFor: 'question', activity: 'waiting: question' } })).toBeNull();
   expect(book.keyOf({ id: 't1', session: { ...waiting, activity: 'waiting: plan approval' } })).toBeNull();
+  expect(book.keyOf({ id: 't1', session: { ...waiting, activity: 'waiting for you' } })).toBeNull();
+  expect(book.keyOf({ id: 't1', session: { ...waiting, activity: null } })).toBeNull();
   expect(book.keyOf({ id: 't1', session: { ...waiting, state: 'idle', waitingFor: 'input' } })).toBeNull();
   expect(book.keyOf({ id: 't1', session: { ...waiting, state: 'error', errorReason: 'rate_limit', waitingFor: null, limitPause: { since: 1, resetsAt: null } } })).toBeNull();
   expect(book.keyOf({ id: 't1', session: null })).toBeNull();

@@ -253,6 +253,7 @@ export class TerminalHub {
       this.artifactHub?.terminals(this.raw);
       void this.mcpList();
       this.publish(true);
+      this.pruneLaunching(Date.now());
       this.listedOnce = true;
       this.keptKnown.terminals = true;
       this.keptChanged();
@@ -269,6 +270,7 @@ export class TerminalHub {
     });
     client.on('exit', (id: string) => {
       this.osc7?.forget(id);
+      this.launching.delete(id);
       const remotes = this.attachments.watchers(id).filter(isRemote);
       this.attachments.forgetTerminal(id);
       const sized = this.sizes.owner(id);
@@ -798,11 +800,16 @@ export class TerminalHub {
    * session) whose Claude hasn't reported its session yet: they read as sessions already, for STARTING_MS at most.
    */
   startingIds(now = Date.now()): ReadonlySet<string> {
+    this.pruneLaunching(now);
+    return new Set(this.launching.keys());
+  }
+
+  /** The launches that stopped mattering go: Claude started, or never did in time. Run on every list from atelierd. */
+  private pruneLaunching(now: number): void {
     for (const [id, at] of this.launching) {
       const t = this.terminals.find((x) => x.id === id);
       if (t?.session || now - at >= STARTING_MS) this.launching.delete(id);
     }
-    return new Set(this.launching.keys());
   }
 
   /** A terminal just launched as a Claude session: starting until its session arrives. */
@@ -995,10 +1002,13 @@ export class TerminalHub {
     return key;
   }
 
-  /** The viewer is gone (its phone's channel ended): it leaves every terminal it watched, sizes given back. */
+  /**
+   * The viewer is gone (its phone's channel ended): it leaves every terminal it watched, sizes given back — those of
+   * the terminals it was still attaching to as well, since an attach takes the size before its screen arrives.
+   */
   removeRemoteViewer(key: number): void {
     if (!this.remotes.delete(key)) return;
-    const shown = this.attachments.terminalsOf(key);
+    const shown = new Set([...this.attachments.terminalsOf(key), ...this.sizes.owned((v) => v === key)]);
     for (const id of this.attachments.removeWindow(key)) void this.client.request({ t: 'detach', id }).catch(() => {});
     for (const id of shown) this.leaveSize(key, id);
     this.sizes.forgetViewer(key);
@@ -1044,6 +1054,8 @@ export class TerminalHub {
         if (done) return;
         this.client.off('snapshot', onSnap);
         this.attachments.abort(key, id);
+        // The size it took goes back, unless the viewer still watches the terminal (an attach asked again).
+        if (!this.attachments.has(key, id) && !this.attachments.attaching(key, id)) this.leaveSize(key, id);
         reject(err);
       });
     });
@@ -1113,10 +1125,14 @@ export class TerminalHub {
     return owner !== undefined && isRemote(owner);
   }
 
-  /** `viewer` stopped showing the terminal: when it owned the size, the most recent view still showing it takes it back. */
+  /**
+   * `viewer` stopped showing the terminal: when it owned the size, the most recent view still showing it takes it back
+   * (or about to show it: a window whose attach is on its way, as after atelierd reconnected).
+   */
   private leaveSize(viewer: number, id: string): void {
     const owned = this.sizes.owner(id) === viewer;
-    const next = this.sizes.leave(viewer, id, this.attachments.watchers(id));
+    const others = [...this.attachments.watchers(id), ...this.attachments.attachingTo(id)].filter((v) => v !== viewer);
+    const next = this.sizes.leave(viewer, id, others);
     if (next) this.applySize(id, next, null);
     else if (owned && isRemote(viewer)) this.onRemoteSized();
   }
@@ -1190,9 +1206,10 @@ export class TerminalHub {
     const key = this.nextRemote--;
     this.attachments.begin(key, id);
     let attached = false;
+    let late = false;
     try {
       const data = await new Promise<string>((resolve, reject) => {
-        const timer = setTimeout(() => { this.client.off('snapshot', onSnap); reject(new Error('no screen')); }, SCREEN_MS);
+        const timer = setTimeout(() => { late = true; this.client.off('snapshot', onSnap); reject(new Error('no screen')); }, SCREEN_MS);
         timer.unref?.();
         const onSnap = (sid: string, snap: string) => {
           if (sid !== id) return;
@@ -1206,8 +1223,13 @@ export class TerminalHub {
       attached = this.attachments.complete(key, id) !== null;
       return await screenLines(data, this.sizeOf(id));
     } finally {
-      if (!attached) this.attachments.abort(key, id);
-      else if (this.attachments.remove(key, id)) void this.client.request({ t: 'detach', id }).catch(() => {});
+      if (!attached) {
+        this.attachments.abort(key, id);
+        // atelierd took the attach but its screen came too late: its stream would stay with nobody reading it. It
+        // goes (atelierd answers requests in order: the detach follows the attach), unless another view watches the
+        // terminal or is attaching to it, since atelierd keeps one stream per terminal.
+        if (late && this.attachments.unwatched(id)) void this.client.request({ t: 'detach', id }).catch(() => {});
+      } else if (this.attachments.remove(key, id)) void this.client.request({ t: 'detach', id }).catch(() => {});
     }
   }
 

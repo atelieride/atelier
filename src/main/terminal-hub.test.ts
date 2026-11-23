@@ -1058,6 +1058,50 @@ describe('remote viewers (a paired phone): watched like a window, with one size 
     expect(t.got.filter((g) => g[0] === 'data')).toEqual([]);
   });
 
+  test('a viewer removed while its attach is on its way gives the size it took back; its late screen goes nowhere', async () => {
+    const t = await withWindow();
+    const p = t.hub.remoteAttach(t.key, 'a', 60, 30);
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 60, rows: 30 }]);
+    t.client.send.mockClear();
+    t.hub.removeRemoteViewer(t.key);
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 120, rows: 40 }]);
+    expect(t.hub.remoteSized()).toEqual([]);
+    t.client.emit('snapshot', 'a', 'late screen');
+    await p;
+    expect(t.got).toEqual([]);
+    // The window still watches the terminal: atelierd keeps its stream.
+    expect(t.requests().filter((r) => r.t === 'detach')).toEqual([]);
+  });
+
+  test('an attach atelierd refuses gives the size it took back', async () => {
+    const t = await withWindow();
+    t.client.request.mockImplementation((async (m: { t: string }) => { if (m.t === 'attach') throw new Error('refused'); return {}; }) as never);
+    await expect(t.hub.remoteAttach(t.key, 'a', 60, 30)).rejects.toThrow('refused');
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 60, rows: 30 }, { t: 'resize', id: 'a', cols: 120, rows: 40 }]);
+    expect(t.hub.remoteSized()).toEqual([]);
+    // A key pressed in the window has nothing to take back.
+    t.client.send.mockClear();
+    t.winType('x', true);
+    expect(t.sent()).toEqual([{ t: 'input', id: 'a', data: 'x' }]);
+  });
+
+  test('atelierd reconnected and the phone\'s attach fails there: the terminal ends for the phone, the window gets the size', async () => {
+    const t = await withWindow();
+    await t.phoneAttach();
+    t.client.emit('status', 'disconnected');
+    t.client.emit('status', 'connected');
+    // The phone's attach is the first one asked (a window's starts a microtask later): refused. The window's is still
+    // on its way when that happens (no screen yet): the size goes to it all the same.
+    let attaches = 0;
+    t.client.request.mockImplementation((async (m: { t: string }) => { if (m.t === 'attach' && ++attaches === 1) throw new Error('gone'); return {}; }) as never);
+    t.client.send.mockClear();
+    t.client.emit('reconnected');
+    await vi.waitFor(() => expect(t.got.at(-1)).toEqual(['exit', 'a']));
+    expect(attaches).toBe(2);
+    expect(t.sent().at(-1)).toEqual({ t: 'resize', id: 'a', cols: 120, rows: 40 });
+    expect(t.hub.remoteSized()).toEqual([]);
+  });
+
   test('a terminal moved to another project\'s window keeps its phone', async () => {
     const t = await withWindow();
     await t.phoneAttach();
@@ -1172,6 +1216,32 @@ describe('what a paired phone lists besides the terminals', () => {
     expect([...hub.startingIds()]).toEqual([]);
   });
 
+  test('the starting sessions are forgotten once they stop mattering, with nobody asking for them (no phone)', async () => {
+    const { mkdtempSync, realpathSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-hub-starting-')));
+    const { hub, client } = setup();
+    const launching = () => [...(hub as unknown as { launching: Map<string, number> }).launching.keys()];
+    const session = { sessionId: 's', state: 'idle', title: null, activity: null, contextPct: null, unread: false, updatedAt: 0 };
+    for (const id of ['c1', 'c2', 'c3']) {
+      client.request.mockResolvedValueOnce(term(id, root) as never);
+      await hub.createRemoteSession({ project: root, kind: 'claude', cols: 80, rows: 24 });
+    }
+    expect(launching()).toEqual(['c1', 'c2', 'c3']);
+    // c1's Claude started; c2's terminal ended.
+    client.emit('terminals', [{ ...term('c1', root), session }, term('c2', root), term('c3', root)]);
+    client.emit('exit', 'c2');
+    expect(launching()).toEqual(['c3']);
+    // c3's Claude never started: past the 30 s a start may take, the next list forgets it.
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 30_000);
+    try {
+      client.emit('terminals', [{ ...term('c1', root), session }, term('c3', root)]);
+    } finally { clock.mockRestore(); }
+    expect(launching()).toEqual([]);
+  });
+
   test('resumables and usage as atelierd last sent them; a new resumables list is a change phones see', () => {
     const { hub, client } = setup();
     let calls = 0;
@@ -1220,6 +1290,42 @@ describe('a paired phone\'s actions on rows, as Atelier\'s own', () => {
     expect(lines.filter(Boolean)).toEqual(['Do you want to proceed?', '❯ 1. Yes', '  2. No']);
     expect((client.request.mock.calls as unknown as unknown[][]).map((c) => c[0])).toEqual([{ t: 'attach', id: 'w' }, { t: 'detach', id: 'w' }]);
     await expect(hub.permissionScreen('gone')).rejects.toThrow();
+  });
+
+  test('a screen later than the read waits for: atelierd\'s attach goes again, unless a window watches the terminal', async () => {
+    vi.useFakeTimers();
+    try {
+      const { hub, register, client } = setup();
+      client.emit('terminals', [waiting('w'), waiting('v')]);
+      const requests = () => (client.request.mock.calls as unknown as unknown[][]).map((c) => c[0]);
+      // atelierd takes the attach and sends no screen in time.
+      const read = hub.permissionScreen('w');
+      const failed = expect(read).rejects.toThrow();
+      await vi.advanceTimersByTimeAsync(5000);
+      await failed;
+      expect(requests()).toEqual([{ t: 'attach', id: 'w' }, { t: 'detach', id: 'w' }]);
+      // Its screen arriving late changes nothing more.
+      client.emit('snapshot', 'w', 'late');
+      expect(requests()).toHaveLength(2);
+      // A terminal a window watches keeps atelierd's stream.
+      const w = wc(1); win(w); register(w);
+      client.request.mockImplementation((async (m: { t: string; id: string }) => {
+        if (m.t === 'attach' && m.id === 'v' && !requests().some((r) => (r as { t: string }).t === 'detach' && (r as { id: string }).id === 'v')) queueMicrotask(() => client.emit('snapshot', m.id, 'screen'));
+        return {};
+      }) as never);
+      hub.installIpc();
+      const attach = (vi.mocked(ipcMain.handle).mock.calls as unknown as [string, (e: unknown, arg: unknown) => Promise<void>][]).findLast((c) => c[0] === IPC.termAttach)![1];
+      await attach({ sender: w }, 'v');
+      client.request.mockClear();
+      client.request.mockImplementation((async () => ({})) as never);
+      const second = hub.permissionScreen('v');
+      const failed2 = expect(second).rejects.toThrow();
+      await vi.advanceTimersByTimeAsync(5000);
+      await failed2;
+      expect(requests()).toEqual([{ t: 'attach', id: 'v' }]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('a screen read while a window watches the terminal leaves its stream alone (no detach)', async () => {

@@ -126,3 +126,16 @@ test('remove and removeWindow: never the last while another window is attaching 
   expect(a.complete(2, 't')).toEqual([]);
   expect(a.remove(2, 't')).toBe(true);
 });
+
+test('who is attaching a terminal, and whether anybody watches it or is about to', () => {
+  const a = new Attachments();
+  expect(a.unwatched('t')).toBe(true);
+  a.begin(-1, 't'); a.begin(2, 't'); a.begin(3, 'tt');
+  expect(a.attachingTo('t').sort()).toEqual([-1, 2]);
+  expect(a.unwatched('t')).toBe(false);
+  a.abort(-1, 't'); a.abort(2, 't');
+  expect(a.attachingTo('t')).toEqual([]);
+  expect(a.unwatched('t')).toBe(true);
+  a.add(4, 't');
+  expect(a.unwatched('t')).toBe(false);
+});
