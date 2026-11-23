@@ -14,3 +14,16 @@
 /* A hairline drawing along an inner edge between two columns as the plates land; it fades into that edge's own border
    while the parts rise in, then is removed. */
 .intro-seam { position: fixed; z-index: 451; background: var(--line-strong); opacity: 0; pointer-events: none; }
+
+/* The selection on its way to a session row (transitions.ts): a lane laid over the sidebar's visible box, first in the
+   sidebar so the rows paint over it and cut at its edges as they are, and in it a pill drawn as a selected row is.
+   Neither takes the pointer; both go once the pill lands. Contained, the pill's moves lay out nothing outside it. */
+.motion-lane { position: fixed; overflow: hidden; contain: strict; pointer-events: none; }
+.motion-pill { position: absolute; background: var(--bg-sel); box-shadow: inset 0 0 0 1px var(--edge-sel); pointer-events: none; }
+/* The row it glides to waits with its own fill and edge hidden until the pill lands; a keyboard focus ring stays. */
+.session-row.is-selected.is-gliding, .term-row.is-selected.is-gliding { background: transparent; }
+.session-row.is-selected.is-gliding:not(:has(> .row-main:focus-visible)), .term-row.is-selected.is-gliding:not(:has(> .row-main:focus-visible)) { box-shadow: none; }
+/* The tab crown on its way to the tab in front: as thin as the crown, its ends tapering as the crown's do along a tab's
+   rounded top; the tab's own crown waits under it, the tab's top plain, until it lands. */
+.tab-crown-fly { position: absolute; z-index: 2; height: 2px; border-radius: 9px 9px 0 0 / 2px 2px 0 0; background: var(--tab-crown); pointer-events: none; }
+.tab.is-active.is-crown-landing { background: var(--bg-2); }

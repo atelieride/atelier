@@ -166,6 +166,8 @@ export const SPECS: Record<string, Area[]> = {
   'starting.spec.ts': ['sessions'],
   'states.spec.ts': ['sessions'],
   'tab-strip.spec.ts': ['workspace'],
+  // The in-app transitions: the sidebar's selection gliding, the tab crown's move, the content rising or sliding in.
+  'transitions.spec.ts': ['workspace', 'sessions'],
   'tasks.spec.ts': ['connectors'],
   'tree-git.spec.ts': ['files', 'changes'],
   'tray.spec.ts': ['notifications'],
@@ -332,6 +334,7 @@ export const SOURCES: Record<string, Area[]> = {
   'src/renderer/motion.ts': ['workspace', 'sessions'],
   'src/renderer/motion-geometry.ts': ['workspace', 'sessions'],
   'src/renderer/intro.ts': ['workspace'],
+  'src/renderer/transitions.ts': ['workspace', 'sessions'],
   'src/renderer/names.ts': ['sessions'],
   'src/renderer/jira-view.ts': ['connectors', 'settings'],
   'src/renderer/notion-view.ts': ['connectors'],
