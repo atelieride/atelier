@@ -452,7 +452,7 @@ test('the computer\'s name and app version reach the phone in the handshake', as
   await vi.waitFor(() => expect((phone as unknown as { channel: { hostHello: unknown } | null }).channel?.hostHello).toEqual({ v: 1, name: 'Studio Mac', app: '0.3.0', platform: 'darwin' }));
 });
 
-describe('what the sidebar shows (v1.1)', () => {
+describe('what the sidebar shows', () => {
   const resetsAt = Math.floor(Date.now() / 1000) + 3600;
   const usage = (pct: number): UsageEntry => ({ configDir: '/home/.claude', usage: { fiveHour: { pct, resetsAt }, sevenDay: null, updatedAt: Date.now() } });
 
@@ -508,7 +508,7 @@ describe('what the sidebar shows (v1.1)', () => {
   });
 });
 
-describe('layouts (v1.1)', () => {
+describe('each project\'s sidebar arrangement', () => {
   const L = (o: Partial<RemoteLayout> = {}): RemoteLayout => ({
     groupByState: true, pins: ['t2'], order: { sessions: [], terminals: ['t1'] },
     workspaces: { active: 'w1', activities: true, places: [{ id: 'w1', name: 'Main', color: 1, open: true }, { id: 'a1', name: 'SSO', color: 3, parent: 'w1', open: false }], members: { t2: 'a1' } },
@@ -554,7 +554,7 @@ describe('layouts (v1.1)', () => {
   });
 });
 
-describe('actions on rows (v1.1)', () => {
+describe('actions on rows', () => {
   const waitingSession = (o: object = {}) => ({ sessionId: 's', state: 'waiting', waitingFor: 'permission', title: null, activity: 'waiting: Bash npm test', contextPct: null, unread: false, updatedAt: 1, ...o }) as never;
 
   test('answer: only for the very wait the state showed, which later events of it don\'t change; another wait is "The request changed"', async () => {
@@ -756,7 +756,7 @@ describe('workspaces and activities from the phone', () => {
   });
 });
 
-describe('push notifications (v1.1)', () => {
+describe('push notifications', () => {
   const token = 'ab'.repeat(32);
   const key = Buffer.alloc(32, 7);
   const waitingTerm = (id: string, title: string) => term(id, '/work/app', { title, session: { sessionId: 's', state: 'waiting', waitingFor: 'permission', title: null, activity: 'waiting: Bash npm test', contextPct: null, unread: false, updatedAt: 1 } as never });

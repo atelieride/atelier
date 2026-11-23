@@ -230,7 +230,7 @@ describe('messages', () => {
     expect(o.received).toHaveLength(4);
   });
 
-  test('v1.1 requests: answer, rename, close, resume, dismiss, create in a place with an account; strict shapes', async () => {
+  test('row actions (answer, rename, close, resume, dismiss) and create in a place as an account: strict shapes', async () => {
     const o = await open();
     const ok = [
       { t: 'answer', rid: 1, id: 't1', wait: 'AbC_-123', choice: 'allow' },
