@@ -328,6 +328,7 @@ export const SOURCES: Record<string, Area[]> = {
   'src/renderer/mention.ts': ['editor', 'sessions'],
   'src/renderer/minute.ts': ['sessions'],
   'src/renderer/motion.ts': ['workspace', 'sessions'],
+  'src/renderer/motion-geometry.ts': ['workspace', 'sessions'],
   'src/renderer/names.ts': ['sessions'],
   'src/renderer/jira-view.ts': ['connectors', 'settings'],
   'src/renderer/notion-view.ts': ['connectors'],
