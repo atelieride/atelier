@@ -240,7 +240,8 @@ export function sparkTo(from: HTMLElement, row: HTMLElement, slot: HTMLElement |
   spark = m;
 }
 
-const entering = new WeakMap<HTMLElement, Animation>();
+/** The entrance playing on an element: its animations (a view's: its move and fade, then its clip). */
+const entering = new WeakMap<HTMLElement, Animation[]>();
 
 /**
  * Where an entrance starts, by where it comes from: moved down or to a side, and what that moves past its own box
@@ -262,13 +263,19 @@ export function enterView(target: HTMLElement, dir: 'up' | 'left' | 'right'): vo
   if (still()) return;
   const was = entering.get(target);
   let from: Keyframe = { ...ENTRY[dir], opacity: 0 };
-  if (was?.playState === 'running') {
+  if (was?.some((a) => a.playState === 'running')) {
     const cs = getComputedStyle(target);
     from = { transform: cs.transform, clipPath: cs.clipPath, opacity: Number(cs.opacity) };
-    was.cancel();
+    for (const a of was) a.cancel();
   }
-  const anim = play(target, [from, { transform: 'none', clipPath: 'inset(0)', opacity: 1 }], { duration: dir === 'up' ? RISE_MS : SLIDE_MS, easing: EASE });
-  if (anim) entering.set(target, anim);
+  const timing = { duration: dir === 'up' ? RISE_MS : SLIDE_MS, easing: EASE };
+  // The move and the fade in one animation, the clip in another on the same timing: a clip-path the compositor does
+  // not run keeps only itself on the main thread, never the move with it.
+  const anims = [
+    play(target, [{ transform: from.transform, opacity: from.opacity }, { transform: 'none', opacity: 1 }], timing),
+    play(target, [{ clipPath: from.clipPath }, { clipPath: 'inset(0)' }], timing)
+  ].filter((a): a is Animation => a !== null);
+  if (anims.length) entering.set(target, anims);
 }
 
 /**
@@ -362,11 +369,10 @@ export function enterPane(body: HTMLElement, index: number): void {
   const content = paneContent(body, index);
   const moves: { el: HTMLElement; anim: Animation }[] = [];
   for (const el of content) {
-    const was = entering.get(el);
-    if (was?.playState === 'running') was.cancel();
+    for (const a of entering.get(el) ?? []) if (a.playState === 'running') a.cancel();
     const anim = play(el, [{ transform: from }, { transform: 'none' }], { duration: PANE_MS, easing: ELASTIC });
     play(el, [{ opacity: 0 }, { opacity: 1 }], { duration: PANE_FADE_MS, easing: EASE });
-    if (anim) { entering.set(el, anim); moves.push({ el, anim }); }
+    if (anim) { entering.set(el, [anim]); moves.push({ el, anim }); }
   }
   if (moves[0]) underPane(body, index, moves[0].el, moves[0].anim);
   if (line) drawLine(line.el);

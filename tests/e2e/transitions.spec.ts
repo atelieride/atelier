@@ -70,6 +70,9 @@ async function threeSessions(win: Page) {
 /** What the page played since the last call. */
 const played = (win: Page) => win.evaluate(() => (window as unknown as { played: Played[] }).played.splice(0));
 const on = (list: Played[], cls: string) => list.filter((p) => p.on.split(/\s+/).includes(cls));
+/** The properties an animation moves, sorted (offset, easing and composite aside). */
+const props = (p: Played) => [...new Set((JSON.parse(p.kf) as Record<string, unknown>[]).flatMap((k) => Object.keys(k)))]
+  .filter((k) => !['offset', 'easing', 'composite'].includes(k)).sort();
 /** A tab strip's edge fades as set, and as its scroll box calls for now (more than 1 px hidden on that side). */
 const fades = (strip: Locator) => strip.evaluate((el) => {
   const max = el.scrollWidth - el.clientWidth;
@@ -326,11 +329,12 @@ test('a session picked in the sidebar: the selection glides to its row, the tab 
     await row(win, 'One').click();
     const glide = await played(win);
     // One pill, from Three's row to One's; the tab crown flies along (one motion language for the selection); the
-    // workspace body rises (one animation, upward), never a sideways slide.
+    // workspace body rises (upward), never a sideways slide: its move and fade in one effect, its clip in another, so
+    // the move stays on the compositor whatever the clip does.
     expect(on(glide, 'motion-pill')).toHaveLength(1);
     expect(on(glide, 'tab-crown-fly')).toHaveLength(1);
     const body = on(glide, 'workspace-body');
-    expect(body).toHaveLength(1);
+    expect(body.map(props)).toEqual([['opacity', 'transform'], ['clipPath']]);
     expect(body[0]!.kf).toContain('translateY(6px)');
     expect(glide.some((p) => p.kf.includes('translateX'))).toBe(false);
     await expect(win.locator('.motion-pill')).toHaveCount(0);
@@ -459,7 +463,7 @@ test('a tab picked: the crown stretches to it and catches up, the content slides
     const left = await played(win);
     expect(on(left, 'tab-crown-fly')).toHaveLength(1);
     const body = on(left, 'workspace-body');
-    expect(body).toHaveLength(1);
+    expect(body.map(props)).toEqual([['opacity', 'transform'], ['clipPath']]);
     expect(body[0]!.kf).toContain('translateX(-14px)');
     expect(on(left, 'motion-pill')).toHaveLength(0);
     await expect(win.locator('.tab-crown-fly')).toHaveCount(0);
