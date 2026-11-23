@@ -13,8 +13,13 @@ export function phoneTerminals(s: RemoteStatus | null): string[] {
   return [...new Set(connectedDevices(s).flatMap((d) => d.attached))];
 }
 
-/** The footer pill: "iPhone" for one phone, "2 iPhones" for more, and its tooltip naming them as they name themselves. */
-export function pillView(devices: RemoteDeviceInfo[]): { label: string; tip: string } | null {
+/**
+ * The footer pill: "iPhone" for one phone, "2 iPhones" for more; its tooltip naming them as Settings › iPhone does
+ * (`title`), and the name a screen reader hears, starting with what the pill shows.
+ */
+export function pillView(devices: RemoteDeviceInfo[], title: (d: RemoteDeviceInfo) => string): { label: string; tip: string; name: string } | null {
   if (devices.length === 0) return null;
-  return { label: t.iphone.pill(devices.length), tip: t.iphone.pillTip(devices.map((d) => d.name.trim() || 'iPhone')) };
+  const label = t.iphone.pill(devices.length);
+  const names = devices.map(title);
+  return { label, tip: t.iphone.pillTip(names), name: t.iphone.pillName(label, names) };
 }

@@ -10,10 +10,10 @@ import { connectedDevices, pillView } from './view';
 
 /** The footer pill while a phone is connected: a click opens Settings › iPhone; its tooltip names the phones. */
 export function IphonePill() {
-  const pill = useIphone(useShallow((x) => (x.marksReady ? pillView(connectedDevices(x.status)) : null)));
+  const pill = useIphone(useShallow((x) => (x.marksReady ? pillView(connectedDevices(x.status), x.deviceTitle) : null)));
   if (!pill) return null;
   return (
-    <button type="button" className="foot-iphone" data-tip={pill.tip} aria-label={pill.tip} onClick={() => useApp.getState().setSettingsOpen('iphone')}>
+    <button type="button" className="foot-iphone" data-tip={pill.tip} aria-label={pill.name} onClick={() => useApp.getState().setSettingsOpen('iphone')}>
       <Icon name="phone" size={11} stroke={2} /><span>{pill.label}</span><i aria-hidden="true" />
     </button>
   );

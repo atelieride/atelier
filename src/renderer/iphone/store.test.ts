@@ -60,4 +60,36 @@ test('the marks\' stylesheet comes once access is on, and only then may the mark
   expect(fresh.getState().marksReady).toBe(false);
   fresh.getState().setStatus(status({ enabled: true }));
   await expect.poll(() => fresh.getState().marksReady).toBe(true);
+  // With them, the phones' names as Settings › iPhone gives them: a phone iOS only calls "iPhone" by its model.
+  expect(fresh.getState().deviceTitle({ name: 'iPhone', model: 'iPhone17,1' })).toBe('iPhone 16 Pro');
+});
+
+// With access on, what phones do in the window comes in a chunk fetched then: what a phone did to the rows before the
+// chunk was in is applied once it is, in order.
+test('a phone\'s rows events that come before access\'s module is in are applied once it is, in order', async () => {
+  const { useApp } = await import('../store');
+  let rowsTo: ((e: unknown) => void) | null = null;
+  vi.stubGlobal('window', {
+    addEventListener: () => {},
+    atelier: {
+      remote: { status: async () => status(), layout: async () => {}, placesReady: async () => [] },
+      on: { remote: () => () => {}, remoteRows: (cb: (e: unknown) => void) => { rowsTo = cb; return () => { rowsTo = null; }; }, remotePlaces: () => () => {} }
+    }
+  });
+  const before = useApp.getState();
+  const seen: string[] = [];
+  useApp.setState({ project: { root: '/p', name: 'p', realRoot: '/p' }, popout: null, settings: { ...before.settings, remoteAccess: true }, phoneResuming: (id: string) => { seen.push(`resuming ${id}`); }, phoneResumed: (from: string, to: string | null) => { seen.push(`resumed ${from} ${to}`); } });
+  const { installIphone } = await import('./store');
+  const off = installIphone();
+  try {
+    rowsTo!({ kind: 'resuming', id: 't1' });
+    rowsTo!({ kind: 'resumed', from: 't1', to: 't2' });
+    await expect.poll(() => seen).toEqual(['resuming t1', 'resumed t1 t2']);
+    rowsTo!({ kind: 'resuming', id: 't3' });
+    expect(seen.at(-1)).toBe('resuming t3');
+  } finally {
+    off();
+    useApp.setState(before, true);
+    vi.unstubAllGlobals();
+  }
 });

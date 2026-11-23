@@ -1,11 +1,9 @@
 // iPhone access in this window: the status main pushes (Settings › iPhone, the footer pill, the phone badges, the size
 // note) and whether the pairing sheet is open. A store of its own: a phone attaching re-renders only what shows it.
 import { create } from 'zustand';
-import type { RemoteStatus } from '@shared/remote';
+import type { RemoteRowsEvent, RemoteStatus } from '@shared/remote';
 import { useApp } from '../store';
 import { phoneTerminals } from './view';
-import { installLayoutSync } from './layout-sync';
-import { installPhoneRows } from './phone-rows';
 
 interface IphoneState {
   /** null until asked: with access off, main is asked only when Settings › iPhone opens (it may touch the Keychain). */
@@ -16,6 +14,8 @@ interface IphoneState {
   pairOpen: boolean;
   /** The marks' stylesheet is in: the pill, the badges and the size note show only then (never unstyled). */
   marksReady: boolean;
+  /** A phone as Settings › iPhone calls it (its model when iOS only says "iPhone"): the footer pill's tooltip. */
+  deviceTitle(d: { name: string; model: string }): string;
   setStatus(s: RemoteStatus): void;
   setPairOpen(open: boolean): void;
 }
@@ -23,14 +23,17 @@ interface IphoneState {
 const NONE: ReadonlySet<string> = new Set();
 
 /**
- * The marks' stylesheet, fetched once access is on (a status that says so), long before a phone connects: nobody
- * without iPhone access, the live demo included, pays for it in the first paint.
+ * The marks' stylesheet and the phones' names, fetched once access is on (a status that says so), long before a phone
+ * connects: nobody without iPhone access, the live demo included, pays for them in the first paint.
  */
 let marksAsked = false;
 function loadMarks(): void {
   if (marksAsked) return;
   marksAsked = true;
-  import('./marks.css').then(() => useIphone.setState({ marksReady: true }), () => { marksAsked = false; });
+  Promise.all([import('./marks.css'), import('./device-name')]).then(
+    ([, names]) => useIphone.setState({ marksReady: true, deviceTitle: names.deviceTitle }),
+    () => { marksAsked = false; }
+  );
 }
 
 /** `prev` when it holds exactly `ids`, else a new set of them. */
@@ -46,6 +49,7 @@ export const useIphone = create<IphoneState>((set, get) => ({
   sized: NONE,
   pairOpen: false,
   marksReady: false,
+  deviceTitle: (d) => d.name.trim() || 'iPhone',
   setStatus: (status) => {
     const prev = get();
     if (status.enabled) loadMarks();
@@ -78,26 +82,30 @@ export function openPairing(): void {
 /**
  * The window's iPhone plumbing: the status as main pushes it, and asked once at start when access is on (off, main
  * isn't asked: nothing shows it until Settings › iPhone opens); with access on, the sidebar's arrangement for the phones
- * and what they change in it.
+ * and what they change in it (access-on.ts).
  */
 export function installIphone(): () => void {
   let live = true;
-  let offPlaces: (() => void) | null = null;
-  let placesAsked = false;
-  // What phones change in the workspaces and activities: its module is fetched once access is on, so nobody without
-  // iPhone access (the live demo included) pays for it in the first paint. Main holds a change until the module asks.
-  const loadPlaces = () => {
-    if (placesAsked) return;
-    placesAsked = true;
-    import('./phone-places').then((m) => { if (live) offPlaces = m.installPhonePlaces(); }, () => { placesAsked = false; });
+  let on: { rows(e: RemoteRowsEvent): void; off(): void } | null = null;
+  let asked = false;
+  // What a phone does to the rows before that module is in (a window opening as a phone acts): kept for it, in order.
+  const early: RemoteRowsEvent[] = [];
+  const offRows = window.atelier.on.remoteRows((e) => { if (on) on.rows(e); else early.push(e); });
+  // Its module is fetched once access is on, so nobody without iPhone access (the live demo included) pays for it in
+  // the first paint. Main holds a change to the places until that module asks.
+  const load = () => {
+    if (asked) return;
+    asked = true;
+    import('./access-on').then((m) => {
+      if (!live) return;
+      on = m.installAccessOn();
+      for (const e of early.splice(0)) on.rows(e);
+    }, () => { asked = false; });
   };
-  const accessOn = () => { refreshIphone(); loadPlaces(); };
+  const accessOn = () => { refreshIphone(); load(); };
   if (useApp.getState().settings.remoteAccess) accessOn();
   const offStatus = window.atelier.on.remote((s) => useIphone.getState().setStatus(s));
   // The settings arrive after the window starts: access found on then (or turned on) asks for the status once.
   const offSettings = useApp.subscribe((s, prev) => { if (s.settings.remoteAccess && !prev.settings.remoteAccess) accessOn(); });
-  // The project's sidebar arrangement, for the phones' grouping; what a phone does to the rows, followed here.
-  const offLayout = installLayoutSync();
-  const offRows = installPhoneRows();
-  return () => { live = false; offStatus(); offSettings(); offLayout(); offRows(); offPlaces?.(); };
+  return () => { live = false; offStatus(); offSettings(); offRows(); on?.off(); };
 }
