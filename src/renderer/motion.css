@@ -46,12 +46,4 @@
 :root:has(.palette-backdrop.is-cmd) :is(.header, .body, .footer) { transform: scale(.985); }
 @keyframes atl-sheet-drop { from { opacity: 0; transform: translateY(-14px) scale(.97); } to { opacity: 1; transform: none; } }
 .palette-backdrop.is-cmd > .palette { animation: atl-sheet-drop 360ms cubic-bezier(.3, 1.3, .5, 1) both; }
-.palette-backdrop.is-cmd .palette-item:nth-child(-n + 8) { animation: atl-enter var(--t-med) var(--ease) both; }
-.palette-backdrop.is-cmd .palette-item:nth-child(1) { animation-delay: 60ms; }
-.palette-backdrop.is-cmd .palette-item:nth-child(2) { animation-delay: 82ms; }
-.palette-backdrop.is-cmd .palette-item:nth-child(3) { animation-delay: 104ms; }
-.palette-backdrop.is-cmd .palette-item:nth-child(4) { animation-delay: 126ms; }
-.palette-backdrop.is-cmd .palette-item:nth-child(5) { animation-delay: 148ms; }
-.palette-backdrop.is-cmd .palette-item:nth-child(6) { animation-delay: 170ms; }
-.palette-backdrop.is-cmd .palette-item:nth-child(7) { animation-delay: 192ms; }
-.palette-backdrop.is-cmd .palette-item:nth-child(8) { animation-delay: 214ms; }
+.palette-backdrop.is-cmd .palette-item.is-enter { animation: atl-enter var(--t-med) var(--ease) both; animation-delay: calc(60ms + var(--i) * 22ms); }

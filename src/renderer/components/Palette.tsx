@@ -235,6 +235,9 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
   const [query, setQuery] = useState(() => useApp.getState().paletteQuery);
   const [files, setFiles] = useState<{ path: string; rel: string }[]>([]);
   const [active, setActive] = useState(0);
+  // The first results rise in only as the palette opens: rows that appear while typing do not fade in late.
+  const [opening, setOpening] = useState(true);
+  useEffect(() => { const id = window.setTimeout(() => setOpening(false), 450); return () => window.clearTimeout(id); }, []);
   const moved = usePointerGate();
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -870,14 +873,14 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
                 if (it.task) {
                   const { row, stale } = it.task;
                   return (
-                    <button key={it.key} type="button" className={`palette-item task-item ${idx === active ? 'is-active' : ''} ${stale ? 'is-stale' : ''}`}
+                    <button key={it.key} type="button" className={`palette-item task-item ${idx === active ? 'is-active' : ''} ${stale ? 'is-stale' : ''} ${opening && idx < 8 ? 'is-enter' : ''}`} style={{ '--i': idx } as CSSProperties}
                       onMouseMove={(e) => { if (moved(e)) setActive(idx); }} onClick={(e) => pick(it, e.altKey, isMod(e))}>
                       <TaskCells row={row} now={now} />
                     </button>
                   );
                 }
                 return (
-                  <button key={it.key} type="button" className={`palette-item ${idx === active ? 'is-active' : ''} ${it.off ? 'is-off' : ''}`}
+                  <button key={it.key} type="button" className={`palette-item ${idx === active ? 'is-active' : ''} ${it.off ? 'is-off' : ''} ${opening && idx < 8 ? 'is-enter' : ''}`} style={{ '--i': idx } as CSSProperties}
                     onMouseMove={(e) => { if (moved(e)) setActive(idx); }} onClick={(e) => pick(it, e.altKey, isMod(e) && !!it.send)}>
                     {(it.kind === 'session' || it.kind === 'resume') && <Avatar title={it.label} color={it.color ?? 'var(--violet)'} size={18} dim={it.kind === 'resume'} />}
                     {it.kind === 'file' && <FileIcon name={it.label} />}

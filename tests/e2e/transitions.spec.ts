@@ -326,12 +326,21 @@ test('The command palette opens over a receding app; other sheets leave it be', 
     await expect(win.locator('.btn-new')).toBeVisible();
     await menu(app, 'Search…');
     await expect(win.locator('.palette-backdrop.is-cmd .palette')).toBeVisible();
+    // The entrance follows the flat index: 60 ms, then 22 ms a row, for the first eight results only (read at once: it
+    // is gated to the opening).
+    const delays = await win.locator('.palette-item').evaluateAll((els) => els.map((el) => getComputedStyle(el).animationDelay));
+    expect(delays.slice(0, 8)).toEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => `${(60 + i * 22) / 1000}s`));
+    expect(delays[8]).toBe('0s');
     await win.waitForTimeout(400);
     expect(await transform(body)).toMatch(/^matrix\(0\.985,/);
     // The sheet itself is not scaled by the receding app (its own animation rests at the identity).
     expect(await transform(win.locator('.palette'))).toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);
     expect(await win.locator('.palette').evaluate((el) => getComputedStyle(el).animationName)).toBe('atl-sheet-drop');
     await look(win, 'test-results/transitions-palette-open.png');
+    // Typing after the opening: the rows it brings have no entrance.
+    await win.waitForTimeout(500);
+    await win.keyboard.type('s');
+    expect(await win.locator('.palette-item').evaluateAll((els) => els.some((el) => el.classList.contains('is-enter')))).toBe(false);
     await win.keyboard.press('Escape');
     await expect(win.locator('.palette')).toHaveCount(0);
     await win.waitForTimeout(400);
