@@ -238,7 +238,11 @@ export class PrHub {
     this.pump();
   }
 
+  /** Called after every change the windows may be sent (a paired phone's rows show the pull requests too). */
+  onChange: (() => void) | null = null;
+
   private broadcast(): void {
+    this.onChange?.();
     for (const w of this.windows.values()) {
       if (w.wc.isDestroyed()) continue;
       const payload = this.stateOf(w.project);

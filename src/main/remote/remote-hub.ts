@@ -6,22 +6,31 @@
 import type { RemoteDeviceInfo, RemotePairingEvent, RemotePairingStart, RemoteRelayState, RemoteSized, RemoteStatus } from '@shared/remote';
 import { relayBase } from '@shared/remote';
 import type { Settings } from '@shared/settings';
-import type { TerminalInfo } from '@shared/protocol';
+import type { PortsMap } from '@shared/ports';
+import type { PrEntry } from '@shared/pr';
+import type { Resumable, TerminalInfo } from '@shared/protocol';
+import type { UsageEntry } from '@shared/session';
 import type { SecretStore } from '../connectors/secret-store';
 import type { RemoteViewer } from '../terminal-hub';
 import type { Size } from '../terminal-sizes';
 import { SecureChannel, type Admission } from './channel';
 import { DeviceStore, type PairedDevice } from './devices';
 import { IdentityStore, type RemoteIdentity } from './identity';
-import { CLOSE, type ByeReason, type DeviceMessage, type HostMessage } from './messages';
+import { CLOSE, type ByeReason, type DeviceMessage, type HostMessage, type RemoteAccount } from './messages';
 import { Pairing } from './pairing';
 import { RelayLink, type RelayLinkOptions } from './relay-link';
-import { remoteState, type RemoteState } from './state';
+import { remoteState, remoteUsage, type RemoteState } from './state';
 import { MAX_APP_MESSAGE, type ChannelKind } from './wire';
 
 /** What the hub needs of TerminalHub. */
 export interface RemoteTerminals {
   allTerminals(): readonly TerminalInfo[];
+  /** The sessions offered to resume, every project's. */
+  allResumables(): readonly Resumable[];
+  /** The Claude accounts' limits, per config dir, from the status line. */
+  usageList(): readonly UsageEntry[];
+  /** Terminals launched as Claude sessions whose Claude hasn't started yet. */
+  startingIds(): ReadonlySet<string>;
   onShown(cb: () => void): () => void;
   addRemoteViewer(v: RemoteViewer): number;
   removeRemoteViewer(key: number): void;
@@ -44,15 +53,25 @@ export interface RemoteHubDeps {
   projects(): { open: string[]; recent: string[] };
   /** This computer as phones see it. */
   host: { name: string; app: string; platform: 'darwin' | 'win32' };
+  /** The default Claude account's config dir (a session's account is found by its dir). */
+  defaultDir(): string;
+  /** A project's terminals' listening ports as their rows show them (none with Show listening ports off). */
+  ports?(root: string): PortsMap;
+  /** A project's sessions' pull requests. */
+  prs?(root: string): Record<string, PrEntry>;
+  /** A path with its links resolved. */
+  realOf?(p: string): string;
   emitStatus(s: RemoteStatus): void;
   emitPairing(e: RemotePairingEvent): void;
   log?(message: string): void;
-  timing?: Partial<{ stateMs: number; outMs: number; decideMs: number; codeTtlMs: number }>;
+  timing?: Partial<{ stateMs: number; usageMs: number; outMs: number; decideMs: number; codeTtlMs: number }>;
   link?: Pick<RelayLinkOptions, 'timing' | 'budget'>;
 }
 
 /** State goes out at most this often (coalesced), only when it changed. */
 const STATE_MS = 200;
+/** Usage likewise, at most once a second. */
+const USAGE_MS = 1000;
 /** One `out` per terminal at most this often: what arrives in between is concatenated, in order. */
 const OUT_MS = 16;
 /** More output than this queued for a phone (a slow link): its channel closes, it reconnects and attaches again. */
@@ -62,6 +81,11 @@ const OUT_CHUNK = 512 * 1024;
 /** A screen larger than a message can carry loses its oldest lines. */
 const SNAPSHOT_MAX = MAX_APP_MESSAGE - 64 * 1024;
 const DEFAULT_SIZE: Size = { cols: 120, rows: 36 };
+/** While sessions are starting, the state is looked at again this often (a start that never came ends at 30 s). */
+const STARTING_RECHECK_MS = 5000;
+
+/** What a phone's state is compared by: equal, it isn't sent again. */
+const stateKey = (st: RemoteState): string => JSON.stringify([st.projects, st.sessions, st.resumables]);
 
 /** The newest lines of a screen whose message would be too large; whole lines only. */
 function fitScreen(data: string): string {
@@ -105,6 +129,7 @@ class PhoneSession implements RemoteViewer {
   private readonly sentAt = new Map<string, number>();
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private lastState = '';
+  private lastUsage = '';
   private lastSize: Size | null = null;
 
   constructor(readonly c: SecureChannel, readonly deviceId: string, private readonly host: SessionHost, private readonly terms: RemoteTerminals) {
@@ -119,7 +144,14 @@ class PhoneSession implements RemoteViewer {
   sendState(json: string, st: RemoteState): void {
     if (json === this.lastState) return;
     this.lastState = json;
-    this.send({ t: 'state', projects: st.projects, sessions: st.sessions });
+    this.send({ t: 'state', projects: st.projects, sessions: st.sessions, resumables: st.resumables });
+  }
+
+  /** The accounts' limits, after the first state; only when what the phone would show changed. */
+  sendUsage(key: string, accounts: RemoteAccount[]): void {
+    if (!this.lastState || key === this.lastUsage) return;
+    this.lastUsage = key;
+    this.send({ t: 'usage', accounts });
   }
 
   private error(rid: number, code: 'not-found' | 'invalid' | 'busy' | 'failed', message: string): void {
@@ -278,6 +310,9 @@ export class RemoteHub {
   private asking: SecureChannel | null = null;
   private stateTimer: ReturnType<typeof setTimeout> | null = null;
   private stateAt = 0;
+  private usageTimer: ReturnType<typeof setTimeout> | null = null;
+  private usageAt = 0;
+  private readonly usageMs: number;
   private statusKey = '';
   /** Whether encryption is available, asked only once remote access is on or Settings asks (it may touch the Keychain). */
   private availableKnown: boolean | null = null;
@@ -289,6 +324,7 @@ export class RemoteHub {
     this.identities = new IdentityStore(d.secrets);
     this.devices = new DeviceStore(d.home);
     this.stateMs = d.timing?.stateMs ?? STATE_MS;
+    this.usageMs = d.timing?.usageMs ?? USAGE_MS;
     this.offShown = d.terminals.onShown(() => this.scheduleState());
     this.host = {
       listed: (id) => this.d.terminals.allTerminals().some((t) => t.id === id),
@@ -301,11 +337,18 @@ export class RemoteHub {
 
   start(): void { this.apply(); }
 
-  /** Settings changed: remote access, the relay, the project colors. */
+  /** Settings changed: remote access, the relay, the project colors, the accounts, the ports shown. */
   settingsChanged(): void {
     this.apply();
     this.scheduleState();
+    this.scheduleUsage();
   }
+
+  /** Something a row shows that TerminalHub doesn't know changed: a port, a pull request. */
+  stateChanged(): void { this.scheduleState(); }
+
+  /** The status line reported the accounts' limits again. */
+  usageChanged(): void { this.scheduleUsage(); }
 
   /** A project window opened or closed, or the recent projects changed. */
   projectsChanged(): void { this.scheduleState(); }
@@ -377,6 +420,8 @@ export class RemoteHub {
   async dispose(): Promise<void> {
     this.offShown();
     if (this.stateTimer) { clearTimeout(this.stateTimer); this.stateTimer = null; }
+    if (this.usageTimer) { clearTimeout(this.usageTimer); this.usageTimer = null; }
+    if (this.startingTimer) { clearTimeout(this.startingTimer); this.startingTimer = null; }
     await this.shutDown('quitting', { flushMs: 500 });
   }
 
@@ -429,7 +474,9 @@ export class RemoteHub {
     this.sessions.set(c.ch, s);
     s.send({ t: 'welcome', host: { name: this.d.host.name, platform: this.d.host.platform }, ...(c.kind === 'pair' ? { room: this.identity.roomId } : {}) });
     const st = this.computeState();
-    s.sendState(JSON.stringify([st.projects, st.sessions]), st);
+    s.sendState(stateKey(st), st);
+    const u = this.computeUsage();
+    s.sendUsage(u.key, u.accounts);
     this.devices.seen(deviceId);
     this.statusChanged();
   }
@@ -452,7 +499,26 @@ export class RemoteHub {
   private computeState(): RemoteState {
     const s = this.d.settings();
     const p = this.d.projects();
-    return remoteState({ terminals: this.d.terminals.allTerminals(), open: p.open, recent: p.recent, colors: s });
+    const terminals = this.d.terminals.allTerminals();
+    const starting = this.d.terminals.startingIds();
+    this.armStarting(starting);
+    // Each project's ports and pull requests, asked once per state.
+    const ports = new Map<string, PortsMap>();
+    const prs = new Map<string, Record<string, PrEntry>>();
+    const rootOf = new Map(terminals.map((t) => [t.id, t.projectRoot]));
+    const of = <T>(cache: Map<string, T>, get: ((root: string) => T) | undefined, id: string): T | undefined => {
+      const root = rootOf.get(id);
+      if (!get || root === undefined) return undefined;
+      if (!cache.has(root)) cache.set(root, get(root));
+      return cache.get(root);
+    };
+    return remoteState({
+      terminals, open: p.open, recent: p.recent, colors: s, now: Date.now(), starting,
+      resumables: this.d.terminals.allResumables(), accounts: s.claudeAccounts, defaultDir: this.d.defaultDir(),
+      ports: (id) => of(ports, this.d.ports, id)?.[id],
+      pr: (id) => of(prs, this.d.prs, id)?.[id],
+      ...(this.d.realOf ? { realOf: this.d.realOf } : {})
+    });
   }
 
   private scheduleState(): void {
@@ -462,10 +528,41 @@ export class RemoteHub {
       this.stateTimer = null;
       this.stateAt = Date.now();
       const st = this.computeState();
-      const json = JSON.stringify([st.projects, st.sessions]);
+      const json = stateKey(st);
       for (const s of this.sessions.values()) s.sendState(json, st);
     }, wait);
     this.stateTimer.unref?.();
+  }
+
+  /** A session still starting reads as one for 30 s at most: the state goes again when that runs out. */
+  private startingTimer: ReturnType<typeof setTimeout> | null = null;
+  private startingKey = '';
+  private armStarting(ids: ReadonlySet<string>): void {
+    const key = [...ids].sort().join(',');
+    if (key === this.startingKey) return;
+    this.startingKey = key;
+    if (this.startingTimer) { clearTimeout(this.startingTimer); this.startingTimer = null; }
+    if (ids.size === 0) return;
+    this.startingTimer = setTimeout(() => { this.startingTimer = null; this.startingKey = ''; this.scheduleState(); }, STARTING_RECHECK_MS);
+    this.startingTimer.unref?.();
+  }
+
+  private computeUsage(): { key: string; accounts: RemoteAccount[] } {
+    const accounts = remoteUsage({ usage: this.d.terminals.usageList(), accounts: this.d.settings().claudeAccounts, defaultDir: this.d.defaultDir(), now: Date.now() });
+    // updatedAt alone moving changes nothing a phone shows.
+    return { key: JSON.stringify(accounts.map(({ updatedAt: _u, ...rest }) => rest)), accounts };
+  }
+
+  private scheduleUsage(): void {
+    if (this.sessions.size === 0 || this.usageTimer) return;
+    const wait = Math.max(0, this.usageAt + this.usageMs - Date.now());
+    this.usageTimer = setTimeout(() => {
+      this.usageTimer = null;
+      this.usageAt = Date.now();
+      const u = this.computeUsage();
+      for (const s of this.sessions.values()) s.sendUsage(u.key, u.accounts);
+    }, wait);
+    this.usageTimer.unref?.();
   }
 
   // ── What the windows get ──

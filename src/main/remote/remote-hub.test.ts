@@ -2,7 +2,9 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { TerminalInfo } from '@shared/protocol';
+import type { Resumable, TerminalInfo } from '@shared/protocol';
+import type { UsageEntry } from '@shared/session';
+import type { PortsMap } from '@shared/ports';
 import type { RemotePairingEvent, RemoteSized, RemoteStatus } from '@shared/remote';
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings';
 import { FakePhone, type Msg } from '../../../tests/support/fake-phone';
@@ -28,7 +30,13 @@ class FakeTerminals implements RemoteTerminals {
   resizes: [string, number, number][] = [];
   created: { project: string; kind: string; cols: number; rows: number }[] = [];
   sized: RemoteSized[] = [];
+  resumables: Resumable[] = [];
+  usage: UsageEntry[] = [];
+  starting = new Set<string>();
   allTerminals() { return this.list; }
+  allResumables() { return this.resumables; }
+  usageList() { return this.usage; }
+  startingIds() { return this.starting; }
   onShown(cb: () => void) { this.shown.add(cb); return () => { this.shown.delete(cb); }; }
   set(list: TerminalInfo[]) { this.list = list; for (const cb of this.shown) cb(); }
   addRemoteViewer(v: RemoteViewer) { const k = this.next--; this.viewers.set(k, v); this.watching.set(k, new Set()); return k; }
@@ -85,7 +93,7 @@ async function until(check: () => boolean, ms = 4000): Promise<void> {
   }
 }
 
-function setup(o: { settings?: Partial<Settings>; safe?: Parameters<typeof testSafeStorage>[0]; timing?: RemoteHubDeps['timing']; link?: RemoteHubDeps['link']; home?: string } = {}) {
+function setup(o: { settings?: Partial<Settings>; safe?: Parameters<typeof testSafeStorage>[0]; timing?: RemoteHubDeps['timing']; link?: RemoteHubDeps['link']; home?: string; deps?: Partial<RemoteHubDeps> } = {}) {
   const home = o.home ?? mkdtempSync(join(tmpdir(), 'atl-remote-hub-'));
   let settings: Settings = { ...DEFAULT_SETTINGS, remoteAccess: true, remoteRelay: relay.url, projectColors: { '/work/app': 4 }, ...o.settings };
   const terms = new FakeTerminals();
@@ -97,7 +105,8 @@ function setup(o: { settings?: Partial<Settings>; safe?: Parameters<typeof testS
     home, secrets: createSecretStore(home, testSafeStorage(o.safe)), settings: () => settings, relayUrl: () => settings.remoteRelay,
     terminals: terms, projects: () => projects, host: { name: 'Studio Mac', app: '0.3.0', platform: 'darwin' },
     emitStatus: (s) => statuses.push(s), emitPairing: (e) => pairing.push(e),
-    timing: { stateMs: 30, ...o.timing }, ...(o.link ? { link: o.link } : {})
+    defaultDir: () => '/home/.claude',
+    timing: { stateMs: 30, usageMs: 30, ...o.timing }, ...(o.link ? { link: o.link } : {}), ...o.deps
   });
   hubs.push(hub);
   const phone = (opts: Partial<ConstructorParameters<typeof FakePhone>[0]> = {}) => { const p = new FakePhone({ relay: relay.url, ...opts }); phones.push(p); return p; };
@@ -410,4 +419,60 @@ test('the computer\'s name and app version reach the phone in the handshake', as
   const phone = t.phone();
   void phone.pairByCode(start.pairing.code).catch(() => {});
   await vi.waitFor(() => expect((phone as unknown as { channel: { hostHello: unknown } | null }).channel?.hostHello).toEqual({ v: 1, name: 'Studio Mac', app: '0.3.0', platform: 'darwin' }));
+});
+
+describe('what the sidebar shows (v1.1)', () => {
+  const resetsAt = Math.floor(Date.now() / 1000) + 3600;
+  const usage = (pct: number): UsageEntry => ({ configDir: '/home/.claude', usage: { fiveHour: { pct, resetsAt }, sevenDay: null, updatedAt: Date.now() } });
+
+  test('state: every row\'s details and the resumables; usage after it, then again when it changes, never the same twice', async () => {
+    const t = setup({ settings: { claudeAccounts: { list: [{ id: 'default', name: 'Claude', dir: '', color: 2 }, { id: 'work', name: 'Work', dir: '/acc/work', color: 5 }], newSession: 'default', dismissed: [] } } });
+    t.terms.resumables = [{ id: 'r1', projectRoot: '/work/app', cwd: '/work/app', title: 'Old run', color: '#F28FAD', sessionId: 's-r1', endedAt: 5, configDir: '/acc/work' }];
+    t.terms.usage = [usage(42)];
+    const { phone } = await paired(t);
+    const state = await phone.state();
+    expect(state.resumables).toEqual([{ id: 'r1', project: projectIdOf('/work/app'), title: 'Old run', color: '#F28FAD', endedAt: 5, account: 'work' }]);
+    expect((state.sessions as Msg[]).find((x) => x.id === 't2')).toMatchObject({ section: 'needs', detail: 'Needs permission' });
+    const first = await phone.waitFor((m) => m.t === 'usage');
+    expect(phone.messages.indexOf(first)).toBeGreaterThan(phone.messages.indexOf(state));
+    expect(first.accounts).toEqual([
+      { id: 'default', name: 'Claude', color: 2, default: true, fiveHour: { pct: 42, resetsAt: expect.any(Number) }, updatedAt: expect.any(Number) },
+      { id: 'work', name: 'Work', color: 5, default: false }
+    ]);
+    // The same numbers (only updatedAt moved): nothing new; another percentage: a new usage.
+    const count = () => phone.messages.filter((m) => m.t === 'usage').length;
+    t.terms.usage = [{ ...usage(42), usage: { ...usage(42).usage, updatedAt: Date.now() + 5 } }];
+    t.hub.usageChanged();
+    await new Promise((r) => setTimeout(r, 120));
+    expect(count()).toBe(1);
+    t.terms.usage = [usage(57)];
+    t.hub.usageChanged();
+    const next = await phone.waitFor((m) => m.t === 'usage' && (m.accounts as Msg[])[0]!.fiveHour !== undefined && ((m.accounts as Msg[])[0]!.fiveHour as Msg).pct === 57);
+    expect(next).toBeTruthy();
+    // A resumable dismissed elsewhere: the state goes again.
+    t.terms.resumables = [];
+    t.terms.set(t.terms.list);
+    await phone.state((s) => (s.resumables as Msg[]).length === 0);
+  });
+
+  test('a terminal launched as a Claude session reads as one while it starts', async () => {
+    const t = setup();
+    t.terms.list = [...t.terms.list, term('n1', '/work/app', { createdAt: 9 })];
+    t.terms.starting = new Set(['n1']);
+    const { phone } = await paired(t);
+    const state = await phone.state((s) => (s.sessions as Msg[]).some((x) => x.id === 'n1'));
+    expect((state.sessions as Msg[]).find((x) => x.id === 'n1')).toMatchObject({ claude: true, starting: true, detail: 'Starting…' });
+  });
+
+  test('ports and pull requests come from their hubs, by project', async () => {
+    const t = setup({
+      deps: {
+        ports: (root): PortsMap => (root === '/work/app' ? { t1: [{ port: 3000, name: 'node' }] } : {}),
+        prs: () => ({})
+      }
+    });
+    const { phone } = await paired(t);
+    const state = await phone.state();
+    expect((state.sessions as Msg[]).find((x) => x.id === 't1')!.ports).toEqual([{ port: 3000, name: 'node' }]);
+  });
 });

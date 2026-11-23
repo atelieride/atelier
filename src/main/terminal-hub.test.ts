@@ -1124,3 +1124,37 @@ describe('onShown: every change of the list windows get', () => {
     expect(calls).toBe(3);
   });
 });
+
+describe('what a paired phone lists besides the terminals', () => {
+  test('a terminal launched as a Claude session is starting until its session arrives, 30 s at most', async () => {
+    const { mkdtempSync, realpathSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-hub-starting-')));
+    const { hub, client } = setup();
+    client.request.mockResolvedValueOnce(term('c1', root) as never);
+    await hub.createRemoteSession({ project: root, kind: 'claude', cols: 80, rows: 24 });
+    client.request.mockResolvedValueOnce({ ...term('p1', root), foreground: 'zsh' } as never);
+    await hub.createRemoteSession({ project: root, kind: 'terminal', cols: 80, rows: 24 });
+    const now = Date.now();
+    expect([...hub.startingIds(now)]).toEqual(['c1']);
+    expect([...hub.startingIds(now + 30_000)]).toEqual([]);
+    client.request.mockResolvedValueOnce(term('c2', root) as never);
+    await hub.createRemoteSession({ project: root, kind: 'claude', cols: 80, rows: 24 });
+    client.emit('terminals', [{ ...term('c2', root), session: { sessionId: 's', state: 'idle', title: null, activity: null, contextPct: null, unread: false, updatedAt: 0 } }]);
+    expect([...hub.startingIds()]).toEqual([]);
+  });
+
+  test('resumables and usage as atelierd last sent them; a new resumables list is a change phones see', () => {
+    const { hub, client } = setup();
+    let calls = 0;
+    hub.onShown(() => { calls++; });
+    const r = { id: 'r1', projectRoot: '/p', cwd: '/p', title: 'R', color: '#fff', sessionId: 's1', endedAt: 1 };
+    client.emit('resumables', [r]);
+    expect(hub.allResumables()).toEqual([r]);
+    expect(calls).toBe(1);
+    const u = [{ configDir: '/c', usage: { fiveHour: null, sevenDay: null, updatedAt: 1 } }];
+    client.emit('usageByConfigDir', u);
+    expect(hub.usageList()).toEqual(u);
+  });
+});

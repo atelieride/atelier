@@ -79,6 +79,8 @@ const inProject = (t: TerminalInfo, root: string) => t.projectRoot === root;
 /** `p` under a `…/` prefix (projectPrefix): `p.startsWith(prefix)` on macOS; any case and separator on Windows. */
 export const underPrefix = (prefix: string, p: string) => isBelow(trimOneSep(prefix), p);
 const isDir = (p: string) => { try { return statSync(p).isDirectory(); } catch { return false; } };
+/** A terminal launched as a Claude session without a session this long after: Claude didn't start (the renderer's own window). */
+const STARTING_MS = 30_000;
 
 export class TerminalHub {
   private windows = new Map<number, WindowEntry>();
@@ -132,6 +134,8 @@ export class TerminalHub {
   /** Conversations from Claude's history resumed here (sessionId → terminal), hidden before Claude reports them. */
   private resumed = new Map<string, string>();
   private resuming = new Set<string>();
+  /** Terminals launched as Claude sessions, still waiting for Claude to start: terminal id → when (startingIds). */
+  private readonly launching = new Map<string, number>();
   /** New MCP servers: each live session's baseline, and the poll while sessions are open. */
   private mcp = new McpWatch({
     pairOf: (t) => this.mcpPair(t),
@@ -278,6 +282,8 @@ export class TerminalHub {
       for (const w of this.windows.values()) this.emit(w, IPC.evResumables, list.filter((r) => r.projectRoot === w.project));
       this.keptKnown.resumables = true;
       this.keptChanged();
+      // A paired phone lists them too.
+      this.shownChanged();
     });
     client.on('usageByConfigDir', (list: UsageEntry[]) => {
       this.usage = list;
@@ -553,7 +559,7 @@ export class TerminalHub {
       // Known at once, like create: the window shows it from the reply and attaches before atelierd's next list.
       // A terminal moved to another project's window: the new one keeps its home.
       const info = await this.client.request<TerminalInfo>(() => ({ t: 'resume', id: o.id, cols: o.cols, rows: o.rows, ...this.sessionProfile(), ...dir() }));
-      return this.created(this.onResumed(o.id, info));
+      return this.launched(this.created(this.onResumed(o.id, info)));
     });
     // Claude Code's own history of the project: listed and resumed only as the main process reads it.
     handle(IPC.claudeHistory, (w) => this.history.list(this.historyQuery(w)));
@@ -591,7 +597,7 @@ export class TerminalHub {
         const title = historyResumeTitle(c.title, this.client.hasCapability('names'));
         // Its new session starts with the conversation's last message time, for an atelierd that keeps it.
         const last = this.client.hasCapability('lastmessage') ? { lastMessageAt: c.at } : {};
-        const info = this.created(await this.client.request<TerminalInfo>(() => ({ t: 'create', projectRoot: w.project, cwd, cols: o.cols, rows: o.rows, ...title, command, ...last, ...this.sessionProfile() })));
+        const info = this.launched(this.created(await this.client.request<TerminalInfo>(() => ({ t: 'create', projectRoot: w.project, cwd, cols: o.cols, rows: o.rows, ...title, command, ...last, ...this.sessionProfile() }))));
         this.resumed.set(c.sessionId, info.id);
         return info;
       } finally {
@@ -627,7 +633,7 @@ export class TerminalHub {
       // The account's dir, resolved here from its id; the default account starts as before.
       const command = sessionCommand(this.settings(), defaultConfigDirNow(), o.account, o.name, { noFlags: o.noFlags });
       await this.freshEnv(w, sessionProfile(this.settings().terminalProfile, this.profilesAvailable()));
-      return this.created(await this.client.request<TerminalInfo>(() => ({ t: 'create', projectRoot: w.project, cwd, cols: o.cols, rows: o.rows, name: o.name, command, ...this.sessionProfile() })));
+      return this.launched(this.created(await this.client.request<TerminalInfo>(() => ({ t: 'create', projectRoot: w.project, cwd, cols: o.cols, rows: o.rows, name: o.name, command, ...this.sessionProfile() }))));
     });
     handle(IPC.termRename, async (w, _wcId, arg) => {
       const o = termRenameSchema.parse(arg);
@@ -776,6 +782,34 @@ export class TerminalHub {
   /** Every project's terminals. */
   allTerminals(): readonly TerminalInfo[] {
     return this.terminals;
+  }
+
+  /** Every project's sessions offered to resume, as atelierd last listed them. */
+  allResumables(): readonly Resumable[] {
+    return this.resumables;
+  }
+
+  /** The Claude accounts' limits per config dir, as the status line last reported them. */
+  usageList(): readonly UsageEntry[] {
+    return this.usage;
+  }
+
+  /**
+   * Terminals launched as Claude sessions (New Session, Resume, a conversation from the history, a phone's new
+   * session) whose Claude hasn't reported its session yet: they read as sessions already, for STARTING_MS at most.
+   */
+  startingIds(now = Date.now()): ReadonlySet<string> {
+    for (const [id, at] of this.launching) {
+      const t = this.terminals.find((x) => x.id === id);
+      if (t?.session || now - at >= STARTING_MS) this.launching.delete(id);
+    }
+    return new Set(this.launching.keys());
+  }
+
+  /** A terminal just launched as a Claude session: starting until its session arrives. */
+  private launched(info: TerminalInfo): TerminalInfo {
+    if (!info.session) this.launching.set(info.id, Date.now());
+    return info;
   }
 
   /** atelierd's first list is in (before it, an empty list means nothing). */
@@ -1101,7 +1135,7 @@ export class TerminalHub {
     if (o.kind === 'claude') {
       const command = sessionCommand(s, defaultConfigDirNow(), undefined, undefined);
       await this.freshEnvQuietly(sessionProfile(s.terminalProfile, this.profilesAvailable()));
-      return at(await this.client.request<TerminalInfo>(() => ({ t: 'create', projectRoot: o.project, cwd, cols: o.cols, rows: o.rows, command, ...this.sessionProfile() })));
+      return this.launched(at(await this.client.request<TerminalInfo>(() => ({ t: 'create', projectRoot: o.project, cwd, cols: o.cols, rows: o.rows, command, ...this.sessionProfile() }))));
     }
     const shells = () => this.shells().map((x) => x.path);
     let likely: TerminalProfile | undefined;

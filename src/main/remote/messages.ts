@@ -33,6 +33,7 @@ export const deviceMessageSchema = z.discriminatedUnion('t', [
 export type DeviceMessage = z.infer<typeof deviceMessageSchema>;
 
 export interface RemoteProject { id: string; name: string; color: number | null; open: boolean }
+/** A row of a project's sidebar as a phone draws it: what Atelier shows of it, by names and ids, never paths. */
 export interface RemoteSession {
   id: string;
   project: string;
@@ -41,6 +42,39 @@ export interface RemoteSession {
   state: 'idle' | 'running' | 'waiting' | 'done' | 'error';
   waitingFor?: 'permission' | 'question';
   createdAt: number;
+  /** The group the sidebar puts it in when grouping by state. */
+  section: 'needs' | 'review' | 'working' | 'idle';
+  /** Its own color, #RRGGBB. */
+  color: string;
+  starting?: true;
+  unread?: true;
+  /** The line under its name in the sidebar (≤ 120 characters). */
+  detail?: string;
+  /** While waiting for a permission: what for (≤ 60 characters). */
+  permission?: string;
+  /** While waiting: a key of this very wait (an `answer` names it). */
+  wait?: string;
+  lastMessageAt?: number;
+  model?: string;
+  contextPct?: number;
+  mode?: 'plan' | 'bypass';
+  agents?: number;
+  /** An account's id (as `usage` lists it), only when not the default one. */
+  account?: string;
+  /** The folder or worktree it runs in when not the project's root: a name, never a path. */
+  folder?: string;
+  /** A plain terminal's foreground program, by name only. */
+  command?: string;
+  ports?: { port: number; name?: string }[];
+  pr?: { number: number; title: string; state: 'open' | 'draft' | 'merged' | 'closed'; checks?: 'pass' | 'fail' | 'pending' };
+  cost?: { usd: number; added: number; removed: number };
+}
+/** A session Atelier offers to resume. */
+export interface RemoteResumable { id: string; project: string; title: string; color: string; endedAt: number; lastMessageAt?: number; account?: string }
+/** A Claude account with its limits when known (a window whose reset has passed is left out): names and colors only. */
+export interface RemoteAccount {
+  id: string; name: string; color: number | null; default: boolean;
+  fiveHour?: { pct: number; resetsAt: number }; sevenDay?: { pct: number; resetsAt: number }; updatedAt?: number;
 }
 
 export type ErrorCode = 'not-found' | 'invalid' | 'busy' | 'failed';
@@ -50,7 +84,8 @@ export type ByeReason = 'revoked' | 'disabled' | 'quitting';
 export type HostMessage =
   | { t: 'welcome'; host: { name: string; platform: string }; room?: string }
   | { t: 'denied'; reason: DeniedReason }
-  | { t: 'state'; projects: RemoteProject[]; sessions: RemoteSession[] }
+  | { t: 'state'; projects: RemoteProject[]; sessions: RemoteSession[]; resumables: RemoteResumable[] }
+  | { t: 'usage'; accounts: RemoteAccount[] }
   | { t: 'snapshot'; id: string; cols: number; rows: number; data: string }
   | { t: 'out'; id: string; data: string }
   | { t: 'size'; id: string; cols: number; rows: number }

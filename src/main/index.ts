@@ -350,7 +350,8 @@ if (!app.requestSingleInstanceLock()) {
     // Tests only: a server that starts later is found within this many ms instead of 30 s.
     ...(Number(devEnv('ATELIER_TEST_REDIS_PROBE_MS')) > 0 ? { timing: { probeMs: Number(devEnv('ATELIER_TEST_REDIS_PROBE_MS')), tickMs: 250 } } : {})
   });
-  portsHub.onChange = () => redisHub.sourcesChanged();
+  // The Redis view's servers started in a terminal; a paired phone's rows show the ports too.
+  portsHub.onChange = () => { redisHub.sourcesChanged(); remote?.stateChanged(); };
   app.on('browser-window-focus', () => redisHub.onFocus());
   app.on('will-quit', () => redisHub.dispose());
   // Databases view: saved connections, added by hand (nothing is looked for),
@@ -387,6 +388,8 @@ if (!app.requestSingleInstanceLock()) {
     ...(prInterval > 0 ? { intervals: { tick: prInterval, focus: prInterval, poll: prInterval, pending: prInterval, rest: prInterval } } : {})
   });
   client.on('terminals', (list: TerminalInfo[]) => prHub.setTerminals(list));
+  // A paired phone's rows show the pull requests too.
+  prHub.onChange = () => remote?.stateChanged();
   client.on('status', (s: string) => { if (s !== 'connected') prHub.setTerminals([]); });
   app.on('browser-window-focus', () => prHub.refresh());
   hub.onTouched = (path) => gitHub.touched(path);
@@ -524,8 +527,9 @@ if (!app.requestSingleInstanceLock()) {
     if (s.countBackgroundWork !== prevSettings.countBackgroundWork) hub.workSettingsChanged();
     if (s.claudeMcpNotice !== prevSettings.claudeMcpNotice) hub.mcpSettingsChanged();
     if (s.prStatus !== prevSettings.prStatus) prHub.settingsChanged();
-    // iPhone access: on/off and the relay; project colors change what the phones show.
-    if (s.remoteAccess !== prevSettings.remoteAccess || s.remoteRelay !== prevSettings.remoteRelay || s.projectTint !== prevSettings.projectTint || s.projectColors !== prevSettings.projectColors) remote?.settingsChanged();
+    // iPhone access: on/off and the relay; project colors, accounts, ports and background work change what phones show.
+    if (s.remoteAccess !== prevSettings.remoteAccess || s.remoteRelay !== prevSettings.remoteRelay || s.projectTint !== prevSettings.projectTint || s.projectColors !== prevSettings.projectColors
+      || s.claudeAccounts !== prevSettings.claudeAccounts || s.showPorts !== prevSettings.showPorts || s.showEphemeralPorts !== prevSettings.showEphemeralPorts) remote?.settingsChanged();
     if (s.autoFetch !== prevSettings.autoFetch) scmHub.fetchSettingsChanged();
     if (s.repoSearchDepth !== prevSettings.repoSearchDepth) gitHub.settingsChanged();
     if (s.showServices !== prevSettings.showServices) servicesHub.settingsChanged();
@@ -1420,6 +1424,17 @@ if (!app.requestSingleInstanceLock()) {
     // the secret store (the e2e stand-in with ATELIER_TEST_FAKE_SAFE_STORAGE); ATELIER_TEST_RELAY_URL stands in for the
     // default relay (a relay typed in Settings › iPhone is dialed as it is). Tests shorten the Allow wait and the code's life.
     const pairDecideMs = testMs('ATELIER_TEST_REMOTE_DECIDE_MS');
+    // A row's folder is named only when it isn't the project root under another name: real paths, a few hundred kept.
+    const realPaths = new Map<string, string>();
+    const remoteRealOf = (p: string): string => {
+      let r = realPaths.get(p);
+      if (r === undefined) {
+        try { r = toOut(realpathSync(p)); } catch { r = p; }
+        if (realPaths.size > 500) realPaths.clear();
+        realPaths.set(p, r);
+      }
+      return r;
+    };
     const pairCodeMs = testMs('ATELIER_TEST_REMOTE_CODE_MS');
     remote = new RemoteHub({
       home: paths.home,
@@ -1431,11 +1446,17 @@ if (!app.requestSingleInstanceLock()) {
       projects: () => ({ open: openProjectRoots(windowsView), recent: recentForWelcome(uiState, isDir) }),
       // The name phones show: the host name without its local-network suffix.
       host: { name: hostname().replace(/\.local$/i, ''), app: app.getVersion(), platform: currentPlatform() === 'win32' ? 'win32' : 'darwin' },
+      defaultDir: () => defaultConfigDirNow(),
+      // What a phone's rows show besides the terminals: their ports (with Show listening ports on) and pull requests.
+      ports: (root) => (settings.get().showPorts ? portsHub.portsOf(root) : {}),
+      prs: (root) => prHub.stateOf(root).terminals,
+      realOf: remoteRealOf,
       emitStatus: (st) => { for (const b of BrowserWindow.getAllWindows()) sendTo(b, IPC.evRemote, st); },
       emitPairing: (ev) => { for (const b of BrowserWindow.getAllWindows()) sendTo(b, IPC.evRemotePairing, ev); },
       log: (message) => { appLog.write({ source: 'main:remote', message }); }
     });
     hub.onRemoteSized = () => remote?.statusChanged();
+    client.on('usageByConfigDir', () => remote?.usageChanged());
     installRemoteIpc(remote, { isTrusted: trusted, handle: (channel, fn) => ipcMain.handle(channel, fn) });
     remote.start();
     // Quitting: every phone is told (`bye`), then the relay connection closes; the quit goes on right after.
