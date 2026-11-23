@@ -1172,6 +1172,32 @@ describe('what a paired phone lists besides the terminals', () => {
     expect([...hub.startingIds()]).toEqual([]);
   });
 
+  test('the starting sessions are forgotten once they stop mattering, with nobody asking for them (no phone)', async () => {
+    const { mkdtempSync, realpathSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-hub-starting-')));
+    const { hub, client } = setup();
+    const launching = () => [...(hub as unknown as { launching: Map<string, number> }).launching.keys()];
+    const session = { sessionId: 's', state: 'idle', title: null, activity: null, contextPct: null, unread: false, updatedAt: 0 };
+    for (const id of ['c1', 'c2', 'c3']) {
+      client.request.mockResolvedValueOnce(term(id, root) as never);
+      await hub.createRemoteSession({ project: root, kind: 'claude', cols: 80, rows: 24 });
+    }
+    expect(launching()).toEqual(['c1', 'c2', 'c3']);
+    // c1's Claude started; c2's terminal ended.
+    client.emit('terminals', [{ ...term('c1', root), session }, term('c2', root), term('c3', root)]);
+    client.emit('exit', 'c2');
+    expect(launching()).toEqual(['c3']);
+    // c3's Claude never started: past the 30 s a start may take, the next list forgets it.
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 30_000);
+    try {
+      client.emit('terminals', [{ ...term('c1', root), session }, term('c3', root)]);
+    } finally { clock.mockRestore(); }
+    expect(launching()).toEqual([]);
+  });
+
   test('resumables and usage as atelierd last sent them; a new resumables list is a change phones see', () => {
     const { hub, client } = setup();
     let calls = 0;

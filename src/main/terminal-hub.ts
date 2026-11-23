@@ -253,6 +253,7 @@ export class TerminalHub {
       this.artifactHub?.terminals(this.raw);
       void this.mcpList();
       this.publish(true);
+      this.pruneLaunching(Date.now());
       this.listedOnce = true;
       this.keptKnown.terminals = true;
       this.keptChanged();
@@ -269,6 +270,7 @@ export class TerminalHub {
     });
     client.on('exit', (id: string) => {
       this.osc7?.forget(id);
+      this.launching.delete(id);
       const remotes = this.attachments.watchers(id).filter(isRemote);
       this.attachments.forgetTerminal(id);
       const sized = this.sizes.owner(id);
@@ -798,11 +800,16 @@ export class TerminalHub {
    * session) whose Claude hasn't reported its session yet: they read as sessions already, for STARTING_MS at most.
    */
   startingIds(now = Date.now()): ReadonlySet<string> {
+    this.pruneLaunching(now);
+    return new Set(this.launching.keys());
+  }
+
+  /** The launches that stopped mattering go: Claude started, or never did in time. Run on every list from atelierd. */
+  private pruneLaunching(now: number): void {
     for (const [id, at] of this.launching) {
       const t = this.terminals.find((x) => x.id === id);
       if (t?.session || now - at >= STARTING_MS) this.launching.delete(id);
     }
-    return new Set(this.launching.keys());
   }
 
   /** A terminal just launched as a Claude session: starting until its session arrives. */
