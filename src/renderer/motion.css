@@ -47,3 +47,11 @@
 @keyframes atl-sheet-drop { from { opacity: 0; transform: translateY(-14px) scale(.97); } to { opacity: 1; transform: none; } }
 .palette-backdrop.is-cmd > .palette { animation: atl-sheet-drop 360ms cubic-bezier(.3, 1.3, .5, 1) both; }
 .palette-backdrop.is-cmd .palette-item.is-enter { animation: atl-enter var(--t-med) var(--ease) both; animation-delay: calc(60ms + var(--i) * 22ms); }
+
+/* A pane split off (transitions.ts): the divider it was split off on draws its line along the gap from the middle, a
+   plain neutral hairline while it draws (never the brand line of a hover or a drag), then fades into the gap's own
+   line. Only the line's pseudo-element moves; the class goes when it ends. Under the pane's content on its way in, its
+   own background fills its cell (the body behind is the colour of the lines between panes): first in the body, under
+   all the pane shows, taking no pointer, removed once the content rests. */
+.pane-divider.is-drawing::after { background: var(--text-4); transition: none; }
+.pane-under { position: absolute; inset: 0; background: var(--bg-2); pointer-events: none; }

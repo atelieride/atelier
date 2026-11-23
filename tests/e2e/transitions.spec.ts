@@ -8,6 +8,7 @@ import { look } from './shots';
 // In-app transitions. A session picked in the sidebar: the selection glides from its row to the new one, the tab crown
 // follows it, and the workspace rises in. A tab picked: its crown stretches over to it, then catches up, and the content
 // slides in from the side it is on. A new session: a spark arcs from the + to its row and its terminal opens from there.
+// A split: the layout is there at once, the new pane's content springs in past its place and settles, its line draws.
 // They never hold a click (one mid-move goes where it lands), leave nothing once they end, and Reduce motion plays none.
 
 type Played = { on: string; kf: string };
@@ -19,14 +20,17 @@ async function launch(): Promise<{ app: ElectronApplication; home: string; win: 
   const win = await app.firstWindow();
   await win.waitForLoadState('domcontentloaded');
   // Every script animation the page starts from now on: the class of what it moves and its keyframes (CSS animations
-  // don't come through here, only the transitions' own).
+  // don't come through here, only the transitions' own). While `hold` is on, each one is held at its start.
   await win.evaluate(() => {
-    const w = window as unknown as { played: Played[] };
+    const w = window as unknown as { played: Played[]; hold: boolean };
     w.played = [];
+    w.hold = false;
     const animate = Element.prototype.animate;
     Element.prototype.animate = function (this: Element, kf: Keyframe[] | PropertyIndexedKeyframes | null, o?: number | KeyframeAnimationOptions) {
       w.played.push({ on: this.getAttribute('class') ?? '', kf: JSON.stringify(kf) });
-      return animate.call(this, kf, o);
+      const anim = animate.call(this, kf, o);
+      if (w.hold) anim.pause();
+      return anim;
     };
   });
   return { app, home, win };
@@ -74,7 +78,7 @@ const freeze = (win: Page, selector: string, ms: number) => win.evaluate(([sel, 
   return el ? { top: getComputedStyle(el).top, count: anims.length, box: el.getBoundingClientRect().toJSON() as DOMRect } : null;
 }, [selector, ms] as const);
 /** Whether one of a transition's own elements is what the pointer would hit at (x, y). */
-const hits = (win: Page, x: number, y: number) => win.evaluate(([px, py]) => !!document.elementFromPoint(px!, py!)?.closest('.motion-lane, .motion-pill, .tab-crown-fly, .motion-fx, .motion-spark, .motion-ring'), [x, y]);
+const hits = (win: Page, x: number, y: number) => win.evaluate(([px, py]) => !!document.elementFromPoint(px!, py!)?.closest('.motion-lane, .motion-pill, .tab-crown-fly, .motion-fx, .motion-spark, .motion-ring, .pane-under'), [x, y]);
 /**
  * Resolves once a new session's spark is on the page (null: none came), every script animation then held where it is
  * (just started), so the test can look at any moment of it. Read in that same task, before anything else can move
@@ -98,6 +102,59 @@ const catchSpark = (win: Page, name: string) => win.evaluate((title) => new Prom
 }), name);
 const centre = (b: { x: number; y: number; width: number; height: number }) => [b.x + b.width / 2, b.y + b.height / 2] as const;
 const resume = (win: Page) => win.evaluate(() => { for (const a of document.getAnimations()) if (a.playState === 'paused') a.play(); });
+/** Holds every script animation the page starts from now on at its start (on), or lets the next ones play (off). */
+const hold = (win: Page, on: boolean) => win.evaluate((h) => { (window as unknown as { hold: boolean }).hold = h; }, on);
+
+type Layout = { columns: string[]; rows: string[]; first: string[] | null; fits: Record<string, string[]> };
+/**
+ * From now on, every grid template the workspace body is given (each value once, in order), the one it has on the first
+ * frame after it is first given one, and every size each terminal slot takes (its first entry: its size now, recorded
+ * before this resolves).
+ */
+const watchLayout = (win: Page) => win.evaluate(() => new Promise<void>((ready) => {
+  const w = window as unknown as { layout: Layout; layoutWatch?: { disconnect(): void }[] };
+  for (const o of w.layoutWatch ?? []) o.disconnect();
+  const body = document.querySelector<HTMLElement>('.workspace-body')!;
+  const log: Layout = { columns: [], rows: [], first: null, fits: {} };
+  w.layout = log;
+  const mo = new MutationObserver(() => {
+    const { gridTemplateColumns: c, gridTemplateRows: r } = body.style;
+    if (c && log.columns.at(-1) !== c) log.columns.push(c);
+    if (r && log.rows.at(-1) !== r) log.rows.push(r);
+    if (c && !log.first) {
+      log.first = [];
+      requestAnimationFrame(() => { log.first = [body.style.gridTemplateColumns, body.style.gridTemplateRows]; });
+    }
+  });
+  mo.observe(body, { attributes: true, attributeFilter: ['style'] });
+  // Its first call has every slot's size now.
+  const ro = new ResizeObserver((entries) => {
+    for (const e of entries) {
+      const size = `${Math.round(e.contentRect.width)}x${Math.round(e.contentRect.height)}`;
+      const list = (log.fits[(e.target as HTMLElement).dataset.termSlot ?? '?'] ??= []);
+      if (list.at(-1) !== size) list.push(size);
+    }
+    ready();
+  });
+  const slots = document.querySelectorAll('.workspace-body > .terminal-slot');
+  for (const el of slots) ro.observe(el);
+  w.layoutWatch = [mo, ro];
+  if (!slots.length) ready();
+}));
+const layoutLog = (win: Page) => win.evaluate(() => (window as unknown as { layout: Layout }).layout);
+/** Where pane `pane`'s picker is moved to by its animations (px), and how opaque it is. */
+const pickerAt = (win: Page, pane: number) => win.evaluate((i) => {
+  const el = [...document.querySelectorAll<HTMLElement>('.workspace-body > .pane-picker')].find((p) => p.style.gridColumnStart === `p${i}l`)!;
+  const cs = getComputedStyle(el);
+  const m = new DOMMatrixReadOnly(cs.transform);
+  return { x: m.m41, y: m.m42, opacity: Number(cs.opacity), transform: cs.transform };
+}, pane);
+/** How far a divider's line is drawn along it (its scale) and how visible it is; `dir`: row (vertical) or column. */
+const lineAt = (win: Page, dir: 'row' | 'column') => win.locator(`.workspace-body > .pane-divider[data-dir="${dir}"]`).evaluate((el, d) => {
+  const cs = getComputedStyle(el, '::after');
+  const m = new DOMMatrixReadOnly(cs.transform);
+  return { scale: d === 'row' ? m.d : m.a, across: d === 'row' ? m.a : m.d, opacity: Number(cs.opacity) };
+}, dir);
 
 test('a session picked in the sidebar: the selection glides to its row, the tab crown follows, the workspace rises in, a click mid-glide goes to the next row', async () => {
   test.setTimeout(120000);
@@ -298,7 +355,111 @@ test('a new session: a spark arcs from the + to its row, a ring ripples there, i
   }
 });
 
-test('Reduce motion: picking a row or a tab plays nothing and leaves nothing', async () => {
+test('a split: the layout is there at once, the new pane\'s content springs in from its side past its place and settles, its line draws; nothing else moves', async () => {
+  test.setTimeout(120000);
+  const { app, home, win } = await launch();
+  try {
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 800));
+    await newSession(win, 'One');
+    await settled(win);
+    await played(win);
+    await watchLayout(win);
+    // What a pane's entrance moves: its content (here, its picker) and the divider it was split off on.
+    const entrance = '.workspace-body > .pane-picker, .workspace-body > .pane-divider';
+
+    // ⌘\ (its menu item), every animation held as it starts: an empty pane on the right, its picker shown.
+    await hold(win, true);
+    await menu(app, 'Split Right');
+    await expect(win.locator('.workspace-body > .pane-strip')).toHaveCount(2);
+    await expect(win.locator('.workspace-body > .pane-picker')).toHaveCount(1);
+    const right = await played(win);
+    // Its content comes in from the right; the line it was split off on draws along its length. Nothing else moves:
+    // neither the left pane, nor the new pane's strip and frame.
+    expect(on(right, 'pane-picker').some((p) => p.kf.includes('translateX(48px)'))).toBe(true);
+    expect(right.filter((p) => /translate/.test(p.kf)).every((p) => p.on.includes('pane-picker'))).toBe(true);
+    const drawn = on(right, 'pane-divider');
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]!.kf).toContain('scaleY(0)');
+
+    // At its start: 48 px to the right, unseen, the line not drawn yet.
+    await freeze(win, entrance, 0);
+    expect(await pickerAt(win, 1)).toMatchObject({ x: 48, y: 0, opacity: 0 });
+    expect((await lineAt(win, 'row')).scale).toBe(0);
+    // Where the content has not arrived yet, the pane's cell shows the pane's own background (not the body's, the colour
+    // of the lines between panes), under the strip; it takes no pointer.
+    const under = win.locator('.workspace-body > .pane-under');
+    await expect(under).toHaveCount(1);
+    const [u, s1, f1] = await Promise.all([under, win.locator('.pane-strip[data-pane="1"]'), win.locator('.pane-frame[data-pane="1"]')].map(async (l) => (await l.boundingBox())!));
+    expect([u!.x, u!.y, u!.width, u!.y + u!.height]).toEqual([s1!.x, s1!.y + s1!.height, s1!.width, f1!.y + f1!.height]);
+    const paint = (sel: string) => win.locator(sel).evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(await paint('.workspace-body > .pane-under')).toBe(await paint('.workspace-body > .pane-picker'));
+    expect(await hits(win, u!.x + 10, u!.y + u!.height / 2)).toBe(false);
+    await look(win.locator('.workspace'), 'test-results/transitions-split-start.png');
+    // Halfway through the line's draw: drawn from its middle, at its full 1 px across.
+    await freeze(win, entrance, 130);
+    const half = await lineAt(win, 'row');
+    expect(half.scale).toBeGreaterThan(0.2);
+    expect(half.scale).toBeLessThan(1);
+    expect(half.across).toBe(1);
+    expect(half.opacity).toBe(1);
+    // Mid-bounce: past its place, towards the line, fully shown, the line drawn.
+    await freeze(win, entrance, 240);
+    const bounce = await pickerAt(win, 1);
+    expect(bounce.x).toBeLessThan(-3);
+    expect(bounce.opacity).toBe(1);
+    expect((await lineAt(win, 'row')).scale).toBeGreaterThan(0.95);
+    await look(win.locator('.workspace'), 'test-results/transitions-split.png');
+    await hold(win, false);
+    await resume(win);
+    await settled(win);
+
+    // At rest: nothing of it is left. The body's template was given once, already right on the first frame, and never
+    // changed while the pane came in; the terminal on the left fitted once, to where it rests.
+    expect((await pickerAt(win, 1)).transform).toBe('none');
+    await expect(win.locator('.pane-divider.is-drawing, .pane-under')).toHaveCount(0);
+    let layout = await layoutLog(win);
+    expect(layout.columns).toHaveLength(1);
+    expect(layout.first).toEqual([layout.columns[0], layout.rows[0]]);
+    const fits = Object.values(layout.fits).filter((f) => f[0] !== '0x0');
+    expect(fits).toHaveLength(1);
+    expect(fits[0]).toHaveLength(2);
+
+    // Split Down from the new pane: an empty pane under it, rising from below; the line across draws along its width.
+    await watchLayout(win);
+    await hold(win, true);
+    await menu(app, 'Split Down');
+    await expect(win.locator('.workspace-body > .pane-strip')).toHaveCount(3);
+    const down = await played(win);
+    expect(on(down, 'pane-picker').some((p) => p.kf.includes('translateY(48px)'))).toBe(true);
+    expect(down.filter((p) => /translate/.test(p.kf))).toHaveLength(1);
+    expect(on(down, 'pane-divider').map((p) => p.kf)).toEqual([expect.stringContaining('scaleX(0)')]);
+    await freeze(win, entrance, 0);
+    expect(await pickerAt(win, 2)).toMatchObject({ x: 0, y: 48, opacity: 0 });
+    await freeze(win, entrance, 240);
+    expect((await pickerAt(win, 2)).y).toBeLessThan(-3);
+    expect((await lineAt(win, 'column')).scale).toBeGreaterThan(0.95);
+    await look(win.locator('.workspace'), 'test-results/transitions-split-down.png');
+    await hold(win, false);
+    await resume(win);
+    await settled(win);
+    expect((await pickerAt(win, 2)).transform).toBe('none');
+    layout = await layoutLog(win);
+    expect(layout.rows).toHaveLength(1);
+    expect(layout.first).toEqual([layout.columns[0], layout.rows[0]]);
+    await expect(win.locator('.pane-divider.is-drawing, .pane-under')).toHaveCount(0);
+
+    // A divider moved: no pane is new, nothing springs in.
+    const given = layout.columns.length;
+    await win.locator('.workspace-body > .pane-divider[data-dir="row"]').focus();
+    await win.keyboard.press('ArrowLeft');
+    await expect.poll(async () => (await layoutLog(win)).columns.length).toBe(given + 1);
+    expect(await played(win)).toEqual([]);
+  } finally {
+    await stop(app, home);
+  }
+});
+
+test('Reduce motion: picking a row or a tab, a new session, a split play nothing and leave nothing', async () => {
   test.setTimeout(120000);
   const { app, home, win } = await launch();
   try {
@@ -310,8 +471,11 @@ test('Reduce motion: picking a row or a tab plays nothing and leaves nothing', a
     await expect(tab(win.locator('.tabs .tab-strip'), 'Two')).toHaveClass(/is-active/);
     // A new session too: no spark, no ring, no reveal.
     await newSession(win, 'Four');
+    // And a split: the new pane is simply there, its line too.
+    await menu(app, 'Split Right');
+    await expect(win.locator('.workspace-body > .pane-picker')).toHaveCount(1);
     expect(await played(win)).toEqual([]);
-    await expect(win.locator('.motion-pill, .motion-lane, .tab-crown-fly, .is-gliding, .is-crown-landing, .motion-fx, .motion-spark, .motion-ring')).toHaveCount(0);
+    await expect(win.locator('.motion-pill, .motion-lane, .tab-crown-fly, .is-gliding, .is-crown-landing, .motion-fx, .motion-spark, .motion-ring, .is-drawing, .pane-under')).toHaveCount(0);
   } finally {
     await stop(app, home);
   }

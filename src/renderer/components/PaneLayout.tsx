@@ -3,6 +3,8 @@ import { useApp } from '../store';
 import { usePaneArea } from '../pane-area';
 import { gridTemplate, STRIP_PX } from '../pane-place';
 import { layoutPanes, type DividerBox } from '../split-layout';
+import { arrivedPane } from '../split-tree';
+import { enterPane } from '../transitions';
 import { PaneDivider } from './PaneDivider';
 
 const sameDividers = (a: DividerBox[], b: DividerBox[]) => a.length === b.length && a.every((d, i) => {
@@ -17,6 +19,7 @@ const sameDividers = (a: DividerBox[], b: DividerBox[]) => a.length === b.length
  * on them follow without re-rendering), the measure is published (usePaneArea: room checks, hit tests) and the dividers
  * are drawn on the gaps. A resize is handled in the ResizeObserver's callback, before the frame is painted, so the panes
  * never lag a frame behind the window; one observer for the body's whole life (a divider drag only lays out again).
+ * A pane just made (a split, a tab moved to a new pane) springs in once its layout is applied and its line is drawn.
  */
 export function PaneLayout() {
   const tree = useApp((s) => s.split.tree);
@@ -45,7 +48,20 @@ export function PaneLayout() {
     const next = split ? l.dividers : [];
     setDividers((cur) => (sameDividers(cur, next) ? cur : next));
   }, []);
-  useLayoutEffect(apply, [apply, tree, multi]);
+  // The tree last laid out: the next one tells which pane is new (none for a layout read back, a resize, a close).
+  const laid = useRef(tree);
+  const [arrival, setArrival] = useState<{ pane: number } | null>(null);
+  useLayoutEffect(() => {
+    apply();
+    const pane = multi ? arrivedPane(laid.current, tree) : null;
+    laid.current = tree;
+    if (pane !== null) setArrival({ pane });
+  }, [apply, tree, multi]);
+  // In the commit that adds the new dividers (this component's state), before the frame is painted.
+  useLayoutEffect(() => {
+    const el = marker.current?.parentElement;
+    if (arrival && el) enterPane(el, arrival.pane);
+  }, [arrival]);
   useLayoutEffect(() => {
     const el = marker.current?.parentElement;
     if (!el) return;

@@ -40,7 +40,9 @@ import { SENSITIVE, SHOTS_ONLY, findBanned } from '../support/banned-strings';
 // +2 KB for a new session's arrival: the dot's arc from the + to its row, the ring where it lands, the terminal's
 // circular reveal, and the launch noted as where that navigation came from. The second KB is the chunk names again:
 // a ten-byte change to the launch moved the first paint by 630 bytes.
-const BUDGET = 925 * 1024;
+// +1 KB for a pane split off: its content springing in from its side, the line it was split off on drawing, the pane's
+// own background under it on its way, and the new pane told apart from a layout read back.
+const BUDGET = 926 * 1024;
 const SHARED = resolve('src/shared');
 const INSTALL = resolve('src/demo/install.ts');
 

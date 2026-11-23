@@ -4,7 +4,7 @@ import {
   pickableKeys, placeOpened, reconcile, removeKeys, renameKeys, restoreLayout, savedKeys, serializeLayout, single, splitPane, stripKeys, unsplit, unsplitAll, unsplitTarget, visibleKeys,
   MAX_PANES, type Pane, type Split
 } from './split';
-import { row, sizesAt, type LayoutNode } from './split-tree';
+import { arrivedPane, row, sizesAt, withSizes, type LayoutNode } from './split-tree';
 import type { TabKey } from './tabs-model';
 
 // Split view with tab groups: each pane owns its tabs and its tab in front; the layout tree says where each pane is.
@@ -386,6 +386,37 @@ describe('open to the side', () => {
     expect(openToSide(s, [], 't:a', 't:a', [])).toBe(s);
     const one = single();
     expect(openToSide(one, ['t:a'], 't:a', 't:a', [])).toBe(one);
+  });
+});
+
+describe('the pane a change brings (arrivedPane: what springs in)', () => {
+  test('a split of one pane: the new pane; the pane it was split from is the one there was', () => {
+    const one = single();
+    expect(arrivedPane(one.tree, splitPane(one, ['t:a'], 't:a', 'right')!.tree)).toBe(1);
+    expect(arrivedPane(one.tree, splitPane(one, ['t:a'], 't:a', 'bottom')!.tree)).toBe(1);
+    expect(arrivedPane(one.tree, moveToNewPane(one, ['t:a', 't:b'], 't:b', 't:b', 0, 'right', [])!.tree)).toBe(1);
+  });
+  test('a split of a split, a tab moved to a new pane on any side, another pane\'s only tab moved to one', () => {
+    const s = S([P(['t:a', 'f:x'], 'f:x'), P(['t:b'])], 0);
+    expect(arrivedPane(s.tree, splitPane(s, [], 'f:x', 'right')!.tree)).toBe(1);
+    expect(arrivedPane(s.tree, splitPane({ ...s, focus: 1 }, [], 't:b', 'bottom')!.tree)).toBe(2);
+    expect(arrivedPane(s.tree, moveToNewPane(s, [], null, 't:a', 1, 'left', [])!.tree)).toBe(1);
+    expect(arrivedPane(s.tree, moveToNewPane(s, [], null, 'f:x', 0, 'top', ['t:a'])!.tree)).toBe(0);
+    const t = S([P(['t:a', 'f:x'], 't:a'), P(['t:b'])], 1);
+    expect(arrivedPane(t.tree, moveToNewPane(t, [], null, 't:b', 0, 'left', [])!.tree)).toBe(0);
+  });
+  test('nothing new: the same tree, a divider moved, a pane closed, a tab moved between panes', () => {
+    const s = S([P(['t:a', 'f:x'], 'f:x'), P(['t:b']), P(['t:c'])], 0);
+    expect(arrivedPane(s.tree, s.tree)).toBeNull();
+    expect(arrivedPane(s.tree, withSizes(s.tree, [], [0.5, 0.25, 0.25]))).toBeNull();
+    expect(arrivedPane(s.tree, unsplit(s, 1).tree)).toBeNull();
+    expect(arrivedPane(s.tree, moveTab(s, 'f:x', 1, null, []).tree)).toBeNull();
+  });
+  test('a layout read back (every pane new) or one pane again: none', () => {
+    const s = S([P(['t:a']), P(['t:b'])], 1, C([L, L]));
+    expect(arrivedPane(single().tree, restoreLayout(JSON.parse(JSON.stringify(serializeLayout(s))), ['t:a', 't:b'])!.tree)).toBeNull();
+    expect(arrivedPane(s.tree, restoreLayout(JSON.parse(JSON.stringify(serializeLayout(s))), ['t:a', 't:b'])!.tree)).toBeNull();
+    expect(arrivedPane(s.tree, unsplitAll(s).tree)).toBeNull();
   });
 });
 

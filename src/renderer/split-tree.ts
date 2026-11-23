@@ -68,6 +68,23 @@ export function panePaths(tree: LayoutNode): number[][] {
   return leafPaths(tree);
 }
 
+function leaves(n: LayoutNode): LayoutNode[] {
+  return n.kind === 'pane' ? [n] : n.children.flatMap(leaves);
+}
+
+/**
+ * The pane `next` has that `prev` did not: its index, when it is the only new leaf of a split layout and every other
+ * leaf is one of `prev`'s (a split, a tab moved to a new pane); null otherwise. Every reshaping here keeps the leaves it
+ * neither adds nor removes (the very same objects), so a pane just made is told apart from a layout read back, whose
+ * leaves are all new.
+ */
+export function arrivedPane(prev: LayoutNode, next: LayoutNode): number | null {
+  const had = new Set(leaves(prev));
+  const now = leaves(next);
+  const fresh = now.flatMap((l, i) => (had.has(l) ? [] : [i]));
+  return now.length > 1 && fresh.length === 1 ? fresh[0]! : null;
+}
+
 function nodeAt(n: LayoutNode, path: readonly number[]): LayoutNode | null {
   let cur: LayoutNode | undefined = n;
   for (const i of path) {

@@ -4,13 +4,14 @@ import { arc, crownKeyframes, revealOrigin, type Box, type Pt } from './motion-g
 // The in-app transitions: short moves that show where something went. A session picked in the sidebar has the
 // selection glide to its row and the workspace rise in; a tab picked has the content slide in from its side; either
 // way the tab crown stretches over to the new tab. A new session has a spark fly from the + to its row and its
-// terminal open from there. Each plays through play() (none under Reduce motion), takes no pointer, moves the content
-// by transform, opacity or clip-path only (a terminal measures its box: no size ever changes), and leaves nothing
-// behind once it ends or a newer one cuts it short.
+// terminal open from there. A pane split off springs in from its side while its line draws. Each plays through play()
+// (none under Reduce motion), takes no pointer, moves the content by transform, opacity or clip-path only (a terminal
+// measures its box: no size ever changes), and leaves nothing behind once it ends or a newer one cuts it short.
 
-/** --ease, the soft spring and the in-out curve (theme.css), as WAAPI takes them. */
+/** --ease (theme.css), the soft spring, the elastic spring and the in-out curve, as WAAPI takes them. */
 const EASE = 'cubic-bezier(.2,.8,.2,1)';
 const SOFT_SPRING = 'cubic-bezier(.3,1.3,.5,1)';
+const ELASTIC = 'cubic-bezier(.3,1.7,.45,1)';
 const IN_OUT = 'cubic-bezier(.7,0,.2,1)';
 const GLIDE_MS = 380;
 const CROWN_MS = 420;
@@ -19,6 +20,11 @@ const SLIDE_MS = 300;
 const SPARK_MS = 560;
 const RING_MS = 480;
 const REVEAL_MS = 620;
+const PANE_MS = 520;
+const PANE_FADE_MS = 200;
+const DRAW_MS = 260;
+/** How far from its place a pane split off starts. */
+const PANE_SHIFT = 48;
 /** Past this, what changes is no longer that click's doing. */
 const NAV_MS = 500;
 
@@ -228,5 +234,112 @@ export function paneContent(body: HTMLElement, pane: number | null): HTMLElement
   if (pane === null) return [body];
   return [...body.children].filter((el): el is HTMLElement => el instanceof HTMLElement
     && el.style.gridColumnStart === `p${pane}l` && el.style.gridRowEnd === `p${pane}b`
-    && !el.classList.contains('pane-frame') && el.getClientRects().length > 0);
+    && !el.classList.contains('pane-frame') && !el.classList.contains('pane-under') && el.getClientRects().length > 0);
+}
+
+type Edge = 'left' | 'top' | 'right' | 'bottom';
+/** Where a pane's content starts from, by the edge of the pane its line is on: from the far side of that line. */
+const FROM: Record<Edge, string> = {
+  left: `translateX(${PANE_SHIFT}px)`, top: `translateY(${PANE_SHIFT}px)`,
+  right: `translateX(${-PANE_SHIFT}px)`, bottom: `translateY(${-PANE_SHIFT}px)`
+};
+
+/** Pane `pane`'s box in the body: what of it carries its index (its strip on top, its frame down to its bottom). */
+function paneRect(body: HTMLElement, pane: number): DOMRect | null {
+  const parts = [...body.querySelectorAll<HTMLElement>(`:scope > [data-pane="${pane}"]`)]
+    .map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
+  if (!parts.length) return null;
+  const left = Math.min(...parts.map((r) => r.left));
+  const top = Math.min(...parts.map((r) => r.top));
+  return new DOMRect(left, top, Math.max(...parts.map((r) => r.right)) - left, Math.max(...parts.map((r) => r.bottom)) - top);
+}
+
+/**
+ * The line a pane (at `box`) was split off on: of the dividers along its edges, one as long as that whole edge (the
+ * line between it and the pane it was split from; one between larger groups runs further), the one on its left or
+ * above it first (a pane split off to the right or below). Null when no divider borders it so.
+ */
+function splitLine(body: HTMLElement, box: DOMRect): { el: HTMLElement; edge: Edge } | null {
+  const near = (a: number, b: number) => Math.abs(a - b) < 1.5;
+  const found: { el: HTMLElement; edge: Edge }[] = [];
+  for (const el of body.querySelectorAll<HTMLElement>(':scope > .pane-divider')) {
+    const r = el.getBoundingClientRect();
+    // The 1 px gap: in the middle of a vertical divider's grab area, in the last pixel of a horizontal one's.
+    if (el.dataset.dir === 'row') {
+      if (!near(r.top, box.top) || !near(r.bottom, box.bottom)) continue;
+      const x = r.left + r.width / 2;
+      if (near(x, box.left - 0.5)) found.push({ el, edge: 'left' });
+      else if (near(x, box.right + 0.5)) found.push({ el, edge: 'right' });
+    } else {
+      if (!near(r.left, box.left) || !near(r.right, box.right)) continue;
+      const y = r.bottom - 0.5;
+      if (near(y, box.top - 0.5)) found.push({ el, edge: 'top' });
+      else if (near(y, box.bottom + 0.5)) found.push({ el, edge: 'bottom' });
+    }
+  }
+  const first: Edge[] = ['left', 'top', 'right', 'bottom'];
+  return found.sort((a, b) => first.indexOf(a.edge) - first.indexOf(b.edge))[0] ?? null;
+}
+
+const lines = new WeakMap<HTMLElement, Move>();
+
+/**
+ * A divider's line draws itself along the gap from its middle, a plain hairline (`.is-drawing`), then fades into the
+ * gap's own line as the pane comes to rest. Only its pseudo-element moves: the grab area keeps its box.
+ */
+function drawLine(el: HTMLElement): void {
+  cut(lines.get(el));
+  const along = el.dataset.dir === 'row' ? 'scaleY' : 'scaleX';
+  const anim = play(el, [
+    { transform: `${along}(0)`, opacity: 1, easing: EASE },
+    { transform: `${along}(1)`, opacity: 1, offset: DRAW_MS / PANE_MS, easing: EASE },
+    { transform: `${along}(1)`, opacity: 0 }
+  ], { duration: PANE_MS, pseudoElement: '::after' });
+  if (!anim) return;
+  el.classList.add('is-drawing');
+  const m = move(anim, () => { el.classList.remove('is-drawing'); if (lines.get(el) === m) lines.delete(el); });
+  lines.set(el, m);
+}
+
+/**
+ * Pane `index` was just split off, already laid out where it rests (every terminal has fitted once, to its final
+ * size): its content springs in from the far side of the line it was split off on, past its place and back, fading in
+ * at the start, while that line draws. Split off to the right it comes from the right, below it rises from below (from
+ * the left or above for a pane put before its neighbour). Its strip, a session's bar and its frame stay where they are.
+ */
+export function enterPane(body: HTMLElement, index: number): void {
+  if (reducedMotion()) return;
+  const box = paneRect(body, index);
+  if (!box) return;
+  const line = splitLine(body, box);
+  const from = FROM[line?.edge ?? 'left'];
+  const content = paneContent(body, index);
+  const moves: Animation[] = [];
+  for (const el of content) {
+    const was = entering.get(el);
+    if (was?.playState === 'running') was.cancel();
+    const anim = play(el, [{ transform: from }, { transform: 'none' }], { duration: PANE_MS, easing: ELASTIC });
+    play(el, [{ opacity: 0 }, { opacity: 1 }], { duration: PANE_FADE_MS, easing: EASE });
+    if (anim) { entering.set(el, anim); moves.push(anim); }
+  }
+  if (moves[0]) underPane(body, index, moves[0]);
+  if (line) drawLine(line.el);
+}
+
+/**
+ * Under pane `index`'s content while `anim` brings it in: the pane's own background where the content has not arrived
+ * yet, never the body's (the colour of the lines between panes). First in the body, so all the pane shows paints over
+ * it; it goes when `anim` ends, or as soon as the pane's box changes (a newer layout).
+ */
+function underPane(body: HTMLElement, index: number, anim: Animation): void {
+  const under = document.createElement('div');
+  under.className = 'pane-under';
+  Object.assign(under.style, { gridColumn: `p${index}l / p${index}r`, gridRow: `p${index}s / p${index}b` });
+  body.prepend(under);
+  let sized = false;
+  // Its first call is its size now; any later one, a new layout.
+  const ro = new ResizeObserver(() => { if (sized) gone(); sized = true; });
+  const gone = () => { ro.disconnect(); under.remove(); };
+  ro.observe(under);
+  move(anim, gone);
 }
