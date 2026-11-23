@@ -160,6 +160,8 @@ interface SessionHost {
   places(root: string, op: RemotePlaceOp): Promise<RemotePlaceResult>;
   /** A Claude account a phone may start a session as (the ids `usage` lists). */
   accountKnown(id: string): boolean;
+  /** The project's main window is open. */
+  windowOpen(root: string): boolean;
   rows(root: string, e: RemoteRowsEvent): void;
   /** A phone's push registration (null token: unregistered). */
   registerPush(deviceId: string, m: Extract<DeviceMessage, { t: 'push' }>): void;
@@ -261,8 +263,7 @@ class PhoneSession implements RemoteViewer {
         this.terms.createRemoteSession({ project: root, kind: m.kind, cols: size.cols, rows: size.rows, ...(m.account !== undefined ? { account: m.account } : {}) }).then(
           (info) => {
             this.send({ t: 'created', rid: m.rid, id: info.id });
-            // The new row joins its place through the project's window (where Atelier puts new rows without one).
-            if (m.place !== undefined) this.host.rows(root, { kind: 'join', id: info.id, place: m.place });
+            if (m.place !== undefined) this.joinPlace(root, info.id, m.place);
             this.host.scheduleState();
           },
           () => this.error(m.rid, 'failed', m.kind === 'claude' ? 'The session could not be started.' : 'The terminal could not be started.')
@@ -357,6 +358,16 @@ class PhoneSession implements RemoteViewer {
         if (this.placeOf(m.rid, root, m.place, 'workspace or activity')) this.place(m.rid, root, { kind: 'move', id: m.id, place: m.place });
       }
     }
+  }
+
+  /**
+   * A new row into the place the phone named, by the project's window (workspaces live there; Atelier puts a new row
+   * in the place in front): an open one moves it once the row shows up in it; a closed one is opened for it, as for any
+   * change to the project's places, and moves it once ready. The phone's next layout shows it there.
+   */
+  private joinPlace(root: string, id: string, place: string): void {
+    if (this.host.windowOpen(root)) { this.host.rows(root, { kind: 'join', id, place }); return; }
+    this.host.places(root, { kind: 'move', id, place }).then(() => this.host.scheduleState(), () => {});
   }
 
   /** Place `id` of project `root`'s layout; refused (another project's: invalid; else not found) when it isn't one. */
@@ -543,6 +554,7 @@ export class RemoteHub {
       },
       places: (root, op) => this.d.places?.(root, op) ?? Promise.resolve({ ok: false, code: 'failed', message: 'The project\'s window could not be reached.' }),
       accountKnown: (id) => accountsFor(this.d.settings().claudeAccounts, this.d.defaultDir()).list.some((a) => a.id === id),
+      windowOpen: (root) => this.d.projects().open.includes(root),
       rows: (root, e) => this.d.rows?.(root, e),
       registerPush: (deviceId, m) => {
         if (m.token === null || !m.env || !m.key) this.pushes.forgetDevice(deviceId);

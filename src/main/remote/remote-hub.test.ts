@@ -710,6 +710,21 @@ describe('actions on rows (v1.1)', () => {
     expect(await phone.create(app, 'terminal', { account: 'work' })).toMatchObject({ t: 'error', code: 'invalid' });
     expect(t.terms.created).toHaveLength(2);
   });
+
+  test('create in a place of a project whose window is closed: the window opens for it and moves the new row there', async () => {
+    const calls: [string, RemotePlaceOp][] = [];
+    const t = setup({ deps: { places: async (root, op) => { calls.push([root, op]); return { ok: true }; } } });
+    // A recent project, its window closed; its layout as its window last showed it.
+    t.hub.layoutChanged('/work/old', { groupByState: true, pins: [], order: { sessions: [], terminals: [] }, workspaces: { active: 'w9', activities: false, places: [{ id: 'w9', name: 'Other', color: 4, open: true }, { id: 'w8', name: 'Release', color: 2, open: true }], members: {} } });
+    const { phone } = await paired(t);
+    await phone.state();
+    expect(await phone.create(projectIdOf('/work/old'), 'claude', { place: 'w8' })).toMatchObject({ t: 'created', id: 'new1' });
+    expect(t.terms.created.at(-1)).toMatchObject({ project: '/work/old', kind: 'claude' });
+    await until(() => calls.length === 1);
+    expect(calls).toEqual([['/work/old', { kind: 'move', id: 'new1', place: 'w8' }]]);
+    // Nothing for a window that isn't there.
+    expect(t.rows).toEqual([]);
+  });
 });
 
 describe('workspaces and activities from the phone', () => {

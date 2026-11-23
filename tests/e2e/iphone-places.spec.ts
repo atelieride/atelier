@@ -1,8 +1,8 @@
 // Workspaces and activities from the phone, end to end, with a fake phone on Atelier's own Noise code
 // (tests/support/fake-phone.ts) through the test relay (tests/support/test-relay.ts): a workspace made where workspaces
 // are off, an activity made in it while activities are off, both renamed, a terminal moved into the activity, then a
-// change with the project's window closed (it opens, the change is applied there). The sidebar and the phone's next
-// layout show each change.
+// change and a new terminal in the activity with the project's window closed (it opens, the change is applied there,
+// the terminal lands there). The sidebar and the phone's next layout show each change.
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import { mkdtempSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -63,7 +63,7 @@ const projectOf = (s: Msg, root: string) => (s.projects as { id: string; name: s
 /** The workspaces of the latest layout the phone got for a project (undefined: off there). */
 const workspacesOf = (phone: FakePhone, project: string) => ([...phone.messages].reverse().find((m) => m.t === 'layout' && m.project === project)?.layout as Msg | null | undefined)?.workspaces as Workspaces | undefined;
 
-test('from the phone: a workspace and an activity where both were off, renamed, a terminal moved in; a closed window opens for a change', async () => {
+test('from the phone: a workspace and an activity where both were off, renamed, a terminal moved in; a closed window opens for a change and a new terminal', async () => {
   test.setTimeout(240_000);
   const l = await launch();
   const { app, win, phone, root } = l;
@@ -131,6 +131,16 @@ test('from the phone: a workspace and an activity where both were off, renamed, 
     await expect.poll(() => workspacesOf(phone, project)?.places.find((p) => p.id === a)?.name).toBe('Ship it');
     await phone.state((s) => projectOf(s, root)?.open === true, 15000);
     await look(reopened, `${SHOTS}/reopened.png`, { settle: 300 });
+
+    // A new terminal in the activity while the window is closed: the window opens for it, and the row lands there.
+    await Promise.all([reopened.waitForEvent('close'), app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.close())]);
+    await phone.state((s) => projectOf(s, root)?.open === false, 15000);
+    const [again, created] = await Promise.all([app.waitForEvent('window'), phone.create(project, 'terminal', { place: a })]);
+    expect(created, JSON.stringify(created)).toMatchObject({ t: 'created' });
+    const fresh = created.id as string;
+    await expect(again.locator(`[data-wsa-group="${a}"] [data-term-row="${fresh}"]`)).toBeVisible({ timeout: 15000 });
+    await expect.poll(() => workspacesOf(phone, project)?.members[fresh], { timeout: 15000 }).toBe(a);
+    await look(again, `${SHOTS}/created-closed.png`, { settle: 300 });
   } finally {
     await close(l);
   }
