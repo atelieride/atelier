@@ -590,6 +590,8 @@ export interface AtelierApi {
   readonly osVersion: string;
   /** The theme this window opened on, set on <html> before the first paint; settings follow. */
   readonly bootTheme: ThemeId;
+  /** null: no launch animation; a number: this window, the first of an app start, plays it, holding at least that many ms for the layout (0 outside tests). */
+  readonly bootIntro: number | null;
   project(): Promise<ProjectInfo | null>;
   openFolder(): Promise<void>;
   /** The welcome window for another project (only one). */

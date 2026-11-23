@@ -581,6 +581,7 @@ export const SOURCES: Record<string, Area[]> = {
   // Themes: the tokens resolved for xterm, main's window colors, the theme list and setting.
   'src/shared/theme-resolve.ts': ['terminal', 'editor', 'workspace'],
   'src/shared/themes.ts': ['settings', 'terminal', 'workspace'],
+  'src/shared/intro.ts': ['settings', 'terminal', 'workspace'],
   'src/shared/project-color.ts': ['settings', 'workspace'],
   'src/shared/themes-docsy.ts': ['settings', 'terminal', 'workspace'],
   'src/main/theme-chrome.ts': ['workspace'],

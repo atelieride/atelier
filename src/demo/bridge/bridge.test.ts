@@ -30,6 +30,10 @@ describe('startup', () => {
     expect(await api.remote.status()).toMatchObject({ enabled: false, devices: [] });
   });
 
+  test('no launch animation: the demo has its own opening', () => {
+    expect(make().api.bootIntro).toBeNull();
+  });
+
   test('no OS version: the demo never plays Windows, so its xterms get no Windows pty', () => {
     expect(make().api.osVersion).toBe('');
   });

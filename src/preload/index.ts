@@ -3,6 +3,7 @@ import { IPC, type AtelierApi } from '@shared/api';
 import type { Binding } from '@shared/companion/types';
 import { toCanonical } from '@shared/paths';
 import { asPlatform } from '@shared/platform';
+import { introFromArgv } from '@shared/intro';
 import { themeFromArgv } from '@shared/themes';
 
 function listen<A extends unknown[]>(channel: string, cb: (...args: A) => void): () => void {
@@ -22,6 +23,7 @@ const api: AtelierApi = {
   platform: asPlatform(process.platform),
   osVersion: (() => { try { return process.getSystemVersion(); } catch { return ''; } })(),
   bootTheme: themeFromArgv(process.argv),
+  bootIntro: introFromArgv(process.argv),
   project: () => ipcRenderer.invoke(IPC.project),
   openFolder: () => ipcRenderer.invoke(IPC.openFolder),
   newWindow: () => ipcRenderer.invoke(IPC.newWindow),

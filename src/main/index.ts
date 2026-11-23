@@ -18,6 +18,7 @@ import { claudeCandidates as claudeBinCandidates } from './claude-bin';
 import { envGet, pathListSplit } from '@shared/env';
 import { IPC, type AppInfo, type AppNotice, type MenuCommand, type ProjectInfo } from '@shared/api';
 import { opensInApp, trafficLights, WINDOW_BAR, windowButtons, zoomFactor } from '@shared/settings';
+import { IntroGate } from '@shared/intro';
 import { themeOf } from '@shared/themes';
 import { chromeOf } from './theme-chrome';
 import { createAppIcon } from './app-icon';
@@ -151,6 +152,8 @@ muteTestAudio(app);
 const windowProjects = new Map<number, string | null>();
 const windowKinds = new Map<number, WindowKind>();
 const windowsView = { projects: windowProjects, kinds: windowKinds };
+// Hands the launch animation to the first window of this process only.
+const introGate = new IntroGate();
 let uiState: UiState = loadUiState(paths.uiState);
 const shells = readShells();
 const settings = new SettingsStore(paths.preferences, { shells: () => shells().map((s) => s.path), log: (message) => { appLog.write({ source: 'main:settings', message }); } });
@@ -641,6 +644,10 @@ if (!app.requestSingleInstanceLock()) {
     // The welcome window's own place is its normal bounds: a maximized one's overhang the screen (by 8 px on Windows).
     const saved = root ? uiState.windows?.[root] : undefined;
     const place = windowPlace(replacing && !replacing.isDestroyed() ? replacing : null, saved, screen.getAllDisplays().map((d) => d.workArea));
+    // Only the first window of the process plays the launch animation (a window opened later never does).
+    const s = settings.get();
+    const intro = introGate.take({ launchAnimation: s.launchAnimation, motion: s.motion, hidden: hiddenWindows(), testIntro: !!devEnv('ATELIER_TEST_INTRO') })
+      ? (testMs('ATELIER_TEST_INTRO_HOLD_MS') ?? 0) : null;
     const win: BrowserWindow = createProjectWindow(root, zoomFactor(settings.get().interfaceSize), place, {
       onUnloadKept: quitStopped,
       // The project's own unsaved guard said Cancel after its pop-outs closed: they come back, and the sessions' answer
@@ -653,7 +660,7 @@ if (!app.requestSingleInstanceLock()) {
         if (root && !quitting) restorePopouts(root);
       },
       ...unsavedAsk(() => win)
-    }, settings.get().theme);
+    }, settings.get().theme, intro);
     const wcId = win.webContents.id;
     win.webContents.on('did-finish-load', () => {
       win.webContents.setZoomFactor(zoomFactor(settings.get().interfaceSize));

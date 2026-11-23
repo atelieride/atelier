@@ -14,6 +14,8 @@ import { delimiter, join, resolve } from 'node:path';
  * - no CLAUDE_CONFIG_DIR: never the Claude account of the session that runs the tests
  * - ATELIER_TEST_BACKGROUND: windows are never shown, focused or raised (src/main/hidden-windows.ts), yet render: the
  *   tests never cover the work of whoever is using the Mac
+ * - ATELIER_TEST_INTRO: lets the launch animation play although windows are hidden (the first window only);
+ *   ATELIER_TEST_INTRO_HOLD_MS makes it hold that long for the layout; neither is set by default
  * - ATELIER_TEST_NOTIFY_LOG / ATELIER_TEST_CLIPBOARD_LOG: OS banners and copies are written to logs in the temporary
  *   home (one JSON value per line), never shown on the user's screen nor put on the real clipboard
  * - ATELIER_TEST_TRAY_LOG: the session icons (menu bar, notification area) are never made; what they would show goes
