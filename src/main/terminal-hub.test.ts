@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { initPlatform, resetPlatformForTests } from '@shared/platform';
-import { toOut } from './cpath';
+import { join as cjoin, toOut } from './cpath';
 
 // Electron stand-ins: windows looked up from their webContents, notifications recorded.
 const fake = vi.hoisted(() => ({
@@ -1292,12 +1292,16 @@ describe('a paired phone\'s actions on rows, as Atelier\'s own', () => {
   test('create with an account: that account\'s command; none: the one set for new sessions', async () => {
     try {
       const root = await project();
+      // A clean absolute dir on every platform: a POSIX path is refused on Windows.
+      const work = cjoin(root, 'claude-work');
       const { hub, client } = setup();
-      hub.settings = () => ({ ...DEFAULT_SETTINGS, claudeAccounts: { list: [{ id: 'default', name: 'Claude', dir: '', color: 1 }, { id: 'work', name: 'Work', dir: '/acc/work', color: 2 }], newSession: 'default', dismissed: [] } });
+      hub.settings = () => ({ ...DEFAULT_SETTINGS, claudeAccounts: { list: [{ id: 'default', name: 'Claude', dir: '', color: 1 }, { id: 'work', name: 'Work', dir: work, color: 2 }], newSession: 'default', dismissed: [] } });
       let req: Record<string, unknown> = {};
       client.request.mockImplementation((async (build: () => unknown) => { req = build() as Record<string, unknown>; return term('n1', root); }) as never);
       await hub.createRemoteSession({ project: root, kind: 'claude', cols: 60, rows: 30, account: 'work' });
-      expect(String(req.command)).toContain("CLAUDE_CONFIG_DIR='/acc/work'");
+      // The quoting is the session shell's (POSIX or PowerShell); the dir itself is in it either way.
+      expect(String(req.command)).toContain('CLAUDE_CONFIG_DIR');
+      expect(String(req.command)).toContain(work);
       await hub.createRemoteSession({ project: root, kind: 'claude', cols: 60, rows: 30 });
       expect(String(req.command)).not.toContain('CLAUDE_CONFIG_DIR');
     } finally { resetPlatformForTests(); }

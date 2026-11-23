@@ -433,7 +433,10 @@ describe('a paired phone', () => {
     t.hub.reset();
     expect(await phone.waitFor((m) => m.t === 'bye')).toEqual({ t: 'bye', reason: 'revoked' });
     expect(t.hub.devices.list()).toEqual([]);
+    // The old link closes on its own time: right after reset the status can still read online from it.
+    await until(() => !relay.hostOnline(room));
     await until(() => t.hub.status().relay.state === 'online');
+    // Online again, and not in the old room: a new one.
     expect(relay.hostOnline(room)).toBe(false);
   });
 });
