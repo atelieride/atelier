@@ -146,9 +146,11 @@ function spanIn(strip: HTMLElement, el: HTMLElement): { left: number; width: num
 
 /**
  * The tab crown leaves `from` (or where a crown still on its way is), stretches over to `to`, then catches up with it.
- * `to`'s own crown waits under it (`data-crown-landing`: the tab's class is React's) until it lands.
+ * `to`'s own crown waits under it (`data-crown-landing`: the tab's class is React's) until it lands. In flight it is
+ * part of what the strip scrolls (a tab closed meanwhile can leave it past the others), so `landed` runs once it has
+ * gone, landed or cut short: the strip measures itself again.
  */
-export function flyCrown(strip: HTMLElement, from: HTMLElement, to: HTMLElement): void {
+export function flyCrown(strip: HTMLElement, from: HTMLElement, to: HTMLElement, landed?: () => void): void {
   if (still() || from === to) return;
   const was = flights.get(strip);
   const start = was ? spanIn(strip, was.fly) : spanIn(strip, from);
@@ -160,7 +162,7 @@ export function flyCrown(strip: HTMLElement, from: HTMLElement, to: HTMLElement)
   const anim = play(fly, crownKeyframes(start, spanIn(strip, to)), { duration: CROWN_MS, easing: EASE });
   if (!anim) { fly.remove(); return; }
   to.dataset.crownLanding = '';
-  const m = { ...move(anim, () => { fly.remove(); delete to.dataset.crownLanding; if (flights.get(strip) === m) flights.delete(strip); }), fly };
+  const m = { ...move(anim, () => { fly.remove(); delete to.dataset.crownLanding; if (flights.get(strip) === m) flights.delete(strip); landed?.(); }), fly };
   flights.set(strip, m);
 }
 

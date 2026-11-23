@@ -70,6 +70,12 @@ async function threeSessions(win: Page) {
 /** What the page played since the last call. */
 const played = (win: Page) => win.evaluate(() => (window as unknown as { played: Played[] }).played.splice(0));
 const on = (list: Played[], cls: string) => list.filter((p) => p.on.split(/\s+/).includes(cls));
+/** A tab strip's edge fades as set, and as its scroll box calls for now (more than 1 px hidden on that side). */
+const fades = (strip: Locator) => strip.evaluate((el) => {
+  const max = el.scrollWidth - el.clientWidth;
+  const want = [el.scrollLeft > 1 && 'start', max > 1 && el.scrollLeft < max - 1 && 'end'].filter(Boolean).join(' ');
+  return { set: (el as HTMLElement).dataset.fade ?? '', want };
+});
 /** Waits until no script animation runs (CSS ones aside: the rows' finite cues may still play). */
 const settled = (win: Page) => expect.poll(() => win.evaluate(() => document.getAnimations()
   .filter((a) => a.playState === 'running' && !(a as CSSAnimation).animationName).length)).toBe(0);
@@ -511,6 +517,33 @@ test('a tab picked: the crown stretches to it and catches up, the content slides
     expect(placed.length).toBeGreaterThan(0);
     expect(placed.every((c) => c === 'p0l')).toBe(true);
     await settled(win);
+  } finally {
+    await stop(app, home);
+  }
+});
+
+test('a tab closed while the crown is on its way: once it lands, the strip fades as its tabs alone call for', async () => {
+  test.setTimeout(120000);
+  const { app, home, win } = await launch();
+  try {
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 800));
+    await threeSessions(win);
+    const strip = win.locator('.tabs .tab-strip');
+    expect(await fades(strip)).toEqual({ set: '', want: '' });
+    // One picked, the crown held at its start over Three (the last tab); Three's tab closes meanwhile (its session
+    // stays). The strip, as wide as its tabs, now has the crown reaching past them.
+    await hold(win, true);
+    await tab(strip, 'One').click();
+    await expect(win.locator('.tab-crown-fly')).toHaveCount(1);
+    await tab(strip, 'Three').locator('.tab-close').click();
+    await expect(tab(strip, 'Three')).toHaveCount(0);
+    expect((await fades(strip)).want).toBe('end');
+    // Once it has landed and gone, the fades are the tabs' own again: none.
+    await hold(win, false);
+    await resume(win);
+    await settled(win);
+    await expect(win.locator('.tab-crown-fly')).toHaveCount(0);
+    expect(await fades(strip)).toEqual({ set: '', want: '' });
   } finally {
     await stop(app, home);
   }

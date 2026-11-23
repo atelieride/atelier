@@ -316,13 +316,13 @@ export const PaneStrip = memo(function PaneStrip({ pane, split, last, onNew }: {
     const from = was ? tabOf(was) : null;
     const to = tabOf(front);
     // Only the focused pane's tab wears the brand crown; another pane's front tab has a quiet one of its own.
-    if (from && to && to.classList.contains('is-active')) flyCrown(el, from, to);
+    if (from && to && to.classList.contains('is-active')) flyCrown(el, from, to, fade);
     if (origin === 'launch') return;
     if (origin === 'sidebar') { for (const view of content) enterView(view, 'up'); return; }
     if (!from || !to) return;
     const dir = from.compareDocumentPosition(to) & Node.DOCUMENT_POSITION_FOLLOWING ? 'right' : 'left';
     for (const view of content) enterView(view, dir);
-  }, [front, split, pane]);
+  }, [front, split, pane, fade]);
   // The tab already in front, clicked: nothing renders for it, so it is shown from here (from the keyboard, no pointer).
   const clickedFront = (e: MouseEvent<HTMLDivElement>) => {
     const tab = (e.target as HTMLElement).closest<HTMLElement>('.tab');
