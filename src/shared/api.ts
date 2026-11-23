@@ -37,7 +37,7 @@ import type { Run } from './automation-run';
 import type { IfBusy, ScheduledPrompt } from './scheduled-prompts';
 import type { ScheduleNotice } from './schedule-notices';
 import type { Binding, CompanionEvent, CompanionModel, Thread } from './companion/types';
-import type { RemoteLayout, RemotePairingEvent, RemotePairingStart, RemoteStatus } from './remote';
+import type { RemoteLayout, RemotePairingEvent, RemotePairingStart, RemoteRowsEvent, RemoteStatus } from './remote';
 import type { SignalBookView } from './claude-signals';
 import type { SearchEvent, SearchRequest } from './search';
 
@@ -475,6 +475,7 @@ export const IPC = {
   remoteLayout: 'remote:layout',
   evRemote: 'ev:remote',
   evRemotePairing: 'ev:remote-pairing',
+  evRemoteRows: 'ev:remote-rows',
   // main → renderer events
   evTerminals: 'ev:terminals',
   evBackgroundFeed: 'ev:background-feed',
@@ -1205,6 +1206,8 @@ export interface AtelierApi {
     remote(cb: (s: RemoteStatus) => void): () => void;
     /** A pairing's news: a fresh code, a phone asking (Allow / Deny), paired, denied, stopped (every window). */
     remotePairing(cb: (e: RemotePairingEvent) => void): () => void;
+    /** What a paired phone did to this project's rows that the sidebar follows (the project's main window only). */
+    remoteRows(cb: (e: RemoteRowsEvent) => void): () => void;
     /** The keys of the tabs in pop-outs changed. */
     popouts(cb: (keys: string[]) => void): () => void;
     /** A pop-out's tab is moved back here. */

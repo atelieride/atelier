@@ -3,7 +3,9 @@
 // output, typing, sizes, new sessions — and runs pairing (the code, the Allow/Deny question to the windows). Off, no
 // relay connection exists at all. A phone only names what the state listed: opaque project ids and terminal ids, never
 // paths, commands, accounts or profiles.
-import type { RemoteDeviceInfo, RemoteLayout, RemotePairingEvent, RemotePairingStart, RemoteRelayState, RemoteSized, RemoteStatus } from '@shared/remote';
+import type { RemoteDeviceInfo, RemoteLayout, RemotePairingEvent, RemotePairingStart, RemoteRelayState, RemoteRowsEvent, RemoteSized, RemoteStatus } from '@shared/remote';
+import { accountsFor } from '@shared/claude-accounts';
+import { waitKind } from '@shared/session-view';
 import { relayBase } from '@shared/remote';
 import type { Settings } from '@shared/settings';
 import type { PortsMap } from '@shared/ports';
@@ -20,6 +22,7 @@ import { LayoutStore } from './layouts';
 import { CLOSE, type ByeReason, type DeviceMessage, type HostMessage, type RemoteAccount } from './messages';
 import { Pairing } from './pairing';
 import { RelayLink, type RelayLinkOptions } from './relay-link';
+import { isPlanApproval, waitKeyOf } from './rows';
 import { remoteState, remoteUsage, type RemoteState } from './state';
 import { MAX_APP_MESSAGE, type ChannelKind } from './wire';
 
@@ -40,7 +43,13 @@ export interface RemoteTerminals {
   remoteInput(key: number, id: string, data: string): boolean;
   remoteResize(key: number, id: string, cols: number, rows: number): boolean;
   remoteSized(): RemoteSized[];
-  createRemoteSession(o: { project: string; kind: 'claude' | 'terminal'; cols: number; rows: number }): Promise<TerminalInfo>;
+  createRemoteSession(o: { project: string; kind: 'claude' | 'terminal'; cols: number; rows: number; account?: string }): Promise<TerminalInfo>;
+  /** Allow ("1": the dialog's first option) or Deny (Esc) on a session's permission request. */
+  answerPermission(id: string, choice: 'allow' | 'deny'): void;
+  renameRemote(id: string, name: string): Promise<void>;
+  closeRemote(id: string): Promise<void>;
+  resumeRemote(id: string, cols: number, rows: number): Promise<TerminalInfo>;
+  dismissRemote(id: string): Promise<void>;
 }
 
 export interface RemoteHubDeps {
@@ -62,6 +71,8 @@ export interface RemoteHubDeps {
   prs?(root: string): Record<string, PrEntry>;
   /** A path with its links resolved. */
   realOf?(p: string): string;
+  /** What a phone did to a project's rows, for its main window to follow (nothing when it isn't open). */
+  rows?(root: string, e: RemoteRowsEvent): void;
   emitStatus(s: RemoteStatus): void;
   emitPairing(e: RemotePairingEvent): void;
   log?(message: string): void;
@@ -115,6 +126,12 @@ interface SessionHost {
   rootOf(projectId: string): string | null;
   /** A listed project's layout, as its window last showed it (null: never shown with iPhone access on). */
   layoutOf(root: string): RemoteLayout | null;
+  terminal(id: string): TerminalInfo | undefined;
+  /** A resumable the state lists: its project's root. */
+  resumableRoot(id: string): string | null;
+  /** A Claude account a phone may start a session as (the ids `usage` lists). */
+  accountKnown(id: string): boolean;
+  rows(root: string, e: RemoteRowsEvent): void;
   scheduleState(): void;
   statusChanged(): void;
   outMs: number;
@@ -205,10 +222,59 @@ class PhoneSession implements RemoteViewer {
       case 'create': {
         const root = this.host.rootOf(m.project);
         if (!root) { this.error(m.rid, 'not-found', 'This project is not on this computer any more.'); return; }
+        if (m.account !== undefined && m.kind !== 'claude') { this.error(m.rid, 'invalid', 'Only a Claude session runs as an account.'); return; }
+        if (m.account !== undefined && !this.host.accountKnown(m.account)) { this.error(m.rid, 'not-found', 'This Claude account is not on this computer any more.'); return; }
+        const places = this.host.layoutOf(root)?.workspaces?.places ?? [];
+        if (m.place !== undefined && !places.some((p) => p.id === m.place)) { this.error(m.rid, 'not-found', 'This workspace is not in the project any more.'); return; }
         const size = this.lastSize ?? DEFAULT_SIZE;
-        this.terms.createRemoteSession({ project: root, kind: m.kind, cols: size.cols, rows: size.rows }).then(
-          (info) => { this.send({ t: 'created', rid: m.rid, id: info.id }); this.host.scheduleState(); },
+        this.terms.createRemoteSession({ project: root, kind: m.kind, cols: size.cols, rows: size.rows, ...(m.account !== undefined ? { account: m.account } : {}) }).then(
+          (info) => {
+            this.send({ t: 'created', rid: m.rid, id: info.id });
+            // The new row joins its place through the project's window (where Atelier puts new rows without one).
+            if (m.place !== undefined) this.host.rows(root, { kind: 'join', id: info.id, place: m.place });
+            this.host.scheduleState();
+          },
           () => this.error(m.rid, 'failed', m.kind === 'claude' ? 'The session could not be started.' : 'The terminal could not be started.')
+        );
+        return;
+      }
+      case 'answer': {
+        const t = this.host.terminal(m.id);
+        if (!t) { this.error(m.rid, 'not-found', 'This session is not on this computer any more.'); return; }
+        // Only the very request the phone saw, while it is still a permission waiting for an answer.
+        if (waitKind(t.session) !== 'permission' || waitKeyOf(t) !== m.wait) { this.error(m.rid, 'busy', 'The request changed'); return; }
+        if (isPlanApproval(t.session)) { this.error(m.rid, 'invalid', 'Open the session to answer a plan.'); return; }
+        this.terms.answerPermission(m.id, m.choice);
+        this.send({ t: 'ok', rid: m.rid });
+        return;
+      }
+      case 'rename':
+      case 'close': {
+        if (!this.host.terminal(m.id)) { this.error(m.rid, 'not-found', 'This session is not on this computer any more.'); return; }
+        const done = m.t === 'rename' ? this.terms.renameRemote(m.id, m.name) : this.terms.closeRemote(m.id);
+        done.then(
+          () => { this.send({ t: 'ok', rid: m.rid }); this.host.scheduleState(); },
+          () => this.error(m.rid, 'failed', m.t === 'rename' ? 'The name could not be changed.' : 'It could not be closed.')
+        );
+        return;
+      }
+      case 'dismiss': {
+        if (this.host.resumableRoot(m.id) === null) { this.error(m.rid, 'not-found', 'This session is not offered to resume any more.'); return; }
+        this.terms.dismissRemote(m.id).then(
+          () => { this.send({ t: 'ok', rid: m.rid }); this.host.scheduleState(); },
+          () => this.error(m.rid, 'failed', 'It could not be dismissed.')
+        );
+        return;
+      }
+      case 'resume': {
+        const root = this.host.resumableRoot(m.id);
+        if (root === null) { this.error(m.rid, 'not-found', 'This session is not offered to resume any more.'); return; }
+        const size = this.lastSize ?? DEFAULT_SIZE;
+        // The project's window keeps the row alive while it resumes, then gives the new terminal its pin and place.
+        this.host.rows(root, { kind: 'resuming', id: m.id });
+        this.terms.resumeRemote(m.id, size.cols, size.rows).then(
+          (info) => { this.host.rows(root, { kind: 'resumed', from: m.id, to: info.id }); this.send({ t: 'created', rid: m.rid, id: info.id }); this.host.scheduleState(); },
+          () => { this.host.rows(root, { kind: 'resumed', from: m.id, to: null }); this.error(m.rid, 'failed', 'The session could not be resumed.'); }
         );
       }
     }
@@ -350,6 +416,14 @@ export class RemoteHub {
       listed: (id) => this.d.terminals.allTerminals().some((t) => t.id === id),
       rootOf: (pid) => this.computeState().roots.get(pid) ?? null,
       layoutOf: (root) => this.layouts.get(root),
+      terminal: (id) => this.d.terminals.allTerminals().find((t) => t.id === id),
+      resumableRoot: (id) => {
+        const st = this.computeState();
+        const r = st.resumables.find((x) => x.id === id);
+        return r ? st.roots.get(r.project) ?? null : null;
+      },
+      accountKnown: (id) => accountsFor(this.d.settings().claudeAccounts, this.d.defaultDir()).list.some((a) => a.id === id),
+      rows: (root, e) => this.d.rows?.(root, e),
       scheduleState: () => this.scheduleState(),
       statusChanged: () => this.statusChanged(),
       outMs: d.timing?.outMs ?? OUT_MS

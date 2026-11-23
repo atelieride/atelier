@@ -227,13 +227,25 @@ export class FakePhone {
   input(id: string, data: string): void { this.send({ t: 'input', id, data }); }
   resize(id: string, cols: number, rows: number): void { this.send({ t: 'resize', id, cols, rows }); }
 
-  /** Starts a session in a listed project; resolves with `created` or `error`. */
-  create(project: string, kind: 'claude' | 'terminal'): Promise<Msg> {
+  /** Starts a session in a listed project (in a place, as an account); resolves with `created` or `error`. */
+  create(project: string, kind: 'claude' | 'terminal', o: { place?: string; account?: string } = {}): Promise<Msg> {
+    return this.request({ t: 'create', project, kind, ...o });
+  }
+
+  /** A request with the next rid; resolves with its answer: `ok`, `created` or `error`. */
+  request(msg: Record<string, unknown> & { t: string }, ms?: number): Promise<Msg> {
     const since = this.messages.length;
     const rid = ++this.rid;
-    this.send({ t: 'create', rid, project, kind });
-    return this.waitFor((m) => (m.t === 'created' || m.t === 'error') && m.rid === rid, { since });
+    this.send({ ...msg, rid });
+    return this.waitFor((m) => (m.t === 'ok' || m.t === 'created' || m.t === 'error') && m.rid === rid, { since, ...(ms ? { ms } : {}) });
   }
+
+  /** Allow or Deny on a session's permission request, naming the wait the state showed. */
+  answer(id: string, wait: string, choice: 'allow' | 'deny'): Promise<Msg> { return this.request({ t: 'answer', id, wait, choice }); }
+  rename(id: string, name: string): Promise<Msg> { return this.request({ t: 'rename', id, name }); }
+  closeRow(id: string): Promise<Msg> { return this.request({ t: 'close', id }); }
+  resume(id: string): Promise<Msg> { return this.request({ t: 'resume', id }); }
+  dismiss(id: string): Promise<Msg> { return this.request({ t: 'dismiss', id }); }
 
   /** A terminal's screen as received: its last snapshot, then every `out` after it. */
   screen(id: string): string {

@@ -1451,6 +1451,8 @@ if (!app.requestSingleInstanceLock()) {
       ports: (root) => (settings.get().showPorts ? portsHub.portsOf(root) : {}),
       prs: (root) => prHub.stateOf(root).terminals,
       realOf: remoteRealOf,
+      // What a phone did to a project's rows: its main window follows (a new row's place, a resume's pin and place).
+      rows: (root, e) => { const b = projectWindow(root); if (b) sendTo(b, IPC.evRemoteRows, e); },
       emitStatus: (st) => { for (const b of BrowserWindow.getAllWindows()) sendTo(b, IPC.evRemote, st); },
       emitPairing: (ev) => { for (const b of BrowserWindow.getAllWindows()) sendTo(b, IPC.evRemotePairing, ev); },
       log: (message) => { appLog.write({ source: 'main:remote', message }); }

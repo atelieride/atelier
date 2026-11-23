@@ -5,6 +5,7 @@ import type { RemoteStatus } from '@shared/remote';
 import { useApp } from '../store';
 import { phoneTerminals } from './view';
 import { installLayoutSync } from './layout-sync';
+import { installPhoneRows } from './phone-rows';
 
 interface IphoneState {
   /** null until asked: with access off, main is asked only when Settings › iPhone opens (it may touch the Keychain). */
@@ -73,7 +74,8 @@ export function installIphone(): () => void {
   const offStatus = window.atelier.on.remote((s) => useIphone.getState().setStatus(s));
   // The settings arrive after the window starts: access found on then (or turned on) asks for the status once.
   const offSettings = useApp.subscribe((s, prev) => { if (s.settings.remoteAccess && !prev.settings.remoteAccess) refreshIphone(); });
-  // The project's sidebar arrangement, for the phones' grouping.
+  // The project's sidebar arrangement, for the phones' grouping; what a phone does to the rows, followed here.
   const offLayout = installLayoutSync();
-  return () => { offStatus(); offSettings(); offLayout(); };
+  const offRows = installPhoneRows();
+  return () => { offStatus(); offSettings(); offLayout(); offRows(); };
 }

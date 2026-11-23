@@ -880,6 +880,10 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
   unlinkTask(id: string): void;
   /** A resumed session is a new terminal: its task link follows it. */
   relinkTask(from: string, to: string): void;
+  /** A paired phone resumes this row: it counts as alive (its pin, order and place kept) until phoneResumed. */
+  phoneResuming(id: string): void;
+  /** That resume is over: the new terminal takes the row's task link, pin, manual place and workspace (`to` null: it failed). */
+  phoneResumed(from: string, to: string | null): void;
   /**
    * Resumes a session left without a process (sidebar, palette): the new terminal is shown as starting, and takes the
    * old one's task link and pin. null when atelierd refused.
@@ -1621,6 +1625,19 @@ export const useApp = create<AppState>((set, get) => ({
     if (!link || from === to) return;
     const { [from]: _moved, ...rest } = get().taskLinks;
     setTaskLinks({ ...rest, [to]: link });
+  },
+  phoneResuming: (id) => { resuming.add(id); },
+  phoneResumed: (from, to) => {
+    if (to) {
+      get().relinkTask(from, to);
+      setPins(relinkPin(get().pins, from, to));
+      setRowOrder(relinkOrder(get().rowOrder, from, to));
+      const ws = get().ws;
+      if (ws) set({ ws: wsRelink(ws, from, to) });
+    }
+    resuming.delete(from);
+    prunePinned();
+    pruneLinks();
   },
   resume: async (id) => {
     const { size } = get();

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Resumable, TerminalInfo } from '@shared/protocol';
 import type { UsageEntry } from '@shared/session';
 import type { PortsMap } from '@shared/ports';
-import type { RemoteLayout, RemotePairingEvent, RemoteSized, RemoteStatus } from '@shared/remote';
+import type { RemoteLayout, RemotePairingEvent, RemoteRowsEvent, RemoteSized, RemoteStatus } from '@shared/remote';
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings';
 import { FakePhone, type Msg } from '../../../tests/support/fake-phone';
 import { startTestRelay, type TestRelay } from '../../../tests/support/test-relay';
@@ -28,7 +28,11 @@ class FakeTerminals implements RemoteTerminals {
   watching = new Map<number, Set<string>>();
   inputs: [string, string][] = [];
   resizes: [string, number, number][] = [];
-  created: { project: string; kind: string; cols: number; rows: number }[] = [];
+  created: { project: string; kind: string; cols: number; rows: number; account?: string }[] = [];
+  answers: [string, string][] = [];
+  renames: [string, string][] = [];
+  closes: string[] = [];
+  dismissals: string[] = [];
   sized: RemoteSized[] = [];
   resumables: Resumable[] = [];
   usage: UsageEntry[] = [];
@@ -59,7 +63,20 @@ class FakeTerminals implements RemoteTerminals {
     return true;
   }
   remoteSized() { return this.sized; }
-  async createRemoteSession(o: { project: string; kind: 'claude' | 'terminal'; cols: number; rows: number }) {
+  answerPermission(id: string, choice: 'allow' | 'deny') { this.answers.push([id, choice]); }
+  async renameRemote(id: string, name: string) { if (!this.list.some((t) => t.id === id)) throw new Error('gone'); this.renames.push([id, name]); }
+  async closeRemote(id: string) { if (!this.list.some((t) => t.id === id)) throw new Error('gone'); this.closes.push(id); this.set(this.list.filter((t) => t.id !== id)); }
+  async resumeRemote(id: string, cols: number, rows: number) {
+    const r = this.resumables.find((x) => x.id === id);
+    if (!r) throw new Error('gone');
+    this.resumables = this.resumables.filter((x) => x.id !== id);
+    const t = term(`from-${id}`, r.projectRoot, { createdAt: 50 });
+    this.created.push({ project: r.projectRoot, kind: 'resume', cols, rows });
+    this.set([...this.list, t]);
+    return t;
+  }
+  async dismissRemote(id: string) { if (!this.resumables.some((x) => x.id === id)) throw new Error('gone'); this.dismissals.push(id); this.resumables = this.resumables.filter((x) => x.id !== id); this.set(this.list); }
+  async createRemoteSession(o: { project: string; kind: 'claude' | 'terminal'; cols: number; rows: number; account?: string }) {
     this.created.push(o);
     const t = term(`new${this.created.length}`, o.project, { createdAt: 10 + this.created.length });
     this.set([...this.list, t]);
@@ -100,19 +117,21 @@ function setup(o: { settings?: Partial<Settings>; safe?: Parameters<typeof testS
   terms.list = [term('t1', '/work/app'), term('t2', '/work/app', { createdAt: 2, session: { sessionId: 's', state: 'waiting', waitingFor: 'permission', title: null, activity: null, contextPct: null, unread: false, updatedAt: 0 } as never })];
   const statuses: RemoteStatus[] = [];
   const pairing: RemotePairingEvent[] = [];
+  const rows: [string, RemoteRowsEvent][] = [];
   let projects = { open: ['/work/app'], recent: ['/work/old'] };
   const hub = new RemoteHub({
     home, secrets: createSecretStore(home, testSafeStorage(o.safe)), settings: () => settings, relayUrl: () => settings.remoteRelay,
     terminals: terms, projects: () => projects, host: { name: 'Studio Mac', app: '0.3.0', platform: 'darwin' },
     emitStatus: (s) => statuses.push(s), emitPairing: (e) => pairing.push(e),
     defaultDir: () => '/home/.claude',
+    rows: (root, e) => rows.push([root, e]),
     timing: { stateMs: 30, usageMs: 30, ...o.timing }, ...(o.link ? { link: o.link } : {}), ...o.deps
   });
   hubs.push(hub);
   const phone = (opts: Partial<ConstructorParameters<typeof FakePhone>[0]> = {}) => { const p = new FakePhone({ relay: relay.url, ...opts }); phones.push(p); return p; };
   const set = (patch: Partial<Settings>) => { settings = { ...settings, ...patch }; hub.settingsChanged(); };
   const setProjects = (p: typeof projects) => { projects = p; hub.projectsChanged(); };
-  return { hub, home, terms, statuses, pairing, phone, set, setProjects };
+  return { hub, home, terms, statuses, pairing, phone, set, setProjects, rows };
 }
 
 /** Pairs a phone by code, answering Allow; the phone and its welcome. */
@@ -520,5 +539,85 @@ describe('layouts (v1.1)', () => {
     const off = setup({ settings: { remoteAccess: false } });
     off.hub.layoutChanged('/work/app', L());
     expect(off.hub.layoutOf('/work/app')).toBeNull();
+  });
+});
+
+describe('actions on rows (v1.1)', () => {
+  const waitingSession = (o: object = {}) => ({ sessionId: 's', state: 'waiting', waitingFor: 'permission', title: null, activity: 'waiting: Bash npm test', contextPct: null, unread: false, updatedAt: 1, ...o }) as never;
+
+  test('answer: only for the very wait the state showed; allow and deny reach the session; another wait is "The request changed"', async () => {
+    const t = setup();
+    t.terms.list = [term('w', '/work/app', { session: waitingSession() })];
+    const { phone } = await paired(t);
+    const row = (await phone.state((s) => (s.sessions as Msg[]).some((x) => x.id === 'w' && x.wait))).sessions as Msg[];
+    const wait = row.find((x) => x.id === 'w')!.wait as string;
+    expect(await phone.answer('w', wait, 'allow')).toMatchObject({ t: 'ok' });
+    expect(t.terms.answers).toEqual([['w', 'allow']]);
+    // A newer request (updated since): refused, nothing typed.
+    t.terms.set([term('w', '/work/app', { session: waitingSession({ updatedAt: 2 }) })]);
+    expect(await phone.answer('w', wait, 'deny')).toMatchObject({ t: 'error', code: 'busy', message: 'The request changed' });
+    // No longer waiting at all: the same.
+    t.terms.set([term('w', '/work/app', { session: waitingSession({ state: 'running', waitingFor: null, activity: 'Bash npm test' }) })]);
+    expect(await phone.answer('w', wait, 'deny')).toMatchObject({ t: 'error', code: 'busy', message: 'The request changed' });
+    expect(await phone.answer('gone', wait, 'allow')).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(t.terms.answers).toEqual([['w', 'allow']]);
+  });
+
+  test('answer: a question or a plan is answered in the session, never from the row', async () => {
+    const t = setup();
+    t.terms.list = [
+      term('q', '/work/app', { session: waitingSession({ waitingFor: 'question', activity: 'waiting: question' }) }),
+      term('p', '/work/app', { session: waitingSession({ activity: 'waiting: plan approval' }) })
+    ];
+    const { phone } = await paired(t);
+    const rows = (await phone.state((s) => (s.sessions as Msg[]).filter((x) => x.wait).length === 2)).sessions as Msg[];
+    const waitOf = (id: string) => rows.find((x) => x.id === id)!.wait as string;
+    expect(await phone.answer('q', waitOf('q'), 'allow')).toMatchObject({ t: 'error', code: 'busy', message: 'The request changed' });
+    expect(await phone.answer('p', waitOf('p'), 'allow')).toMatchObject({ t: 'error', code: 'invalid' });
+    expect(t.terms.answers).toEqual([]);
+  });
+
+  test('rename, close, dismiss and resume a listed row; unknown ones are not found', async () => {
+    const t = setup();
+    t.terms.resumables = [
+      { id: 'r1', projectRoot: '/work/app', cwd: '/work/app', title: 'Old', color: '#F28FAD', sessionId: 's-r1', endedAt: 5 },
+      { id: 'r2', projectRoot: '/work/app', cwd: '/work/app', title: 'Older', color: '#F28FAD', sessionId: 's-r2', endedAt: 4 },
+      { id: 'far', projectRoot: '/elsewhere', cwd: '/elsewhere', title: 'Far', color: '#F28FAD', sessionId: 's-far', endedAt: 4 }
+    ];
+    const { phone } = await paired(t);
+    await phone.state();
+    expect(await phone.rename('t1', 'Build')).toMatchObject({ t: 'ok' });
+    expect(t.terms.renames).toEqual([['t1', 'Build']]);
+    expect(await phone.closeRow('t1')).toMatchObject({ t: 'ok' });
+    expect(t.terms.closes).toEqual(['t1']);
+    expect(await phone.dismiss('r2')).toMatchObject({ t: 'ok' });
+    expect(t.terms.dismissals).toEqual(['r2']);
+    const resumed = await phone.resume('r1');
+    expect(resumed).toMatchObject({ t: 'created', id: 'from-r1' });
+    // The project's window keeps the row's pin and place: told before the resume, and after it.
+    expect(t.rows).toEqual([['/work/app', { kind: 'resuming', id: 'r1' }], ['/work/app', { kind: 'resumed', from: 'r1', to: 'from-r1' }]]);
+    // A project the phone doesn't list, and ids that aren't there.
+    expect(await phone.resume('far')).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(await phone.dismiss('nope')).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(await phone.rename('nope', 'x')).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(await phone.closeRow('nope')).toMatchObject({ t: 'error', code: 'not-found' });
+  });
+
+  test('create in a place of the project\'s layout, as an account; an unknown place or account is refused', async () => {
+    const t = setup({ settings: { claudeAccounts: { list: [{ id: 'default', name: 'Claude', dir: '', color: 1 }, { id: 'work', name: 'Work', dir: '/acc/work', color: 2 }], newSession: 'default', dismissed: [] } } });
+    t.hub.layoutChanged('/work/app', { groupByState: true, pins: [], order: { sessions: [], terminals: [] }, workspaces: { active: 'w1', activities: true, places: [{ id: 'w1', name: 'Main', color: 1, open: true }, { id: 'a1', name: 'SSO', color: 2, parent: 'w1', open: false }], members: {} } });
+    const { phone } = await paired(t);
+    await phone.state();
+    const app = projectIdOf('/work/app');
+    expect(await phone.create(app, 'claude', { place: 'a1', account: 'work' })).toMatchObject({ t: 'created', id: 'new1' });
+    expect(t.terms.created.at(-1)).toMatchObject({ project: '/work/app', kind: 'claude', account: 'work' });
+    expect(t.rows).toEqual([['/work/app', { kind: 'join', id: 'new1', place: 'a1' }]]);
+    // No place: wherever Atelier puts new rows; nothing for the window to do.
+    expect(await phone.create(app, 'terminal')).toMatchObject({ t: 'created' });
+    expect(t.rows).toHaveLength(1);
+    expect(await phone.create(app, 'claude', { place: 'gone' })).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(await phone.create(app, 'claude', { account: 'nobody' })).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(await phone.create(app, 'terminal', { account: 'work' })).toMatchObject({ t: 'error', code: 'invalid' });
+    expect(t.terms.created).toHaveLength(2);
   });
 });

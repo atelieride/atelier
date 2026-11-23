@@ -230,6 +230,56 @@ describe('messages', () => {
     expect(o.received).toHaveLength(4);
   });
 
+  test('v1.1 requests: answer, rename, close, resume, dismiss, create in a place with an account; strict shapes', async () => {
+    const o = await open();
+    const ok = [
+      { t: 'answer', rid: 1, id: 't1', wait: 'AbC_-123', choice: 'allow' },
+      { t: 'answer', rid: 2, id: 't1', wait: 'AbC_-123', choice: 'deny' },
+      { t: 'rename', rid: 3, id: 't1', name: 'Fix the login' },
+      { t: 'rename', rid: 4, id: 't1', name: '' },
+      { t: 'close', rid: 5, id: 't1' },
+      { t: 'resume', rid: 6, id: 'r1' },
+      { t: 'dismiss', rid: 7, id: 'r1' },
+      { t: 'create', rid: 8, project: 'p', kind: 'claude', place: 'w1abc', account: 'work' }
+    ];
+    for (const m of ok) o.send(m);
+    expect(o.received).toEqual(ok);
+    const bad = [
+      { t: 'answer', rid: 11, id: 't1', wait: 'x', choice: 'always' },
+      { t: 'answer', rid: 12, id: 't1', choice: 'allow' },
+      { t: 'answer', rid: 13, id: 't1', wait: 'has space', choice: 'allow' },
+      { t: 'rename', rid: 14, id: 't1', name: 'x'.repeat(61) },
+      { t: 'close', rid: 15, id: 't1', force: true },
+      { t: 'create', rid: 16, project: 'p', kind: 'claude', place: '../w' },
+      { t: 'create', rid: 17, project: 'p', kind: 'claude', account: '/Users/x/.claude' },
+      { t: 'create', rid: 18, project: 'p', kind: 'claude', command: 'rm -rf /' }
+    ];
+    for (const m of bad) o.send(m);
+    expect(o.received).toHaveLength(ok.length);
+    expect(o.got.filter((m) => m.t === 'error').map((m) => m.rid)).toEqual([11, 12, 13, 14, 15, 16, 17, 18]);
+    // A name is counted in characters: 60 emoji are fine.
+    o.send({ t: 'rename', rid: 19, id: 't1', name: '🚀'.repeat(60) });
+    expect(o.received.at(-1)).toMatchObject({ rid: 19 });
+  });
+
+  test('limits: answer, rename, close, resume and dismiss together per minute', async () => {
+    let now = 0;
+    const o = await open({ now: () => now, limits: { actionsPerMin: 3 } });
+    o.send({ t: 'answer', rid: 1, id: 't', wait: 'w', choice: 'allow' });
+    o.send({ t: 'rename', rid: 2, id: 't', name: 'x' });
+    o.send({ t: 'close', rid: 3, id: 't' });
+    o.send({ t: 'dismiss', rid: 4, id: 'r' });
+    o.send({ t: 'resume', rid: 5, id: 'r' });
+    expect(o.received.map((m) => ('rid' in m ? m.rid : 0))).toEqual([1, 2, 3]);
+    expect(o.got.filter((m) => m.t === 'error').map((m) => [m.rid, m.code])).toEqual([[4, 'busy'], [5, 'busy']]);
+    // Attaching and typing don't count.
+    o.send({ t: 'detach', id: 't' });
+    expect(o.received).toHaveLength(4);
+    now += 60_000;
+    o.send({ t: 'resume', rid: 6, id: 'r' });
+    expect(o.received.at(-1)).toMatchObject({ rid: 6 });
+  });
+
   test('bye: the message, then a normal close; the relay\'s own close is reported once', async () => {
     const o = await open();
     o.ch.bye('revoked');

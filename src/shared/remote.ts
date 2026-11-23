@@ -115,3 +115,13 @@ export interface RemoteLayout {
   order: { sessions: string[]; terminals: string[] };
   workspaces?: { active: string; activities: boolean; places: RemotePlace[]; members: Record<string, string> };
 }
+
+/**
+ * What a paired phone did to a project's rows that its main window follows (only while it is open): a new row joins
+ * the place the phone named; a resume keeps the old row alive meanwhile, then the new terminal takes its pin, its place
+ * in the manual order and its workspace (`to` null: the resume failed).
+ */
+export type RemoteRowsEvent =
+  | { kind: 'join'; id: string; place: string }
+  | { kind: 'resuming'; id: string }
+  | { kind: 'resumed'; from: string; to: string | null };

@@ -85,6 +85,7 @@ export function createEmitter(): Emitter {
     // iPhone access is off in the demo: no status changes or pairing news come.
     remote: listen('remote'),
     remotePairing: listen('remotePairing'),
+    remoteRows: listen('remoteRows'),
     popouts: listen('popouts'),
     dock: listen('dock'),
     dockHover: listen('dockHover'),

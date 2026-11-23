@@ -454,6 +454,7 @@ const api: AtelierApi = {
     companion: (cb) => listen(IPC.evCompanion, cb),
     remote: (cb) => listen(IPC.evRemote, cb),
     remotePairing: (cb) => listen(IPC.evRemotePairing, cb),
+    remoteRows: (cb) => listen(IPC.evRemoteRows, cb),
     popouts: (cb) => listen(IPC.evPopouts, cb),
     dock: (cb) => listen(IPC.evDock, cb),
     dockHover: (cb) => listen(IPC.evDockHover, cb),

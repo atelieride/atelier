@@ -1158,3 +1158,92 @@ describe('what a paired phone lists besides the terminals', () => {
     expect(hub.usageList()).toEqual(u);
   });
 });
+
+describe('a paired phone\'s actions on rows, as Atelier\'s own', () => {
+  async function project() {
+    const { mkdtempSync, realpathSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    initPlatform(process.platform);
+    return toOut(realpathSync(mkdtempSync(join(tmpdir(), 'atl-hub-actions-'))));
+  }
+  const handler = (channel: string) => {
+    const call = (vi.mocked(ipcMain.handle).mock.calls as unknown as [string, (e: unknown, arg: unknown) => unknown][]).findLast((c) => c[0] === channel);
+    if (!call) throw new Error(`no handler for ${channel}`);
+    return call[1];
+  };
+  const waiting = (id: string, root = '/p') => ({ ...term(id, root), session: { sessionId: `s-${id}`, state: 'waiting', waitingFor: 'permission', title: null, activity: 'waiting: Bash npm test', contextPct: null, unread: false, updatedAt: 1 } }) as unknown as TerminalInfo;
+
+  test('answer: allow chooses the prompt\'s first option ("1"), deny presses Esc, seen by the interrupt watch as typed keys', () => {
+    const { hub, client } = setup();
+    client.emit('terminals', [waiting('w')]);
+    hub.answerPermission('w', 'allow');
+    hub.answerPermission('w', 'deny');
+    expect(client.send.mock.calls.map((c) => c[0])).toEqual([{ t: 'input', id: 'w', data: '1' }, { t: 'input', id: 'w', data: '\x1b' }]);
+  });
+
+  test('rename: as the row\'s Rename (trimmed, control characters out, "" gives the automatic name back, the same name is nothing)', async () => {
+    const { hub, client } = setup();
+    client.emit('terminals', [term('a')]);
+    await hub.renameRemote('a', '  Fix\tthe login  ');
+    await hub.renameRemote('a', '');
+    await hub.renameRemote('a', 'a');
+    expect((client.request.mock.calls as unknown as unknown[][]).map((c) => c[0])).toEqual([{ t: 'rename', id: 'a', name: 'Fix the login' }, { t: 'rename', id: 'a', name: null }]);
+    await expect(hub.renameRemote('gone', 'x')).rejects.toThrow();
+  });
+
+  test('close: what closing its tab does, "Keep closed sessions under Resume" included; once', async () => {
+    const { hub, client } = setup();
+    const withSession = (id: string) => ({ ...term(id), session: { sessionId: id, state: 'done', lastMessageAt: 1 } }) as unknown as TerminalInfo;
+    client.emit('terminals', [withSession('s'), withSession('k')]);
+    await hub.closeRemote('s');
+    hub.settings = () => ({ ...DEFAULT_SETTINGS, keepClosedSessions: true });
+    await hub.closeRemote('k');
+    await hub.closeRemote('k');
+    expect((client.request.mock.calls as unknown as unknown[][]).map((c) => c[0])).toEqual([{ t: 'kill', id: 's' }, { t: 'kill', id: 'k', resumable: true }]);
+    await expect(hub.closeRemote('gone')).rejects.toThrow();
+  });
+
+  test('resume and dismiss: a listed resumable of any project, as Resume and Dismiss do; the new terminal starts as a session', async () => {
+    try {
+      const root = await project();
+      const { hub, client } = setup();
+      const r = { id: 'r1', projectRoot: root, cwd: root, title: 'Old', color: '#fff', sessionId: 's1', endedAt: 1 };
+      client.emit('resumables', [r]);
+      let req: Record<string, unknown> = {};
+      client.request.mockImplementation((async (build: unknown) => { req = (typeof build === 'function' ? build() : build) as Record<string, unknown>; return req.t === 'resume' ? term('n1', root) : {}; }) as never);
+      const info = await hub.resumeRemote('r1', 70, 30);
+      expect(req).toMatchObject({ t: 'resume', id: 'r1', cols: 70, rows: 30 });
+      expect(info.id).toBe('n1');
+      expect([...hub.startingIds()]).toContain('n1');
+      await hub.dismissRemote('r1');
+      expect(req).toEqual({ t: 'dismiss', id: 'r1' });
+      await expect(hub.resumeRemote('nope', 70, 30)).rejects.toThrow();
+      await expect(hub.dismissRemote('nope')).rejects.toThrow();
+    } finally { resetPlatformForTests(); }
+  });
+
+  test('the window\'s own Close still keeps a session under Resume the same way', async () => {
+    const { hub, register, client } = setup();
+    const w = wc(1); win(w); register(w);
+    client.emit('terminals', [{ ...term('s'), session: { sessionId: 's', state: 'done', lastMessageAt: 1 } } as unknown as TerminalInfo]);
+    hub.settings = () => ({ ...DEFAULT_SETTINGS, keepClosedSessions: true });
+    hub.installIpc();
+    await handler(IPC.termClose)({ sender: w }, 's');
+    expect(client.request).toHaveBeenCalledWith({ t: 'kill', id: 's', resumable: true });
+  });
+
+  test('create with an account: that account\'s command; none: the one set for new sessions', async () => {
+    try {
+      const root = await project();
+      const { hub, client } = setup();
+      hub.settings = () => ({ ...DEFAULT_SETTINGS, claudeAccounts: { list: [{ id: 'default', name: 'Claude', dir: '', color: 1 }, { id: 'work', name: 'Work', dir: '/acc/work', color: 2 }], newSession: 'default', dismissed: [] } });
+      let req: Record<string, unknown> = {};
+      client.request.mockImplementation((async (build: () => unknown) => { req = build() as Record<string, unknown>; return term('n1', root); }) as never);
+      await hub.createRemoteSession({ project: root, kind: 'claude', cols: 60, rows: 30, account: 'work' });
+      expect(String(req.command)).toContain("CLAUDE_CONFIG_DIR='/acc/work'");
+      await hub.createRemoteSession({ project: root, kind: 'claude', cols: 60, rows: 30 });
+      expect(String(req.command)).not.toContain('CLAUDE_CONFIG_DIR');
+    } finally { resetPlatformForTests(); }
+  });
+});

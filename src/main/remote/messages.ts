@@ -2,6 +2,7 @@
 // unknown field or kind is refused), and what this computer sends it. Every message is one JSON object with a string
 // `t`; requests carry `rid`, a positive integer the phone picks, repeated in the answer.
 import { z } from 'zod';
+import { ACCOUNT_ID } from '@shared/claude-accounts';
 import type { RemoteLayout } from '@shared/remote';
 
 /** Control and line-separator characters: names are shown as plain text on both ends. */
@@ -24,13 +25,29 @@ const dim = z.number().int().min(2).max(1000);
 /** At most 64 KiB of UTF-8 per input message. */
 export const MAX_INPUT_BYTES = 64 * 1024;
 
+/** A workspace or activity of a project's layout, as the sidebar names it. */
+const placeId = z.string().regex(/^[\w-]{1,40}$/);
+/** A Claude account, by the id `usage` lists (never a directory). */
+const accountId = z.string().regex(ACCOUNT_ID);
+/** A wait's key, as the state gave it. */
+const waitKey = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
+/** At most 60 characters (not UTF-16 units: an emoji counts once). */
+export const MAX_NAME = 60;
+
 export const deviceMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('attach'), rid, id: terminalId, cols: dim, rows: dim }).strict(),
   z.object({ t: z.literal('detach'), id: terminalId }).strict(),
   z.object({ t: z.literal('input'), id: terminalId, data: z.string().max(MAX_INPUT_BYTES).refine((s) => Buffer.byteLength(s, 'utf8') <= MAX_INPUT_BYTES, 'input too large') }).strict(),
   z.object({ t: z.literal('resize'), id: terminalId, cols: dim, rows: dim }).strict(),
-  z.object({ t: z.literal('create'), rid, project: z.string().min(1).max(64), kind: z.enum(['claude', 'terminal']) }).strict()
+  z.object({ t: z.literal('create'), rid, project: z.string().min(1).max(64), kind: z.enum(['claude', 'terminal']), place: placeId.optional(), account: accountId.optional() }).strict(),
+  z.object({ t: z.literal('answer'), rid, id: terminalId, wait: waitKey, choice: z.enum(['allow', 'deny']) }).strict(),
+  z.object({ t: z.literal('rename'), rid, id: terminalId, name: z.string().max(MAX_NAME * 4).refine((s) => [...s].length <= MAX_NAME, 'name too long') }).strict(),
+  z.object({ t: z.literal('close'), rid, id: terminalId }).strict(),
+  z.object({ t: z.literal('resume'), rid, id: terminalId }).strict(),
+  z.object({ t: z.literal('dismiss'), rid, id: terminalId }).strict()
 ]);
+/** The requests that act on a row (answered `busy` past their shared limit). */
+export const ROW_ACTIONS: ReadonlySet<DeviceMessage['t']> = new Set(['answer', 'rename', 'close', 'resume', 'dismiss']);
 export type DeviceMessage = z.infer<typeof deviceMessageSchema>;
 
 export interface RemoteProject { id: string; name: string; color: number | null; open: boolean }

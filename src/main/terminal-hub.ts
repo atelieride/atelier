@@ -35,7 +35,7 @@ import type { ScheduledPrompt } from '@shared/scheduled-prompts';
 import { noArgsSchema, scheduleAddSchema, scheduleFireSchema, scheduleIdSchema, scheduleRestoreSchema, scheduleSnoozeSchema, scheduleUpdateSchema } from './ipc-schemas';
 import type { SignalBookView } from '@shared/claude-signals';
 import { attributionResolveSchema, attributionUndoSchema, backgroundLoopSchema, backgroundWatchSchema, claudeConfigSchema, claudeRestartSchema, claudeLaunchPreviewSchema, claudeResumeSchema, termResumeSchema, idSchema, termCreateSchema, termCreateSessionSchema, termInputSchema, termRenameSchema, termResizeSchema, termStopSchema, triggerNotifySchema } from './ipc-schemas';
-import { claudeResumeCommand } from '@shared/shell';
+import { claudeResumeCommand, cleanName } from '@shared/shell';
 import { isShell } from '@shared/shells';
 import { keptOnClose } from '@shared/close-plan';
 import { accountDirOf, accountsOf, defaultConfigDirNow, historyResume, historyRoots, isRegularFile, launchFlags, restartCommand, resumeConfigDir, resumeFields, sessionCommand } from './claude-accounts';
@@ -551,15 +551,7 @@ export class TerminalHub {
       const o = termResumeSchema.parse(arg);
       const r = this.resumables.find((x) => x.id === o.id);
       if (!r || r.projectRoot !== w.project) throw new Error('session of another project');
-      await this.freshEnv(w, sessionProfile(this.settings().terminalProfile, this.profilesAvailable()));
-      // The account it ran with: main picks the dir, null for the default one; sent only to an
-      // atelierd that uses it (the request is built once connected, so the capability is the connected one's).
-      const configDir = await resumeConfigDir(r, accountsOf(this.settings(), defaultConfigDirNow()), defaultConfigDirNow(), isRegularFile);
-      const dir = () => resumeFields(this.client.hasCapability('resume-config-dir'), configDir);
-      // Known at once, like create: the window shows it from the reply and attaches before atelierd's next list.
-      // A terminal moved to another project's window: the new one keeps its home.
-      const info = await this.client.request<TerminalInfo>(() => ({ t: 'resume', id: o.id, cols: o.cols, rows: o.rows, ...this.sessionProfile(), ...dir() }));
-      return this.launched(this.created(this.onResumed(o.id, info)));
+      return this.resumeOf(r, o.cols, o.rows, (profile) => this.freshEnv(w, profile));
     });
     // Claude Code's own history of the project: listed and resumed only as the main process reads it.
     handle(IPC.claudeHistory, (w) => this.history.list(this.historyQuery(w)));
@@ -713,15 +705,7 @@ export class TerminalHub {
     // The page asked already, in the row or the popover where the close was asked. With
     // "Keep closed sessions under Resume" the session comes back there: main decides.
     handle(IPC.termClose, async (w, _wcId, arg) => {
-      const id = this.ownedBy(w, idSchema.parse(arg));
-      const term = this.terminals.find((t) => t.id === id);
-      const keep = this.settings().keepClosedSessions && this.canStopResumable();
-      let resumable = !!term && keptOnClose(term, keep);
-      // No message yet by atelierd's count, but a conversation resumed in place (Restart Session, /resume, claude -c)
-      // starts again that way: Claude's own history says whether there is one. Unreadable: not kept.
-      const s = term?.session;
-      if (keep && !resumable && s && s.lastMessageAt === null) resumable = await this.history.hasConversation(this.historyQuery(w), s.sessionId).catch(() => false);
-      await this.killOnce(id, resumable);
+      await this.closeAsTab(this.ownedBy(w, idSchema.parse(arg)));
     });
     handle(IPC.termKill, async (w, _wcId, arg) => {
       await this.killOnce(this.ownedBy(w, idSchema.parse(arg)));
@@ -1123,17 +1107,18 @@ export class TerminalHub {
   }
 
   /**
-   * A session a phone starts in a listed project: exactly New Session (the command for the account set for new
-   * sessions, its launch flags, the session profile) or New Terminal (the default profile), at the project's root, at
-   * the phone's size. The shell environment is checked first, as for any Atelier terminal.
+   * A session a phone starts in a listed project: exactly New Session (the command for the account the phone chose or
+   * the one set for new sessions, its launch flags, the session profile) or New Terminal (the default profile), at the
+   * project's root, at the phone's size. The shell environment is checked first, as for any Atelier terminal.
    */
-  async createRemoteSession(o: { project: string; kind: 'claude' | 'terminal'; cols: number; rows: number }): Promise<TerminalInfo> {
+  async createRemoteSession(o: { project: string; kind: 'claude' | 'terminal'; cols: number; rows: number; account?: string }): Promise<TerminalInfo> {
     const cwd = terminalCwd(o.project, o.project);
     if (!cwd) throw new Error('project folder not found');
     const at = (info: TerminalInfo) => { const t = this.created(info); this.sizes.known(t.id, { cols: o.cols, rows: o.rows }); return t; };
     const s = this.settings();
     if (o.kind === 'claude') {
-      const command = sessionCommand(s, defaultConfigDirNow(), undefined, undefined);
+      // The account the phone chose (an id it was listed), else the one set for new sessions.
+      const command = sessionCommand(s, defaultConfigDirNow(), o.account, undefined);
       await this.freshEnvQuietly(sessionProfile(s.terminalProfile, this.profilesAvailable()));
       return this.launched(at(await this.client.request<TerminalInfo>(() => ({ t: 'create', projectRoot: o.project, cwd, cols: o.cols, rows: o.rows, command, ...this.sessionProfile() }))));
     }
@@ -1145,6 +1130,79 @@ export class TerminalHub {
       const profile = terminalProfile(undefined, this.settings().terminalProfile, shells(), this.profilesAvailable());
       return { t: 'create', projectRoot: o.project, cwd, cols: o.cols, rows: o.rows, ...(profile ? { profile } : {}), ...this.aliases() };
     }));
+  }
+
+  /**
+   * Resumes a session left without a process, with the account it ran with, in a new terminal known at once (the
+   * window shows it from the reply and attaches before atelierd's next list).
+   */
+  private async resumeOf(r: Resumable, cols: number, rows: number, fresh: (profile: TerminalProfile | undefined) => Promise<void>): Promise<TerminalInfo> {
+    await fresh(sessionProfile(this.settings().terminalProfile, this.profilesAvailable()));
+    // The account it ran with: main picks the dir, null for the default one; sent only to an
+    // atelierd that uses it (the request is built once connected, so the capability is the connected one's).
+    const configDir = await resumeConfigDir(r, accountsOf(this.settings(), defaultConfigDirNow()), defaultConfigDirNow(), isRegularFile);
+    const dir = () => resumeFields(this.client.hasCapability('resume-config-dir'), configDir);
+    // A terminal moved to another project's window: the new one keeps its home.
+    const info = await this.client.request<TerminalInfo>(() => ({ t: 'resume', id: r.id, cols, rows, ...this.sessionProfile(), ...dir() }));
+    return this.launched(this.created(this.onResumed(r.id, info)));
+  }
+
+  /**
+   * Closes a terminal as closing its tab does: with "Keep closed sessions under Resume" a session with a conversation
+   * comes back there (atelierd decides which terminal has one); once, whoever asks.
+   */
+  private async closeAsTab(id: string): Promise<void> {
+    const term = this.terminals.find((t) => t.id === id);
+    const keep = this.settings().keepClosedSessions && this.canStopResumable();
+    let resumable = !!term && keptOnClose(term, keep);
+    // No message yet by atelierd's count, but a conversation resumed in place (Restart Session, /resume, claude -c)
+    // starts again that way: Claude's own history says whether there is one. Unreadable: not kept.
+    const s = term?.session;
+    if (term && keep && !resumable && s && s.lastMessageAt === null) resumable = await this.history.hasConversation(this.historyQueryFor(term.projectRoot), s.sessionId).catch(() => false);
+    await this.killOnce(id, resumable);
+  }
+
+  // ── A paired phone's actions on rows (the remote hub checked them first) ──
+
+  /**
+   * Answers the permission dialog a session shows, as a key pressed in it: "1" picks its first option (allow once),
+   * Esc declines. Claude Code's selection lists take a digit as the choice itself, whichever row the cursor is on.
+   */
+  answerPermission(id: string, choice: 'allow' | 'deny'): void {
+    const data = choice === 'allow' ? '1' : '\x1b';
+    // Seen by the interrupt watch as a typed key is (Esc ends the turn without a Stop).
+    this.typed(id, data);
+    this.client.send({ t: 'input', id, data });
+  }
+
+  /** Rename, as a row's: trimmed, control characters out, "" gives the automatic name back, the shown name is nothing. */
+  async renameRemote(id: string, name: string): Promise<void> {
+    const term = this.terminals.find((t) => t.id === id);
+    if (!term) throw new Error('no such terminal');
+    const v = cleanName(name);
+    if (v === term.title) return;
+    await this.client.request({ t: 'rename', id, name: v || null });
+  }
+
+  /** Close, as its tab's. */
+  async closeRemote(id: string): Promise<void> {
+    if (!this.terminals.some((t) => t.id === id)) throw new Error('no such terminal');
+    await this.closeAsTab(id);
+  }
+
+  /** Resume, for a listed resumable of any project, at the phone's size; nothing to show the shell's reload to. */
+  async resumeRemote(id: string, cols: number, rows: number): Promise<TerminalInfo> {
+    const r = this.resumables.find((x) => x.id === id);
+    if (!r) throw new Error('no such session to resume');
+    const info = await this.resumeOf(r, cols, rows, (profile) => this.freshEnvQuietly(profile));
+    this.sizes.known(info.id, { cols, rows });
+    return info;
+  }
+
+  /** Dismiss, as Resume's own. */
+  async dismissRemote(id: string): Promise<void> {
+    if (!this.resumables.some((x) => x.id === id)) throw new Error('no such session to resume');
+    await this.client.request({ t: 'dismiss', id });
   }
 
   /** freshEnv for a terminal no window asked for: nobody to show the reload to. */
@@ -1429,9 +1487,13 @@ export class TerminalHub {
   }
 
   private historyQuery(w: WindowEntry): HistoryQuery {
-    let realRoot = w.project;
-    try { realRoot = toOut(realpathSync(w.project)); } catch { /* folder gone: nothing will match */ }
-    return { root: w.project, realRoot, exclude: runningSessions(this.terminals, this.resumed) };
+    return this.historyQueryFor(w.project);
+  }
+
+  private historyQueryFor(project: string): HistoryQuery {
+    let realRoot = project;
+    try { realRoot = toOut(realpathSync(project)); } catch { /* folder gone: nothing will match */ }
+    return { root: project, realRoot, exclude: runningSessions(this.terminals, this.resumed) };
   }
 
   /** Sends every window its project's attributions again (atelierd's or the app-side Bash ones changed). */

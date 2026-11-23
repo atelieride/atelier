@@ -2,13 +2,15 @@
 # Fake claude for tests: sends events through the real bridges, as Claude Code would with --settings.
 # It is in Perl because a process that is not a shell must show up in the foreground.
 use strict; use warnings;
+use POSIX ();
 $| = 1;
 my $home = $ENV{ATELIER_HOME};
 my $hook = "$home/bin/atelier-hook";
 my $status = "$home/bin/atelier-statusline";
 # Like Claude Code, a resumed conversation keeps its session id; ATELIER_FAKE_SESSION_ID sets one for a new session.
 my $resume = ''; for my $i (0..$#ARGV) { $resume = $ARGV[$i+1] if $ARGV[$i] eq '--resume' && defined $ARGV[$i+1]; }
-my $sid = $resume || $ENV{ATELIER_FAKE_SESSION_ID} || "fake-$$";
+# ATELIER_FAKE_UUID_SESSIONS (opt-in): each new session gets its own UUID from its pid, so several can be resumed.
+my $sid = $resume || $ENV{ATELIER_FAKE_SESSION_ID} || ($ENV{ATELIER_FAKE_UUID_SESSIONS} ? sprintf('00000000-0000-4000-8000-%012d', $$) : "fake-$$");
 # Reset in 2 hours (5h window) and in 3 days (7d): the meter shows the time left for both.
 my $r5 = time() + 2 * 3600 + 120; my $r7 = time() + 3 * 86400 + 4 * 3600 + 120;
 # ATELIER_FAKE_5H="<pct>:<seconds to reset>" sets the 5h window (spec usage per config dir: one account per config dir).
@@ -56,14 +58,35 @@ use Cwd ();
 my @shown; for (my $i = 0; $i <= $#ARGV; $i++) { if ($ARGV[$i] eq '--settings') { $i++; next; } push @shown, $ARGV[$i]; }
 print "FAKE-CLAUDE args=@shown\n" if $resume || $ENV{ATELIER_FAKE_PRINT_ARGS};
 print "FAKE-CLAUDE cwd=" . Cwd::getcwd() . "\n";
-print "FAKE-CLAUDE waiting; press enter\n";
-my $line = <STDIN>;
-$line = '' unless defined $line; chomp $line; $line =~ s/\r$//;
-print "FAKE-CLAUDE got=$line\n" if length $line;
-send_hook(qq({"hook_event_name":"PostToolUse","session_id":"$sid","tool_name":"Bash","tool_input":{"command":"npm test"}}));
+my ($line, $denied) = ('', 0);
+if ($ENV{ATELIER_FAKE_PERMISSION_KEYS}) {
+  # ATELIER_FAKE_PERMISSION_KEYS (opt-in): the permission waits as Claude Code's dialog does, one key at a time (raw
+  # mode, nothing echoed): "1" chooses its first option (Yes, allow once), Esc declines it; any other key is shown.
+  print "FAKE-CLAUDE permission: 1 allows, esc denies\n";
+  my $t = POSIX::Termios->new; $t->getattr(0);
+  my $saved = $t->getlflag;
+  $t->setlflag($saved & ~(POSIX::ECHO() | POSIX::ICANON())); $t->setcc(POSIX::VMIN(), 1); $t->setcc(POSIX::VTIME(), 0); $t->setattr(0, POSIX::TCSANOW());
+  while (1) {
+    my $key = '';
+    last unless sysread(STDIN, $key, 1);
+    if ($key eq '1') { print "FAKE-CLAUDE allowed\n"; last; }
+    if ($key eq "\e") { print "FAKE-CLAUDE denied\n"; $denied = 1; last; }
+    printf "FAKE-CLAUDE key=%02x\n", ord $key;
+  }
+  $t->setlflag($saved); $t->setattr(0, POSIX::TCSANOW());
+} else {
+  print "FAKE-CLAUDE waiting; press enter\n";
+  $line = <STDIN>;
+  $line = '' unless defined $line; chomp $line; $line =~ s/\r$//;
+  print "FAKE-CLAUDE got=$line\n" if length $line;
+}
+# Declined: no tool runs and no Stop comes; Claude Code's idle notice brings the session back to its prompt.
+if ($denied) { send_hook(qq({"hook_event_name":"Notification","session_id":"$sid","notification_type":"idle_prompt","message":"Claude is waiting for your input"})); }
+else { send_hook(qq({"hook_event_name":"PostToolUse","session_id":"$sid","tool_name":"Bash","tool_input":{"command":"npm test"}})); }
 # "hold": keeps working until the next line; "fail": the turn stops on an error (StopFailure).
 if ($line eq 'hold') { print "FAKE-CLAUDE working; press enter\n"; my $more = <STDIN>; }
-if ($line eq 'fail') {
+if ($denied) {
+} elsif ($line eq 'fail') {
   send_hook(qq({"hook_event_name":"StopFailure","session_id":"$sid","error":"rate_limit"}));
   print "FAKE-CLAUDE failed\n";
 } else {
