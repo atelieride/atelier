@@ -1,5 +1,6 @@
 // iPhone access, live: this Atelier, a real relay and the real iOS app, each in its own process. Not part of the
-// suite: the iOS app's live check starts the relay, runs this spec, then the app's own UI test on a simulator.
+// suite: whoever runs it starts the relay, then this spec and the iOS app's own UI test on a simulator side by side;
+// the two sides take turns through the folder below.
 //   ATELIER_LIVE_DIR    the folder both sides share: handoff.json (the code, the QR link, the rows and places the phone
 //                       acts on) goes there for the phone, and the screenshots (with ATELIER_E2E_SHOTS=1). The two
 //                       sides take turns through empty files there: the phone writes phone-<step> once it has done a
@@ -28,6 +29,7 @@ import { basename, join, resolve } from 'node:path';
 import { homeHash } from '../../src/daemon/launchd';
 import { e2eEnv } from './env';
 import { look } from './shots';
+import { command, menu, settingsSet, stopDaemon } from './iphone-fixture';
 
 const LIVE = process.env.ATELIER_LIVE_DIR ?? '';
 const RELAY = process.env.ATELIER_LIVE_RELAY || 'http://127.0.0.1:8787';
@@ -73,20 +75,7 @@ async function phoneDid(step: string, timeout = 10 * 60_000): Promise<string> {
 const macSaw = (step: string) => writeFileSync(join(LIVE, `mac-${step}`), '');
 
 const codeOf = (win: Page) => win.locator('.pair-sheet .pair-code:not(.is-spent)');
-const command = (app: ElectronApplication, c: string) => app.evaluate(({ BrowserWindow }, c) => BrowserWindow.getAllWindows()[0]!.webContents.send('ev:command', c), c);
-const settingsSet = (win: Page, patch: object) => win.evaluate((p) => (window as unknown as { atelier: { settings: { set(p: object): Promise<unknown> } } }).atelier.settings.set(p), patch);
 const rowIds = (win: Page) => win.locator('[data-term-row]').evaluateAll((rows) => rows.map((r) => r.getAttribute('data-term-row')!));
-
-/** App menu items are clicked (synthetic key events do not go through NSMenu). */
-async function menu(app: ElectronApplication, label: string): Promise<void> {
-  await app.evaluate(({ Menu, BrowserWindow }, l) => {
-    const walk = (items: Electron.MenuItem[]): Electron.MenuItem | undefined => {
-      for (const it of items) { if (it.label === l && it.visible) return it; const sub = it.submenu ? walk(it.submenu.items) : undefined; if (sub) return sub; }
-      return undefined;
-    };
-    walk(Menu.getApplicationMenu()!.items)!.click(undefined, BrowserWindow.getAllWindows()[0]);
-  }, label);
-}
 
 /** A new Claude session in the place in front, from the menu's New Claude Session: its id, once it asks for a permission. */
 async function newWaitingSession(app: ElectronApplication, win: Page): Promise<string> {
@@ -292,6 +281,6 @@ test('live: the iOS app pairs through the relay, mirrors the sidebar, acts on it
     throw e;
   } finally {
     await app.close().catch(() => {});
-    try { process.kill((JSON.parse(readFileSync(join(home, 'atelierd.json'), 'utf8')) as { pid: number }).pid, 'SIGTERM'); } catch { /* already stopped */ }
+    stopDaemon(home);
   }
 });

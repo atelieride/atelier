@@ -3,59 +3,17 @@
 // are off, an activity made in it while activities are off, both renamed, a terminal moved into the activity, then a
 // change with the project's window closed (it opens, the change is applied there). The sidebar and the phone's next
 // layout show each change.
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
-import { mkdtempSync, readFileSync, realpathSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
-import { e2eEnv } from './env';
+import { expect, test } from '@playwright/test';
+import { basename } from 'node:path';
 import { look } from './shots';
-import { startTestRelay, type TestRelay } from '../support/test-relay';
 import { FakePhone, type Msg } from '../support/fake-phone';
+import { close, launchWithPhone, pairPhone, settingsOf, type Launched } from './iphone-fixture';
 
 const SHOTS = 'test-results/iphone-places';
 
-const command = (app: ElectronApplication, c: string) => app.evaluate(({ BrowserWindow }, c) => BrowserWindow.getAllWindows()[0]!.webContents.send('ev:command', c), c);
-const stopDaemon = (home: string) => { try { process.kill((JSON.parse(readFileSync(join(home, 'atelierd.json'), 'utf8')) as { pid: number }).pid, 'SIGTERM'); } catch { /* already stopped */ } };
-const settingsOf = (win: Page) => win.evaluate(() => (window as unknown as { atelier: { settings: { get(): Promise<{ wsActivities: boolean }> } } }).atelier.settings.get());
-
-interface Launched { app: ElectronApplication; win: Page; home: string; root: string; relay: TestRelay; phone: FakePhone }
-
 /** A project with a terminal open at its prompt, a test relay and a phone for it. */
-async function launch(): Promise<Launched> {
-  const relay = await startTestRelay();
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-iphp-')));
-  const { env, home } = e2eEnv({ ATELIER_TEST_RELAY_URL: relay.url });
-  const app = await electron.launch({ args: ['out/main/index.js', `--project=${root}`], env });
-  const win = await app.firstWindow();
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 800));
-  await win.getByRole('button', { name: 'Open a terminal' }).click();
-  await expect(win.locator('.terminal-slot:visible .xterm-rows')).toContainText('›', { timeout: 15000 });
-  return { app, win, home, root, relay, phone: new FakePhone({ relay: relay.url }) };
-}
-
-async function close(l: Launched): Promise<void> {
-  l.phone.drop();
-  await l.app.close();
-  stopDaemon(l.home);
-  await l.relay.close();
-}
-
-/** Settings › iPhone: access on, a phone paired by code with Allow, Settings closed. */
-async function pair(l: Launched): Promise<void> {
-  const { app, win, phone } = l;
-  await command(app, 'open-settings');
-  await win.locator('.set-nav-item', { hasText: 'iPhone' }).click();
-  await win.getByRole('switch', { name: 'Allow access from iPhone' }).click();
-  await expect(win.locator('.iph-status')).toContainText('Connected to the relay', { timeout: 15000 });
-  await win.getByRole('button', { name: 'Pair iPhone…' }).click();
-  const code = win.locator('.pair-sheet .pair-code:not(.is-spent)');
-  await expect(code).toHaveText(/^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/, { timeout: 15000 });
-  const paired = phone.pairByCode((await code.innerText()).trim());
-  await win.locator('.pair-sheet').getByRole('button', { name: 'Allow' }).click({ timeout: 20000 });
-  expect((await paired).t).toBe('welcome');
-  await win.keyboard.press('Escape');
-  await expect(win.locator('.settings')).toHaveCount(0);
-}
+const launch = () => launchWithPhone({}, { size: [1280, 800] });
+const pair = (l: Launched) => pairPhone(l.app, l.win, l.phone);
 
 type Place = { id: string; name: string; color: number; parent?: string; open: boolean };
 type Workspaces = { active: string; activities: boolean; places: Place[]; members: Record<string, string> };
