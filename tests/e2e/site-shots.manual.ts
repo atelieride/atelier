@@ -113,12 +113,14 @@ async function menu(app: ElectronApplication, top: string, label: string) {
 }
 
 /**
- * No script animation or CSS transition running (CSS animations aside: the rows' finite cues and the lasting ones may
- * still play): what was just split off, moved to a pane or switched to has come in and rests where it is laid out. A
- * pane springing in, or the workspace sliding in from another activity, moves the boxes a measure reads.
+ * No script animation running: what was just split off, moved to a pane or switched to has come in and rests where it
+ * is laid out (a pane springing in, the workspace sliding in from another activity: every move the app makes with
+ * play()). CSS animations and transitions aside: the rows' cues and the lasting loops play on, and the Docker view's
+ * stat bars ease to each new reading every probe, so the page is never free of them. Lists what still runs.
  */
 const rested = (win: Page) => expect.poll(() => win.evaluate(() => document.getAnimations()
-  .filter((a) => a.playState === 'running' && !(a as CSSAnimation).animationName).length), { timeout: 10000 }).toBe(0);
+  .filter((a) => a.playState === 'running' && !(a instanceof CSSAnimation) && !(a instanceof CSSTransition))
+  .map((a) => ((a.effect as KeyframeEffect | null)?.target as Element | null)?.getAttribute('class') ?? '?')), { timeout: 10000 }).toEqual([]);
 
 /** Drags the first split divider until the right pane starts at `x` (CSS px), measured once the panes are at rest. */
 async function rightPaneAt(win: Page, x: number) {
