@@ -387,7 +387,8 @@ const api: AtelierApi = {
     stopPairing: () => ipcRenderer.invoke(IPC.remoteStopPairing),
     decide: (requestId, allow) => ipcRenderer.invoke(IPC.remoteDecide, { requestId, allow }),
     removeDevice: (id) => ipcRenderer.invoke(IPC.remoteRemoveDevice, { id }),
-    reset: () => ipcRenderer.invoke(IPC.remoteReset)
+    reset: () => ipcRenderer.invoke(IPC.remoteReset),
+    layout: (l) => ipcRenderer.invoke(IPC.remoteLayout, l)
   },
   // The request's fields one by one, as for companion: main's schema is strict.
   search: {

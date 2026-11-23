@@ -178,6 +178,8 @@ export const SPECS: Record<string, Area[]> = {
   'project-color.spec.ts': ['settings', 'workspace'],
   // iPhone access through the test relay and a fake phone: Settings › iPhone, pairing, a phone typing, the marks.
   'iphone-remote.spec.ts': ['iphone', 'settings', 'terminal'],
+  // What the sidebar shows, on the phone: layouts, actions on rows, push notifications.
+  'iphone-sidebar.spec.ts': ['iphone', 'sessions', 'workspace', 'notifications'],
   'terminal-font.spec.ts': ['settings', 'terminal'],
   'window.spec.ts': ['workspace'],
   'word-wrap.spec.ts': ['editor', 'settings'],

@@ -100,3 +100,18 @@ export type RemotePairingEvent =
   | { kind: 'paired'; device: RemoteDeviceInfo }
   | { kind: 'denied'; reason: 'declined' | 'expired' }
   | { kind: 'stopped' };
+
+/** A place of a project's sidebar: a workspace, or an activity inside one (`parent`). `folder`: a name, never a path. */
+export interface RemotePlace { id: string; name: string; color: number; folder?: string; parent?: string; open: boolean }
+
+/**
+ * How a project's sidebar is arranged, as its window shows it: grouping by state, the pins, the order rows were put
+ * in by hand, and the workspaces with their activities and which place each row belongs to (absent with workspaces
+ * off). The project's main window sends it to main whenever it changes while iPhone access is on; phones get it as is.
+ */
+export interface RemoteLayout {
+  groupByState: boolean;
+  pins: string[];
+  order: { sessions: string[]; terminals: string[] };
+  workspaces?: { active: string; activities: boolean; places: RemotePlace[]; members: Record<string, string> };
+}

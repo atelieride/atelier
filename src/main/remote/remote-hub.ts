@@ -3,7 +3,7 @@
 // output, typing, sizes, new sessions — and runs pairing (the code, the Allow/Deny question to the windows). Off, no
 // relay connection exists at all. A phone only names what the state listed: opaque project ids and terminal ids, never
 // paths, commands, accounts or profiles.
-import type { RemoteDeviceInfo, RemotePairingEvent, RemotePairingStart, RemoteRelayState, RemoteSized, RemoteStatus } from '@shared/remote';
+import type { RemoteDeviceInfo, RemoteLayout, RemotePairingEvent, RemotePairingStart, RemoteRelayState, RemoteSized, RemoteStatus } from '@shared/remote';
 import { relayBase } from '@shared/remote';
 import type { Settings } from '@shared/settings';
 import type { PortsMap } from '@shared/ports';
@@ -16,6 +16,7 @@ import type { Size } from '../terminal-sizes';
 import { SecureChannel, type Admission } from './channel';
 import { DeviceStore, type PairedDevice } from './devices';
 import { IdentityStore, type RemoteIdentity } from './identity';
+import { LayoutStore } from './layouts';
 import { CLOSE, type ByeReason, type DeviceMessage, type HostMessage, type RemoteAccount } from './messages';
 import { Pairing } from './pairing';
 import { RelayLink, type RelayLinkOptions } from './relay-link';
@@ -112,6 +113,8 @@ function chunks(text: string, n: number): string[] {
 interface SessionHost {
   listed(id: string): boolean;
   rootOf(projectId: string): string | null;
+  /** A listed project's layout, as its window last showed it (null: never shown with iPhone access on). */
+  layoutOf(root: string): RemoteLayout | null;
   scheduleState(): void;
   statusChanged(): void;
   outMs: number;
@@ -130,6 +133,8 @@ class PhoneSession implements RemoteViewer {
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private lastState = '';
   private lastUsage = '';
+  /** Each listed project's layout as this phone last got it (JSON). */
+  private readonly lastLayouts = new Map<string, string>();
   private lastSize: Size | null = null;
 
   constructor(readonly c: SecureChannel, readonly deviceId: string, private readonly host: SessionHost, private readonly terms: RemoteTerminals) {
@@ -145,6 +150,19 @@ class PhoneSession implements RemoteViewer {
     if (json === this.lastState) return;
     this.lastState = json;
     this.send({ t: 'state', projects: st.projects, sessions: st.sessions, resumables: st.resumables });
+  }
+
+  /** Each listed project's layout, after the first state: the ones this phone hasn't got as they are now. */
+  sendLayouts(st: RemoteState): void {
+    if (!this.lastState) return;
+    for (const p of st.projects) {
+      const root = st.roots.get(p.id);
+      const layout = root === undefined ? null : this.host.layoutOf(root);
+      const key = JSON.stringify(layout);
+      if (this.lastLayouts.get(p.id) === key) continue;
+      this.lastLayouts.set(p.id, key);
+      this.send({ t: 'layout', project: p.id, layout });
+    }
   }
 
   /** The accounts' limits, after the first state; only when what the phone would show changed. */
@@ -297,6 +315,7 @@ class PhoneSession implements RemoteViewer {
 export class RemoteHub {
   private readonly identities: IdentityStore;
   readonly devices: DeviceStore;
+  private readonly layouts: LayoutStore;
   private identity: RemoteIdentity | null = null;
   private link: RelayLink | null = null;
   private linkFor = '';
@@ -323,12 +342,14 @@ export class RemoteHub {
   constructor(private readonly d: RemoteHubDeps) {
     this.identities = new IdentityStore(d.secrets);
     this.devices = new DeviceStore(d.home);
+    this.layouts = new LayoutStore(d.home);
     this.stateMs = d.timing?.stateMs ?? STATE_MS;
     this.usageMs = d.timing?.usageMs ?? USAGE_MS;
     this.offShown = d.terminals.onShown(() => this.scheduleState());
     this.host = {
       listed: (id) => this.d.terminals.allTerminals().some((t) => t.id === id),
       rootOf: (pid) => this.computeState().roots.get(pid) ?? null,
+      layoutOf: (root) => this.layouts.get(root),
       scheduleState: () => this.scheduleState(),
       statusChanged: () => this.statusChanged(),
       outMs: d.timing?.outMs ?? OUT_MS
@@ -349,6 +370,18 @@ export class RemoteHub {
 
   /** The status line reported the accounts' limits again. */
   usageChanged(): void { this.scheduleUsage(); }
+
+  /**
+   * A project's main window shows its sidebar arranged this way now: kept (and saved) while iPhone access is on, and
+   * sent to the phones when it changed.
+   */
+  layoutChanged(root: string, layout: RemoteLayout): void {
+    if (!this.d.settings().remoteAccess) return;
+    if (this.layouts.set(root, layout)) this.scheduleState();
+  }
+
+  /** A project's layout as phones get it (null: never shown with iPhone access on). */
+  layoutOf(root: string): RemoteLayout | null { return this.layouts.get(root); }
 
   /** A project window opened or closed, or the recent projects changed. */
   projectsChanged(): void { this.scheduleState(); }
@@ -475,6 +508,7 @@ export class RemoteHub {
     s.send({ t: 'welcome', host: { name: this.d.host.name, platform: this.d.host.platform }, ...(c.kind === 'pair' ? { room: this.identity.roomId } : {}) });
     const st = this.computeState();
     s.sendState(stateKey(st), st);
+    s.sendLayouts(st);
     const u = this.computeUsage();
     s.sendUsage(u.key, u.accounts);
     this.devices.seen(deviceId);
@@ -529,7 +563,7 @@ export class RemoteHub {
       this.stateAt = Date.now();
       const st = this.computeState();
       const json = stateKey(st);
-      for (const s of this.sessions.values()) s.sendState(json, st);
+      for (const s of this.sessions.values()) { s.sendState(json, st); s.sendLayouts(st); }
     }, wait);
     this.stateTimer.unref?.();
   }

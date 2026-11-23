@@ -50,7 +50,10 @@ const ALLOWED = new Set(['fs/write.ts', 'clipboard-image.ts', 'index.ts', 'daemo
   // ATELIER_HOME/companion only: thread.json, rules.md, chat.md, facts.md, 0700/0600, atomic; whole session dir removed by retention
   'companion/store.ts', 'app-icon-exec.ts',
   // ATELIER_HOME/remote/devices.json only: the paired phones' public keys, names and dates, 0600 in a 0700 folder, atomic
-  'remote/devices.ts']);
+  'remote/devices.ts',
+  // ATELIER_HOME/remote/layouts.json only: each project's sidebar arrangement for paired phones (names and ids, a
+  // workspace's folder by its name), 0600 in a 0700 folder, atomic, at most 100 projects
+  'remote/layouts.ts']);
 
 test('the app icon writes only its marks, ATELIER_HOME/app-icon.json, atomically (0600 by default), or removes them', () => {
   const src = readFileSync(join(mainDir, 'app-icon-exec.ts'), 'utf8');
@@ -97,6 +100,16 @@ test('the connector secret store writes only ATELIER_HOME/connectors/<id>.bin, a
 test('the paired phones write only ATELIER_HOME/remote/devices.json, atomically, 0600 in a 0700 folder', () => {
   const src = readFileSync(join(mainDir, 'remote/devices.ts'), 'utf8');
   expect([...src.matchAll(/join\([^)]*\)/g)].map((m) => m[0])).toEqual(["join(home, 'remote')", "join(this.dir, 'devices.json')"]);
+  expect(src).not.toMatch(/\b(homedir|tmpdir)\s*\(/);
+  expect([...src.matchAll(/\b(writeFile(Sync)?|appendFile(Sync)?|writeFileAtomic|rename(Sync)?|rm(Sync)?|unlink(Sync)?|ensureDir|mkdir(Sync)?)\s*\(([^,)]*)/g)].map((m) => `${m[1]}(${m[8]}`))
+    .toEqual(['ensureDir(this.dir', 'writeFileAtomic(this.file']);
+  expect(src).toContain('ensureDir(this.dir, 0o700)');
+  expect(src).toMatch(/writeFileAtomic\(this\.file, [^;]*, 0o600\)/);
+});
+
+test('the phones\' layouts write only ATELIER_HOME/remote/layouts.json, atomically, 0600 in a 0700 folder', () => {
+  const src = readFileSync(join(mainDir, 'remote/layouts.ts'), 'utf8');
+  expect([...src.matchAll(/join\([^)]*\)/g)].map((m) => m[0])).toEqual(["join(home, 'remote')", "join(this.dir, 'layouts.json')"]);
   expect(src).not.toMatch(/\b(homedir|tmpdir)\s*\(/);
   expect([...src.matchAll(/\b(writeFile(Sync)?|appendFile(Sync)?|writeFileAtomic|rename(Sync)?|rm(Sync)?|unlink(Sync)?|ensureDir|mkdir(Sync)?)\s*\(([^,)]*)/g)].map((m) => `${m[1]}(${m[8]}`))
     .toEqual(['ensureDir(this.dir', 'writeFileAtomic(this.file']);

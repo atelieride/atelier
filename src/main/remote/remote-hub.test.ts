@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Resumable, TerminalInfo } from '@shared/protocol';
 import type { UsageEntry } from '@shared/session';
 import type { PortsMap } from '@shared/ports';
-import type { RemotePairingEvent, RemoteSized, RemoteStatus } from '@shared/remote';
+import type { RemoteLayout, RemotePairingEvent, RemoteSized, RemoteStatus } from '@shared/remote';
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings';
 import { FakePhone, type Msg } from '../../../tests/support/fake-phone';
 import { startTestRelay, type TestRelay } from '../../../tests/support/test-relay';
@@ -474,5 +474,51 @@ describe('what the sidebar shows (v1.1)', () => {
     const { phone } = await paired(t);
     const state = await phone.state();
     expect((state.sessions as Msg[]).find((x) => x.id === 't1')!.ports).toEqual([{ port: 3000, name: 'node' }]);
+  });
+});
+
+describe('layouts (v1.1)', () => {
+  const L = (o: Partial<RemoteLayout> = {}): RemoteLayout => ({
+    groupByState: true, pins: ['t2'], order: { sessions: [], terminals: ['t1'] },
+    workspaces: { active: 'w1', activities: true, places: [{ id: 'w1', name: 'Main', color: 1, open: true }, { id: 'a1', name: 'SSO', color: 3, parent: 'w1', open: false }], members: { t2: 'a1' } },
+    ...o
+  });
+
+  test('after the first state, one layout per listed project (null when never shown), then each change once', async () => {
+    const t = setup();
+    const { phone } = await paired(t);
+    const state = await phone.state();
+    const ids = (state.projects as Msg[]).map((p) => p.id);
+    const layouts = () => phone.messages.filter((m) => m.t === 'layout');
+    await until(() => layouts().length === ids.length);
+    expect(phone.messages.findIndex((m) => m.t === 'layout')).toBeGreaterThan(phone.messages.indexOf(state));
+    expect(layouts().map((m) => [m.project, m.layout])).toEqual(ids.map((id) => [id, null]));
+    t.hub.layoutChanged('/work/app', L());
+    const app = projectIdOf('/work/app');
+    const got = await phone.waitFor((m) => m.t === 'layout' && m.project === app && m.layout !== null);
+    expect(got.layout).toEqual(L());
+    // The same layout again: nothing; another one: sent.
+    t.hub.layoutChanged('/work/app', L());
+    await new Promise((r) => setTimeout(r, 100));
+    expect(layouts()).toHaveLength(ids.length + 1);
+    t.hub.layoutChanged('/work/app', L({ groupByState: false }));
+    await phone.waitFor((m) => m.t === 'layout' && (m.layout as Msg | null)?.groupByState === false);
+    // A project that comes into the list gets its layout with it.
+    t.setProjects({ open: ['/work/app', '/work/new'], recent: ['/work/old'] });
+    await phone.waitFor((m) => m.t === 'layout' && m.project === projectIdOf('/work/new'));
+  });
+
+  test('kept for a phone that connects later, and across restarts; never taken with access off', async () => {
+    const t = setup();
+    t.hub.layoutChanged('/work/app', L());
+    const { phone } = await paired(t);
+    const got = await phone.waitFor((m) => m.t === 'layout' && m.project === projectIdOf('/work/app'));
+    expect(got.layout).toEqual(L());
+    const again = setup({ home: t.home });
+    again.hub.start();
+    expect(again.hub.layoutOf('/work/app')).toEqual(L());
+    const off = setup({ settings: { remoteAccess: false } });
+    off.hub.layoutChanged('/work/app', L());
+    expect(off.hub.layoutOf('/work/app')).toBeNull();
   });
 });

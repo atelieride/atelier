@@ -1457,7 +1457,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     hub.onRemoteSized = () => remote?.statusChanged();
     client.on('usageByConfigDir', () => remote?.usageChanged());
-    installRemoteIpc(remote, { isTrusted: trusted, handle: (channel, fn) => ipcMain.handle(channel, fn) });
+    installRemoteIpc(remote, { isTrusted: trusted, handle: (channel, fn) => ipcMain.handle(channel, fn), projectOf: (id) => (isPopoutWindow(windowsView, id) ? null : windowProjects.get(id) ?? null) });
     remote.start();
     // Quitting: every phone is told (`bye`), then the relay connection closes; the quit goes on right after.
     let remoteClosed = false;

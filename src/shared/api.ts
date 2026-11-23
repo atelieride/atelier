@@ -37,7 +37,7 @@ import type { Run } from './automation-run';
 import type { IfBusy, ScheduledPrompt } from './scheduled-prompts';
 import type { ScheduleNotice } from './schedule-notices';
 import type { Binding, CompanionEvent, CompanionModel, Thread } from './companion/types';
-import type { RemotePairingEvent, RemotePairingStart, RemoteStatus } from './remote';
+import type { RemoteLayout, RemotePairingEvent, RemotePairingStart, RemoteStatus } from './remote';
 import type { SignalBookView } from './claude-signals';
 import type { SearchEvent, SearchRequest } from './search';
 
@@ -132,6 +132,8 @@ export interface RemoteApi {
   decide(requestId: string, allow: boolean): Promise<boolean>;
   removeDevice(id: string): Promise<boolean>;
   reset(): Promise<void>;
+  /** A project's main window: its sidebar's arrangement now, while iPhone access is on (phones group rows by it). */
+  layout(l: RemoteLayout): Promise<void>;
 }
 
 /** Install / Uninstall 'atelier' Command. */
@@ -462,6 +464,7 @@ export const IPC = {
    *   remote:status, remote:start-pairing, remote:stop-pairing, remote:reset   no argument
    *   remote:decide          { requestId, allow }
    *   remote:remove-device   { id }
+   *   remote:layout          RemoteLayout   (a project's main window only: its sidebar's arrangement, for the phones)
    */
   remoteStatus: 'remote:status',
   remoteStartPairing: 'remote:start-pairing',
@@ -469,6 +472,7 @@ export const IPC = {
   remoteDecide: 'remote:decide',
   remoteRemoveDevice: 'remote:remove-device',
   remoteReset: 'remote:reset',
+  remoteLayout: 'remote:layout',
   evRemote: 'ev:remote',
   evRemotePairing: 'ev:remote-pairing',
   // main → renderer events

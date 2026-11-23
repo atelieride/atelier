@@ -12,17 +12,20 @@ function setup(trusted = true) {
     stopPairing: vi.fn(),
     decide: vi.fn(() => true),
     removeDevice: vi.fn(() => true),
-    reset: vi.fn()
+    reset: vi.fn(),
+    layoutChanged: vi.fn()
   };
-  installRemoteIpc(hub, { isTrusted: () => trusted, handle: (channel, fn) => { handlers.set(channel, fn); } });
-  const call = (channel: string, arg?: unknown) => handlers.get(channel)!({ sender: { id: 1 } } as Parameters<Handler>[0], arg);
+  // Window 1 is the project's main window, 2 a pop-out (no project for this), 3 the welcome window.
+  const projectOf = (id: number) => (id === 1 ? '/work/app' : null);
+  installRemoteIpc(hub, { isTrusted: () => trusted, handle: (channel, fn) => { handlers.set(channel, fn); }, projectOf });
+  const call = (channel: string, arg?: unknown, sender = 1) => handlers.get(channel)!({ sender: { id: sender } } as Parameters<Handler>[0], arg);
   return { hub, call, handlers };
 }
 
 describe('window.atelier.remote in main', () => {
   test('every channel answers a trusted app page', async () => {
     const { hub, call, handlers } = setup();
-    expect([...handlers.keys()].sort()).toEqual([IPC.remoteDecide, IPC.remoteRemoveDevice, IPC.remoteReset, IPC.remoteStartPairing, IPC.remoteStatus, IPC.remoteStopPairing].sort());
+    expect([...handlers.keys()].sort()).toEqual([IPC.remoteDecide, IPC.remoteRemoveDevice, IPC.remoteReset, IPC.remoteStartPairing, IPC.remoteStatus, IPC.remoteStopPairing, IPC.remoteLayout].sort());
     expect(await call(IPC.remoteStatus)).toMatchObject({ enabled: true });
     expect(await call(IPC.remoteStartPairing)).toMatchObject({ ok: true });
     await call(IPC.remoteStopPairing);
@@ -53,5 +56,45 @@ describe('window.atelier.remote in main', () => {
     expect(() => call(IPC.remoteDecide, { requestId: '0123456789abcdef', allow: true })).toThrow(/unauthorized/);
     expect(hub.status).not.toHaveBeenCalled();
     expect(hub.decide).not.toHaveBeenCalled();
+  });
+});
+
+describe('a project window\'s layout for the phones', () => {
+  const layout = { groupByState: true, pins: ['t1'], order: { sessions: ['t1'], terminals: [] }, workspaces: { active: 'w1', activities: false, places: [{ id: 'w1', name: 'Main', color: 2, folder: 'api', open: true }], members: { t1: 'w1' } } };
+
+  test('from the project\'s main window: kept for its own project, never a project the page names', async () => {
+    const { hub, call } = setup();
+    await call(IPC.remoteLayout, layout);
+    expect(hub.layoutChanged).toHaveBeenCalledWith('/work/app', layout);
+  });
+
+  test('a pop-out, the welcome window or a page that isn\'t the app\'s: refused', () => {
+    const { hub, call } = setup();
+    expect(() => call(IPC.remoteLayout, layout, 2)).toThrow();
+    expect(() => call(IPC.remoteLayout, layout, 3)).toThrow();
+    expect(() => setup(false).call(IPC.remoteLayout, layout)).toThrow(/unauthorized/);
+    expect(hub.layoutChanged).not.toHaveBeenCalled();
+  });
+
+  test('strict: paths, extra fields, control characters and oversized lists are refused', () => {
+    const { hub, call } = setup();
+    const ws = layout.workspaces;
+    const bad = [
+      { ...layout, root: '/work/app' },
+      { ...layout, workspaces: { ...ws, places: [{ ...ws.places[0], folder: '/work/app/api' }] } },
+      { ...layout, workspaces: { ...ws, places: [{ ...ws.places[0], folder: 'a\\b' }] } },
+      { ...layout, workspaces: { ...ws, places: [{ ...ws.places[0], name: 'two\nlines' }] } },
+      { ...layout, workspaces: { ...ws, places: [{ ...ws.places[0], color: 9 }] } },
+      { ...layout, pins: ['../x'] },
+      { ...layout, pins: Array.from({ length: 1001 }, (_, i) => `t${i}`) },
+      { ...layout, order: { sessions: [], terminals: [], extra: [] } },
+      { ...layout, workspaces: { ...ws, members: { t1: 'w 1' } } }
+    ];
+    for (const b of bad) expect(() => call(IPC.remoteLayout, b), JSON.stringify(b).slice(0, 120)).toThrow();
+    expect(hub.layoutChanged).not.toHaveBeenCalled();
+    // Without workspaces (off in that project): fine.
+    const { workspaces: _w, ...plain } = layout;
+    void call(IPC.remoteLayout, plain);
+    expect(hub.layoutChanged).toHaveBeenCalledWith('/work/app', plain);
   });
 });

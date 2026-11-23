@@ -75,6 +75,8 @@ export function createRemote(): AtelierApi['remote'] {
     stopPairing: noop,
     decide: () => resolved(false),
     removeDevice: () => resolved(false),
-    reset: noop
+    reset: noop,
+    // Access is off in the demo: no window ever sends its layout; one that did would go nowhere.
+    layout: noop
   };
 }

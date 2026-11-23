@@ -2,6 +2,7 @@
 // unknown field or kind is refused), and what this computer sends it. Every message is one JSON object with a string
 // `t`; requests carry `rid`, a positive integer the phone picks, repeated in the answer.
 import { z } from 'zod';
+import type { RemoteLayout } from '@shared/remote';
 
 /** Control and line-separator characters: names are shown as plain text on both ends. */
 // eslint-disable-next-line no-control-regex
@@ -86,6 +87,7 @@ export type HostMessage =
   | { t: 'denied'; reason: DeniedReason }
   | { t: 'state'; projects: RemoteProject[]; sessions: RemoteSession[]; resumables: RemoteResumable[] }
   | { t: 'usage'; accounts: RemoteAccount[] }
+  | { t: 'layout'; project: string; layout: RemoteLayout | null }
   | { t: 'snapshot'; id: string; cols: number; rows: number; data: string }
   | { t: 'out'; id: string; data: string }
   | { t: 'size'; id: string; cols: number; rows: number }

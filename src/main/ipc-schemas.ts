@@ -292,6 +292,31 @@ export const noArgsSchema = z.undefined();
 // iPhone access: a pairing request's id (8 random bytes, hex) and a paired phone's id (16 base64url characters).
 export const remoteDecideSchema = z.object({ requestId: z.string().regex(/^[0-9a-f]{16}$/), allow: z.boolean() }).strict();
 export const remoteDeviceSchema = z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{16}$/) }).strict();
+/** A row's id (a terminal's or a resumable's) and a place's, as the sidebar keeps them. */
+const rowId = z.string().regex(/^[\w.-]{1,64}$/);
+const placeId = z.string().regex(/^[\w-]{1,40}$/);
+/** Control and line-separator characters: names are shown as plain text on both ends. */
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+const shownName = (max: number) => z.string().min(1).max(max).refine((s) => !CONTROL.test(s), 'name');
+/**
+ * A project window's sidebar arrangement for paired phones (RemoteLayout): bounded everywhere; a place's folder only
+ * as its name (no separator at all, so never a path).
+ */
+export const remoteLayoutSchema = z.object({
+  groupByState: z.boolean(),
+  pins: z.array(rowId).max(1000),
+  order: z.object({ sessions: z.array(rowId).max(2000), terminals: z.array(rowId).max(2000) }).strict(),
+  workspaces: z.object({
+    active: placeId,
+    activities: z.boolean(),
+    places: z.array(z.object({
+      id: placeId, name: shownName(60), color: z.number().int().min(1).max(8),
+      folder: shownName(255).refine((s) => !/[/\\]/.test(s), 'a name, never a path').optional(), parent: placeId.optional(), open: z.boolean()
+    }).strict()).max(500),
+    members: z.record(rowId, placeId).refine((m) => Object.keys(m).length <= 4000, 'too many members')
+  }).strict().optional()
+}).strict();
 
 // Automations: the shape is strict here, every value bounded; main then validates the values
 // field by field (normalizeAutomation), and a new automation must be the sender's project.
