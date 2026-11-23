@@ -114,16 +114,35 @@ export function TerminalView({ id, visible, focused = visible, place }: { id: st
   }, [id, visible, setSize]);
   // A phone owns the terminal's size: drawn at it, the terminal's one size, so what the program draws for it (a shell
   // redrawing its prompt, a full-screen app) lands where it does on the phone; drawn at the pane's size it went a line
-  // too high and wiped the output above. Only this view changes: the program has that size already. Taken back (a key
-  // pressed or typing here, a resize, Fit to Window) or the phone gone, main gives the program this window's size: the
-  // pane's here.
-  const phone = useIphone((x) => { const s = x.status?.enabled && x.status.sized.find((v) => v.id === id); return s ? `${s.cols}x${s.rows}` : ''; });
+  // too high and wiped the output above. Only this view changes: the program has that size already. Larger than the
+  // pane, the pane clips it and keeps its bottom rows in view (marks.css). Taken back (a key pressed or typing here, a
+  // resize, Fit to Window) or the phone gone, main gives the program this window's size: the pane's here. Only once the
+  // marks' stylesheet is in: never drawn past the pane unclipped.
+  const phone = useIphone((x) => {
+    const s = x.marksReady && x.status?.enabled && x.status.sized.find((v) => v.id === id);
+    return s ? `${s.cols}x${s.rows}` : '';
+  });
+  /** The phone's size this view draws now ('': the pane's). */
+  const [drawn, setDrawn] = useState('');
+  /** The phone's size as it was when this view last followed it; null while hidden. */
+  const followed = useRef<string | null>(null);
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) { followed.current = null; setDrawn(''); return; }
+    // Just shown: the view fitted the terminal to its pane and gave it that size (above), taking it back from a phone;
+    // the phone's size main lists until its news arrives is never drawn (it flashed, the note popping in and out).
+    if (followed.current === null) { followed.current = phone; return; }
+    if (followed.current === phone) return;
+    followed.current = phone;
     const lt = getLiveTerminal(id);
-    if (phone) { const [cols, rows] = phone.split('x').map(Number); lt.term.resize(cols!, rows!); }
-    else try { lt.fit.fit(); } catch { return; }
-    setSize(lt.term.cols, lt.term.rows);
+    if (phone) {
+      const [cols, rows] = phone.split('x').map(Number) as [number, number];
+      lt.term.resize(cols, rows);
+      setSize(cols, rows);
+    } else {
+      try { lt.fit.fit(); } catch { /* not laid out: as it is */ }
+      if (lt.term.cols >= 2 && lt.term.rows >= 2) setSize(lt.term.cols, lt.term.rows);
+    }
+    setDrawn(phone);
   }, [id, visible, phone, setSize]);
   // The keyboard goes to the shown terminal; in the split view only to the focused pane's.
   useEffect(() => { if (visible && focused) getLiveTerminal(id).term.focus(); }, [id, visible, focused]);
@@ -211,11 +230,11 @@ export function TerminalView({ id, visible, focused = visible, place }: { id: st
       clear: () => { lt.term.clear(); lt.term.focus(); }
     }));
   };
-  return <div ref={slot} className={`terminal-slot ${dropping ? 'is-drop' : ''}`} style={{ display: visible ? 'block' : 'none', ...place }} onContextMenu={(e) => void onMenu(e)}
+  return <div ref={slot} className={`terminal-slot ${dropping ? 'is-drop' : ''}${drawn ? ' is-phone-sized' : ''}`} style={{ display: visible ? 'block' : 'none', ...place }} onContextMenu={(e) => void onMenu(e)}
     onDragOver={onDragOver} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false); }} onDrop={onDrop}>
     {find !== null && Find && <Find id={id} nonce={find} visible={visible} onClose={() => setFind(null)} />}
-    {/* Its size a phone's: said where it covers none of the text, the corner its smaller screen leaves free or under
-        its rows (Find's card takes that corner while open), with the way back to this view's size. */}
-    {visible && find === null && <SizeNote id={id} />}
+    {/* Drawn at a phone's size: said where it covers none of the text, the corner its smaller screen leaves free or
+        under its rows (Find's card takes that corner while open), with the way back to this view's size. */}
+    {visible && drawn && find === null && <SizeNote id={id} />}
   </div>;
 }

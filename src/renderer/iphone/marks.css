@@ -8,9 +8,21 @@
 /* The badge: the phone glyph alone (in a box it read as a 0), lit by a live dot in the brand's pink. */
 .phone-badge { position: relative; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 18px; color: var(--violet-light); animation: atl-pop var(--t-med) var(--ease) both; transition: color var(--t-fast) var(--ease); }
 .phone-badge::after { content: ''; position: absolute; top: 2px; right: 0; width: 5px; height: 5px; border-radius: 50%; background: var(--pink); box-shadow: 0 0 0 1.5px var(--bg-1); }
-:is(.session-row, .term-row):is(:hover, :focus-within) .phone-badge, .tab:hover .phone-badge, .tab.is-active .phone-badge { color: var(--text); }
-.tab .phone-badge::after { box-shadow: 0 0 0 1.5px var(--bg-tabs); }
+:is(.session-row, .term-row):is(:hover, :focus-within) .phone-badge, .tab.is-active .phone-badge { color: var(--text); }
+.tab .phone-badge::after { right: 3px; box-shadow: 0 0 0 1.5px var(--bg-tabs); }
 .tab.is-active .phone-badge::after { box-shadow: 0 0 0 1.5px var(--bg-0); }
+/* On a tab it takes the close button's place, as a file's unsaved dot does, and its width: a phone opening the
+   terminal never widens the tab (the tabs after it would move under the pointer). Pointed at or focused, the tab
+   shows its close button there again. */
+.tab .phone-badge { width: 20px; }
+.tab:not(:hover, :focus-within) .phone-badge + .tab-close { display: none; }
+.tab:is(:hover, :focus-within) .phone-badge { display: none; }
+/* A terminal drawn at a phone's size larger than its pane: whole, at that size (the program's), the pane clipping it.
+   Its bottom rows stay in view (the prompt, the cursor, the newest output): the terminal is at least the pane's height
+   and packed at the bottom, so what it has beyond the pane goes up, out of view; its left edge stays where it always is
+   and what is wider goes past the right edge. The clip leaves the left gutter, where command blocks draw their bars. */
+.terminal-slot.is-phone-sized .terminal-host { display: flex; flex-direction: column; justify-content: flex-end; clip-path: inset(0 0 0 -22px); }
+.terminal-slot.is-phone-sized .terminal-host > .xterm { flex: none; height: auto; min-height: 100%; }
 /* Clear of the terminal's text, drawn at the phone's size from the pane's top left (its screen is the anchor): in the
    top right corner when the phone's narrower screen leaves it free; in a pane barely wider than the phone, just under
    the drawn rows; with no room either way (the phone's size fills the pane), the corner all the same, Fit to Window in
