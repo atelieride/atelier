@@ -5,7 +5,7 @@
 // closed. Whether a phone is let in at all (the allowlist, or the user's Allow) is the hub's call.
 import { TokenBucket } from './bucket';
 import { CLOSE, ROW_ACTIONS, deviceHelloSchema, deviceMessageSchema, type ByeReason, type DeniedReason, type DeviceHello, type DeviceMessage, type ErrorCode, type HostMessage } from './messages';
-import { NoiseHandshake, type KeyPair, type NoiseTransport } from './noise';
+import { NOISE_MAX_MESSAGE, NoiseHandshake, type KeyPair, type NoiseTransport } from './noise';
 import { MAX_APP_MESSAGE, Reassembler, b64url, fragments, prologue, protocolOf, type ChannelKind } from './wire';
 
 export interface ChannelLink {
@@ -103,8 +103,13 @@ export class SecureChannel {
     this.timer.unref?.();
   }
 
-  /** A frame from the relay for this channel. */
+  /**
+   * A frame from the relay for this channel. One larger than a Noise message (65535 bytes) is no frame a phone sends
+   * (its fragments are at most that, and the relay refuses larger ones from it): refused unread, in every state.
+   */
   receive(frame: Buffer): void {
+    if (this.state === 'closed') return;
+    if (frame.length > NOISE_MAX_MESSAGE) { this.close(CLOSE.tooLarge); return; }
     switch (this.state) {
       case 'hello': this.first(frame); return;
       case 'auth': this.third(frame); return;

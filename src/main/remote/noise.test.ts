@@ -133,4 +133,20 @@ describe('failures', () => {
     expect(b.decrypt(one).toString()).toBe('1');
     expect(() => b.decrypt(one)).toThrow();
   });
+
+  test('a transport message is at most 65535 bytes: none larger is made, none larger is decrypted', () => {
+    const { init, resp } = pair('Noise_XX_25519_AESGCM_SHA256');
+    resp.readMessage(init.writeMessage(Buffer.alloc(0)));
+    init.readMessage(resp.writeMessage(Buffer.alloc(0)));
+    resp.readMessage(init.writeMessage(Buffer.alloc(0)));
+    const a = init.split(); const b = resp.split();
+    // The largest: 65519 bytes of plaintext and the 16-byte tag.
+    const full = a.encrypt(Buffer.alloc(65535 - 16, 1));
+    expect(full).toHaveLength(65535);
+    expect(b.decrypt(full)).toHaveLength(65519);
+    expect(() => a.encrypt(Buffer.alloc(65535 - 15))).toThrow(/too large/);
+    // Refused before any work, and the nonce stays: the next real message still opens.
+    expect(() => b.decrypt(Buffer.alloc(65536))).toThrow(/too large/);
+    expect(b.decrypt(a.encrypt(Buffer.from('next'))).toString()).toBe('next');
+  });
 });

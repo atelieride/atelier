@@ -113,6 +113,8 @@ const SNAPSHOT_MAX = MAX_APP_MESSAGE - 64 * 1024;
 const DEFAULT_SIZE: Size = { cols: 120, rows: 36 };
 /** While sessions are starting, the state is looked at again this often (a start that never came ends at 30 s). */
 const STARTING_RECHECK_MS = 5000;
+/** Channels still in their handshake (or waiting to be let in) at once, at most. */
+const MAX_HANDSHAKES = 16;
 
 /** What a phone's state is compared by: equal, it isn't sent again. */
 const stateKey = (st: RemoteState): string => JSON.stringify([st.projects, st.sessions, st.resumables]);
@@ -682,6 +684,11 @@ export class RemoteHub {
 
   private openChannel(link: RelayLink, id: RemoteIdentity, ch: number, kind: ChannelKind, lookup?: string): void {
     this.channels.get(ch)?.relayClosed();
+    // Each handshake costs keys and a timer for up to 30 s, and the relay decides how many channels open: past the
+    // cap, new ones are closed at once (a phone told so reconnects). The relay's own limit per room is far below it.
+    let pending = 0;
+    for (const c of this.channels.values()) if (c.state !== 'open' && c.state !== 'closed') pending++;
+    if (pending >= MAX_HANDSHAKES) { link.closeChannel(ch, CLOSE.overloaded, { drop: true }); return; }
     const c = new SecureChannel(ch, kind, {
       link, host: id.host, roomId: id.roomId,
       hello: { name: this.d.host.name, app: this.d.host.app, platform: this.d.host.platform },

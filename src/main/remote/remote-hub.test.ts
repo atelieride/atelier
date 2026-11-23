@@ -2,6 +2,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import WebSocket from 'ws';
 import type { Resumable, TerminalInfo } from '@shared/protocol';
 import type { UsageEntry } from '@shared/session';
 import type { PortsMap } from '@shared/ports';
@@ -438,6 +439,38 @@ describe('a paired phone', () => {
     await until(() => t.hub.status().relay.state === 'online');
     // Online again, and not in the old room: a new one.
     expect(relay.hostOnline(room)).toBe(false);
+  });
+});
+
+describe('what a relay can make this computer do', () => {
+  test('at most 16 handshakes at once: channels beyond them are closed overloaded until one ends', async () => {
+    await relay.close();
+    relay = await startTestRelay({ maxChannels: 40 });
+    const t = setup();
+    const { phone } = await paired(t);
+    await phone.close();
+    const room = phone.room!;
+    const dial = () => {
+      const ws = new WebSocket(relay.url.replace(/^http/, 'ws') + `/v1/device/${room}`);
+      const s = { ws, code: null as number | null };
+      ws.on('close', (code) => { s.code = code; });
+      ws.on('error', () => {});
+      return s;
+    };
+    // Channels that never send their first handshake message: each would hold a handshake for 30 s.
+    const idle = Array.from({ length: 16 }, dial);
+    const channels = () => (t.hub as unknown as { channels: Map<number, unknown> }).channels.size;
+    await until(() => channels() === 16);
+    const extra = dial();
+    await until(() => extra.code !== null);
+    expect(extra.code).toBe(4429);
+    expect(idle.every((s) => s.code === null)).toBe(true);
+    await expect(phone.connect()).rejects.toThrow(/4429/);
+    // One ends: there is room for a phone again.
+    idle[0]!.ws.terminate();
+    await until(() => channels() === 15);
+    expect((await phone.connect()).t).toBe('welcome');
+    for (const s of idle) s.ws.terminate();
   });
 });
 

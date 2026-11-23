@@ -180,6 +180,37 @@ describe('messages', () => {
     expect(o.got.at(-1)).toMatchObject({ t: 'error', code: 'invalid' });
   });
 
+  test('a phone\'s fragments are up to Noise\'s 65535 bytes, and a full one is taken', async () => {
+    const o = await open();
+    // 64 KiB of input and its JSON: more than one fragment, the first at the full size.
+    const data = 'x'.repeat(64 * 1024);
+    const frames = o.phone.encode({ t: 'input', id: 't1', data });
+    expect(frames[0]).toHaveLength(65535);
+    for (const f of frames) o.ch.receive(f);
+    expect(o.received).toEqual([{ t: 'input', id: 't1', data }]);
+  });
+
+  test('a frame larger than a Noise message is refused unread, in every state: the channel closes as too large', async () => {
+    const big = Buffer.alloc(65536, 7);
+    // During the handshake.
+    const hello = setup();
+    hello.ch.receive(big);
+    expect(hello.closes).toEqual([CLOSE.tooLarge]);
+    // While the hub decides (frames are kept then: never one this large).
+    const s = setup({ admit: () => new Promise(() => {}) });
+    const phone = new PhoneChannel({ kind: 'device', id: ROOM, key: generateKeyPair() });
+    s.ch.receive(phone.start());
+    s.ch.receive(phone.receive(s.sent.shift()!).reply!);
+    expect(s.ch.state).toBe('admitting');
+    s.ch.receive(big);
+    expect(s.closes).toEqual([CLOSE.tooLarge]);
+    // Open.
+    const o = await open();
+    o.ch.receive(big);
+    expect(o.closes).toEqual([CLOSE.tooLarge]);
+    expect(o.received).toEqual([]);
+  });
+
   test('a frame that does not decrypt, or JSON that is not an object, closes the channel', async () => {
     const o = await open();
     o.ch.receive(Buffer.alloc(40, 3));

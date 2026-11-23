@@ -149,11 +149,20 @@ const PATTERNS: Record<NoiseProtocol, Token[][]> = {
   Noise_XXpsk3_25519_AESGCM_SHA256: [['e'], ['e', 'ee', 's', 'es'], ['s', 'se', 'psk']]
 };
 
-/** The two directions after the handshake: what this side sends with, what it receives with. */
+/**
+ * The two directions after the handshake: what this side sends with, what it receives with. A transport message is at
+ * most 65535 bytes, tag included, either way: a larger one is refused before any work (the nonce stays).
+ */
 export class NoiseTransport {
   constructor(private readonly tx: CipherState, private readonly rx: CipherState) {}
-  encrypt(plaintext: Uint8Array): Buffer { return this.tx.encrypt(Buffer.alloc(0), plaintext); }
-  decrypt(ciphertext: Uint8Array): Buffer { return this.rx.decrypt(Buffer.alloc(0), ciphertext); }
+  encrypt(plaintext: Uint8Array): Buffer {
+    if (plaintext.length + NOISE_TAG > NOISE_MAX_MESSAGE) throw new Error('message too large');
+    return this.tx.encrypt(Buffer.alloc(0), plaintext);
+  }
+  decrypt(ciphertext: Uint8Array): Buffer {
+    if (ciphertext.length > NOISE_MAX_MESSAGE) throw new Error('message too large');
+    return this.rx.decrypt(Buffer.alloc(0), ciphertext);
+  }
   /** Transport messages sent and received so far. */
   get sent(): number { return this.tx.count; }
   get received(): number { return this.rx.count; }
