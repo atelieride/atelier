@@ -14,12 +14,15 @@ const privateV4 = (host: string): boolean => {
   return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
 };
 
-/** Loopback (::1) or a unique local address (fc00::/7), as the URL parser writes an IPv6 host: in brackets. */
+/**
+ * Loopback (::1) or a unique local address (fc00::/7), as the URL parser writes an IPv6 host: in brackets, each hextet
+ * without its leading zeros. A unique local address's first hextet is fcXX or fdXX, four digits: `fc::1` is 00fc.
+ */
 const privateV6 = (host: string): boolean => {
   const m = /^\[([0-9a-f:.]+)\]$/.exec(host);
   if (!m) return false;
   const ip = m[1]!;
-  return ip === '::1' || /^f[cd][0-9a-f]{0,2}:/.test(ip);
+  return ip === '::1' || /^f[cd][0-9a-f]{2}:/.test(ip);
 };
 
 /**
