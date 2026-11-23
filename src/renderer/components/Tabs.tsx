@@ -299,8 +299,9 @@ export const PaneStrip = memo(function PaneStrip({ pane, split, last, onNew }: {
     if (el) for (const child of el.children) sizes.current?.observe(child);
     fade();
   }, [front, order, fade, showClicked]);
-  // Another tab in front: picked in the sidebar, what it shows rises in; from one tab of this strip to another (a tab
-  // picked, the keyboard, the palette), the crown flies over to it and the content slides in from its side.
+  // Another tab in front, from one tab of this strip to another (however it was picked): the crown flies over to it.
+  // What it shows comes in by where it was picked: rising from the sidebar, otherwise (a tab, the keyboard, the
+  // palette) from the side of the tab.
   const shown = useRef(front);
   useLayoutEffect(() => {
     const was = shown.current;
@@ -309,13 +310,14 @@ export const PaneStrip = memo(function PaneStrip({ pane, split, last, onNew }: {
     if (!el || !front || was === front) return;
     const body = el.closest('.workspace')?.querySelector<HTMLElement>('.workspace-body');
     const content = body ? paneContent(body, split ? pane : null) : [];
-    if (takeNav() === 'sidebar') { for (const view of content) enterView(view, 'up'); return; }
+    const sidebar = takeNav() === 'sidebar';
     const tabOf = (k: TabKey) => el.querySelector<HTMLElement>(`.tab[data-key="${CSS.escape(k)}"]`);
     const from = was ? tabOf(was) : null;
     const to = tabOf(front);
-    if (!from || !to) return;
     // Only the focused pane's tab wears the brand crown; another pane's front tab has a quiet one of its own.
-    if (to.classList.contains('is-active')) flyCrown(el, from, to);
+    if (from && to && to.classList.contains('is-active')) flyCrown(el, from, to);
+    if (sidebar) { for (const view of content) enterView(view, 'up'); return; }
+    if (!from || !to) return;
     const dir = from.compareDocumentPosition(to) & Node.DOCUMENT_POSITION_FOLLOWING ? 'right' : 'left';
     for (const view of content) enterView(view, dir);
   }, [front, split, pane]);

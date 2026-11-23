@@ -2,8 +2,8 @@ import { play, reducedMotion } from './motion';
 import { crownKeyframes } from './motion-geometry';
 
 // The in-app transitions: short moves that show where something went. A session picked in the sidebar has the
-// selection glide to its row and the workspace rise in; a tab picked has the crown stretch over to it and the content
-// slide in from its side. Each plays through play() (none under Reduce motion), takes no pointer, moves the content by
+// selection glide to its row and the workspace rise in; a tab picked has the content slide in from its side; either
+// way the tab crown stretches over to the new tab. Each plays through play() (none under Reduce motion), takes no pointer, moves the content by
 // transform and opacity only (a terminal measures its box: no size ever changes), and leaves nothing behind once it
 // ends or a newer one cuts it short.
 

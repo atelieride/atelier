@@ -5,9 +5,9 @@ import { join, resolve } from 'node:path';
 import { e2eEnv } from './env';
 import { look } from './shots';
 
-// In-app transitions. A session picked in the sidebar: the selection glides from its row to the new one and the
-// workspace rises in. A tab picked: its crown stretches over to it, then catches up, and the content slides in from the
-// side it is on. They never hold a click (one mid-move goes where it lands), leave nothing once they end, and Reduce
+// In-app transitions. A session picked in the sidebar: the selection glides from its row to the new one, the tab crown
+// follows it, and the workspace rises in. A tab picked: its crown stretches over to it, then catches up, and the content
+// slides in from the side it is on. They never hold a click (one mid-move goes where it lands), leave nothing once they end, and Reduce
 // motion plays none.
 
 type Played = { on: string; kf: string };
@@ -77,7 +77,7 @@ const freeze = (win: Page, selector: string, ms: number) => win.evaluate(([sel, 
 const hits = (win: Page, x: number, y: number) => win.evaluate(([px, py]) => !!document.elementFromPoint(px!, py!)?.closest('.motion-lane, .motion-pill, .tab-crown-fly'), [x, y]);
 const resume = (win: Page) => win.evaluate(() => { for (const a of document.getAnimations()) if (a.playState === 'paused') a.play(); });
 
-test('a session picked in the sidebar: the selection glides to its row, the workspace rises in, a click mid-glide goes to the next row', async () => {
+test('a session picked in the sidebar: the selection glides to its row, the tab crown follows, the workspace rises in, a click mid-glide goes to the next row', async () => {
   test.setTimeout(120000);
   const { app, home, win } = await launch();
   try {
@@ -86,15 +86,17 @@ test('a session picked in the sidebar: the selection glides to its row, the work
 
     await row(win, 'One').click();
     const glide = await played(win);
-    // One pill, from Three's row to One's; the workspace body rises (one animation, upward); no crown, no slide.
+    // One pill, from Three's row to One's; the tab crown flies along (one motion language for the selection); the
+    // workspace body rises (one animation, upward), never a sideways slide.
     expect(on(glide, 'motion-pill')).toHaveLength(1);
+    expect(on(glide, 'tab-crown-fly')).toHaveLength(1);
     const body = on(glide, 'workspace-body');
     expect(body).toHaveLength(1);
     expect(body[0]!.kf).toContain('translateY(6px)');
-    expect(on(glide, 'tab-crown-fly')).toHaveLength(0);
     expect(glide.some((p) => p.kf.includes('translateX'))).toBe(false);
     await expect(win.locator('.motion-pill')).toHaveCount(0, { timeout: 600 });
-    await expect(win.locator('.motion-lane')).toHaveCount(0);
+    await expect(win.locator('.motion-lane, .tab-crown-fly')).toHaveCount(0);
+    await expect(win.locator('.is-crown-landing')).toHaveCount(0);
     await expect(row(win, 'One')).toHaveClass(/is-selected/);
     await expect(row(win, 'One')).not.toHaveClass(/is-gliding/);
 
