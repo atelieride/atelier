@@ -71,6 +71,8 @@ export interface Settings {
   projectColors: ProjectColors;
   terminalColors: TerminalColors;
   motion: MotionPref;
+  /** Plays the logo animation once when the app starts (never with reduced motion). */
+  launchAnimation: boolean;
   /** The terminal's font family: JetBrains Mono or an installed monospaced font. */
   terminalFontFamily: string;
   terminalFontSize: number;
@@ -269,6 +271,7 @@ export const DEFAULT_SETTINGS: Settings = {
   projectColors: {},
   terminalColors: 'theme',
   motion: 'system',
+  launchAnimation: true,
   terminalFontFamily: BUNDLED_FONT,
   terminalFontSize: 13,
   terminalLineHeight: 1.2,
@@ -431,6 +434,7 @@ export const SETTINGS_FIELDS: { [K in keyof Settings]: Field } = {
   projectColors: { kind: 'projectColors' },
   terminalColors: { kind: 'enum', values: ['theme', 'dark'] },
   motion: { kind: 'enum', values: ['system', 'reduced'] },
+  launchAnimation: { kind: 'bool' },
   terminalFontFamily: { kind: 'fontFamily' },
   terminalFontSize: { kind: 'int', min: 10, max: 24 },
   terminalLineHeight: { kind: 'step', min: 1, max: 1.6, step: 0.05 },

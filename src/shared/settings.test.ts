@@ -615,3 +615,9 @@ test('iPhone access: off by default, the default relay; a relay URL Atelier may 
   expect(settingsPatchSchema.safeParse({ remoteRelay: 'http://relay.test' }).success).toBe(false);
   expect(settingsPatchSchema.safeParse({ remoteAccess: true }).success).toBe(true);
 });
+
+test('launch animation is on by default and normalizes', () => {
+  expect(DEFAULT_SETTINGS.launchAnimation).toBe(true);
+  expect(normalizeSettings({ launchAnimation: false }).launchAnimation).toBe(false);
+  expect(normalizeSettings({ launchAnimation: 'x' }).launchAnimation).toBe(true);
+});
