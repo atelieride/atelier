@@ -118,7 +118,6 @@ export class SecureChannel {
         this.held.push(frame);
         return;
       case 'open': this.transportFrame(frame); return;
-      case 'closed': return;
     }
   }
 
