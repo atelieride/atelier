@@ -1628,16 +1628,8 @@ export const useApp = create<AppState>((set, get) => ({
   },
   phoneResuming: (id) => { resuming.add(id); },
   phoneResumed: (from, to) => {
-    if (to) {
-      get().relinkTask(from, to);
-      setPins(relinkPin(get().pins, from, to));
-      setRowOrder(relinkOrder(get().rowOrder, from, to));
-      const ws = get().ws;
-      if (ws) set({ ws: wsRelink(ws, from, to) });
-    }
-    resuming.delete(from);
-    prunePinned();
-    pruneLinks();
+    if (to) relinkResumed(from, to);
+    resumeOver(from);
   },
   resume: async (id) => {
     const { size } = get();
@@ -1647,12 +1639,7 @@ export const useApp = create<AppState>((set, get) => ({
     resuming.add(id);
     try {
       const info = await window.atelier.terminals.resume(id, size.cols || 120, size.rows || 36);
-      get().relinkTask(id, info.id);
-      setPins(relinkPin(get().pins, id, info.id));
-      setRowOrder(relinkOrder(get().rowOrder, id, info.id));
-      // Its workspace too: the new id is where the old one was.
-      const ws = get().ws;
-      if (ws) set({ ws: wsRelink(ws, id, info.id) });
+      relinkResumed(id, info.id);
       // Resumed from elsewhere (the palette) into another workspace: that workspace comes forward with it. Never during
       // Resume all: it resumes the active workspace's, and a switch made meanwhile is the user's — so is a space left.
       const w = get();
@@ -1662,9 +1649,7 @@ export const useApp = create<AppState>((set, get) => ({
     } catch {
       return null;
     } finally {
-      resuming.delete(id);
-      prunePinned();
-      pruneLinks();
+      resumeOver(id);
     }
   },
   launchedToSide: (info) => {
@@ -3755,6 +3740,25 @@ function setHidden(hidden: string[]) {
  * and their link and pin must still be there to move.
  */
 const resuming = new Set<string>();
+
+/**
+ * A resumed session is a new terminal: it takes the old row's task link, pin, manual place and workspace (the new id
+ * is where the old one was). Resumed here or by a paired phone.
+ */
+function relinkResumed(from: string, to: string): void {
+  useApp.getState().relinkTask(from, to);
+  setPins(relinkPin(useApp.getState().pins, from, to));
+  setRowOrder(relinkOrder(useApp.getState().rowOrder, from, to));
+  const ws = useApp.getState().ws;
+  if (ws) useApp.setState({ ws: wsRelink(ws, from, to) });
+}
+
+/** A resume is over (done or failed): the old row no longer counts as alive, and what was kept for it is pruned. */
+function resumeOver(from: string): void {
+  resuming.delete(from);
+  prunePinned();
+  pruneLinks();
+}
 
 /**
  * Task links of terminals that are gone — neither running nor resumable — are dropped. Only once both lists are known:
