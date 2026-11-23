@@ -12,6 +12,22 @@ const fake = vi.hoisted(() => ({
   banners: [] as string[],
   overlays: new Map<number, (string | null)[]>()
 }));
+// The interrupt check's read of Claude's settings (real I/O), each one kept so a test can let it finish before fake
+// time moves on. It is made as slow as a busy Windows runner's disk (150 ms of real time, on the timer fake time
+// doesn't replace): longer than the test's fake seconds take to pass.
+const settingsReads = vi.hoisted(() => ({ reads: [] as Promise<unknown>[], realTimeout: globalThis.setTimeout }));
+vi.mock('./claude-config', async (importOriginal) => {
+  const m = await importOriginal<typeof import('./claude-config')>();
+  const claudeReducesMotion: typeof m.claudeReducesMotion = (...a) => {
+    const read = (async () => {
+      await new Promise((r) => settingsReads.realTimeout(r, 150));
+      return m.claudeReducesMotion(...a);
+    })();
+    settingsReads.reads.push(read);
+    return read;
+  };
+  return { ...m, claudeReducesMotion };
+});
 vi.mock('electron', () => {
   class Notification {
     static isSupported() { return true; }
@@ -732,8 +748,12 @@ describe('a turn interrupted before Claude wrote anything', () => {
   beforeEach(() => { fake.windows.clear(); });
   afterEach(() => { vi.useRealTimers(); });
 
-  /** Fake time in steps, with real turns of the event loop in between (the settings read is real I/O). */
+  /**
+   * Fake time in steps, with real turns of the event loop in between. A settings read the key started (real I/O)
+   * finishes first, however slow the disk: otherwise fake seconds could pass before it and end the check early.
+   */
   const pass = async (ms: number) => {
+    await Promise.allSettled(settingsReads.reads.splice(0));
     for (let t = 0; t < ms; t += 50) {
       await vi.advanceTimersByTimeAsync(50);
       await new Promise((r) => setImmediate(r));
