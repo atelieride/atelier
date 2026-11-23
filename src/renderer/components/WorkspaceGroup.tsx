@@ -168,6 +168,7 @@ export function WorkspaceGroup({ w, active, inAct = false, open, card, account, 
           ? <div className="ws-name-btn">{name}</div>
           : (
             <button type="button" className="ws-name-btn" aria-label={atOwn ? w.name : inAct ? t.wsAct.ownTabs(w.name) : t.ws.switchTo(card.label)}
+              aria-description={account ? t.accounts.groupSays(account.tag.name) : undefined}
               data-tip={atOwn ? undefined : inAct ? t.wsAct.ownTabs(w.name) : card.label}
               {...(atOwn ? { 'aria-expanded': open } : {})} onClick={atOwn ? toggle : () => st().switchWorkspace(w.id)}>
               {name}

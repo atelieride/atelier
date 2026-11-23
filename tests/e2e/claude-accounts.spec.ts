@@ -274,6 +274,8 @@ test('every session on one account: the group\'s head names it once (Sessions, t
     });
     const wsHead = win.locator('.ws-head .group-account');
     await expect(wsHead).toHaveText('Ops');
+    // Inside the head's button, whose label is its name: a screen reader hears the account as its description.
+    await expect(win.locator('.ws-group.is-active .ws-name-btn')).toHaveAttribute('aria-description', 'Every session here runs as Ops');
     await expect(win.locator('.sidebar-head .group-account')).toHaveCount(0);
     await expect(win.locator('.session-row .account-chip')).toHaveCount(0);
     expect(await win.locator('.ws-group.is-active .ws-name').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);

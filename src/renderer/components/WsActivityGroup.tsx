@@ -66,6 +66,7 @@ export function WsActivityGroup({ a, current, open, card, account, children }: {
           )
           : (
             <button type="button" className="wsa-name-btn" aria-label={current ? a.name : t.wsAct.showTabs(a.name)}
+              aria-description={account ? t.accounts.groupSays(account.tag.name) : undefined}
               {...(current ? { 'aria-current': 'location' as const } : {})} onClick={current ? undefined : () => st().switchWorkspace(a.id)}>
               {glyph}
               <span className="wsa-name">{a.name}</span>

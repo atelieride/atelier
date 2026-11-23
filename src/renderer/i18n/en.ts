@@ -85,6 +85,8 @@ const strings = {
     chipTip: (name: string, dir: string) => `Claude account: ${name} · ${dir}`,
     /** On a group's head: every session there runs as this account. */
     groupTip: (name: string, dir: string) => `Every session here runs as ${name} · ${dir}`,
+    /** The same, for a screen reader, on the head's button (whose label is the group's name). */
+    groupSays: (name: string) => `Every session here runs as ${name}`,
     allAccounts: 'All accounts',
     thisSession: 'this session',
     title: 'Accounts',
