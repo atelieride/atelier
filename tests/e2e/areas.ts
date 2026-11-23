@@ -180,6 +180,8 @@ export const SPECS: Record<string, Area[]> = {
   'iphone-remote.spec.ts': ['iphone', 'settings', 'terminal'],
   // What the sidebar shows, on the phone: layouts, actions on rows, push notifications.
   'iphone-sidebar.spec.ts': ['iphone', 'sessions', 'workspace', 'notifications'],
+  // Workspaces and activities from the phone: made, renamed, a row moved in, a closed window opened for a change.
+  'iphone-places.spec.ts': ['iphone', 'workspace'],
   'terminal-font.spec.ts': ['settings', 'terminal'],
   'window.spec.ts': ['workspace'],
   'word-wrap.spec.ts': ['editor', 'settings'],
@@ -250,6 +252,8 @@ export const SOURCES: Record<string, Area[]> = {
   // iPhone, pairing sheet, pill, badges and size note; the test relay and the fake phone the spec drives them with.
   'src/main/remote/': ['iphone', 'terminal', 'sessions', 'settings'],
   'src/renderer/iphone/': ['iphone'],
+  // A phone's changes to the places go through the workspaces' own store actions.
+  'src/renderer/iphone/phone-places': ['iphone', 'workspace'],
   'tests/support/test-relay.ts': ['iphone'],
   'tests/support/fake-phone.ts': ['iphone'],
   'src/shared/remote.ts': ['iphone', 'settings'],

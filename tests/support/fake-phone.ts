@@ -247,6 +247,11 @@ export class FakePhone {
   registerPush(token: string, env: 'sandbox' | 'production', key: Buffer): Promise<Msg> { return this.request({ t: 'push', token, env, key: key.toString('base64url') }); }
   unregisterPush(): Promise<Msg> { return this.request({ t: 'push', token: null }); }
   closeRow(id: string): Promise<Msg> { return this.request({ t: 'close', id }); }
+  // Workspaces and activities, applied in the project's window (opened first when closed: up to 10 s).
+  newWorkspace(project: string, name?: string): Promise<Msg> { return this.request({ t: 'workspace', project, ...(name !== undefined ? { name } : {}) }, 15000); }
+  newActivity(project: string, workspace: string, name?: string): Promise<Msg> { return this.request({ t: 'activity', project, workspace, ...(name !== undefined ? { name } : {}) }, 15000); }
+  renamePlace(project: string, place: string, name: string): Promise<Msg> { return this.request({ t: 'renamePlace', project, place, name }, 15000); }
+  move(id: string, place: string): Promise<Msg> { return this.request({ t: 'move', id, place }, 15000); }
   resume(id: string): Promise<Msg> { return this.request({ t: 'resume', id }); }
   dismiss(id: string): Promise<Msg> { return this.request({ t: 'dismiss', id }); }
 
