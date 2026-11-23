@@ -1,14 +1,16 @@
 // window.atelier.remote's channels: any trusted app page (Settings is in the welcome window too), the sender checked
 // before its input is parsed, every argument through a strict schema; the layout, and the answers to a phone's changes
-// to the places, only from a project's main window. Status and pairing events go to every window.
-import type { IpcMainInvokeEvent } from 'electron';
+// to the places, only from a project's main window. Status and pairing events go to every window. A pairing lasts no
+// longer than the pages that started it: closed, reloaded, navigated away or crashed, a page never says its sheet
+// closed, so main watches each one.
+import type { IpcMainInvokeEvent, WebContents } from 'electron';
 import { IPC } from '@shared/api';
 import type { RemoteLayout, RemotePlaceResult } from '@shared/remote';
 import { noArgsSchema, remoteDecideSchema, remoteDeviceSchema, remoteLayoutSchema, remotePlaceDoneSchema } from '../ipc-schemas';
 import type { PlaceRequests } from './places';
 import type { RemoteHub } from './remote-hub';
 
-export type RemoteIpcHub = Pick<RemoteHub, 'status' | 'startPairing' | 'stopPairing' | 'decide' | 'removeDevice' | 'reset' | 'layoutChanged'>;
+export type RemoteIpcHub = Pick<RemoteHub, 'status' | 'startPairing' | 'stopPairing' | 'decide' | 'removeDevice' | 'reset' | 'layoutChanged' | 'pageGone'>;
 export type RemotePlacesIpc = Pick<PlaceRequests, 'takeHeld' | 'done'>;
 
 export interface RemoteIpcDeps {
@@ -25,8 +27,31 @@ export function installRemoteIpc(hub: RemoteIpcHub, deps: RemoteIpcDeps): void {
     if (!deps.isTrusted(e)) throw new Error('unauthorized sender');
     return fn(arg);
   });
+  // The pages that started a pairing, each watched once for as long as it lives. A navigation counts once the new page
+  // replaced the old one (did-navigate: main frame, a new document, a reload too), not when it only starts: the old
+  // page, told the pairing stopped while still there, would start it again.
+  const watched = new Set<number>();
+  const watch = (wc: WebContents) => {
+    const page = wc.id;
+    if (watched.has(page)) return;
+    watched.add(page);
+    const gone = () => hub.pageGone(page);
+    wc.on('did-navigate', gone);
+    wc.on('render-process-gone', gone);
+    wc.once('destroyed', () => {
+      watched.delete(page);
+      wc.off('did-navigate', gone);
+      wc.off('render-process-gone', gone);
+      gone();
+    });
+  };
   handle(IPC.remoteStatus, (arg) => { noArgsSchema.parse(arg); return hub.status(); });
-  handle(IPC.remoteStartPairing, (arg) => { noArgsSchema.parse(arg); return hub.startPairing(); });
+  deps.handle(IPC.remoteStartPairing, (e, arg) => {
+    if (!deps.isTrusted(e)) throw new Error('unauthorized sender');
+    noArgsSchema.parse(arg);
+    watch(e.sender);
+    return hub.startPairing(e.sender.id);
+  });
   handle(IPC.remoteStopPairing, (arg) => { noArgsSchema.parse(arg); hub.stopPairing(); });
   handle(IPC.remoteDecide, (arg) => { const o = remoteDecideSchema.parse(arg); return hub.decide(o.requestId, o.allow); });
   handle(IPC.remoteRemoveDevice, (arg) => hub.removeDevice(remoteDeviceSchema.parse(arg).id));

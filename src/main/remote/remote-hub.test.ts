@@ -281,6 +281,64 @@ describe('pairing', () => {
     expect(t.pairing.some((e) => e.kind === 'denied')).toBe(false);
   });
 
+  describe('the pages that show the code', () => {
+    async function online() {
+      const t = setup();
+      t.hub.start();
+      await until(() => t.hub.status().relay.state === 'online');
+      return t;
+    }
+
+    test('the pairing lasts while a page that started it is there: the last one gone (closed, reloaded), it stops', async () => {
+      const t = await online();
+      expect(await t.hub.startPairing(1)).toMatchObject({ ok: true });
+      expect(await t.hub.startPairing(2)).toMatchObject({ ok: true });
+      await until(() => relay.offers().length === 1);
+      t.hub.pageGone(1);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(relay.offers()).toHaveLength(1);
+      expect(t.pairing.some((e) => e.kind === 'stopped')).toBe(false);
+      // A page that never showed it changes nothing.
+      t.hub.pageGone(7);
+      t.hub.pageGone(2);
+      expect(t.pairing.at(-1)).toEqual({ kind: 'stopped' });
+      await until(() => relay.offers().length === 0);
+    });
+
+    test('a phone waiting for Allow when the last page goes is told pairing is off', async () => {
+      const t = await online();
+      const start = await t.hub.startPairing(1);
+      if (!start.ok) throw new Error('no code');
+      const answer = t.phone().pairByCode(start.pairing.code);
+      await until(() => t.pairing.some((e) => e.kind === 'request'));
+      t.hub.pageGone(1);
+      expect(await answer).toEqual({ t: 'denied', reason: 'disabled' });
+    });
+
+    test('the pages of an earlier pairing are not this one\'s: stopped or paired, the next starts with none', async () => {
+      const t = await online();
+      await t.hub.startPairing(1);
+      t.hub.stopPairing();
+      await t.hub.startPairing(2);
+      t.hub.pageGone(1);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(relay.offers()).toHaveLength(1);
+      // Paired from page 2: the pairing is over; page 3's next one isn't held by page 2.
+      const again = await t.hub.startPairing(2);
+      if (!again.ok) throw new Error('no code');
+      const answer = t.phone().pairByCode(again.pairing.code);
+      await until(() => t.pairing.some((e) => e.kind === 'request'));
+      t.hub.decide((t.pairing.find((e) => e.kind === 'request') as { request: { id: string } }).request.id, true);
+      expect((await answer).t).toBe('welcome');
+      await t.hub.startPairing(3);
+      t.hub.pageGone(2);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(relay.offers()).toHaveLength(1);
+      t.hub.pageGone(3);
+      await until(() => relay.offers().length === 0);
+    });
+  });
+
   describe('a phone that holds its last handshake message while the code goes', () => {
     /** Presents `code` and stops after message 2; `finish()` sends its message 3 later, as a slow or wily phone may. */
     async function holding(code: string) {

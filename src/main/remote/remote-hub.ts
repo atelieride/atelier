@@ -488,6 +488,8 @@ export class RemoteHub {
   /** Channels admitted, by channel, with their device's id, until opened. */
   private readonly admitted = new Map<number, string>();
   private pairing: Pairing | null = null;
+  /** The pages (webContents ids) that started the pairing in progress. */
+  private readonly pairingPages = new Set<number>();
   /** The pairing channel waiting for the user's answer, and the pairing it asked. */
   private asking: { c: SecureChannel; pairing: Pairing } | null = null;
   private stateTimer: ReturnType<typeof setTimeout> | null = null;
@@ -727,7 +729,7 @@ export class RemoteHub {
     // Full: the phone that made room goes as Remove takes it (its connection ends, its notices stop).
     for (const d of evicted) this.letGo(d.id);
     pairing.finish();
-    if (this.pairing === pairing) this.pairing = null;
+    if (this.pairing === pairing) { this.pairing = null; this.pairingPages.clear(); }
     this.admitted.set(c.ch, device.id);
     this.d.emitPairing({ kind: 'paired', device: this.info(device, new Map([[device.id, new Set()]])) });
     return { ok: true };
@@ -876,12 +878,18 @@ export class RemoteHub {
 
   // ── Pairing and devices (the windows' requests) ──
 
-  async startPairing(): Promise<RemotePairingStart> {
+  /**
+   * The pairing sheet opened (in `page`, a window's webContents id): the code, a fresh one when none is live. The
+   * pairing lasts while a page that started it is there (see pageGone).
+   */
+  async startPairing(page?: number): Promise<RemotePairingStart> {
     if (!this.d.settings().remoteAccess) return { ok: false, reason: 'disabled', message: 'Turn on access from iPhone first.' };
     const link = this.link;
     const id = this.identity;
     const base = relayBase(this.d.relayUrl());
     if (!link || !id || !base) return { ok: false, reason: 'unavailable', message: this.relay.message ?? 'iPhone access is unavailable right now.' };
+    if (!this.pairing) this.pairingPages.clear();
+    if (page !== undefined) this.pairingPages.add(page);
     this.pairing ??= new Pairing({
       offer: (lookup, ttl) => this.link?.offer(lookup, ttl),
       withdraw: (lookup) => this.link?.withdraw(lookup),
@@ -897,11 +905,22 @@ export class RemoteHub {
 
   /** The pairing sheet closed: the code goes; a phone waiting for an answer is told pairing is off. */
   stopPairing(): void {
+    this.pairingPages.clear();
     const p = this.pairing;
     if (!p) return;
     this.pairing = null;
     p.stop();
     this.d.emitPairing({ kind: 'stopped' });
+  }
+
+  /**
+   * A page is gone: its window closed, or the page reloaded, navigated or crashed, none of which lets the sheet say
+   * it closed. The last page that started the pairing gone, it stops as if its sheet had closed: no code is left
+   * renewing and offered to the relay with no window to show it, or to ask about a phone that presents it.
+   */
+  pageGone(page: number): void {
+    if (!this.pairingPages.delete(page)) return;
+    if (this.pairingPages.size === 0) this.stopPairing();
   }
 
   decide(requestId: string, allow: boolean): boolean {

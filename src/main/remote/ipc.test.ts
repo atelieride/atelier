@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { describe, expect, test, vi } from 'vitest';
 import { IPC } from '@shared/api';
 import { installRemoteIpc, type RemoteIpcDeps, type RemoteIpcHub, type RemotePlacesIpc } from './ipc';
@@ -13,7 +14,8 @@ function setup(trusted = true) {
     decide: vi.fn(() => true),
     removeDevice: vi.fn(() => true),
     reset: vi.fn(),
-    layoutChanged: vi.fn()
+    layoutChanged: vi.fn(),
+    pageGone: vi.fn()
   };
   const order: string[] = [];
   vi.mocked(hub.layoutChanged).mockImplementation(() => { order.push('layout'); });
@@ -24,8 +26,15 @@ function setup(trusted = true) {
   // Window 1 is the project's main window, 2 a pop-out (no project for this), 3 the welcome window.
   const projectOf = (id: number) => (id === 1 ? '/work/app' : null);
   installRemoteIpc(hub, { isTrusted: () => trusted, handle: (channel, fn) => { handlers.set(channel, fn); }, projectOf, places });
-  const call = (channel: string, arg?: unknown, sender = 1) => handlers.get(channel)!({ sender: { id: sender } } as Parameters<Handler>[0], arg);
-  return { hub, call, handlers, places, order };
+  // Each window's webContents: its id and its events, as Electron emits them.
+  const senders = new Map<number, EventEmitter & { id: number }>();
+  const sender = (id: number) => {
+    let s = senders.get(id);
+    if (!s) { s = Object.assign(new EventEmitter(), { id }); senders.set(id, s); }
+    return s;
+  };
+  const call = (channel: string, arg?: unknown, from = 1) => handlers.get(channel)!({ sender: sender(from) } as unknown as Parameters<Handler>[0], arg);
+  return { hub, call, handlers, places, order, sender };
 }
 
 describe('window.atelier.remote in main', () => {
@@ -54,6 +63,34 @@ describe('window.atelier.remote in main', () => {
     expect(hub.decide).not.toHaveBeenCalled();
     expect(hub.removeDevice).not.toHaveBeenCalled();
     expect(hub.reset).not.toHaveBeenCalled();
+  });
+
+  test('pairing is started for the page that asks, and lasts no longer than it: closed, reloaded, navigated or crashed', async () => {
+    const { hub, call, sender } = setup();
+    await call(IPC.remoteStartPairing, undefined, 4);
+    expect(hub.startPairing).toHaveBeenCalledWith(4);
+    // Asked again by the same page (the sheet restarts after a stop): still one watch on it.
+    await call(IPC.remoteStartPairing, undefined, 4);
+    expect(sender(4).listenerCount('destroyed')).toBe(1);
+    // A navigation only starting, in-page or in a subframe leaves the sheet as it is: the page that shows it is there
+    // until a new one replaces it (told "stopped" before that, the sheet would just start again).
+    sender(4).emit('did-start-navigation', { isMainFrame: true, isSameDocument: false });
+    sender(4).emit('did-navigate-in-page', {}, 'file:///index.html#x', true);
+    sender(4).emit('did-frame-navigate', {}, 'file:///frame.html', 200, 'OK', false);
+    expect(hub.pageGone).not.toHaveBeenCalled();
+    // Its main frame replaced by a new page (a reload too).
+    sender(4).emit('did-navigate', {}, 'file:///index.html', 200, 'OK');
+    expect(hub.pageGone).toHaveBeenLastCalledWith(4);
+    sender(4).emit('render-process-gone', {}, { reason: 'crashed' });
+    sender(4).emit('destroyed');
+    expect(vi.mocked(hub.pageGone).mock.calls).toEqual([[4], [4], [4]]);
+    // Gone for good: no watch left on it.
+    expect(sender(4).listenerCount('did-navigate')).toBe(0);
+    expect(sender(4).listenerCount('render-process-gone')).toBe(0);
+    // Another page: its own watch.
+    await call(IPC.remoteStartPairing, undefined, 5);
+    sender(5).emit('destroyed');
+    expect(hub.pageGone).toHaveBeenLastCalledWith(5);
   });
 
   test('a page that is not the app\'s is refused, its input never parsed', () => {

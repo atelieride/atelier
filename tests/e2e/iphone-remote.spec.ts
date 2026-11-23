@@ -1,9 +1,9 @@
 // iPhone access end to end. Through the test relay (tests/support/test-relay.ts): Settings › iPhone turns access on,
 // says when the relay can't be reached, takes a relay address only when Atelier may dial it, and connects to the test
 // relay; the pairing sheet offers to turn access on, shows a live code (QR and text) that renews in place, and takes
-// it back when it closes. From main's news (its remote handlers stood in for): the Allow / Deny question, the toast,
-// the notices, the footer pill, the phone badge on the tab and the row, the size note and Fit to Window, the paired
-// phones' list and Remove. And with a fake phone on Atelier's own Noise code (tests/support/fake-phone.ts): pairing by
+// it back when it closes, when its page reloads and when its window closes with it open. From main's news (its remote
+// handlers stood in for): the Allow / Deny question, the toast, the notices, the footer pill, the phone badge on the
+// tab and the row, the size note and Fit to Window, the paired phones' list and Remove. And with a fake phone on Atelier's own Noise code (tests/support/fake-phone.ts): pairing by
 // code, Allow, a phone typing in a terminal, access off and Remove dropping it. And the beta it is said to be, where
 // pairing starts.
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
@@ -159,6 +159,39 @@ test('the pairing sheet offers to turn access on, and a code that runs out renew
     await win.keyboard.press('Enter');
     await expect(sheet).toBeVisible();
     await codeOnScreen(win);
+  } finally {
+    await app.close();
+    stopDaemon(home);
+    await relay.close();
+  }
+});
+
+test('the code goes with the page that showed it: reloaded, or its window closed, with the sheet open', async () => {
+  test.setTimeout(120_000);
+  const relay = await startTestRelay();
+  const { app, win, home } = await launch({ ATELIER_TEST_RELAY_URL: relay.url });
+  try {
+    await command(app, 'pair-iphone');
+    const sheet = win.locator('.pair-sheet');
+    await sheet.getByRole('button', { name: 'Turn On and Pair' }).click();
+    await codeOnScreen(win);
+    await expect.poll(() => relay.offers().length, { timeout: 15000 }).toBe(1);
+    const room = relay.hostFrames.find((f) => f.frame.t === 'offer')!.roomId!;
+
+    // A reload never lets the sheet say it closed: the code is withdrawn all the same, Atelier stays online.
+    await win.reload();
+    await expect.poll(() => relay.offers().length, { timeout: 10000 }).toBe(0);
+    expect(relay.hostOnline(room)).toBe(true);
+
+    // Shown again, then its window closed.
+    await expect(win.locator('.terminal-slot:visible .xterm-rows')).toContainText('›', { timeout: 15000 });
+    await command(app, 'pair-iphone');
+    await codeOnScreen(win);
+    await expect.poll(() => relay.offers().length, { timeout: 15000 }).toBe(1);
+    const window = await app.browserWindow(win);
+    await window.evaluate((w) => w.close());
+    await expect.poll(() => relay.offers().length, { timeout: 10000 }).toBe(0);
+    expect(relay.hostOnline(room)).toBe(true);
   } finally {
     await app.close();
     stopDaemon(home);
