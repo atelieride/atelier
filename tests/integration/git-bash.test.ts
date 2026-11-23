@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import * as pty from 'node-pty';
 import { expect, test } from 'vitest';
 import { ATELIER_BASH, gitBashArgs } from '../../src/daemon/install-files';
@@ -233,7 +233,10 @@ test.runIf(isWin && existsSync(GIT_BASH))('no claude on PATH: the one Claude’s
 test.runIf(canRun)('an alias to Claude’s binary by its path is tracked, and still runs that binary', async () => {
   const r = await runBash({ bins: { 'tools/claude': FAKE_CLAUDE }, home: { '.bash_profile': 'alias cc="$HOME/tools/claude --model m"\n' }, lines: ['cc a', 'alias cc'] });
   expect(r.log).toBe(`ARGS:--settings ${r.settings} --model m a\n`);
-  expect(r.flat).toContain(`alias cc='__atelier_claude_with ${bashPath(r.home)}/tools/claude --model m'`);
+  // Git Bash may name $HOME through one of its mounts (%TEMP% is /tmp), so on Windows the binary's path is checked by
+  // its end.
+  const target = /alias cc='__atelier_claude_with (\S+) --model m'/.exec(r.flat)?.[1];
+  expect(isWin ? target?.endsWith(`/${basename(dirname(r.home))}/home/tools/claude`) : target === `${r.home}/tools/claude`, target).toBe(true);
 }, 60_000);
 
 test.runIf(canRun)('variables an alias sets in front of Claude’s binary stay', async () => {
