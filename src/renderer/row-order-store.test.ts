@@ -102,6 +102,31 @@ describe('row order', () => {
     expect(st().rowOrder.sessions).toEqual(['b2', 'a']);
   });
 
+  test('a session a paired phone resumes keeps its place and pin, as one resumed here does; a failed one is pruned', () => {
+    st().setProject({ root: '/p', name: 'p', realRoot: '/p' });
+    st().setTerminals([]);
+    st().setTerminals([term('a'), term('b')]);
+    useApp.setState({ pins: ['b'] });
+    st().setResumables([res('b')]);
+    st().setTerminals([term('a')]);
+    // Main says a phone is resuming it: the lists that come before its outcome keep the row's place and pin.
+    st().phoneResuming('b');
+    st().setResumables([]);
+    st().setTerminals([term('a'), term('b2')]);
+    expect(st().rowOrder.sessions).toEqual(['b', 'a']);
+    expect(st().pins).toEqual(['b']);
+    st().phoneResumed('b', 'b2');
+    expect(st().rowOrder.sessions).toEqual(['b2', 'a']);
+    expect(st().pins).toEqual(['b2']);
+    // A resume that failed: the old row is gone with its place.
+    st().setResumables([res('a')]);
+    st().setTerminals([term('b2')]);
+    st().phoneResuming('a');
+    st().setResumables([]);
+    st().phoneResumed('a', null);
+    expect(st().rowOrder.sessions).toEqual(['b2']);
+  });
+
   test('a hand move to another workspace un-places the row; a move onto its own place does not', () => {
     const ws: WorkspacesState = {
       on: true, active: 'A', members: { a: 'A', b: 'B' },

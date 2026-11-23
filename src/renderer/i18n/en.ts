@@ -2458,6 +2458,7 @@ const strings = {
   // iPhone, the pairing sheet) comes with their chunk (i18n/iphone.ts).
   iphone: {
     pill: (n: number) => (n === 1 ? 'iPhone' : `${n} iPhones`), pillTip: (names: string[]) => `Connected now: ${names.join(', ')}`,
+    pillName: (pill: string, names: string[]) => `${pill} connected: ${names.join(', ')}`,
     badge: 'Open on iPhone',
     sized: 'Sized for iPhone', sizedTip: 'An iPhone set this terminal\'s size. Any key pressed here takes it back too.', fit: 'Fit to Window',
     command: 'Pair iPhone…'

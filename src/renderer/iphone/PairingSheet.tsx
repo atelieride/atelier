@@ -9,7 +9,7 @@ import { useApp } from '../store';
 import { Icon } from '../components/Icon';
 import { PAIR_START, pairReducer, type PairSheet } from './pairing';
 import { qrPath } from './qr';
-import { useIphone } from './store';
+import { refreshIphone, useIphone } from './store';
 import { countdown, deviceSubtitle, deviceTitle } from './sheet-view';
 import './iphone.css';
 
@@ -84,9 +84,11 @@ export function PairingSheet() {
   }, []);
 
   const asking = s.phase === 'request';
+  // A phone asking is a question to answer: an alert dialog, described by it.
   return (
     <div className="palette-backdrop settings-backdrop" onMouseDown={close}>
-      <div ref={sheet} className={`pair-sheet${asking ? ' is-asking' : ''}`} role="dialog" aria-modal="true" aria-label={tiph.sheetTitle} tabIndex={-1} onMouseDown={(e) => e.stopPropagation()}>
+      <div ref={sheet} className={`pair-sheet${asking ? ' is-asking' : ''}`} role={asking ? 'alertdialog' : 'dialog'} aria-modal="true" aria-label={tiph.sheetTitle}
+        aria-describedby={asking ? ASK_IDS : undefined} tabIndex={-1} onMouseDown={(e) => e.stopPropagation()}>
         <header className="pair-head">
           <span className="pair-head-glyph"><Icon name="phone" size={15} stroke={1.8} /></span>
           <h2>{tiph.sheetTitle}</h2>
@@ -107,7 +109,7 @@ function Body({ s, onStart, onAllow }: { s: PairSheet; onStart: () => void; onAl
     case 'starting':
     case 'stopped':
     case 'paired':
-      return <div className="pair-body is-starting" aria-busy="true"><span className="pair-spin" aria-hidden="true" /></div>;
+      return <Starting />;
     case 'off': return <Off onStart={onStart} />;
     case 'error':
       return (
@@ -123,23 +125,37 @@ function Body({ s, onStart, onAllow }: { s: PairSheet; onStart: () => void; onAl
   }
 }
 
-/** Access off: turning it on here goes straight on to the code (main dials the relay as the setting changes). */
+/**
+ * Access off: turning it on here goes straight on to the code (main dials the relay as the setting changes). Main is
+ * asked first whether this computer can keep the keys (opened from the menu or the palette, nothing asked it yet): if
+ * it can't, the sheet says so and offers nothing to turn on.
+ */
 function Off({ onStart }: { onStart: () => void }) {
+  const known = useIphone((x) => x.status !== null);
   const unavailable = useIphone((x) => x.status?.available === false);
+  const [asked, setAsked] = useState(false);
+  useEffect(() => { void refreshIphone().then(() => setAsked(true)); }, []);
+  const ready = known || asked;
   const turnOn = () => { void window.atelier.settings.set({ remoteAccess: true }).then(onStart, onStart); };
   const first = useRef<HTMLButtonElement>(null);
-  useEffect(() => { first.current?.focus(); }, []);
+  useEffect(() => { if (ready) first.current?.focus(); }, [ready, unavailable]);
+  if (!ready) return <Starting />;
   return (
     <div className="pair-body pair-message">
       <span className={`pair-hero${unavailable ? ' is-error' : ''}`}><Icon name="phone" size={24} stroke={1.6} /></span>
       <h3>{unavailable ? tiph.unavailableTitle : tiph.offTitle}</h3>
       <p>{unavailable ? tiph.relay.unavailable : tiph.offBody}</p>
       <div className="pair-actions">
-        <button type="button" className="btn-ghost" onClick={close}>{t.confirm.cancel}</button>
+        <button ref={unavailable ? first : undefined} type="button" className="btn-ghost" onClick={close}>{unavailable ? tiph.close : t.confirm.cancel}</button>
         {!unavailable && <button ref={first} type="button" className="btn-primary" onClick={turnOn}><Icon name="qr" size={13} stroke={1.9} />{tiph.turnOn}</button>}
       </div>
     </div>
   );
+}
+
+/** On its way: a few turns of a small spinner where the sheet's body will be. */
+function Starting() {
+  return <div className="pair-body is-starting" aria-busy="true"><span className="pair-spin" aria-hidden="true" /></div>;
 }
 
 /** The code: its QR code, its text in large mono (selectable), the steps, and the time it has left. */
@@ -168,7 +184,8 @@ function Code({ pairing, notice, spent }: { pairing: RemotePairing; notice: 'dec
           <li><span className="pair-step-n">2</span>{tiph.step2}</li>
         </ol>
         <div className="pair-code-label">{tiph.codeLabel}</div>
-        <div key={pairing.code} className={`pair-code mono${renewing ? ' is-spent' : ''}`} aria-live="polite">{pairing.code}</div>
+        {/* One live region for every code the sheet shows: a renewed code is announced (a region made with it is not). */}
+        <div aria-live="polite"><div key={pairing.code} className={`pair-code mono${renewing ? ' is-spent' : ''}`}>{pairing.code}</div></div>
         <div className="pair-timer" aria-hidden={renewing ? undefined : 'true'}>
           <span className="pair-bar"><span key={pairing.code} style={{ transform: `scaleX(${renewing ? 0 : left / total})` }} /></span>
           <span className="pair-left mono">{renewing ? tiph.renewing : tiph.renewsIn(countdown(left))}</span>
@@ -180,24 +197,28 @@ function Code({ pairing, notice, spent }: { pairing: RemotePairing; notice: 'dec
   );
 }
 
+/** The question a phone asks and what it means: the alert dialog's description, and its answers'. */
+const ASK_IDS = 'pair-ask-question pair-ask-body';
+
 /** A phone presented the code: who it is, what it will be able to do, Allow or Deny before the question expires. */
 function Ask({ s, onAllow }: { s: Extract<PairSheet, { phase: 'request' }>; onAllow: (id: string) => void }) {
   const left = useLeft(s.request.expiresAt);
   const deny = useRef<HTMLButtonElement>(null);
-  // The safe answer takes the keyboard: an Enter meant for something else never lets a phone in.
+  // The safe answer takes the keyboard: an Enter meant for something else never lets a phone in. The question is its
+  // description, so a screen reader says it with the button.
   useEffect(() => { deny.current?.focus(); }, [s.request.id]);
   const title = deviceTitle(s.request);
   const sub = deviceSubtitle(s.request);
   return (
     <div className="pair-body pair-message pair-ask">
       <span className="pair-hero is-asking"><Icon name="phone" size={24} stroke={1.6} /></span>
-      <h3>{tiph.askTitle(title)}</h3>
+      <h3 id="pair-ask-question">{tiph.askTitle(title)}</h3>
       {sub && <span className="pair-ask-model">{sub}</span>}
-      <p>{tiph.askBody}</p>
+      <p id="pair-ask-body">{tiph.askBody}</p>
       <span className="pair-left mono">{tiph.answerWithin(countdown(left))}</span>
       <div className="pair-actions">
-        <button ref={deny} type="button" className="btn-ghost" disabled={s.answering} onClick={() => void window.atelier.remote.decide(s.request.id, false)}>{tiph.deny}</button>
-        <button type="button" className="btn-primary" disabled={s.answering} onClick={() => onAllow(s.request.id)}>{s.answering ? tiph.allowing : tiph.allow}</button>
+        <button ref={deny} type="button" className="btn-ghost" aria-describedby={ASK_IDS} disabled={s.answering} onClick={() => void window.atelier.remote.decide(s.request.id, false)}>{tiph.deny}</button>
+        <button type="button" className="btn-primary" aria-describedby={ASK_IDS} disabled={s.answering} onClick={() => onAllow(s.request.id)}>{s.answering ? tiph.allowing : tiph.allow}</button>
       </div>
     </div>
   );

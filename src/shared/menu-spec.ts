@@ -61,8 +61,9 @@ export const MENU_SPEC: readonly MenuSpecMenu[] = [
     sep,
     { label: 'Settings…', accelerator: 'CmdOrCtrl+,', command: 'open-settings' },
     { label: 'Connectors…', command: 'open-connectors' },
-    // iPhone access: the pairing sheet (with access off, it offers to turn it on). No default shortcut.
-    { label: 'Pair iPhone…', command: 'pair-iphone' },
+    // iPhone access: the pairing sheet (with access off, it offers to turn it on). No default shortcut. A project's
+    // window shows the sheet: the welcome window and pop-outs have none.
+    { label: 'Pair iPhone…', command: 'pair-iphone', enabledWhen: 'project' },
     sep,
     // The `atelier` shell command.
     { label: "Install 'atelier' Command", command: 'install-shell-command' },

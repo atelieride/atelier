@@ -99,6 +99,13 @@ test('Go lists the workspaces with Ctrl+Alt+1…9 and New Workspace… is Ctrl+A
   expect(project.find((m) => m.label === 'View')!.items.find((i) => i.kind === 'item' && i.label === 'Toggle Workspaces for This Project')).toMatchObject({ enabled: true });
 });
 
+// Pair iPhone…: its sheet lives in a project's window; the welcome window and pop-outs have none to show.
+test('File › Pair iPhone… is offered in a project window only', () => {
+  expect(find('Pair iPhone…')).toMatchObject({ id: 'command:pair-iphone', enabled: false });
+  const project = windowsMenu(MENU_SPEC, { ...env, state: { ...env.state, project: true } });
+  expect(project.find((m) => m.label === 'File')!.items.find((i) => i.kind === 'item' && i.label === 'Pair iPhone…')).toMatchObject({ enabled: true });
+});
+
 // Word wrap: View › Word Wrap, ✓ while on (main adds it from the settings); no
 // shortcut in the menu (Alt+Z is the editor's).
 // A checkable item says so when off too (checked: false), so the drop-down can announce it as a checkbox.

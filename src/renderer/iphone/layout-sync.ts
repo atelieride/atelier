@@ -35,11 +35,16 @@ export const LAYOUT_SYNC_MS = 300;
 
 /**
  * Sends the layout whenever it changes while iPhone access is on, from the project's main window only (never a
- * pop-out). Off, nothing is sent; turned on, the current one goes at once.
+ * pop-out). Off, nothing is sent; turned on, the current one goes at once. Installed once access is on (access-on.ts):
+ * the current one goes then too.
  */
 export function installLayoutSync(): () => void {
   let sent = '';
   let timer: ReturnType<typeof setTimeout> | null = null;
+  const later = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(flush, LAYOUT_SYNC_MS);
+  };
   const flush = () => {
     timer = null;
     const st = useApp.getState();
@@ -54,8 +59,8 @@ export function installLayoutSync(): () => void {
     if (!s.settings.remoteAccess) { sent = ''; return; }
     if (s.settings.remoteAccess === prev.settings.remoteAccess && s.groupByState === prev.groupByState && s.pins === prev.pins && s.rowOrder === prev.rowOrder
       && s.ws === prev.ws && s.settings.wsActivities === prev.settings.wsActivities && s.project === prev.project) return;
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(flush, LAYOUT_SYNC_MS);
+    later();
   });
+  if (useApp.getState().settings.remoteAccess) later();
   return () => { off(); if (timer) clearTimeout(timer); };
 }

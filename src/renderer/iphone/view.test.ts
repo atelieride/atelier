@@ -73,7 +73,9 @@ test('the connected phones, the terminals they have open, the pill naming them',
   expect(phoneTerminals(s).sort()).toEqual(['t1', 't2']);
   // Access turned off: nobody is connected, whatever the last list said.
   expect(connectedDevices(status({ enabled: false, devices: [a] }))).toEqual([]);
-  expect(pillView([])).toBeNull();
-  expect(pillView([a])).toEqual({ label: 'iPhone', tip: 'Connected now: Test iPhone' });
-  expect(pillView([a, b])).toEqual({ label: '2 iPhones', tip: 'Connected now: Test iPhone, iPhone' });
+  expect(pillView([], deviceTitle)).toBeNull();
+  expect(pillView([a], deviceTitle)).toEqual({ label: 'iPhone', tip: 'Connected now: Test iPhone', name: 'iPhone connected: Test iPhone' });
+  // A phone iOS only calls "iPhone" goes by its model, as in Settings › iPhone; the name screen readers hear starts
+  // with what the pill shows.
+  expect(pillView([a, b], deviceTitle)).toEqual({ label: '2 iPhones', tip: 'Connected now: Test iPhone, iPhone 15', name: '2 iPhones connected: Test iPhone, iPhone 15' });
 });

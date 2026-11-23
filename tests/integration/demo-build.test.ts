@@ -31,9 +31,10 @@ import { SENSITIVE, SHOTS_ONLY, findBanned } from '../support/banned-strings';
 // with every release's notes, and with it the names of the chunks the entry lists. Those names are random and compress
 // poorly: one word of release notes moved the first paint by more than 100 bytes, enough to fail a budget met exactly.
 // +1 KB for Remote Control: the wifi glyph on a session's row and bar, its URL check, the row's menu item and strings.
-// +1 KB more of room for those names: a change with no first-paint code at all (the rules of a lazy stylesheet, the
-// iPhone size note's place) changed the entry's hash, so nearly every chunk's name with it, and the new names alone
-// moved the first paint by 434 bytes (the same code, byte for byte, but the names).
+// +1 KB for iPhone access, off in the demo but in its entry: the store that follows main's status, the footer pill, the
+// phone badges and the size note (their stylesheet, the phones' names, Settings › iPhone, the pairing sheet and what a
+// window does for the phones load once access is on), a key pressed told apart from the terminal's own answers, the
+// menu item, two glyphs, strings, and the names of those lazy chunks.
 const BUDGET = 922 * 1024;
 const SHARED = resolve('src/shared');
 const INSTALL = resolve('src/demo/install.ts');

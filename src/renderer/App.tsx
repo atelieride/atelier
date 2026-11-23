@@ -310,7 +310,8 @@ export function App() {
       const st = useApp.getState();
       // A pop-out has no palette: the project window opens it and comes forward.
       if (st.popout) { void window.atelier.popout.forward('open-palette').catch(() => {}); return; }
-      // Like the other commands, it closes Settings instead of opening under the sheet.
+      // Like the other commands, it closes Settings and the pairing sheet instead of opening under or over them.
+      useIphone.getState().setPairOpen(false);
       st.setSettingsOpen(null);
       st.setPaletteOpen(true);
     };
@@ -350,7 +351,7 @@ export function App() {
       // Not before the tabs from before a restart are back: the session shown meanwhile isn't one
       // you chose to look at, and would be marked seen.
       if (st.project && !st.tabsRestored) return;
-      const covered = st.settingsOpen !== null || st.paletteOpen || st.whatsNew !== null;
+      const covered = st.settingsOpen !== null || st.paletteOpen || st.whatsNew !== null || useIphone.getState().pairOpen;
       const id = seenNow(st.terminals, st.selectedId, st.activeTab, document.hasFocus(), covered);
       if (id && id !== asked) { asked = id; void window.atelier.terminals.markSeen(id).catch(() => {}); }
       if (!id) asked = null;
@@ -361,8 +362,10 @@ export function App() {
       for (const terminalId of Object.keys(st.askOpen)) st.markAskSeen(terminalId);
     };
     const off = useApp.subscribe((s, prev) => { if (s.terminals !== prev.terminals || s.selectedId !== prev.selectedId || s.activeTab !== prev.activeTab || s.settingsOpen !== prev.settingsOpen || s.paletteOpen !== prev.paletteOpen || s.whatsNew !== prev.whatsNew || s.notes !== prev.notes || s.tabsRestored !== prev.tabsRestored || s.askOpen !== prev.askOpen || s.askThreads !== prev.askThreads || s.split.panes !== prev.split.panes || s.split.focus !== prev.split.focus) check(); });
+    // The pairing sheet covers the window as Settings does.
+    const offSheet = useIphone.subscribe((s, prev) => { if (s.pairOpen !== prev.pairOpen) check(); });
     window.addEventListener('focus', check);
-    return () => { off(); window.removeEventListener('focus', check); };
+    return () => { off(); offSheet(); window.removeEventListener('focus', check); };
   }, []);
 
   // Unsaved files: closing (window, quit, reload) is blocked and the main process asks what to do.
@@ -522,6 +525,15 @@ export function App() {
       window.atelier.on.backgroundFeed((f) => useApp.getState().applyBackgroundFeed(f)),
       window.atelier.on.command((cmd, from) => {
         const st = useApp.getState();
+        // The pairing sheet over the window (or over Settings) holds the commands as Settings does: ⌘W closes it, Pair
+        // iPhone… keeps it, any other command closes it (its code goes with it) and goes on as without it. Not F4 or
+        // ⇧F4 from a pop-out: the user is there.
+        const pairing = useIphone.getState();
+        if (pairing.pairOpen && cmd !== 'next-search-result' && cmd !== 'prev-search-result') {
+          if (cmd === 'pair-iphone') return;
+          pairing.setPairOpen(false);
+          if (cmd === 'close-tab') return;
+        }
         // A pop-out's toast for one connector: its details page here.
         const connector = CONNECTOR_IDS.find((id) => cmd === `open-connector:${id}`);
         if (connector) { st.setSettingsOpen('connectors'); st.openConnector(connector); return; }
@@ -597,7 +609,8 @@ export function App() {
           case 'open-about': st.setSettingsOpen('about'); break;
           case 'whats-new': st.setWhatsNew({ since: null }); break;
           case 'open-connectors': st.setSettingsOpen('connectors'); break;
-          case 'pair-iphone': openPairing(); break;
+          // Its sheet is a project window's: the welcome window and pop-outs have none (the menu offers it there disabled).
+          case 'pair-iphone': if (st.project && !st.popout) openPairing(); break;
           case 'review-all': st.openReview('all'); break;
           case 'review-session': reviewSelected(); break;
           case 'comment-selection': commentOnSelection(); break;

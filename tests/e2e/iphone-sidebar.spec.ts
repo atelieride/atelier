@@ -2,71 +2,19 @@
 // (tests/support/fake-phone.ts) through the test relay (tests/support/test-relay.ts): the sidebar's arrangement
 // (workspaces, an activity, grouping, pins) as a layout the phone groups rows by; Allow and Deny on a permission, and
 // the other actions on rows; push notifications sealed for the phone, while the user is away.
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, readFileSync, realpathSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
-import { e2eEnv } from './env';
+import { basename, resolve } from 'node:path';
 import { look } from './shots';
-import { startTestRelay, type TestRelay } from '../support/test-relay';
 import { FakePhone, type Msg } from '../support/fake-phone';
 import { openPush, pushKeyId } from '../../src/main/remote/push-seal';
+import { close, command, launchWithPhone, menu, pairPhone, settingsSet, type Launched } from './iphone-fixture';
 
 const SHOTS = 'test-results/iphone-sidebar';
 
-const command = (app: ElectronApplication, c: string) => app.evaluate(({ BrowserWindow }, c) => BrowserWindow.getAllWindows()[0]!.webContents.send('ev:command', c), c);
-const stopDaemon = (home: string) => { try { process.kill((JSON.parse(readFileSync(join(home, 'atelierd.json'), 'utf8')) as { pid: number }).pid, 'SIGTERM'); } catch { /* already stopped */ } };
-
-/** App menu items are clicked (synthetic key events do not go through NSMenu). */
-async function menu(app: ElectronApplication, label: string): Promise<void> {
-  await app.evaluate(({ Menu, BrowserWindow }, l) => {
-    const walk = (items: Electron.MenuItem[]): Electron.MenuItem | undefined => {
-      for (const it of items) { if (it.label === l && it.visible) return it; const sub = it.submenu ? walk(it.submenu.items) : undefined; if (sub) return sub; }
-      return undefined;
-    };
-    walk(Menu.getApplicationMenu()!.items)!.click(undefined, BrowserWindow.getAllWindows()[0]);
-  }, label);
-}
-
-interface Launched { app: ElectronApplication; win: Page; home: string; root: string; relay: TestRelay; phone: FakePhone }
-
 /** A project with a terminal open at its prompt, the fake Claude for its sessions, a test relay and a phone for it. */
-async function launch(extra: Record<string, string> = {}): Promise<Launched> {
-  const relay = await startTestRelay();
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-iphs-')));
-  const { env, home } = e2eEnv({ ATELIER_TEST_RELAY_URL: relay.url, ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl'), ...extra });
-  const app = await electron.launch({ args: ['out/main/index.js', `--project=${root}`], env });
-  const win = await app.firstWindow();
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 800));
-  await win.getByRole('button', { name: 'Open a terminal' }).click();
-  await expect(win.locator('.terminal-slot:visible .xterm-rows')).toContainText('›', { timeout: 15000 });
-  return { app, win, home, root, relay, phone: new FakePhone({ relay: relay.url }) };
-}
-
-async function close(l: Launched): Promise<void> {
-  l.phone.drop();
-  await l.app.close();
-  stopDaemon(l.home);
-  await l.relay.close();
-}
-
-/** Settings › iPhone: access on, a phone paired by code with Allow, Settings closed. */
-async function pair(l: Launched): Promise<void> {
-  const { app, win, phone } = l;
-  if (!(await win.locator('.settings').isVisible())) await command(app, 'open-settings');
-  await win.locator('.set-nav-item', { hasText: 'iPhone' }).click();
-  await win.getByRole('switch', { name: 'Allow access from iPhone' }).click();
-  await expect(win.locator('.iph-status')).toContainText('Connected to the relay', { timeout: 15000 });
-  await win.getByRole('button', { name: 'Pair iPhone…' }).click();
-  const code = win.locator('.pair-sheet .pair-code:not(.is-spent)');
-  await expect(code).toHaveText(/^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/, { timeout: 15000 });
-  const paired = phone.pairByCode((await code.innerText()).trim());
-  await win.locator('.pair-sheet').getByRole('button', { name: 'Allow' }).click({ timeout: 20000 });
-  expect((await paired).t).toBe('welcome');
-  await win.keyboard.press('Escape');
-  await expect(win.locator('.settings')).toHaveCount(0);
-}
+const launch = (extra: Record<string, string> = {}) => launchWithPhone({ ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl'), ...extra }, { size: [1280, 800] });
+const pair = (l: Launched) => pairPhone(l.app, l.win, l.phone);
 
 const projectOf = (s: Msg, root: string) => (s.projects as { id: string; name: string }[]).find((p) => p.name === basename(root))!;
 /** The latest layout the phone got for a project. */
@@ -130,7 +78,6 @@ test('the sidebar\'s arrangement reaches the phone: grouping, workspaces, an act
 
 type Row = { id: string; title: string; claude: boolean; state: string; section: string; wait?: string; permission?: string; detail?: string };
 const rowsOf = (s: Msg) => s.sessions as Row[];
-const settingsSet = (win: Page, patch: object) => win.evaluate((p) => (window as unknown as { atelier: { settings: { set(p: object): Promise<unknown> } } }).atelier.settings.set(p), patch);
 
 test('Allow and Deny from the phone answer a session\'s permission request with its dialog\'s own keys; a changed request is refused', async () => {
   test.setTimeout(180_000);
@@ -205,10 +152,11 @@ test('Allow picks the dialog\'s own "Yes" wherever it is listed; with only "don\
   const only = await oneWaiting('always-only');
   try {
     expect(await only.l.phone.answer(only.id, only.wait, 'allow')).toMatchObject({ t: 'error', code: 'invalid', message: 'Open the session to answer' });
-    await new Promise((r) => setTimeout(r, 500));
-    expect(only.l.phone.screen(only.id)).not.toMatch(/FAKE-CLAUDE (allowed|denied|key=)/);
     expect(await only.l.phone.answer(only.id, only.wait, 'deny')).toMatchObject({ t: 'ok' });
     await only.l.phone.sees(only.id, 'FAKE-CLAUDE denied', 10000);
+    // The dialog reads one key at a time, in order: anything the refused Allow had typed would show before the denial
+    // (a key it ignores) or would have ended the dialog before Deny reached it (a choice).
+    expect(only.l.phone.screen(only.id)).not.toMatch(/FAKE-CLAUDE (allowed|key=)/);
   } finally {
     await close(only.l);
   }

@@ -6,49 +6,19 @@
 // tab and the row, the size note and Fit to Window, the paired phones' list and Remove. And with a fake phone on Atelier's own Noise code (tests/support/fake-phone.ts): pairing by
 // code, Allow, a phone typing in a terminal, access off and Remove dropping it. And the beta it is said to be, where
 // pairing starts.
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
-import { mkdtempSync, readFileSync, realpathSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { basename } from 'node:path';
 import type { RemoteDeviceInfo, RemotePairing, RemotePairingEvent, RemoteStatus } from '../../src/shared/remote';
-import { e2eEnv } from './env';
 import { look, shotsOn } from './shots';
 import { startTestRelay, type TestRelay } from '../support/test-relay';
 import { FakePhone, type Msg } from '../support/fake-phone';
+import { codeOnScreen, command, launchProject as launch, openIphoneSettings as openSection, pairPhone, settingsOf, settingsSet, stopDaemon } from './iphone-fixture';
 
 const SHOTS = 'test-results/iphone-remote';
 
-const command = (app: ElectronApplication, c: string) => app.evaluate(({ BrowserWindow }, c) => BrowserWindow.getAllWindows()[0]!.webContents.send('ev:command', c), c);
-const stopDaemon = (home: string) => { try { process.kill((JSON.parse(readFileSync(join(home, 'atelierd.json'), 'utf8')) as { pid: number }).pid, 'SIGTERM'); } catch { /* already stopped */ } };
-type Api = { settings: { get(): Promise<{ remoteRelay: string; remoteAccess: boolean } | null>; set(p: object): Promise<unknown> } };
-const setTheme = (win: Page, theme: string) => win.evaluate((th) => (window as unknown as { atelier: Api }).atelier.settings.set({ theme: th }), theme);
+const setTheme = (win: Page, theme: string) => settingsSet(win, { theme });
 /** A setting as main saved it. */
-const saved = (win: Page, key: 'remoteRelay' | 'remoteAccess') => win.evaluate((k) => (window as unknown as { atelier: Api }).atelier.settings.get().then((s) => s?.[k]), key);
-
-/** A project with a terminal open at its prompt. */
-async function launch(extra: Record<string, string> = {}): Promise<{ app: ElectronApplication; win: Page; home: string; root: string }> {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'atl-iph-')));
-  const { env, home } = e2eEnv(extra);
-  const app = await electron.launch({ args: ['out/main/index.js', `--project=${root}`], env });
-  const win = await app.firstWindow();
-  await win.getByRole('button', { name: 'Open a terminal' }).click();
-  await expect(win.locator('.terminal-slot:visible .xterm-rows')).toContainText('›', { timeout: 15000 });
-  return { app, win, home, root };
-}
-
-async function openSection(app: ElectronApplication, win: Page): Promise<void> {
-  if (!(await win.locator('.settings').isVisible())) await command(app, 'open-settings');
-  await win.locator('.set-nav-item', { hasText: 'iPhone' }).click();
-  await expect(win.locator('.set-head h2')).toHaveText('iPhone');
-}
-
-/** The code the sheet shows now; with `not`, the one that replaced it. */
-async function codeOnScreen(win: Page, not?: string): Promise<string> {
-  const code = win.locator('.pair-sheet .pair-code:not(.is-spent)');
-  if (not) await expect(code).not.toHaveText(not, { timeout: 15000 });
-  await expect(code).toHaveText(/^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/, { timeout: 15000 });
-  return (await code.innerText()).trim();
-}
+const saved = (win: Page, key: 'remoteRelay' | 'remoteAccess') => settingsOf(win).then((s) => s?.[key]);
 
 test('Settings › iPhone: access on, an unreachable relay said, the relay field checked then used; Pair iPhone… shows a live code', async () => {
   test.setTimeout(120_000);
@@ -72,9 +42,9 @@ test('Settings › iPhone: access on, an unreachable relay said, the relay field
     // An address Atelier won't dial is explained and never saved; the test relay is, and Atelier connects to it.
     const field = win.getByRole('textbox', { name: 'Relay server' });
     await field.fill('http://relay.test');
+    await field.press('Enter');
     await expect(win.locator('#iph-relay-warn')).toContainText('http:// works only for this computer or your local network');
     await look(win, `${SHOTS}/settings-relay-invalid.png`, { settle: 200 });
-    await field.press('Enter');
     expect(await saved(win, 'remoteRelay')).toBe('https://relay.useatelier.dev');
     await field.fill(relay.url);
     await expect(win.locator('#iph-relay-warn')).toHaveCount(0);
@@ -289,6 +259,7 @@ test('main\'s news on screen: the Allow question, Deny, no answer, paired; the p
     const pill = win.locator('.foot-iphone');
     await expect(pill).toHaveText('iPhone');
     await expect(pill).toHaveAttribute('data-tip', 'Connected now: Test iPhone');
+    await expect(pill).toHaveAccessibleName('iPhone connected: Test iPhone');
     await expect(win.locator('.tab.is-active .phone-badge')).toHaveAttribute('data-tip', 'Open on iPhone');
     await expect(win.locator(`[data-term-row="${id}"] .phone-badge`)).toBeVisible();
     const note = win.locator('.terminal-slot:visible .size-note');
@@ -522,21 +493,6 @@ test('a phone pairs by code, Allow, types in a terminal; access off and Remove d
 });
 
 // ── A terminal a phone sized, in the window ──
-
-/** Pairs `phone` by code from Settings › iPhone (access on, Allow), then closes Settings. */
-async function pairPhone(app: ElectronApplication, win: Page, phone: FakePhone): Promise<void> {
-  await openSection(app, win);
-  await win.getByRole('switch', { name: 'Allow access from iPhone' }).click();
-  await expect(win.locator('.iph-status')).toContainText('Connected to the relay', { timeout: 15000 });
-  await win.getByRole('button', { name: 'Pair iPhone…' }).click();
-  const paired = phone.pairByCode(await codeOnScreen(win));
-  const sheet = win.locator('.pair-sheet');
-  await sheet.getByRole('button', { name: 'Allow' }).click({ timeout: 20000 });
-  expect((await paired).t).toBe('welcome');
-  await expect(sheet).toHaveCount(0);
-  await win.keyboard.press('Escape');
-  await expect(win.locator('.settings')).toHaveCount(0);
-}
 
 /** The phone opens the window's terminal at its own size; the terminal's id. */
 async function phoneOpens(win: Page, phone: FakePhone, cols: number, rows: number): Promise<string> {

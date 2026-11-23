@@ -1,8 +1,8 @@
-// window.atelier.remote's channels: any trusted app page (Settings is in the welcome window too), the sender checked
-// before its input is parsed, every argument through a strict schema; the layout, and the answers to a phone's changes
-// to the places, only from a project's main window. Status and pairing events go to every window. A pairing lasts no
-// longer than the pages that started it: closed, reloaded, navigated away or crashed, a page never says its sheet
-// closed, so main watches each one.
+// window.atelier.remote's channels: any trusted app page (every window follows the status: a pop-out draws a terminal
+// a phone sized), the sender checked before its input is parsed, every argument through a strict schema; the layout,
+// and the answers to a phone's changes to the places, only from a project's main window. Status and pairing events go
+// to every window. A pairing lasts no longer than the pages that started it: closed, reloaded, navigated away or
+// crashed, a page never says its sheet closed, so main watches each one.
 import type { IpcMainInvokeEvent, WebContents } from 'electron';
 import { IPC } from '@shared/api';
 import type { RemoteLayout, RemotePlaceResult } from '@shared/remote';

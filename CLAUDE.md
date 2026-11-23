@@ -176,7 +176,9 @@ tile + white Λ).
   produces garbage; warm up Metal at engine start.
 - Dictation vocabulary: whisper keeps the *last* prompt tokens, so the most relevant terms go last: "Claude",
   "CLAUDE.md" and "Atelier" always end the list (dictated "Claude" came out as "cloud").
-- iPhone-only renderer code (the settings section, the pairing sheet, `phone-places.ts`, the marks' CSS) loads with `import()`/`lazy()`: in the first bundle it would push the live demo over its first-paint budget (`tests/integration/demo-build.test.ts`).
+- iPhone-only renderer code (the settings section, the pairing sheet, `access-on.ts` with what a window does for the
+  phones, the marks' CSS and the phones' model names) loads with `import()`/`lazy()`: in the first bundle it would push
+  the live demo over its first-paint budget (`tests/integration/demo-build.test.ts`).
 - Claude accounts (`CLAUDE_CONFIG_DIR`): the default account is **never** launched with an explicit
   `CLAUDE_CONFIG_DIR` (Claude Code keys its sign-in on the dir it is given), and another account starts as
   `CLAUDE_CONFIG_DIR='<dir>' claude`, an assignment, never `env …` (that skips Atelier's zsh function and the hooks).

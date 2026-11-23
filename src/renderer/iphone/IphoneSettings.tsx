@@ -9,16 +9,25 @@ import { Icon } from '../components/Icon';
 import { Row, Toggle } from '../components/Settings';
 import { ConfirmActions, onEscCancel, useDismiss } from '../confirms/InlineConfirm';
 import { useAgo } from '../minute';
+import { useApp } from '../store';
 import { openPairing, refreshIphone, useIphone } from './store';
 import { deviceSubtitle, deviceTitle, relayLine, relayProblem, seenText } from './sheet-view';
 import './iphone.css';
 
 const set = (patch: Partial<S>) => void window.atelier.settings.set(patch);
 
+/** Settings › iPhone shown this long (not passed through with the arrow keys) before it asks main how things stand. */
+const SHOWN_MS = 250;
+
 export function IphoneSettings({ s }: { s: S }) {
   const status = useIphone((x) => x.status);
-  // Opening the section asks main how things stand (the one moment access off may touch the Keychain).
-  useEffect(refreshIphone, []);
+  // The section shown asks main how things stand: with access off, the one moment main may touch the Keychain, so not
+  // for a section only passed through on the way to another. With access on, main has said already: asked at once.
+  useEffect(() => {
+    if (s.remoteAccess) { void refreshIphone(); return; }
+    const timer = setTimeout(() => void refreshIphone(), SHOWN_MS);
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const line = relayLine(status);
   const unavailable = status?.available === false;
   const devices = status?.devices ?? [];
@@ -51,7 +60,8 @@ export function IphoneSettings({ s }: { s: S }) {
       <Notifications s={s} />
       <div className="set-group-title">{tiph.advanced}</div>
       <RelayField saved={s.remoteRelay} />
-      <ForgetAll />
+      {/* Nothing to forget with no phone paired and access off: offered, disabled, in its place. */}
+      <ForgetAll disabled={!s.remoteAccess && devices.length === 0} />
     </>
   );
 }
@@ -123,17 +133,32 @@ function RemoveConfirm({ d, title, onDone }: { d: RemoteDeviceInfo; title: strin
   );
 }
 
+/** Why `draft` can't be the relay; null when it can, or when it is the saved address. */
+const problemOf = (draft: string, saved: string) => (draft.trim() === saved ? null : relayProblem(draft));
+
 /**
  * The relay's address: saved on Enter or blur when Atelier can dial it (https anywhere; http to this computer or the
- * local network), else the field says why and the saved one stays. Esc puts the saved one back.
+ * local network), else the field says why and the saved one stays. Said then, not while the address is being typed
+ * (its first letter is no address yet); once said, it follows the typing until the address is one Atelier can use.
+ * Esc puts the saved one back; with the saved one there, Esc closes Settings as it does anywhere else.
  */
 function RelayField({ saved }: { saved: string }) {
   const [draft, setDraft] = useState(saved);
+  const [warned, setWarned] = useState(false);
   const field = useRef<HTMLInputElement>(null);
   // Changed elsewhere (another window, Restore Defaults): shown unless the field is being edited.
-  useEffect(() => { if (document.activeElement !== field.current) setDraft(saved); }, [saved]);
-  const problem = draft.trim() === saved ? null : relayProblem(draft);
-  const commit = () => { const v = draft.trim(); if (!relayProblem(v) && v !== saved) set({ remoteRelay: v }); };
+  useEffect(() => { if (document.activeElement !== field.current) { setDraft(saved); setWarned(false); } }, [saved]);
+  const problem = warned ? problemOf(draft, saved) : null;
+  const commit = () => {
+    const v = draft.trim();
+    if (problemOf(v, saved)) { setWarned(true); return; }
+    if (v !== saved) set({ remoteRelay: v });
+  };
+  const change = (v: string) => {
+    setDraft(v);
+    // Fixed: the warning goes, and waits for the next Enter or blur.
+    if (warned && !problemOf(v, saved)) setWarned(false);
+  };
   // The text above, the field the row's whole width under it: an address is long, and the hint stays readable.
   return (
     <div className="set-row iph-relay-row">
@@ -142,12 +167,16 @@ function RelayField({ saved }: { saved: string }) {
       </div>
       <div className="iph-relay">
         <input ref={field} className="set-text-input mono" value={draft} spellCheck={false} aria-label={tiph.relayServer} aria-invalid={problem ? true : undefined}
-          aria-describedby={problem ? 'iph-relay-warn' : undefined} placeholder={DEFAULT_RELAY} onChange={(e) => setDraft(e.target.value)} onBlur={commit}
+          aria-describedby={problem ? 'iph-relay-warn' : undefined} placeholder={DEFAULT_RELAY} onChange={(e) => change(e.target.value)} onBlur={commit}
           onKeyDown={(e) => {
             if (e.key === 'Enter') { e.preventDefault(); commit(); }
-            else if (e.key === 'Escape' && draft !== saved) { e.preventDefault(); e.stopPropagation(); setDraft(saved); }
+            else if (e.key === 'Escape') {
+              e.preventDefault();
+              e.stopPropagation();
+              if (draft !== saved) { setDraft(saved); setWarned(false); } else useApp.getState().setSettingsOpen(null);
+            }
           }} />
-        {saved !== DEFAULT_RELAY && <button type="button" className="btn-ghost sm" onClick={() => { setDraft(DEFAULT_RELAY); set({ remoteRelay: DEFAULT_RELAY }); }}>{tiph.relayDefault}</button>}
+        {saved !== DEFAULT_RELAY && <button type="button" className="btn-ghost sm" onClick={() => { setDraft(DEFAULT_RELAY); setWarned(false); set({ remoteRelay: DEFAULT_RELAY }); }}>{tiph.relayDefault}</button>}
       </div>
       {problem && <span id="iph-relay-warn" className="set-warn" role="note"><Icon name="info" size={12} stroke={1.8} />{problem}</span>}
     </div>
@@ -155,7 +184,7 @@ function RelayField({ saved }: { saved: string }) {
 }
 
 /** Forget All: a new identity, every phone unpaired; asked in a card in its place. */
-function ForgetAll() {
+function ForgetAll({ disabled }: { disabled: boolean }) {
   const [asking, setAsking] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -164,8 +193,8 @@ function ForgetAll() {
   // Asked, the question takes the row's place, the row's whole width.
   if (asking) return <div className="set-row"><ForgetCard box={box} onDone={() => setAsking(false)} /></div>;
   return (
-    <Row label={tiph.forget} hint={tiph.forgetHint}>
-      <button ref={button} type="button" className="btn-ghost is-danger iph-forget" onClick={() => setAsking(true)}>{tiph.forgetButton}</button>
+    <Row label={tiph.forget} hint={tiph.forgetHint} disabled={disabled}>
+      <button ref={button} type="button" className="btn-ghost is-danger iph-forget" disabled={disabled} onClick={() => setAsking(true)}>{tiph.forgetButton}</button>
     </Row>
   );
 }
