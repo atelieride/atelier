@@ -54,8 +54,9 @@
 /* A pane split off (transitions.ts): the divider it was split off on draws its line along the gap from the middle, a
    plain neutral hairline while it draws (never the brand line of a hover or a drag), then fades into the gap's own
    line. Only the line's pseudo-element moves; its mark (data-drawing) goes when it ends. Under the pane's content on
-   its way in, its own background fills its cell (the body behind is the colour of the lines between panes): first in
-   the body, under all the pane shows, taking no pointer, removed once the content rests. */
+   its way in, a background fills its cell (the body behind is the colour of the lines between panes): the content's
+   own when it has one (a terminal's, given inline), else the pane's; first in the body, under all the pane shows,
+   taking no pointer, removed once the content rests. */
 .pane-divider[data-drawing]::after { background: var(--text-4); transition: none; }
 .pane-under { position: absolute; inset: 0; background: var(--bg-2); pointer-events: none; }
 

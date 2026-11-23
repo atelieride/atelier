@@ -358,27 +358,31 @@ export function enterPane(body: HTMLElement, index: number): void {
   const line = splitLine(body, box);
   const from = FROM[line?.edge ?? 'left'];
   const content = paneContent(body, index);
-  const moves: Animation[] = [];
+  const moves: { el: HTMLElement; anim: Animation }[] = [];
   for (const el of content) {
     const was = entering.get(el);
     if (was?.playState === 'running') was.cancel();
     const anim = play(el, [{ transform: from }, { transform: 'none' }], { duration: PANE_MS, easing: ELASTIC });
     play(el, [{ opacity: 0 }, { opacity: 1 }], { duration: PANE_FADE_MS, easing: EASE });
-    if (anim) { entering.set(el, anim); moves.push(anim); }
+    if (anim) { entering.set(el, anim); moves.push({ el, anim }); }
   }
-  if (moves[0]) underPane(body, index, moves[0]);
+  if (moves[0]) underPane(body, index, moves[0].el, moves[0].anim);
   if (line) drawLine(line.el);
 }
 
 /**
- * Under pane `index`'s content while `anim` brings it in: the pane's own background where the content has not arrived
- * yet, never the body's (the colour of the lines between panes). First in the body, so all the pane shows paints over
- * it; it goes when `anim` ends, or as soon as the pane's box changes (a newer layout).
+ * Under pane `index`'s content while `anim` brings it in: the background of what it shows (`content`: a terminal's
+ * own, which may differ from the panels'), else the pane's, where the content has not arrived yet, never the body's
+ * (the colour of the lines between panes). First in the body, so all the pane shows paints over it; it goes when
+ * `anim` ends, or as soon as the pane's box changes (a newer layout).
  */
-function underPane(body: HTMLElement, index: number, anim: Animation): void {
+function underPane(body: HTMLElement, index: number, content: HTMLElement, anim: Animation): void {
   const under = document.createElement('div');
   under.className = 'pane-under';
+  const paint = getComputedStyle(content).backgroundColor;
   Object.assign(under.style, { gridColumn: `p${index}l / p${index}r`, gridRow: `p${index}s / p${index}b` });
+  // A content painted in a colour of its own (not see-through) lends it; otherwise the pane's (motion.css).
+  if (paint && !/^rgba\(.*,\s*0\)$|^transparent$/.test(paint)) under.style.backgroundColor = paint;
   body.prepend(under);
   let sized = false;
   // Its first call is its size now; any later one, a new layout.

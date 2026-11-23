@@ -709,6 +709,50 @@ test('a split: the layout is there at once, the new pane\'s content springs in f
   }
 });
 
+test('a tab moved to a new pane: under its terminal on its way in, the terminal\'s own background (a light theme, terminals kept dark)', async () => {
+  test.setTimeout(120000);
+  const { app, home, win } = await launch({ theme: 'paper', terminalColors: 'dark' });
+  try {
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 800));
+    await menu(app, 'New Terminal');
+    await menu(app, 'New Terminal');
+    const tabs = win.locator('.tabs .tab');
+    await expect(tabs).toHaveCount(2);
+    await expect(win.locator('.workspace-body > .terminal-slot')).toHaveCount(2);
+    await settled(win);
+    await played(win);
+
+    // ⌥-click on the second tab (Move to Right Pane), every animation held as it starts: its terminal comes in.
+    await hold(win, true);
+    await tabs.nth(1).click({ modifiers: ['Alt'] });
+    await expect(win.locator('.workspace-body > .pane-strip')).toHaveCount(2);
+    await expect(win.locator('.workspace-body > .pane-under')).toHaveCount(1);
+    expect(on(await played(win), 'terminal-slot').some((p) => p.kf.includes('translateX(48px)'))).toBe(true);
+    await freeze(win, '.workspace-body > .terminal-slot', 0);
+    const paint = await win.evaluate(() => {
+      const bg = (el: Element) => getComputedStyle(el).backgroundColor;
+      const slot = [...document.querySelectorAll<HTMLElement>('.workspace-body > .terminal-slot')].find((el) => el.style.gridColumnStart === 'p1l' && el.getClientRects().length > 0)!;
+      const probe = document.createElement('div');
+      probe.style.background = 'var(--bg-2)';
+      document.body.append(probe);
+      const panel = bg(probe);
+      probe.remove();
+      return { under: bg(document.querySelector('.workspace-body > .pane-under')!), terminal: bg(slot), panel };
+    });
+    // The terminal keeps its dark background in the light theme: the cell under it on its way is that colour, not
+    // the light panel's.
+    expect(paint.terminal).not.toBe(paint.panel);
+    expect(paint.under).toBe(paint.terminal);
+    await look(win.locator('.workspace'), 'test-results/transitions-split-terminal.png');
+    await hold(win, false);
+    await resume(win);
+    await settled(win);
+    await expect(win.locator('.pane-under')).toHaveCount(0);
+  } finally {
+    await stop(app, home);
+  }
+});
+
 test('a session that finishes: a flat wave crosses its row, a check takes its avatar a moment, both go; never at a reload. A waiting row keeps an amber edge', async () => {
   test.setTimeout(120000);
   const { app, home, win } = await launch();
