@@ -20,17 +20,24 @@ const SPRING = 'cubic-bezier(.3,1.3,.5,1)';
 const IN_OUT = 'cubic-bezier(.7,0,.2,1)';
 /** How long after the hold the layout may take before the overlay gives up and fades away. */
 const CAP = 4000;
+/** Past the hold, CAP and this, the launch ends wherever it is: whatever went wrong, the overlay never stays. */
+const DEADLINE = 1500;
 /** The columns the plates open into. */
 const COLUMNS = ['aside.sidebar', 'main.workspace', 'aside.changes'];
 /**
- * The app's parts as they rise in once the overlay is gone: each group's first beat (ms after the plates land), its
- * items 26 ms apart, the first 8 shown.
+ * The app's parts as they rise in once the overlay is gone, each group with its first step and its items (the first 8
+ * shown) one step apart. Step n starts RISE_AT + n × RISE_STEP ms after the plates land (steps past RISE_LAST start
+ * with it) and rises for RISE_FOR ms: the whole rise ends within RISE_AT + RISE_LAST × RISE_STEP + RISE_FOR ms.
  */
 const RISE: [string, number][] = [
-  ['.header', 0], ['.activity-bar', 26], ['.sidebar .sidebar-head, .sidebar .list > *', 52], ['.tabs, .session-bar', 52],
-  ['.changes-head, .changes-body > *', 78], ['.terminal-slot, .workspace-empty', 104], ['.footer', 130],
+  ['.header', 0], ['.activity-bar', 1], ['.sidebar .sidebar-head, .sidebar .list > *', 1], ['.tabs, .session-bar', 2],
+  ['.changes-head, .changes-body > *', 2], ['.terminal-slot, .workspace-empty', 3], ['.footer', 4],
   ['.welcome-card > :not(.logo)', 0]
 ];
+const RISE_AT = 60;
+const RISE_STEP = 18;
+const RISE_LAST = 7;
+const RISE_FOR = 300;
 const SEAM: Keyframe[] = [
   { transform: 'scaleY(0)', opacity: 1 }, { transform: 'scaleY(1)', opacity: 1, offset: 0.45 }, { transform: 'scaleY(1)', opacity: 0 }
 ];
@@ -73,7 +80,7 @@ export function startIntro(doc: Document, win: Window, holdMs: number): void {
     }
     return a;
   };
-  /** Resolves once every animation given has finished; rejects when one is cancelled (a skip). */
+  /** Resolves once every animation given has finished; rejects when one is cancelled (a skip, or from outside). */
   const after = (list: (Animation | null)[]) => Promise.all(list.map((a) => a?.finished));
 
   const overlay = doc.createElement('div');
@@ -124,7 +131,9 @@ export function startIntro(doc: Document, win: Window, holdMs: number): void {
     { duration: 360, delay: 240, easing: IN_OUT, fill: 'backwards' });
   const start = win.performance.now();
   const hold = new Promise<void>((r) => { timers.push(win.setTimeout(r, holdMs)); });
-  void Promise.all([after([...leaf, draw]), hold]).then(waitForLayout, () => { /* skipped */ });
+  // Every step hands a failure (an exception, an animation cancelled from outside) to end(): the launch stops there.
+  void Promise.all([after([...leaf, draw]), hold]).then(waitForLayout).catch(end);
+  timers.push(win.setTimeout(end, holdMs + CAP + DEADLINE));
 
   const shown = () => doc.querySelector('main.workspace') ?? doc.querySelector('.welcome-card .logo');
   const unwatch = () => { observer?.disconnect(); observer = null; };
@@ -132,10 +141,14 @@ export function startIntro(doc: Document, win: Window, holdMs: number): void {
   // 2 · The mark holds still until the layout is there (no loop meanwhile), for at most CAP after the hold.
   function waitForLayout(): void {
     if (phase !== 'mark') return;
-    if (shown()) { void morph(); return; }
-    observer = new MutationObserver(() => { if (shown()) { unwatch(); void morph(); } });
+    if (shown()) { morph().catch(end); return; }
+    observer = new MutationObserver(() => { if (shown()) { unwatch(); morph().catch(end); } });
     observer.observe(doc.getElementById('root') ?? doc.body, { childList: true, subtree: true });
-    timers.push(win.setTimeout(() => { if (phase === 'mark') { unwatch(); leave(); } }, Math.max(0, start + holdMs + CAP - win.performance.now())));
+    timers.push(win.setTimeout(() => {
+      if (phase !== 'mark') return;
+      unwatch();
+      try { leave(); } catch { end(); }
+    }, Math.max(0, start + holdMs + CAP - win.performance.now())));
   }
 
   // 3 · The plates open into the columns shown, left to right (two plates share the first when there are only two),
@@ -180,7 +193,7 @@ export function startIntro(doc: Document, win: Window, holdMs: number): void {
       moves.push(run(lambda, [{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: EASE }));
       seams(cols, boxes);
     }
-    void after(moves).then(land, () => { /* skipped */ });
+    void after(moves).then(land).catch(end);
   }
 
   /** One hairline at each inner edge between columns, on the border that edge already has. */
@@ -210,16 +223,17 @@ export function startIntro(doc: Document, win: Window, holdMs: number): void {
     overlay.remove();
     root.dataset.intro = 'landing';
     const visible = (el: Element) => el.getClientRects().length > 0;
-    const parts = RISE.flatMap(([sel, at]) => [...doc.querySelectorAll(sel)].filter(visible).slice(0, 8).map((el, k) =>
-      run(el, [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 360, delay: at + k * 26, easing: EASE, fill: 'backwards' })));
-    void after(parts).then(end, () => { /* skipped */ });
+    const parts = RISE.flatMap(([sel, first]) => [...doc.querySelectorAll(sel)].filter(visible).slice(0, 8).map((el, k) =>
+      run(el, [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }],
+        { duration: RISE_FOR, delay: RISE_AT + Math.min(first + k, RISE_LAST) * RISE_STEP, easing: EASE, fill: 'backwards' })));
+    void after(parts).then(end, end);
   }
 
   /** No layout in time: the overlay fades out over the app as it is. */
   function leave(): void {
     phase = 'landing';
     overlay.style.opacity = '0';
-    void after([run(overlay, [{ opacity: 1 }, { opacity: 0 }], { duration: 240, easing: EASE })]).then(end, () => { /* skipped */ });
+    void after([run(overlay, [{ opacity: 1 }, { opacity: 0 }], { duration: 240, easing: EASE })]).then(end, end);
   }
 
   function end(): void {

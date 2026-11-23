@@ -71,6 +71,25 @@ const freezeMidMorph = (win: Page) => win.evaluate(() => new Promise<{ plates: n
 }));
 /** Whether two lists of boxes agree within a pixel. */
 const near = (a: number[][], b: number[][]) => a.length === b.length && a.every((r, i) => r.every((v, j) => Math.abs(v - b[i]![j]!) <= 1));
+/**
+ * Cancels one of the launch's own animations from outside once `phase` is on (a plate's move mid-morph, a part's rise
+ * mid-landing), as anything else on the page could.
+ */
+const cancelOne = (win: Page, phase: 'morph' | 'landing') => win.evaluate((phase) => new Promise<void>((done) => {
+  const tick = () => {
+    const pick = document.getAnimations().find((a) => {
+      const e = a.effect as KeyframeEffect | null;
+      const el = e?.target as Element | null;
+      if (a.playState !== 'running' || (a as CSSAnimation).animationName || !el) return false;
+      return phase === 'morph' ? el.classList.contains('intro-plate') && e!.getKeyframes().some((k) => 'width' in k)
+        : document.documentElement.dataset.intro === 'landing' && !el.classList.contains('intro-seam');
+    });
+    if (!pick) { requestAnimationFrame(tick); return; }
+    pick.cancel();
+    done();
+  };
+  tick();
+}), phase);
 const playOn = (win: Page) => win.evaluate(() => { for (const a of (window as unknown as { frozen: Animation[] }).frozen) a.play(); });
 
 test('the first window plays the launch, then leaves nothing moving', async () => {
@@ -132,6 +151,36 @@ test('a key skips it too: that key goes no further, the next one does', async ()
     await expect(win.locator('.intro')).toHaveCount(0, { timeout: 300 });
     await win.keyboard.press('b');
     expect(await win.evaluate(() => (window as unknown as { heard: string[] }).heard)).toEqual(['b']);
+  } finally {
+    await stop(app, home);
+  }
+});
+
+for (const phase of ['morph', 'landing'] as const) {
+  test(`one of its animations cancelled from outside mid-${phase}: the launch ends there, nothing left`, async () => {
+    const { app, home, win } = await launch();
+    try {
+      await expect(win.locator('.intro')).toBeAttached();
+      await cancelOne(win, phase);
+      await expect(win.locator('.intro')).toHaveCount(0, { timeout: 500 });
+      await expect(win.locator('html')).not.toHaveAttribute('data-intro', { timeout: 500 });
+      await expect(win.locator('.intro-seam')).toHaveCount(0, { timeout: 500 });
+      expect((await running(win)).filter((a) => a.startsWith('script'))).toEqual([]);
+    } finally {
+      await stop(app, home);
+    }
+  });
+}
+
+test('stalled mid-morph (its frames stop), the launch still ends by its deadline', async () => {
+  const { app, home, win } = await launch();
+  try {
+    await expect(win.locator('.intro')).toBeVisible();
+    await freezeMidMorph(win);
+    // Never played on. The deadline: the hold (0) + 4000 ms for the layout + 1500 ms.
+    await expect(win.locator('.intro')).toHaveCount(0, { timeout: 7000 });
+    await expect(win.locator('html')).not.toHaveAttribute('data-intro');
+    expect(await win.locator('.intro-seam').count()).toBe(0);
   } finally {
     await stop(app, home);
   }
