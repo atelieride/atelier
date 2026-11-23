@@ -6,8 +6,8 @@ import { arc, crownKeyframes, revealOrigin, type Box, type Pt } from './motion-g
 // way the tab crown stretches over to the new tab. A new session has a spark fly from the + to its row and its
 // terminal open from there. A pane split off springs in from its side while its line draws. Each plays through
 // play() (none under Reduce motion, none while the launch's landing plays), takes no pointer, moves the content by
-// transform, opacity or clip-path only (a terminal measures its box: no size ever changes), and leaves nothing behind
-// once it ends or a newer one cuts it short.
+// transform, opacity or clip-path only (a terminal measures its box: no size ever changes), paints nothing outside
+// the box of what it moves, and leaves nothing behind once it ends or a newer one cuts it short.
 
 const GLIDE_MS = 380;
 const CROWN_MS = 420;
@@ -241,15 +241,31 @@ export function sparkTo(from: HTMLElement, row: HTMLElement, slot: HTMLElement |
 const entering = new WeakMap<HTMLElement, Animation>();
 
 /**
+ * Where an entrance starts, by where it comes from: moved down or to a side, and what that moves past its own box
+ * clipped away (the clip shrinks with the move, so the content never paints over the sidebar, Changes, the footer or
+ * the pane next to it).
+ */
+const ENTRY: Record<'up' | 'left' | 'right', Keyframe> = {
+  up: { transform: 'translateY(6px)', clipPath: 'inset(0 0 6px 0)' },
+  right: { transform: 'translateX(14px)', clipPath: 'inset(0 14px 0 0)' },
+  left: { transform: 'translateX(-14px)', clipPath: 'inset(0 0 0 14px)' }
+};
+
+/**
  * What a navigation shows comes in: rising (`up`, picked in the sidebar) or from the side of the tab picked. A newer
- * entrance of the same element replaces the one still playing.
+ * entrance of the same element (tabs switched as fast as a held key repeats) goes on from where the one still playing
+ * has brought it, never from unseen again.
  */
 export function enterView(target: HTMLElement, dir: 'up' | 'left' | 'right'): void {
   if (still()) return;
-  const offset = dir === 'up' ? 'translateY(6px)' : `translateX(${dir === 'right' ? 14 : -14}px)`;
   const was = entering.get(target);
-  if (was?.playState === 'running') was.cancel();
-  const anim = play(target, [{ transform: offset, opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: dir === 'up' ? RISE_MS : SLIDE_MS, easing: EASE });
+  let from: Keyframe = { ...ENTRY[dir], opacity: 0 };
+  if (was?.playState === 'running') {
+    const cs = getComputedStyle(target);
+    from = { transform: cs.transform, clipPath: cs.clipPath, opacity: Number(cs.opacity) };
+    was.cancel();
+  }
+  const anim = play(target, [from, { transform: 'none', clipPath: 'inset(0)', opacity: 1 }], { duration: dir === 'up' ? RISE_MS : SLIDE_MS, easing: EASE });
   if (anim) entering.set(target, anim);
 }
 

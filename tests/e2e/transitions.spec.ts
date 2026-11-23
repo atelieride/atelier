@@ -217,6 +217,56 @@ const lineAt = (win: Page, dir: 'row' | 'column') => win.locator(`.workspace-bod
   const m = new DOMMatrixReadOnly(cs.transform);
   return { scale: d === 'row' ? m.d : m.a, across: d === 'row' ? m.a : m.d, opacity: Number(cs.opacity) };
 }, dir);
+/**
+ * Where the element matching `selector` paints now (its box as its transform moves it, less what its clip-path cuts
+ * away), where it rests (the same box without the transform) and how far it is moved, as [left, top, right, bottom].
+ */
+const paints = (win: Page, selector: string) => win.locator(selector).first().evaluate((el) => {
+  const cs = getComputedStyle(el);
+  const r = el.getBoundingClientRect();
+  const m = new DOMMatrixReadOnly(cs.transform);
+  // inset(top right bottom left), its sides given as a margin's are.
+  const v = (/^inset\(([^)]*)\)$/.exec(cs.clipPath)?.[1] ?? '0').split(/\s+/).map(parseFloat);
+  const [t = 0, right = t, b = t, left = right] = v;
+  return {
+    painted: [r.left + left, r.top + t, r.right - right, r.bottom - b],
+    rest: [r.left - m.m41, r.top - m.m42, r.right - m.m41, r.bottom - m.m42],
+    moved: [m.m41, m.m42]
+  };
+});
+/** Whether `inner` ([left, top, right, bottom]) lies within `outer`, to half a pixel. */
+const within = (inner: number[], outer: number[]) => inner[0]! >= outer[0]! - 0.5 && inner[1]! >= outer[1]! - 0.5 && inner[2]! <= outer[2]! + 0.5 && inner[3]! <= outer[3]! + 0.5;
+/** Clicks the app menu's `label` `times` times, `every` ms apart, as a key held down repeats it. */
+const repeat = (app: ElectronApplication, label: string, times: number, every: number) => app.evaluate(async ({ Menu, BrowserWindow }, [l, n, ms]) => {
+  const walk = (items: Electron.MenuItem[]): Electron.MenuItem | undefined => {
+    for (const it of items) { if (it.label === l) return it; const sub = it.submenu ? walk(it.submenu.items) : undefined; if (sub) return sub; }
+    return undefined;
+  };
+  const item = walk(Menu.getApplicationMenu()!.items)!;
+  for (let i = 0; i < (n as number); i++) {
+    item.click(undefined, BrowserWindow.getAllWindows()[0]);
+    await new Promise((r) => setTimeout(r, ms as number));
+  }
+}, [label, times, every] as const);
+/**
+ * From now until `stopSampling`, at every frame an entrance plays on the element matching `selector`: its opacity, in
+ * runs of consecutive frames (a frame with none playing ends a run).
+ */
+const sampleOpacity = (win: Page, selector: string) => win.evaluate((sel) => {
+  const w = window as unknown as { runs: number[][]; sampling: boolean };
+  w.runs = [];
+  w.sampling = true;
+  let run: number[] | null = null;
+  const tick = () => {
+    if (!w.sampling) return;
+    const el = document.querySelector(sel);
+    const on = !!el?.getAnimations().some((a) => !(a as CSSAnimation).animationName && a.playState === 'running');
+    if (on) { if (!run) w.runs.push(run = []); run.push(Number(getComputedStyle(el!).opacity)); } else run = null;
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}, selector);
+const stopSampling = (win: Page) => win.evaluate(() => { const w = window as unknown as { runs: number[][]; sampling: boolean }; w.sampling = false; return w.runs; });
 type GlideFrame = { lands: number[]; rests: number[]; own: string; edge: string };
 /**
  * From now until `stopGlideProbe`, at every frame a selection pill is on its way: where it lands (its last keyframe, in
@@ -303,6 +353,18 @@ test('a session picked in the sidebar: the selection glides to its row, the tab 
     await expect(row(win, 'Two')).not.toHaveClass(/is-selected/);
     await expect(win.locator('[data-gliding]')).toHaveCount(0);
     await settled(win);
+
+    // Rising in (held at its start), the workspace paints only inside its own box: what the rise moves past its
+    // bottom edge is cut away, never drawn over the footer.
+    await hold(win, true);
+    await row(win, 'One').click();
+    await freeze(win, '.workspace-body', 0);
+    const rise = await paints(win, '.workspace-body');
+    expect(rise.moved[1]).toBeGreaterThan(3);
+    expect(within(rise.painted, rise.rest), JSON.stringify(rise)).toBe(true);
+    await hold(win, false);
+    await resume(win);
+    await settled(win);
   } finally {
     await stop(app, home);
   }
@@ -380,6 +442,12 @@ test('a tab picked: the crown stretches to it and catches up, the content slides
     await expect(tab(strip, 'One')).toHaveAttribute('data-crown-landing');
     expect(await hits(win, mid!.box.x + mid!.box.width / 2, mid!.box.y + 1)).toBe(false);
     await look(win.locator('.tabs'), 'test-results/transitions-crown.png');
+    // The content held at the start of its slide from the left: it paints only inside its own box (what the slide
+    // moves past its left edge, over the sidebar, is cut away).
+    await freeze(win, '.workspace-body', 0);
+    const fromLeft = await paints(win, '.workspace-body');
+    expect(fromLeft.moved[0]).toBeLessThan(-10);
+    expect(within(fromLeft.painted, fromLeft.rest), JSON.stringify(fromLeft)).toBe(true);
     await resume(win);
     const left = await played(win);
     expect(on(left, 'tab-crown-fly')).toHaveLength(1);
@@ -391,12 +459,17 @@ test('a tab picked: the crown stretches to it and catches up, the content slides
     await expect(tab(strip, 'One')).toHaveClass(/is-active/);
     await expect(tab(strip, 'One')).not.toHaveAttribute('data-crown-landing');
 
-    // Right, to Two: from the right.
+    // Right, to Two: from the right, and inside its box there too (nothing drawn over Changes).
     await hold(win, true);
     await tab(strip, 'Two').click();
     const right = await played(win);
     expect(on(right, 'tab-crown-fly')).toHaveLength(1);
     expect(on(right, 'workspace-body')[0]?.kf).toContain('translateX(14px)');
+    await freeze(win, '.workspace-body', 0);
+    const fromRight = await paints(win, '.workspace-body');
+    expect(fromRight.moved[0]).toBeGreaterThan(10);
+    expect(within(fromRight.painted, fromRight.rest), JSON.stringify(fromRight)).toBe(true);
+    await look(win.locator('.workspace'), 'test-results/transitions-slide-clip.png');
     // Another tab picked while the crown is on its way (still held): the strip watches its tabs' sizes, never the
     // crown in flight.
     await watchObserved(win);
@@ -407,6 +480,16 @@ test('a tab picked: the crown stretches to it and catches up, the content slides
     await resume(win);
     await settled(win);
     await played(win);
+
+    // Tabs switched as fast as a key held down repeats (Next Tab, 30 times a second): each entrance goes on from
+    // where the one before it is, so the content never drops back to unseen mid-way.
+    await sampleOpacity(win, '.workspace-body');
+    await repeat(app, 'Next Tab', 8, 33);
+    await settled(win);
+    const runs = await stopSampling(win);
+    expect(on(await played(win), 'workspace-body').length).toBeGreaterThan(4);
+    expect(runs.flat().length).toBeGreaterThan(0);
+    for (const run of runs) for (let i = 1; i < run.length; i++) expect(run[i]!, JSON.stringify(runs)).toBeGreaterThanOrEqual(run[i - 1]! - 0.01);
 
     // Split: the left pane keeps the tabs; a tab picked there moves its own views, never the body or the other pane.
     await menu(app, 'Split Right');
