@@ -14,7 +14,8 @@ case "$ATELIER_TERMINAL_ID" in ''|*[!0-9a-f-]*) cat >/dev/null; exit 0;; esac
 case "$ATELIER_HOOK_TOKEN" in ''|*[!0-9a-f]*) cat >/dev/null; exit 0;; esac
 [ -S "$ATELIER_SOCK" ] || { cat >/dev/null; exit 0; }
 rc=$CLAUDE_CODE_BRIDGE_SESSION_ID
-case "$rc" in session_?*) case "\${rc#session_}" in *[!A-Za-z0-9]*) rc='';; esac;; *) rc='';; esac
+# Letters spelled out: in a UTF-8 locale a range such as a-z also takes in letters like é.
+case "$rc" in session_?*) case "\${rc#session_}" in *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789]*) rc='';; esac;; *) rc='';; esac
 [ \${#rc} -le 88 ] || rc=''
 { printf '{"t":"hook","token":"%s","term":"%s","rc":"%s"}\\n' "$ATELIER_HOOK_TOKEN" "$ATELIER_TERMINAL_ID" "$rc"; cat; } \\
   | /usr/bin/nc -U -w 1 "$ATELIER_SOCK" 2>/dev/null

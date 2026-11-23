@@ -4,7 +4,7 @@ import type { TerminalManager } from './terminals';
 import { tokensEqual } from './auth';
 import {
   DAEMON_CAPABILITIES, LineDecoder, MAX_HOOK_PAYLOAD_CHARS, MAX_LINE_CHARS, clientRequestSchema, encode, headerSchema,
-  type ClientRequest, type ServerMessage, type TerminalProfile
+  remoteId, type ClientRequest, type ServerMessage, type TerminalProfile
 } from '@shared/protocol';
 import type { Usage, UsageEntry } from '@shared/session';
 import type { NameReply } from '@shared/session-name';
@@ -165,7 +165,7 @@ function handleConnection(socket: net.Socket, deps: ServerDeps, onControl: () =>
             mode = 'event';
             eventKind = h.data.t;
             eventTerm = h.data.term;
-            eventRemote = h.data.t === 'hook' ? h.data.rc : undefined;
+            eventRemote = h.data.t === 'hook' ? remoteId(h.data.rc) : undefined;
             // The following payload lines are part of the body, not messages.
             const idx = lines.indexOf(line);
             eventBody = lines.slice(idx + 1).map((l) => l + '\n').join('') + decoder.rest();

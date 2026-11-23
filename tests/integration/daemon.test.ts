@@ -101,6 +101,18 @@ describe('atelierd', () => {
     expect(got).toEqual([{ term: 'abc', p: { hook_event_name: 'Stop', session_id: 's' } }]);
   });
 
+  test('hook with Remote Control: a plain id is passed on; anything else still delivers the hook, read as none', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'atl-d-'));
+    const got: unknown[] = [];
+    const d = await runDaemon({ home, version: 't', shellArgs: ['-f'], onHook: (term, _p, remote) => got.push({ term, remote }) });
+    running.push(d);
+    for (const rc of ['session_01AbC', 'session_é1', undefined]) {
+      const c = await connectRaw(d.paths.sock, encode({ t: 'hook', token: d.hookToken, term: 'abc', ...(rc === undefined ? {} : { rc }) }) + '{"hook_event_name":"Stop","session_id":"s"}');
+      await c.closed;
+    }
+    expect(got).toEqual([{ term: 'abc', remote: 'session_01AbC' }, { term: 'abc', remote: '' }, { term: 'abc', remote: undefined }]);
+  });
+
   test('hook with wrong token → ignored', async () => {
     const home = mkdtempSync(join(tmpdir(), 'atl-d-'));
     const got: unknown[] = [];

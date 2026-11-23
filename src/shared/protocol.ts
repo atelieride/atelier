@@ -182,11 +182,21 @@ export const headerSchema = z.discriminatedUnion('t', [
   // no graceful signal for an atelierd that speaks another version.
   z.object({ t: z.literal('stop'), token: z.string().max(256) }),
   // rc: the claude.ai session Claude Code's Remote Control bridges this session to (CLAUDE_CODE_BRIDGE_SESSION_ID in the
-  // hook's environment), empty when none. Absent from a bridge an earlier atelierd installed.
-  z.object({ t: z.literal('hook'), token: z.string().max(256), term: id, rc: z.string().regex(/^(?:session_[A-Za-z0-9]{1,80})?$/).optional() }),
+  // hook's environment), empty when none. Absent from a bridge an earlier atelierd installed. Any short string passes
+  // here and remoteId keeps only a plain id: a value the bridge let through by mistake never costs the hook itself.
+  z.object({ t: z.literal('hook'), token: z.string().max(256), term: id, rc: z.string().max(256).optional() }),
   z.object({ t: z.literal('status'), token: z.string().max(256), term: id })
 ]);
 export type Header = z.infer<typeof headerSchema>;
+
+/**
+ * What a hook header's rc says of Remote Control: a plain claude.ai session id (`session_` and up to 80 letters and
+ * digits), '' for none (anything else reads as none), undefined when the bridge says nothing.
+ */
+export function remoteId(rc: string | undefined): string | undefined {
+  if (rc === undefined) return undefined;
+  return /^session_[A-Za-z0-9]{1,80}$/.test(rc) ? rc : '';
+}
 
 export type ServerMessage =
   | { t: 'welcome'; v: number; version: string; pid: number; capabilities?: string[] }

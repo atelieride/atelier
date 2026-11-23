@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { DAEMON_CAPABILITIES, LineDecoder, clientRequestSchema, daemonCapabilities, encode, headerSchema } from './protocol';
+import { DAEMON_CAPABILITIES, LineDecoder, clientRequestSchema, daemonCapabilities, encode, headerSchema, remoteId } from './protocol';
 
 describe('LineDecoder', () => {
   test('splits on \\n and keeps the remainder for the next chunk', () => {
@@ -36,9 +36,21 @@ describe('schemas', () => {
     const h = { t: 'hook', token: 'x', term: 'abc' };
     expect(headerSchema.safeParse({ ...h, rc: 'session_01TestRemoteCtl4Kp9Zq' }).success).toBe(true);
     expect(headerSchema.safeParse({ ...h, rc: '' }).success).toBe(true);
-    expect(headerSchema.safeParse({ ...h, rc: 'session_1"}' }).success).toBe(false);
-    expect(headerSchema.safeParse({ ...h, rc: 'session_../x' }).success).toBe(false);
-    expect(headerSchema.safeParse({ ...h, rc: `session_${'a'.repeat(200)}` }).success).toBe(false);
+    expect(headerSchema.safeParse({ ...h, rc: 7 }).success).toBe(false);
+    expect(headerSchema.safeParse({ ...h, rc: `session_${'a'.repeat(300)}` }).success).toBe(false);
+  });
+  test('hook header: an rc the bridge let through but that is no plain id still delivers the hook; it reads as none', () => {
+    // A bridge whose sh lets `session_é1` through its letter check (bracket ranges follow the locale) must not cost the
+    // hook itself: its state, name sync and attributions.
+    const h = { t: 'hook', token: 'x', term: 'abc' };
+    for (const rc of ['session_é1', 'session_1"}', 'session_../x', `session_${'a'.repeat(200)}`]) {
+      const parsed = headerSchema.safeParse({ ...h, rc });
+      expect(parsed.success, rc).toBe(true);
+      expect(parsed.success && parsed.data.t === 'hook' && remoteId(parsed.data.rc), rc).toBe('');
+    }
+    expect(remoteId('session_01TestRemoteCtl4Kp9Zq')).toBe('session_01TestRemoteCtl4Kp9Zq');
+    expect(remoteId('')).toBe('');
+    expect(remoteId(undefined)).toBeUndefined();
   });
 });
 

@@ -1,5 +1,6 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, test } from 'vitest';
@@ -52,6 +53,37 @@ test('atelier-hook with the service off: exit 0 right away, no output', async ()
   expect(r.status).toBe(0);
   expect(r.stdout + r.stderr).toBe('');
   expect(Date.now() - t0).toBeLessThan(1500);
+});
+
+test('atelier-hook says Remote Control only for a plain claude.ai session id, whatever the locale', async () => {
+  const { d, env } = await setup();
+  // A socket of its own reads the header exactly as the bridge wrote it, before any check of atelierd's.
+  const sock = join(d.paths.home, 'raw.sock');
+  const headers: string[] = [];
+  const server = createServer((c) => {
+    let buf = '';
+    c.on('data', (b) => { buf += b.toString(); if (buf.includes('\n')) { headers.push(buf.slice(0, buf.indexOf('\n'))); c.destroy(); } });
+  });
+  await new Promise<void>((r) => server.listen(sock, r));
+  try {
+    const rcOf = async (value: string | undefined) => {
+      const n = headers.length;
+      const { CLAUDE_CODE_BRIDGE_SESSION_ID: _none, ...rest } = { ...env, ATELIER_SOCK: sock, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8', CLAUDE_CODE_BRIDGE_SESSION_ID: value };
+      const run = value === undefined ? rest : { ...rest, CLAUDE_CODE_BRIDGE_SESSION_ID: value };
+      await new Promise<void>((res) => { const p = spawn(join(d.paths.bin, 'atelier-hook'), { env: run }); p.on('exit', () => res()); p.stdin.end('{}'); });
+      await until(() => headers.length > n);
+      return (JSON.parse(headers.at(-1)!) as { rc?: string }).rc;
+    };
+    expect(await rcOf('session_01AbC')).toBe('session_01AbC');
+    // A letter outside ASCII falls inside a-z in a UTF-8 locale's ranges: the check spells its letters out.
+    expect(await rcOf('session_é1')).toBe('');
+    expect(await rcOf('session_1"}')).toBe('');
+    expect(await rcOf('cse_01AbC')).toBe('');
+    expect(await rcOf(`session_${'a'.repeat(81)}`)).toBe('');
+    expect(await rcOf(undefined)).toBe('');
+  } finally {
+    server.close();
+  }
 });
 
 test('atelier-hook rejects a terminal id with invalid characters (no injected JSON)', async () => {
