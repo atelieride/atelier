@@ -121,6 +121,15 @@ test('optional views say where they are turned on: Services and Automations star
   expect(automations.text).toMatch(/turn (it|them) on in Settings/i);
 });
 
+test('Calm by design names the app\'s motion settings by their labels: Reduce motion, and the launch animation it can turn off', () => {
+  const strings = readFileSync(fileURLToPath(new URL('../../../src/renderer/i18n/en.ts', import.meta.url)), 'utf8');
+  const calm = bento.find((b) => b.title === 'Calm by design')!;
+  for (const label of ['Reduce motion', 'Launch animation']) {
+    expect(strings, `Settings has "${label}"`).toContain(`'${label}'`);
+    expect(calm.text.toLowerCase(), label).toContain(label.toLowerCase());
+  }
+});
+
 // The six-block home: tiles, the "your Mac" strip and the questions are data
 // here, like the rows, so the home, /features, the search and llms.txt never drift apart.
 test('tiles: the eight of the home, in order, each a row with a focus point on its shot', async () => {

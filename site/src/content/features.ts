@@ -156,7 +156,7 @@ export const bento: BentoItem[] = [
   { icon: 'sliders', title: 'Session panel', text: 'Model, permission mode, MCP servers and skills at a glance.' },
   { icon: 'tag', title: 'Names in step', text: 'Rename a session in Atelier and Claude\'s /resume follows.' },
   { icon: 'settings', title: 'Make it yours', text: 'Appearance, terminal, editor and notifications; every shortcut listed.' },
-  { icon: 'swap', title: 'Calm by design', text: 'Reduce motion, swap the side panels, zoom the interface.' }
+  { icon: 'swap', title: 'Calm by design', text: 'Reduce motion, turn off the launch animation, swap the side panels, zoom the interface.' }
 ];
 
 export const keys = [
