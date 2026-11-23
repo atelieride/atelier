@@ -326,7 +326,7 @@ test('a session picked in the sidebar: the selection glides to its row, the tab 
     expect(body).toHaveLength(1);
     expect(body[0]!.kf).toContain('translateY(6px)');
     expect(glide.some((p) => p.kf.includes('translateX'))).toBe(false);
-    await expect(win.locator('.motion-pill')).toHaveCount(0, { timeout: 600 });
+    await expect(win.locator('.motion-pill')).toHaveCount(0);
     await expect(win.locator('.motion-lane, .tab-crown-fly')).toHaveCount(0);
     await expect(win.locator('[data-crown-landing]')).toHaveCount(0);
     await expect(row(win, 'One')).toHaveClass(/is-selected/);
@@ -348,7 +348,7 @@ test('a session picked in the sidebar: the selection glides to its row, the tab 
     const start = (JSON.parse(next[1]!.kf) as { top: string }[])[0]!;
     expect(Math.abs(parseFloat(start.top) - parseFloat(mid!.top))).toBeLessThan(1);
     await resume(win);
-    await expect(win.locator('.motion-pill')).toHaveCount(0, { timeout: 600 });
+    await expect(win.locator('.motion-pill')).toHaveCount(0);
     await expect(row(win, 'Three')).toHaveClass(/is-selected/);
     await expect(row(win, 'Two')).not.toHaveClass(/is-selected/);
     await expect(win.locator('[data-gliding]')).toHaveCount(0);
@@ -455,7 +455,7 @@ test('a tab picked: the crown stretches to it and catches up, the content slides
     expect(body).toHaveLength(1);
     expect(body[0]!.kf).toContain('translateX(-14px)');
     expect(on(left, 'motion-pill')).toHaveLength(0);
-    await expect(win.locator('.tab-crown-fly')).toHaveCount(0, { timeout: 600 });
+    await expect(win.locator('.tab-crown-fly')).toHaveCount(0);
     await expect(tab(strip, 'One')).toHaveClass(/is-active/);
     await expect(tab(strip, 'One')).not.toHaveAttribute('data-crown-landing');
 

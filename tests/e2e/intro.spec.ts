@@ -41,10 +41,13 @@ const introShown = (win: Page, ms: number) => win.evaluate((t) => new Promise<bo
   tick();
 }), ms);
 
-/** The animations running now (xterm's own cursor blink aside), by what they animate. */
+/**
+ * The animations running now (xterm's own cursor blink aside), by what they animate: a CSS animation by its name, a CSS
+ * transition (a hover, a colour applied) as "transition", a script animation (the launch's) as "script".
+ */
 const running = (win: Page) => win.evaluate(() => document.getAnimations()
   .filter((a) => a.playState === 'running' && !/^blink_(bar|block|underline)_/.test((a as CSSAnimation).animationName ?? ''))
-  .map((a) => `${(a as CSSAnimation).animationName ?? 'script'} on ${((a.effect as KeyframeEffect | null)?.target as Element | null)?.getAttribute('class') ?? ''}`));
+  .map((a) => `${(a as CSSAnimation).animationName ?? ((a as CSSTransition).transitionProperty ? 'transition' : 'script')} on ${((a.effect as KeyframeEffect | null)?.target as Element | null)?.getAttribute('class') ?? ''}`));
 
 /**
  * Waits for the plates' morph, then freezes every running animation 260 ms into it (the plates halfway, the seams
@@ -293,9 +296,10 @@ test('a slow layout: the mark holds, then leaves', async () => {
   try {
     await expect(win.locator('.intro')).toBeAttached();
     await pageAt(win, 1200);
-    // Leafed out and drawn, the mark waits still: nothing runs meanwhile (no loop).
+    // Leafed out and drawn, the mark waits still: nothing of it runs meanwhile (no loop; the app's own entrances
+    // under the overlay may still be playing).
     expect(await win.locator('.intro').count()).toBe(1);
-    expect(await running(win)).toEqual([]);
+    expect((await running(win)).filter((a) => a.startsWith('script'))).toEqual([]);
     await win.waitForFunction(() => !document.querySelector('.intro')
       || performance.now() - (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming).domContentLoadedEventStart >= 2500);
     expect(await win.locator('.intro').count()).toBe(0);
