@@ -60,8 +60,18 @@ export function refreshIphone(): void {
   void window.atelier.remote.status().then((s) => useIphone.getState().setStatus(s)).catch(() => {});
 }
 
+/**
+ * Whether this page offers iPhone access: always in the app; not in the website's live demo, where Settings lists no
+ * iPhone section, the palette has no Pair iPhone… and nothing opens the pairing sheet.
+ */
+export function iphoneOffered(): boolean {
+  // Only when the bridge says so: a view rendered with no bridge at all (a unit test's palette) offers none either.
+  return typeof window !== 'undefined' && window.atelier?.remote?.offered === true;
+}
+
 /** Pair iPhone… (Settings › iPhone, the menu, the palette): the pairing sheet, over whatever is open. */
 export function openPairing(): void {
+  if (!iphoneOffered()) return;
   useIphone.getState().setPairOpen(true);
 }
 

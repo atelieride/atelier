@@ -382,6 +382,7 @@ const api: AtelierApi = {
   },
   // Arguments rebuilt field by field: main's schemas are strict.
   remote: {
+    offered: true,
     status: () => ipcRenderer.invoke(IPC.remoteStatus),
     startPairing: () => ipcRenderer.invoke(IPC.remoteStartPairing),
     stopPairing: () => ipcRenderer.invoke(IPC.remoteStopPairing),

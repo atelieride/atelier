@@ -56,6 +56,16 @@ describe('buildMenus', () => {
     expect(item('File', 'Restart atelierd (closes all sessions)…').effect).toEqual({ kind: 'not-in-demo', what: 'Restart atelierd (closes all sessions)' });
   });
 
+  test('iPhone access is not offered in the demo: Pair iPhone… is in the app menu, never in the demo\'s', () => {
+    const app = MENU_SPEC.find((m) => 'label' in m && m.label === 'Atelier');
+    expect(app && 'submenu' in app && app.submenu.some((i) => 'command' in i && i.command === 'pair-iphone')).toBe(true);
+    for (const m of menus) expect(labels(m.items)).not.toContain('Pair iPhone…');
+    // Its neighbours stay, with no separator left doubled.
+    expect(labels(menu('Atelier').items)).toContain('Connectors…');
+    const spec: MenuSpecMenu[] = [{ label: 'Atelier', submenu: [{ label: 'Pair iPhone…', command: 'pair-iphone' }, { type: 'separator' }, { label: 'Settings…', command: 'open-settings' }] }];
+    expect(labels(buildMenus(spec, { profiles: true, accounts: ACCOUNTS })[0]!.items)).toEqual(['Settings…']);
+  });
+
   test("the app menu's roles: About opens the app's own About, Hide and Quit leave, Services and Hide Others are disabled", () => {
     expect(item('Atelier', 'About Atelier').effect).toEqual({ kind: 'command', command: 'open-about' });
     expect(item('Atelier', 'Hide Atelier')).toMatchObject({ keys: '⌘H', effect: { kind: 'exit' } });

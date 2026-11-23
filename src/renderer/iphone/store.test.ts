@@ -1,6 +1,6 @@
 import { beforeEach, expect, test, vi } from 'vitest';
 import type { RemoteDeviceInfo, RemoteStatus } from '@shared/remote';
-import { useIphone } from './store';
+import { iphoneOffered, openPairing, useIphone } from './store';
 
 const device = (o: Partial<RemoteDeviceInfo>): RemoteDeviceInfo => ({ id: 'd1', name: 'Test iPhone', model: 'iPhone17,1', pairedAt: 1, lastSeenAt: 1, connected: true, attached: [], ...o });
 const status = (o: Partial<RemoteStatus> = {}): RemoteStatus => ({ enabled: true, available: true, relay: { state: 'online' }, devices: [], sized: [], ...o });
@@ -25,6 +25,23 @@ test('a status that changes nothing they show keeps the sets as they were: rows 
   useIphone.getState().setStatus(status({ devices: [device({ attached: ['t1'] })], sized: [] }));
   expect([...useIphone.getState().attached]).toEqual(['t1']);
   expect(useIphone.getState().sized.size).toBe(0);
+});
+
+test('Pair iPhone… opens its sheet where iPhone access is offered, and nothing where it isn\'t (the live demo)', () => {
+  // No bridge at all (a view rendered in a unit test): not offered.
+  expect(iphoneOffered()).toBe(false);
+  vi.stubGlobal('window', { atelier: { remote: { offered: false } } });
+  try {
+    expect(iphoneOffered()).toBe(false);
+    openPairing();
+    expect(useIphone.getState().pairOpen).toBe(false);
+    vi.stubGlobal('window', { atelier: { remote: { offered: true } } });
+    expect(iphoneOffered()).toBe(true);
+    openPairing();
+    expect(useIphone.getState().pairOpen).toBe(true);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 test('access off: no badge and no size note, whatever the last list said', () => {

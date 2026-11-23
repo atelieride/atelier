@@ -6,6 +6,7 @@ import { t } from '../i18n/en';
 import { currentPlatform } from '@shared/platform';
 import { trayCopy } from '../tray-copy';
 import { useApp, type SettingsSection } from '../store';
+import { iphoneOffered } from '../iphone/store';
 import { kbd } from '../kbd';
 import { Notes } from './Notes';
 import { CHANGELOG_URL } from '@shared/whats-new';
@@ -888,7 +889,10 @@ function About() {
 
 /** Settings: modal sheet with the sections on the left; every change applies immediately, in all windows. */
 export function Settings() {
-  const section = useApp((s) => s.settingsOpen) ?? 'appearance';
+  // Settings › iPhone only where iPhone access is offered (not in the website's live demo); asked for there, Appearance.
+  const sections = iphoneOffered() ? SECTIONS : SECTIONS.filter((x) => x.id !== 'iphone');
+  const asked = useApp((s) => s.settingsOpen) ?? 'appearance';
+  const section = sections.some((x) => x.id === asked) ? asked : 'appearance';
   const s = useApp((st) => st.settings);
   const close = () => useApp.getState().setSettingsOpen(null);
   // Connectors in the sidebar from one of its details pages: back to the list.
@@ -952,8 +956,8 @@ export function Settings() {
   const onNavKey = (e: React.KeyboardEvent) => {
     if (!(e.target as HTMLElement).classList.contains('set-nav-item') || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
     e.preventDefault();
-    const i = SECTIONS.findIndex((x) => x.id === section);
-    go(SECTIONS[(i + (e.key === 'ArrowDown' ? 1 : SECTIONS.length - 1)) % SECTIONS.length]!.id);
+    const i = sections.findIndex((x) => x.id === section);
+    go(sections[(i + (e.key === 'ArrowDown' ? 1 : sections.length - 1)) % sections.length]!.id);
     requestAnimationFrame(() => sheet.current?.querySelector<HTMLElement>('.set-nav-item.is-active')?.focus());
   };
 
@@ -963,7 +967,7 @@ export function Settings() {
         onMouseDown={(e) => { e.stopPropagation(); if (!(e.target as HTMLElement).closest('button, input, textarea')) e.preventDefault(); }}>
         <nav className="set-nav" aria-label={t.set.sectionsLabel} onKeyDown={onNavKey}>
           <div className="set-nav-title">{t.set.title}</div>
-          {SECTIONS.map((x) => (
+          {sections.map((x) => (
             <button key={x.id} type="button" className={`set-nav-item ${x.id === section ? 'is-active' : ''}`} aria-current={x.id === section ? 'page' : undefined} onClick={() => go(x.id)}>
               <Icon name={x.icon} size={15} />{t.set.sections[x.id]}
               {x.id === 'connectors' && connectorsAttention && <span className="set-nav-dot" role="img" aria-label={t.conn.attention(connectorsAttention)} />}

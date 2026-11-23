@@ -126,6 +126,11 @@ export interface CompanionApi {
  * unpairs every phone.
  */
 export interface RemoteApi {
+  /**
+   * Whether this page offers iPhone access at all: the app always does; the website's live demo doesn't, and there
+   * nothing of it shows (no Settings › iPhone, no Pair iPhone…).
+   */
+  readonly offered: boolean;
   status(): Promise<RemoteStatus>;
   startPairing(): Promise<RemotePairingStart>;
   stopPairing(): Promise<void>;

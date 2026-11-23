@@ -24,6 +24,12 @@ describe('startup', () => {
     expect(fonts).toEqual(['Menlo', 'Monaco', 'SF Mono', 'Courier New', 'Consolas', 'Cascadia Mono', 'Ubuntu Mono', 'DejaVu Sans Mono', 'Liberation Mono']);
   });
 
+  test('iPhone access is not offered: the renderer shows no Settings › iPhone and no Pair iPhone…', async () => {
+    const { api } = make();
+    expect(api.remote.offered).toBe(false);
+    expect(await api.remote.status()).toMatchObject({ enabled: false, devices: [] });
+  });
+
   test('no OS version: the demo never plays Windows, so its xterms get no Windows pty', () => {
     expect(make().api.osVersion).toBe('');
   });

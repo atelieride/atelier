@@ -12,7 +12,7 @@ import { viewCommand } from '../scm/all-view';
 import { lastUndo } from '../git/actions';
 import { commandRepo, gitPaletteCommands, runPaletteGit, sessionWork } from '../git/commands';
 import { useApp, type PaletteSend } from '../store';
-import { openPairing } from '../iphone/store';
+import { iphoneOffered, openPairing } from '../iphone/store';
 import type { ClaudeConversation } from '@shared/history';
 import type { TerminalInfo } from '@shared/protocol';
 import { parseQuery, splitTerminals, stepActive, type PaletteQuery } from '../palette-query';
@@ -566,7 +566,8 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
       c('attention', t.cmd.nextAttention, kbd('⌘J'), 'bell', goToAttention),
       c('settings', t.cmd.openSettings, kbd('⌘,'), 'settings', () => st.setSettingsOpen('appearance')),
       // iPhone access: the pairing sheet (with access off, it offers to turn it on), once the palette gave the focus back.
-      c('pair-iphone', t.iphone.command, '', 'qr', () => setTimeout(openPairing, 0)),
+      // Not where iPhone access isn't offered (the website's live demo).
+      ...(iphoneOffered() ? [c('pair-iphone', t.iphone.command, '', 'qr', () => setTimeout(openPairing, 0))] : []),
       // Launch flags: Settings › Claude at the flags.
       c('launch-flags', t.flags.command, '', 'flag', () => setTimeout(() => openLaunchFlags(), 0)),
       // Claude Code compatibility: Settings › Claude at that row.
