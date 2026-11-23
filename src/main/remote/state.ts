@@ -14,7 +14,7 @@ import { isLimitPaused, modeBadge, waitKind } from '@shared/session-view';
 import { isShell } from '@shared/shells';
 import { samePath } from '@shared/paths';
 import type { RemoteAccount, RemoteProject, RemoteResumable, RemoteSession } from './messages';
-import { detailOf, permissionOf, sectionOf, waitKeyOf } from './rows';
+import { WaitBook, detailOf, permissionOf, sectionOf } from './rows';
 
 /** b64url(SHA-256(root)), its first 16 characters: stable for a project, and nothing of its path. */
 export const projectIdOf = (root: string): string => createHash('sha256').update(root, 'utf8').digest('base64url').slice(0, 16);
@@ -63,6 +63,8 @@ export interface StateInput {
   pr?(id: string): PrEntry | undefined;
   /** A path with its links resolved (a folder that is the project root under another name). */
   realOf?(p: string): string;
+  /** The keys of the waits rows can answer, kept across states (a wait's key lasts the whole wait). */
+  waits?: WaitBook;
 }
 
 export interface RemoteState {
@@ -102,6 +104,7 @@ function accountIdOf(configDir: string | undefined, accounts: ClaudeAccounts | u
 export function remoteState(i: StateInput): RemoteState {
   const now = i.now ?? Date.now();
   const realOf = i.realOf ?? ((p: string) => p);
+  const waits = i.waits ?? new WaitBook();
   const byAge = [...i.terminals].sort((a, b) => a.createdAt - b.createdAt);
   const order: string[] = [];
   const add = (root: string) => { if (!order.includes(root)) order.push(root); };
@@ -119,7 +122,7 @@ export function remoteState(i: StateInput): RemoteState {
     const wait = isLimitPaused(s) ? null : waitKind(s);
     const detail = detailOf(t, { starting, now });
     const permission = permissionOf(s);
-    const key = waitKeyOf(t);
+    const key = waits.keyOf(t);
     const mode = modeBadge(s?.permissionMode);
     const account = s || starting ? accountIdOf(t.configDir, i.accounts, i.defaultDir) : null;
     const folder = folderOf(t, realOf);

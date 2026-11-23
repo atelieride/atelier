@@ -6,7 +6,7 @@ import { effectiveState } from '@shared/background';
 import { reasonLabel } from '@shared/notifications';
 import type { TerminalInfo } from '@shared/protocol';
 import type { SessionInfo } from '@shared/session';
-import { isLimitPaused, isWaiting, needsYou, waitKind, waitTarget } from '@shared/session-view';
+import { isLimitPaused, needsYou, waitKind, waitTarget } from '@shared/session-view';
 
 export type RowSection = 'needs' | 'review' | 'working' | 'idle';
 
@@ -107,14 +107,41 @@ export function permissionOf(s: SessionInfo | null): string | null {
 /** A plan waiting for approval: its dialog asks something else than a tool's permission. */
 export const isPlanApproval = (s: SessionInfo | null): boolean => waitKind(s) === 'permission' && waitTarget(s?.activity) === 'plan approval';
 
+/** What an answerable wait is about (its kind and target), or null when the row can't answer it. */
+function answerable(s: SessionInfo | null): string | null {
+  if (!s || isLimitPaused(s) || waitKind(s) !== 'permission' || isPlanApproval(s)) return null;
+  return `permission\u0000${waitTarget(s.activity) ?? ''}`;
+}
+
 /**
- * A key of the wait a session is in now: its terminal, state, wait kind, activity and last update, hashed. A newer
- * request (another tool, another update) gets another key, so an answer meant for an earlier one is refused. Null
- * while the session isn't waiting.
+ * Keys of the waits sessions are in, one per wait: a permission the row can answer (not a plan, not a question), by
+ * its terminal, kind, target and when it began. Later events of the same wait (a subagent's tool call) leave its key
+ * alone; a wait that ends and comes again is a new one. `update` follows every terminal list, so an end is seen.
  */
-export function waitKeyOf(t: Pick<TerminalInfo, 'id' | 'session'>): string | null {
-  const s = t.session;
-  if (!s || isLimitPaused(s) || !isWaiting(s)) return null;
-  const parts = [t.id, s.state, waitKind(s), s.activity ?? null, s.updatedAt];
-  return createHash('sha256').update(JSON.stringify(parts), 'utf8').digest('base64url').slice(0, 22);
+export class WaitBook {
+  private waits = new Map<string, { what: string; since: number }>();
+
+  update(list: readonly Pick<TerminalInfo, 'id' | 'session'>[]): void {
+    const next = new Map<string, { what: string; since: number }>();
+    for (const t of list) {
+      const w = this.see(t);
+      if (w) next.set(t.id, w);
+    }
+    this.waits = next;
+  }
+
+  keyOf(t: Pick<TerminalInfo, 'id' | 'session'>): string | null {
+    const w = this.see(t);
+    if (!w) return null;
+    this.waits.set(t.id, w);
+    return createHash('sha256').update(JSON.stringify([t.id, w.what, w.since]), 'utf8').digest('base64url').slice(0, 22);
+  }
+
+  /** The wait a terminal is in, as first seen (a new one when what it waits for changed). */
+  private see(t: Pick<TerminalInfo, 'id' | 'session'>): { what: string; since: number } | null {
+    const what = answerable(t.session);
+    if (what === null) return null;
+    const known = this.waits.get(t.id);
+    return known?.what === what ? known : { what, since: t.session!.updatedAt };
+  }
 }

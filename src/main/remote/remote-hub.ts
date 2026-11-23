@@ -8,7 +8,6 @@
 import { randomBytes } from 'node:crypto';
 import type { RemoteDeviceInfo, RemoteLayout, RemotePairingEvent, RemotePairingStart, RemoteRelayState, RemoteRowsEvent, RemoteSized, RemoteStatus } from '@shared/remote';
 import { accountsFor } from '@shared/claude-accounts';
-import { waitKind } from '@shared/session-view';
 import { relayBase } from '@shared/remote';
 import type { Settings } from '@shared/settings';
 import type { PortsMap } from '@shared/ports';
@@ -28,7 +27,8 @@ import { PushStore } from './push-store';
 import { CLOSE, type ByeReason, type DeviceMessage, type HostMessage, type RemoteAccount } from './messages';
 import { Pairing } from './pairing';
 import { RelayLink, type RelayLinkOptions } from './relay-link';
-import { isPlanApproval, waitKeyOf } from './rows';
+import { allowKey } from './prompt';
+import { WaitBook } from './rows';
 import { remoteState, remoteUsage, type RemoteState } from './state';
 import { MAX_APP_MESSAGE, type ChannelKind } from './wire';
 
@@ -50,8 +50,10 @@ export interface RemoteTerminals {
   remoteResize(key: number, id: string, cols: number, rows: number): boolean;
   remoteSized(): RemoteSized[];
   createRemoteSession(o: { project: string; kind: 'claude' | 'terminal'; cols: number; rows: number; account?: string }): Promise<TerminalInfo>;
-  /** Allow ("1": the dialog's first option) or Deny (Esc) on a session's permission request. */
-  answerPermission(id: string, choice: 'allow' | 'deny'): void;
+  /** A session's screen as text rows (Allow reads the permission dialog's own "Yes" from it). */
+  permissionScreen(id: string): Promise<string[]>;
+  /** A key pressed in a session's permission dialog: the digit of an option, or Esc. */
+  answerKey(id: string, key: string): void;
   renameRemote(id: string, name: string): Promise<void>;
   closeRemote(id: string): Promise<void>;
   resumeRemote(id: string, cols: number, rows: number): Promise<TerminalInfo>;
@@ -137,6 +139,8 @@ interface SessionHost {
   /** A listed project's layout, as its window last showed it (null: never shown with iPhone access on). */
   layoutOf(root: string): RemoteLayout | null;
   terminal(id: string): TerminalInfo | undefined;
+  /** The key of the wait a session is in, when the row may answer it. */
+  waitKey(t: TerminalInfo): string | null;
   /** A resumable the state lists: its project's root. */
   resumableRoot(id: string): string | null;
   /** A Claude account a phone may start a session as (the ids `usage` lists). */
@@ -253,11 +257,22 @@ class PhoneSession implements RemoteViewer {
       case 'answer': {
         const t = this.host.terminal(m.id);
         if (!t) { this.error(m.rid, 'not-found', 'This session is not on this computer any more.'); return; }
-        // Only the very request the phone saw, while it is still a permission waiting for an answer.
-        if (waitKind(t.session) !== 'permission' || waitKeyOf(t) !== m.wait) { this.error(m.rid, 'busy', 'The request changed'); return; }
-        if (isPlanApproval(t.session)) { this.error(m.rid, 'invalid', 'Open the session to answer a plan.'); return; }
-        this.terms.answerPermission(m.id, m.choice);
-        this.send({ t: 'ok', rid: m.rid });
+        // Only the very request the phone saw, while it is still waiting for an answer (no key: not one to answer here).
+        const still = () => { const now = this.host.terminal(m.id); return !!now && this.host.waitKey(now) === m.wait; };
+        if (!still()) { this.error(m.rid, 'busy', 'The request changed'); return; }
+        // Deny is Esc, whatever the dialog lists.
+        if (m.choice === 'deny') { this.terms.answerKey(m.id, '\x1b'); this.send({ t: 'ok', rid: m.rid }); return; }
+        // Allow chooses the dialog's own "Yes", read from the screen; checked again once it is read.
+        this.terms.permissionScreen(m.id).then(
+          (lines) => {
+            if (!still()) { this.error(m.rid, 'busy', 'The request changed'); return; }
+            const k = allowKey(lines);
+            if (!k.ok) { this.error(m.rid, 'invalid', k.message); return; }
+            this.terms.answerKey(m.id, k.key);
+            this.send({ t: 'ok', rid: m.rid });
+          },
+          () => this.error(m.rid, 'invalid', 'Open the session to answer')
+        );
         return;
       }
       case 'rename':
@@ -398,6 +413,8 @@ export class RemoteHub {
   private readonly identities: IdentityStore;
   readonly devices: DeviceStore;
   private readonly layouts: LayoutStore;
+  /** Every wait a row may answer, followed across terminal lists so a key lasts the whole wait. */
+  private readonly waits = new WaitBook();
   private readonly pushes: PushStore;
   private readonly decider: PushDecider;
   /** Pushes the relay hasn't answered yet: their id → the token they went to (a dead one is forgotten). */
@@ -433,12 +450,13 @@ export class RemoteHub {
     this.decider = new PushDecider({ settings: () => this.d.settings(), away: () => this.d.away?.() ?? false });
     this.stateMs = d.timing?.stateMs ?? STATE_MS;
     this.usageMs = d.timing?.usageMs ?? USAGE_MS;
-    this.offShown = d.terminals.onShown(() => this.scheduleState());
+    this.offShown = d.terminals.onShown(() => { this.waits.update(this.d.terminals.allTerminals()); this.scheduleState(); });
     this.host = {
       listed: (id) => this.d.terminals.allTerminals().some((t) => t.id === id),
       rootOf: (pid) => this.computeState().roots.get(pid) ?? null,
       layoutOf: (root) => this.layouts.get(root),
       terminal: (id) => this.d.terminals.allTerminals().find((t) => t.id === id),
+      waitKey: (t) => this.waits.keyOf(t),
       resumableRoot: (id) => {
         const st = this.computeState();
         const r = st.resumables.find((x) => x.id === id);
@@ -682,6 +700,7 @@ export class RemoteHub {
     return remoteState({
       terminals, open: p.open, recent: p.recent, colors: s, now: Date.now(), starting,
       resumables: this.d.terminals.allResumables(), accounts: s.claudeAccounts, defaultDir: this.d.defaultDir(),
+      waits: this.waits,
       ports: (id) => of(ports, this.d.ports, id)?.[id],
       pr: (id) => of(prs, this.d.prs, id)?.[id],
       ...(this.d.realOf ? { realOf: this.d.realOf } : {})

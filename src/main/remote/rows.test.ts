@@ -6,7 +6,7 @@ import type { SessionInfo } from '@shared/session';
 import { inboxSection } from '../../renderer/inbox';
 import { sessionSubtitle } from '../../renderer/selectors';
 import { t as words } from '../../renderer/i18n/en';
-import { MAX_DETAIL, detailOf, isPlanApproval, permissionOf, sectionOf, waitKeyOf } from './rows';
+import { MAX_DETAIL, WaitBook, detailOf, isPlanApproval, permissionOf, sectionOf } from './rows';
 
 const term = (session: SessionInfo | null, work?: BackgroundWork): TerminalInfo => ({
   id: 't1', projectRoot: '/p', cwd: '/p', title: 'T', name: null, color: '#B794F6', foreground: 'claude', createdAt: 1, session, ...(work ? { work } : {})
@@ -87,17 +87,27 @@ test('a permission\'s target while waiting for one, cut to 60 characters; nothin
   expect(isPlanApproval(session({ state: 'waiting', waitingFor: 'permission', activity: 'waiting: Bash npm test' }))).toBe(false);
 });
 
-test('a wait\'s key: the same for the same wait, another for any newer request; none out of a wait', () => {
+test('a wait\'s key: only for a permission the row can answer, the same for the whole wait, another for the next one', () => {
+  const book = new WaitBook();
   const waiting = session({ state: 'waiting', waitingFor: 'permission', activity: 'waiting: Bash npm test', updatedAt: 10 });
-  const key = waitKeyOf({ id: 't1', session: waiting })!;
+  const key = book.keyOf({ id: 't1', session: waiting })!;
   expect(key).toMatch(/^[A-Za-z0-9_-]{22}$/);
-  expect(waitKeyOf({ id: 't1', session: { ...waiting, contextPct: 40 } })).toBe(key);
-  expect(waitKeyOf({ id: 't2', session: waiting })).not.toBe(key);
-  expect(waitKeyOf({ id: 't1', session: { ...waiting, updatedAt: 11 } })).not.toBe(key);
-  expect(waitKeyOf({ id: 't1', session: { ...waiting, activity: 'waiting: Bash rm -rf build' } })).not.toBe(key);
-  expect(waitKeyOf({ id: 't1', session: { ...waiting, waitingFor: 'question' } })).not.toBe(key);
-  expect(waitKeyOf({ id: 't1', session: { ...waiting, state: 'running', waitingFor: null } })).toBeNull();
-  // The idle notice is no wait; neither is a usage-limit pause.
-  expect(waitKeyOf({ id: 't1', session: { ...waiting, state: 'idle', waitingFor: 'input' } })).toBeNull();
-  expect(waitKeyOf({ id: 't1', session: null })).toBeNull();
+  // Later events of the same wait (a subagent's tool call, the status line) move updatedAt: the same key.
+  expect(book.keyOf({ id: 't1', session: { ...waiting, updatedAt: 11, contextPct: 40 } })).toBe(key);
+  book.update([{ id: 't1', session: { ...waiting, updatedAt: 12 } }]);
+  expect(book.keyOf({ id: 't1', session: { ...waiting, updatedAt: 13 } })).toBe(key);
+  // Another terminal, another target: other keys.
+  expect(book.keyOf({ id: 't2', session: waiting })).not.toBe(key);
+  expect(book.keyOf({ id: 't1', session: { ...waiting, activity: 'waiting: Bash rm -rf build', updatedAt: 14 } })).not.toBe(key);
+  // The wait ends, and the same request comes again later: a new wait, a new key.
+  book.update([{ id: 't1', session: { ...waiting, state: 'running', waitingFor: null, activity: 'Bash npm test', updatedAt: 20 } }]);
+  const again = book.keyOf({ id: 't1', session: { ...waiting, updatedAt: 30 } });
+  expect(again).not.toBeNull();
+  expect(again).not.toBe(key);
+  // No key for what the row can't answer: a question, a plan, the idle notice, a usage-limit pause, no session.
+  expect(book.keyOf({ id: 't1', session: { ...waiting, waitingFor: 'question', activity: 'waiting: question' } })).toBeNull();
+  expect(book.keyOf({ id: 't1', session: { ...waiting, activity: 'waiting: plan approval' } })).toBeNull();
+  expect(book.keyOf({ id: 't1', session: { ...waiting, state: 'idle', waitingFor: 'input' } })).toBeNull();
+  expect(book.keyOf({ id: 't1', session: { ...waiting, state: 'error', errorReason: 'rate_limit', waitingFor: null, limitPause: { since: 1, resetsAt: null } } })).toBeNull();
+  expect(book.keyOf({ id: 't1', session: null })).toBeNull();
 });

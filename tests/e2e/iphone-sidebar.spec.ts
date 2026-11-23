@@ -132,7 +132,7 @@ type Row = { id: string; title: string; claude: boolean; state: string; section:
 const rowsOf = (s: Msg) => s.sessions as Row[];
 const settingsSet = (win: Page, patch: object) => win.evaluate((p) => (window as unknown as { atelier: { settings: { set(p: object): Promise<unknown> } } }).atelier.settings.set(p), patch);
 
-test('Allow and Deny from the phone answer a session\'s permission request as its dialog\'s keys; a changed request is refused', async () => {
+test('Allow and Deny from the phone answer a session\'s permission request with its dialog\'s own keys; a changed request is refused', async () => {
   test.setTimeout(180_000);
   const l = await launch({ ATELIER_FAKE_PERMISSION_KEYS: '1' });
   const { win, phone, root } = l;
@@ -150,13 +150,13 @@ test('Allow and Deny from the phone answer a session\'s permission request as it
     expect(row(ids[0]!).wait).toMatch(/^[A-Za-z0-9_-]+$/);
     // The session's own dialog is on its screen.
     await phone.attach(ids[0]!, 80, 24);
-    await phone.sees(ids[0]!, 'FAKE-CLAUDE permission: 1 allows, esc denies', 15000);
+    await phone.sees(ids[0]!, 'Do you want to proceed?', 15000);
     phone.detach(ids[0]!);
 
     // A wait the session is no longer in: refused, nothing typed.
     expect(await phone.answer(ids[0]!, 'AAAAAAAAAAAAAAAAAAAAAA', 'allow')).toMatchObject({ t: 'error', code: 'busy', message: 'The request changed' });
 
-    // Allow: "1" picks the dialog's first option; the tool runs and the turn finishes.
+    // Allow: the digit of the dialog's own "Yes" (here the first); the tool runs and the turn finishes.
     expect(await phone.answer(ids[0]!, row(ids[0]!).wait!, 'allow')).toMatchObject({ t: 'ok' });
     // Deny: Esc declines; the session is back at its prompt.
     expect(await phone.answer(ids[1]!, row(ids[1]!).wait!, 'deny')).toMatchObject({ t: 'ok' });
@@ -172,6 +172,42 @@ test('Allow and Deny from the phone answer a session\'s permission request as it
     await look(win, `${SHOTS}/answered.png`, { settle: 300 });
   } finally {
     await close(l);
+  }
+});
+
+/** A phone paired with a project whose Claude sessions show the permission dialog `mode` (fake-claude.pl), one started. */
+async function oneWaiting(mode: string): Promise<{ l: Launched; id: string; wait: string }> {
+  const l = await launch({ ATELIER_FAKE_PERMISSION_KEYS: mode });
+  await pair(l);
+  const made = await l.phone.create(projectOf(await l.phone.state(), l.root).id, 'claude');
+  const id = made.id as string;
+  const row = rowsOf(await l.phone.state((s) => !!rowsOf(s).find((x) => x.id === id)?.wait, 30000)).find((x) => x.id === id)!;
+  await l.phone.attach(id, 80, 24);
+  await l.phone.sees(id, 'Do you want to proceed?', 15000);
+  return { l, id, wait: row.wait! };
+}
+
+test('Allow picks the dialog\'s own "Yes" wherever it is listed; with only "don\'t ask again" offered, it is refused and nothing is typed', async () => {
+  test.setTimeout(240_000);
+  // "No" listed first: Allow presses "2".
+  const first = await oneWaiting('no-first');
+  try {
+    expect(await first.l.phone.answer(first.id, first.wait, 'allow')).toMatchObject({ t: 'ok' });
+    await first.l.phone.sees(first.id, 'FAKE-CLAUDE allowed', 10000);
+    expect(first.l.phone.screen(first.id)).not.toContain('FAKE-CLAUDE denied');
+  } finally {
+    await close(first.l);
+  }
+  // No plain "Yes": refused, the dialog still waits; Deny still answers it.
+  const only = await oneWaiting('always-only');
+  try {
+    expect(await only.l.phone.answer(only.id, only.wait, 'allow')).toMatchObject({ t: 'error', code: 'invalid', message: 'Open the session to answer' });
+    await new Promise((r) => setTimeout(r, 500));
+    expect(only.l.phone.screen(only.id)).not.toMatch(/FAKE-CLAUDE (allowed|denied|key=)/);
+    expect(await only.l.phone.answer(only.id, only.wait, 'deny')).toMatchObject({ t: 'ok' });
+    await only.l.phone.sees(only.id, 'FAKE-CLAUDE denied', 10000);
+  } finally {
+    await close(only.l);
   }
 });
 

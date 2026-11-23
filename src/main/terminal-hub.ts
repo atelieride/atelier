@@ -56,6 +56,7 @@ import { join, toOut } from './cpath';
 import { atelierHome } from '@shared/paths.node';
 import { Osc7Tracker } from './osc7';
 import { SessionTray, type TrayActions, type TrayHost } from './tray';
+import { screenLines } from './remote/prompt';
 
 interface WindowEntry { wc: WebContents; project: string }
 
@@ -81,6 +82,8 @@ export const underPrefix = (prefix: string, p: string) => isBelow(trimOneSep(pre
 const isDir = (p: string) => { try { return statSync(p).isDirectory(); } catch { return false; } };
 /** A terminal launched as a Claude session without a session this long after: Claude didn't start (the renderer's own window). */
 const STARTING_MS = 30_000;
+/** atelierd sends a screen on attach within this long, or it isn't coming. */
+const SCREEN_MS = 5000;
 
 export class TerminalHub {
   private windows = new Map<number, WindowEntry>();
@@ -1168,15 +1171,42 @@ export class TerminalHub {
 
   // ── A paired phone's actions on rows (the remote hub checked them first) ──
 
+  /** A key pressed in a session's permission dialog (an option's digit, or Esc), seen by the interrupt watch as typed. */
+  answerKey(id: string, key: string): void {
+    // Esc ends the turn without a Stop: the interrupt watch brings the session back as for a key typed in a window.
+    this.typed(id, key);
+    this.client.send({ t: 'input', id, data: key });
+  }
+
   /**
-   * Answers the permission dialog a session shows, as a key pressed in it: "1" picks its first option (allow once),
-   * Esc declines. Claude Code's selection lists take a digit as the choice itself, whichever row the cursor is on.
+   * A session's screen as text rows, for reading the dialog it shows: atelierd's screen through an attach of its own
+   * (a terminal windows watch keeps its stream; one nobody watches is detached again).
    */
-  answerPermission(id: string, choice: 'allow' | 'deny'): void {
-    const data = choice === 'allow' ? '1' : '\x1b';
-    // Seen by the interrupt watch as a typed key is (Esc ends the turn without a Stop).
-    this.typed(id, data);
-    this.client.send({ t: 'input', id, data });
+  async permissionScreen(id: string): Promise<string[]> {
+    if (!this.terminals.some((t) => t.id === id)) throw new Error('no such terminal');
+    // A viewer key of its own: the attach's place among the windows' and the phones', then gone.
+    const key = this.nextRemote--;
+    this.attachments.begin(key, id);
+    let attached = false;
+    try {
+      const data = await new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(() => { this.client.off('snapshot', onSnap); reject(new Error('no screen')); }, SCREEN_MS);
+        timer.unref?.();
+        const onSnap = (sid: string, snap: string) => {
+          if (sid !== id) return;
+          clearTimeout(timer);
+          this.client.off('snapshot', onSnap);
+          resolve(snap);
+        };
+        this.client.on('snapshot', onSnap);
+        this.client.request({ t: 'attach', id }).catch((err: Error) => { clearTimeout(timer); this.client.off('snapshot', onSnap); reject(err); });
+      });
+      attached = this.attachments.complete(key, id) !== null;
+      return await screenLines(data, this.sizeOf(id));
+    } finally {
+      if (!attached) this.attachments.abort(key, id);
+      else if (this.attachments.remove(key, id)) void this.client.request({ t: 'detach', id }).catch(() => {});
+    }
   }
 
   /** Rename, as a row's: trimmed, control characters out, "" gives the automatic name back, the shown name is nothing. */

@@ -1174,12 +1174,41 @@ describe('a paired phone\'s actions on rows, as Atelier\'s own', () => {
   };
   const waiting = (id: string, root = '/p') => ({ ...term(id, root), session: { sessionId: `s-${id}`, state: 'waiting', waitingFor: 'permission', title: null, activity: 'waiting: Bash npm test', contextPct: null, unread: false, updatedAt: 1 } }) as unknown as TerminalInfo;
 
-  test('answer: allow chooses the prompt\'s first option ("1"), deny presses Esc, seen by the interrupt watch as typed keys', () => {
+  test('answer: the key goes to the session as typed, seen by the interrupt watch', () => {
     const { hub, client } = setup();
     client.emit('terminals', [waiting('w')]);
-    hub.answerPermission('w', 'allow');
-    hub.answerPermission('w', 'deny');
-    expect(client.send.mock.calls.map((c) => c[0])).toEqual([{ t: 'input', id: 'w', data: '1' }, { t: 'input', id: 'w', data: '\x1b' }]);
+    hub.answerKey('w', '2');
+    hub.answerKey('w', '\x1b');
+    expect(client.send.mock.calls.map((c) => c[0])).toEqual([{ t: 'input', id: 'w', data: '2' }, { t: 'input', id: 'w', data: '\x1b' }]);
+  });
+
+  test('a session\'s screen as text, through an attach atelierd answers with it; detached again when nobody watches it', async () => {
+    const { hub, client } = setup();
+    client.emit('terminals', [waiting('w')]);
+    client.request.mockImplementation((async (m: { t: string; id: string }) => {
+      if (m.t === 'attach') queueMicrotask(() => client.emit('snapshot', m.id, 'Do you want to proceed?\r\n\x1b[1m❯\x1b[0m 1. Yes\r\n  2. No'));
+      return {};
+    }) as never);
+    const lines = await hub.permissionScreen('w');
+    expect(lines.filter(Boolean)).toEqual(['Do you want to proceed?', '❯ 1. Yes', '  2. No']);
+    expect((client.request.mock.calls as unknown as unknown[][]).map((c) => c[0])).toEqual([{ t: 'attach', id: 'w' }, { t: 'detach', id: 'w' }]);
+    await expect(hub.permissionScreen('gone')).rejects.toThrow();
+  });
+
+  test('a screen read while a window watches the terminal leaves its stream alone (no detach)', async () => {
+    const { hub, register, client } = setup();
+    const w = wc(1); win(w); register(w);
+    client.emit('terminals', [waiting('w')]);
+    client.request.mockImplementation((async (m: { t: string; id: string }) => {
+      if (m.t === 'attach') queueMicrotask(() => client.emit('snapshot', m.id, '❯ 1. Yes'));
+      return {};
+    }) as never);
+    hub.installIpc();
+    const attach = (vi.mocked(ipcMain.handle).mock.calls as unknown as [string, (e: unknown, arg: unknown) => Promise<void>][]).findLast((c) => c[0] === IPC.termAttach)![1];
+    await attach({ sender: w }, 'w');
+    client.request.mockClear();
+    expect((await hub.permissionScreen('w')).filter(Boolean)).toEqual(['❯ 1. Yes']);
+    expect((client.request.mock.calls as unknown as unknown[][]).map((c) => c[0])).toEqual([{ t: 'attach', id: 'w' }]);
   });
 
   test('rename: as the row\'s Rename (trimmed, control characters out, "" gives the automatic name back, the same name is nothing)', async () => {

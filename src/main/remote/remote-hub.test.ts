@@ -31,7 +31,9 @@ class FakeTerminals implements RemoteTerminals {
   inputs: [string, string][] = [];
   resizes: [string, number, number][] = [];
   created: { project: string; kind: string; cols: number; rows: number; account?: string }[] = [];
+  /** The keys answers pressed, and each terminal's screen as text (the usual permission dialog unless set). */
   answers: [string, string][] = [];
+  screens = new Map<string, string[]>();
   renames: [string, string][] = [];
   closes: string[] = [];
   dismissals: string[] = [];
@@ -65,7 +67,11 @@ class FakeTerminals implements RemoteTerminals {
     return true;
   }
   remoteSized() { return this.sized; }
-  answerPermission(id: string, choice: 'allow' | 'deny') { this.answers.push([id, choice]); }
+  async permissionScreen(id: string) {
+    if (!this.list.some((t) => t.id === id)) throw new Error('gone');
+    return this.screens.get(id) ?? ['Do you want to proceed?', '❯ 1. Yes', '  2. Yes, and don\'t ask again for npm test commands', '  3. No, and tell Claude what to do differently (esc)', '', 'Esc to cancel · Tab to amend'];
+  }
+  answerKey(id: string, key: string) { this.answers.push([id, key]); }
   async renameRemote(id: string, name: string) { if (!this.list.some((t) => t.id === id)) throw new Error('gone'); this.renames.push([id, name]); }
   async closeRemote(id: string) { if (!this.list.some((t) => t.id === id)) throw new Error('gone'); this.closes.push(id); this.set(this.list.filter((t) => t.id !== id)); }
   async resumeRemote(id: string, cols: number, rows: number) {
@@ -548,35 +554,61 @@ describe('layouts (v1.1)', () => {
 describe('actions on rows (v1.1)', () => {
   const waitingSession = (o: object = {}) => ({ sessionId: 's', state: 'waiting', waitingFor: 'permission', title: null, activity: 'waiting: Bash npm test', contextPct: null, unread: false, updatedAt: 1, ...o }) as never;
 
-  test('answer: only for the very wait the state showed; allow and deny reach the session; another wait is "The request changed"', async () => {
+  test('answer: only for the very wait the state showed, which later events of it don\'t change; another wait is "The request changed"', async () => {
     const t = setup();
     t.terms.list = [term('w', '/work/app', { session: waitingSession() })];
     const { phone } = await paired(t);
     const row = (await phone.state((s) => (s.sessions as Msg[]).some((x) => x.id === 'w' && x.wait))).sessions as Msg[];
     const wait = row.find((x) => x.id === 'w')!.wait as string;
+    // A subagent's event during the same wait: the key stays, the answer goes.
+    t.terms.set([term('w', '/work/app', { session: waitingSession({ updatedAt: 2, subagents: 1 }) })]);
+    await phone.state((s) => (s.sessions as Msg[]).some((x) => x.id === 'w' && x.agents === 1));
+    expect((await phone.state()).sessions as Msg[]).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'w', wait })]));
     expect(await phone.answer('w', wait, 'allow')).toMatchObject({ t: 'ok' });
-    expect(t.terms.answers).toEqual([['w', 'allow']]);
-    // A newer request (updated since): refused, nothing typed.
-    t.terms.set([term('w', '/work/app', { session: waitingSession({ updatedAt: 2 }) })]);
+    expect(t.terms.answers).toEqual([['w', '1']]);
+    // The wait ends and another starts: refused, nothing typed.
+    t.terms.set([term('w', '/work/app', { session: waitingSession({ state: 'running', waitingFor: null, activity: 'Bash npm test', updatedAt: 3 }) })]);
+    t.terms.set([term('w', '/work/app', { session: waitingSession({ updatedAt: 4 }) })]);
     expect(await phone.answer('w', wait, 'deny')).toMatchObject({ t: 'error', code: 'busy', message: 'The request changed' });
-    // No longer waiting at all: the same.
+    const fresh = ((await phone.state((s) => (s.sessions as Msg[]).some((x) => x.id === 'w' && x.wait && x.wait !== wait))).sessions as Msg[]).find((x) => x.id === 'w')!.wait as string;
+    // Deny: Esc.
+    expect(await phone.answer('w', fresh, 'deny')).toMatchObject({ t: 'ok' });
+    // No longer waiting at all: refused.
     t.terms.set([term('w', '/work/app', { session: waitingSession({ state: 'running', waitingFor: null, activity: 'Bash npm test' }) })]);
-    expect(await phone.answer('w', wait, 'deny')).toMatchObject({ t: 'error', code: 'busy', message: 'The request changed' });
+    expect(await phone.answer('w', fresh, 'deny')).toMatchObject({ t: 'error', code: 'busy', message: 'The request changed' });
     expect(await phone.answer('gone', wait, 'allow')).toMatchObject({ t: 'error', code: 'not-found' });
-    expect(t.terms.answers).toEqual([['w', 'allow']]);
+    expect(t.terms.answers).toEqual([['w', '1'], ['w', '\x1b']]);
   });
 
-  test('answer: a question or a plan is answered in the session, never from the row', async () => {
+  test('allow picks the screen\'s own "Yes"; with none to pick (or the cursor in a feedback field), refused and nothing typed', async () => {
+    const t = setup();
+    t.terms.list = [term('a', '/work/app', { session: waitingSession() }), term('b', '/work/app', { session: waitingSession() }), term('c', '/work/app', { session: waitingSession() })];
+    t.terms.screens.set('a', ['Do you want to proceed?', '❯ 1. No', '  2. Yes']);
+    t.terms.screens.set('b', ['Do you want to proceed?', '❯ 1. Yes, and don\'t ask again for this session', '  2. No']);
+    t.terms.screens.set('c', ['Do you want to proceed?', '❯ 1. Yes, and tell Claude what to do next', '  2. No']);
+    const { phone } = await paired(t);
+    const rows = (await phone.state((s) => (s.sessions as Msg[]).filter((x) => x.wait).length === 3)).sessions as Msg[];
+    const waitOf = (id: string) => rows.find((x) => x.id === id)!.wait as string;
+    expect(await phone.answer('a', waitOf('a'), 'allow')).toMatchObject({ t: 'ok' });
+    expect(await phone.answer('b', waitOf('b'), 'allow')).toMatchObject({ t: 'error', code: 'invalid', message: 'Open the session to answer' });
+    expect(await phone.answer('c', waitOf('c'), 'allow')).toMatchObject({ t: 'error', code: 'invalid', message: 'Open the session to answer' });
+    // Deny needs no screen: Esc declines whatever the dialog lists.
+    expect(await phone.answer('b', waitOf('b'), 'deny')).toMatchObject({ t: 'ok' });
+    expect(t.terms.answers).toEqual([['a', '2'], ['b', '\x1b']]);
+  });
+
+  test('answer: a question or a plan has no wait key and is answered in the session, never from the row', async () => {
     const t = setup();
     t.terms.list = [
       term('q', '/work/app', { session: waitingSession({ waitingFor: 'question', activity: 'waiting: question' }) }),
       term('p', '/work/app', { session: waitingSession({ activity: 'waiting: plan approval' }) })
     ];
     const { phone } = await paired(t);
-    const rows = (await phone.state((s) => (s.sessions as Msg[]).filter((x) => x.wait).length === 2)).sessions as Msg[];
-    const waitOf = (id: string) => rows.find((x) => x.id === id)!.wait as string;
-    expect(await phone.answer('q', waitOf('q'), 'allow')).toMatchObject({ t: 'error', code: 'busy', message: 'The request changed' });
-    expect(await phone.answer('p', waitOf('p'), 'allow')).toMatchObject({ t: 'error', code: 'invalid' });
+    const rows = (await phone.state((s) => (s.sessions as Msg[]).filter((x) => x.state === 'waiting').length === 2)).sessions as Msg[];
+    expect(rows.filter((x) => x.wait)).toEqual([]);
+    expect(rows.find((x) => x.id === 'p')).toMatchObject({ permission: 'plan approval' });
+    expect(await phone.answer('q', 'AAAAAAAAAAAAAAAAAAAAAA', 'allow')).toMatchObject({ t: 'error', code: 'busy', message: 'The request changed' });
+    expect(await phone.answer('p', 'AAAAAAAAAAAAAAAAAAAAAA', 'allow')).toMatchObject({ t: 'error', code: 'busy', message: 'The request changed' });
     expect(t.terms.answers).toEqual([]);
   });
 

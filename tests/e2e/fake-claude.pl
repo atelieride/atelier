@@ -59,18 +59,31 @@ my @shown; for (my $i = 0; $i <= $#ARGV; $i++) { if ($ARGV[$i] eq '--settings') 
 print "FAKE-CLAUDE args=@shown\n" if $resume || $ENV{ATELIER_FAKE_PRINT_ARGS};
 print "FAKE-CLAUDE cwd=" . Cwd::getcwd() . "\n";
 my ($line, $denied) = ('', 0);
-if ($ENV{ATELIER_FAKE_PERMISSION_KEYS}) {
-  # ATELIER_FAKE_PERMISSION_KEYS (opt-in): the permission waits as Claude Code's dialog does, one key at a time (raw
-  # mode, nothing echoed): "1" chooses its first option (Yes, allow once), Esc declines it; any other key is shown.
-  print "FAKE-CLAUDE permission: 1 allows, esc denies\n";
+if (my $mode = $ENV{ATELIER_FAKE_PERMISSION_KEYS}) {
+  # ATELIER_FAKE_PERMISSION_KEYS (opt-in): the permission waits as Claude Code's dialog does, its options drawn as it
+  # draws them and chosen one key at a time (raw mode, nothing echoed): a digit chooses that option, Esc declines.
+  # "no-first" lists No before Yes; "always-only" offers no plain Yes; anything else is the usual three options.
+  my @options = $mode eq 'no-first' ? ('No', 'Yes')
+    : $mode eq 'always-only' ? ("Yes, and don't ask again for this session", 'No, and tell Claude what to do differently (esc)')
+    : ('Yes', "Yes, and don't ask again for npm test commands", 'No, and tell Claude what to do differently (esc)');
+  print "Do you want to proceed?\n";
+  # The cursor mark (U+276F) and the hints' dot (U+00B7) as UTF-8 bytes, as the terminal gets them.
+  for my $i (0..$#options) { printf "%s %d. %s\n", ($i == 0 ? "\xE2\x9D\xAF" : ' '), $i + 1, $options[$i]; }
+  print "\nEsc to cancel \xC2\xB7 Tab to amend\n";
   my $t = POSIX::Termios->new; $t->getattr(0);
   my $saved = $t->getlflag;
   $t->setlflag($saved & ~(POSIX::ECHO() | POSIX::ICANON())); $t->setcc(POSIX::VMIN(), 1); $t->setcc(POSIX::VTIME(), 0); $t->setattr(0, POSIX::TCSANOW());
   while (1) {
     my $key = '';
     last unless sysread(STDIN, $key, 1);
-    if ($key eq '1') { print "FAKE-CLAUDE allowed\n"; last; }
     if ($key eq "\e") { print "FAKE-CLAUDE denied\n"; $denied = 1; last; }
+    if ($key =~ /^[1-9]$/ && $key <= @options) {
+      my $label = $options[$key - 1];
+      if ($label eq 'Yes') { print "FAKE-CLAUDE allowed\n"; }
+      elsif ($label =~ /^No/) { print "FAKE-CLAUDE denied\n"; $denied = 1; }
+      else { print "FAKE-CLAUDE allowed always\n"; }
+      last;
+    }
     printf "FAKE-CLAUDE key=%02x\n", ord $key;
   }
   $t->setlflag($saved); $t->setattr(0, POSIX::TCSANOW());
