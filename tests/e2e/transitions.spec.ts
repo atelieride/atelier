@@ -935,6 +935,9 @@ test('The command palette opens over a receding app; other sheets leave it be', 
     const rows = () => win.evaluate(() => (window as unknown as { rows: { i: string; enter: boolean; delay: string }[] }).rows.slice());
     await menu(app, 'Search…');
     await expect(win.locator('.palette-backdrop.is-cmd .palette')).toBeVisible();
+    // The app recedes by a mark on the root the palette sets while it is open (never a :has() the page re-checks).
+    const mark = () => win.evaluate(() => document.documentElement.getAttribute('data-palette'));
+    expect(await mark()).toBe('open');
     // The entrance follows the flat index: 60 ms, then 22 ms a row, for the first eight results only.
     const opened = await rows();
     expect(opened.length).toBeGreaterThan(8);
@@ -956,6 +959,7 @@ test('The command palette opens over a receding app; other sheets leave it be', 
     await expect(win.locator('.palette')).toHaveCount(0);
     // It returns at once, so what is measured right after a palette action is the app at rest.
     expect(await transform(body)).toBe('none');
+    expect(await mark()).toBeNull();
 
     // Another sheet sharing the palette's classes keeps its own entrance and leaves the app where it is.
     await menu(app, 'New Claude Session');
@@ -963,6 +967,7 @@ test('The command palette opens over a receding app; other sheets leave it be', 
     await expect(sheet).toBeVisible();
     expect(await sheet.evaluate((el) => getComputedStyle(el).animationName)).toBe('atl-pop');
     expect(await transform(body)).toBe('none');
+    expect(await mark()).toBeNull();
     await win.keyboard.press('Escape');
     await expect(sheet).toHaveCount(0);
 

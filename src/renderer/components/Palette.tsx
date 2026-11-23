@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { newAutomation, setPaused } from '../automations/actions';
 import { themeOf } from '@shared/themes';
 import { currentProjectColor, openProjectColorMenu } from '../project-color-menu';
@@ -238,6 +238,13 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
   // The first results rise in only as the palette opens: rows that appear while typing do not fade in late.
   const [opening, setOpening] = useState(true);
   useEffect(() => { const id = window.setTimeout(() => setOpening(false), 450); return () => window.clearTimeout(id); }, []);
+  // While it is open the app behind it recedes (motion.css): a mark on the root, set before the first paint and gone
+  // with the palette, never a selector that looks for the palette across the whole page after every change.
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    root.dataset.palette = 'open';
+    return () => { delete root.dataset.palette; };
+  }, []);
   const moved = usePointerGate();
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);

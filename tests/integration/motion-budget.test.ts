@@ -50,6 +50,13 @@ test('waiting cues play --cue-cycles, then rest; working, live, pending and star
   }
 });
 
+test('no :has() on the document root: a mark the component sets instead (measured: the live demo\'s start, 0 → ~250 ms blocked)', () => {
+  // `:root:has(…)` (html, body alike) is checked against the whole page after every DOM change: each terminal refresh
+  // that read the layout paid a full style recalc. A `:has()` on a row about its own children stays local.
+  const offenders = all.flatMap((r) => r.selectors.filter((s) => /(^|[\s>+~(])(:root|html|body)(?![\w-])[^\s>+~]*:has\(/.test(s)).map((s) => `${r.file}: ${s}`));
+  expect(offenders).toEqual([]);
+});
+
 test('no label sweeps or loops, not even the visible session bar: the shimmer is gone', () => {
   // Measured on a packaged app: the bar's looping shimmer alone kept the GPU process at 20-25% while Claude worked;
   // Claude
