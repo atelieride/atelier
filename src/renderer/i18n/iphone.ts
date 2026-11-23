@@ -5,6 +5,8 @@ import { currentPlatform } from '@shared/platform';
 import { localize } from '@shared/windows-words';
 
 const strings = {
+  // Said where pairing starts (Settings › iPhone, the pairing sheet), with the Beta chip beside their titles.
+  beta: 'iPhone access is in beta: the Atelier iPhone app is available to selected users for now, and soon to everyone.',
   access: 'Allow access from iPhone',
   accessHint: 'This computer connects to the relay only while this is on. Everything between your iPhone and this computer is end-to-end encrypted.',
   relay: {

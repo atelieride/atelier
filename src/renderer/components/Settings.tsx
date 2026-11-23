@@ -55,6 +55,8 @@ const SECTIONS: { id: SettingsSection; icon: IconName }[] = [
   { id: 'appearance', icon: 'appearance' }, { id: 'terminal', icon: 'terminal' }, { id: 'editor', icon: 'code' }, { id: 'scm', icon: 'git' }, { id: 'docker', icon: 'whale' }, { id: 'redis', icon: 'redis' }, { id: 'databases', icon: 'databases' },
   { id: 'claude', icon: 'sparkle' }, { id: 'connectors', icon: 'plug' }, { id: 'ask', icon: 'ask' }, { id: 'automations', icon: 'automation' }, { id: 'dictation', icon: 'mic' }, { id: 'notifications', icon: 'bell' }, { id: 'iphone', icon: 'phone' }, { id: 'keyboard', icon: 'keyboard' }, { id: 'about', icon: 'info' }
 ];
+/** The sections of features still in beta: a Beta chip beside their title. */
+const BETA: ReadonlySet<SettingsSection> = new Set(['iphone']);
 
 // Main validates, saves and sends the settings back to all windows: the view updates from there.
 const set = (patch: Partial<S>) => void window.atelier.settings.set(patch);
@@ -973,6 +975,7 @@ export function Settings() {
         <section className="set-body">
           <header className="set-head">
             {section === 'connectors' && connectorDetail ? <ConnectorsBack /> : <h2>{t.set.sections[section]}</h2>}
+            {BETA.has(section) && <span className="beta-chip">{t.beta}</span>}
             <button type="button" className="icon-btn" aria-label={t.set.close} onClick={close}><Icon name="x" size={14} /></button>
           </header>
           <div className="set-content" key={section}>

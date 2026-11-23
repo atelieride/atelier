@@ -90,10 +90,13 @@ export function PairingSheet() {
         <header className="pair-head">
           <span className="pair-head-glyph"><Icon name="phone" size={15} stroke={1.8} /></span>
           <h2>{tiph.sheetTitle}</h2>
+          <span className="beta-chip">{t.beta}</span>
           <span className="grow" />
           <button type="button" className="pair-x" aria-label={tiph.close} data-tip={tiph.close} data-kbd="Esc" onClick={close}><Icon name="x" size={12} stroke={2} /></button>
         </header>
         <Body s={s} onStart={start} onAllow={(id) => { dispatch({ kind: 'allow' }); void window.atelier.remote.decide(id, true); }} />
+        {/* The beta it is, at the foot while pairing starts; a phone's question (Allow or Deny) has the sheet to itself. */}
+        {!asking && <p className="pair-beta" role="note"><Icon name="info" size={13} stroke={1.8} />{tiph.beta}</p>}
       </div>
     </div>
   );

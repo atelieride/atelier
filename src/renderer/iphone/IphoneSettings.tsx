@@ -1,5 +1,6 @@
-// Settings › iPhone: access on or off, how the relay connection stands, Pair iPhone…, the paired phones (connected
-// now or last seen, Remove), the relay this computer dials, and Forget All. Loaded with its section, not the first paint.
+// Settings › iPhone: the beta it is, access on or off, how the relay connection stands, Pair iPhone…, the paired phones
+// (connected now or last seen, Remove), the relay this computer dials, and Forget All. Loaded with its section, not the
+// first paint.
 import { useEffect, useRef, useState } from 'react';
 import { DEFAULT_RELAY, relayBase, type RemoteDeviceInfo } from '@shared/remote';
 import type { Settings as S } from '@shared/settings';
@@ -23,6 +24,7 @@ export function IphoneSettings({ s }: { s: S }) {
   const devices = status?.devices ?? [];
   return (
     <>
+      <p className="iph-beta" role="note"><Icon name="info" size={13} stroke={1.8} />{tiph.beta}</p>
       <Row label={tiph.access} hint={tiph.accessHint} disabled={unavailable && !s.remoteAccess}>
         <Toggle label={tiph.access} value={s.remoteAccess} disabled={unavailable && !s.remoteAccess} onChange={(v) => set({ remoteAccess: v })} />
       </Row>

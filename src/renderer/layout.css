@@ -1923,6 +1923,10 @@ html.is-tab-dragging, html.is-tab-dragging * { cursor: grabbing !important; user
 .set-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .set-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px 10px 26px; }
 .set-head h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+/* A feature still in beta: a small brand-tinted pill beside its title (Settings › iPhone, the pairing sheet). In the
+   settings head it sits by the title, the close button kept at the far end. */
+.beta-chip { flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 999px; font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--violet-light); background: var(--tint-violet); box-shadow: inset 0 0 0 1px var(--edge-violet); animation: atl-fade var(--t-med) var(--ease) both; }
+.set-head .beta-chip { margin: 1px auto 0 10px; }
 .set-content { flex: 1; overflow: auto; padding: 4px 26px 24px; animation: atl-enter var(--t-med) var(--ease) both; user-select: none; }
 .set-row { display: flex; align-items: center; gap: 24px; padding: 13px 0; border-bottom: 1px solid var(--line-soft); }
 .set-row:last-child { border-bottom: 0; }

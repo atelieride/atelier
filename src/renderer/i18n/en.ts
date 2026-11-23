@@ -59,6 +59,8 @@ const strings = {
   daemonMismatch: (v: string) => `atelierd from ${v} is out of date: restart it to update.`,
   footerVersion: (v: string) => `v${v}`,
   comingSoon: 'Coming in the next phase.',
+  /** The chip beside the title of a feature still in beta (Settings › iPhone, the pairing sheet). */
+  beta: 'Beta',
   footerTerm: (cols: number, rows: number) => `${cols}×${rows}`,
   legend: { waiting: 'waiting', running: 'working', done: 'done', error: 'error' },
   /** Subtitle of a session whose only activity is background work (agents, shells, monitors). */

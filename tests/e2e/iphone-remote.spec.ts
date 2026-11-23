@@ -4,7 +4,8 @@
 // it back when it closes. From main's news (its remote handlers stood in for): the Allow / Deny question, the toast,
 // the notices, the footer pill, the phone badge on the tab and the row, the size note and Fit to Window, the paired
 // phones' list and Remove. And with a fake phone on Atelier's own Noise code (tests/support/fake-phone.ts): pairing by
-// code, Allow, a phone typing in a terminal, access off and Remove dropping it.
+// code, Allow, a phone typing in a terminal, access off and Remove dropping it. And the beta it is said to be, where
+// pairing starts.
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import { mkdtempSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -325,6 +326,61 @@ test('main\'s news on screen: the Allow question, Deny, no answer, paired; the p
     await pushPairing(app, { kind: 'request', request: { id: 'req-4', name: 'Test iPhone', model: 'iPhone17,1', expiresAt: Date.now() + 60_000 } });
     await expect(sheet.getByRole('heading', { name: 'Allow Test iPhone to use Atelier?' })).toBeVisible();
     await look(win, `${SHOTS}/sheet-request-light.png`, { settle: 300 });
+  } finally {
+    await app.close();
+    stopDaemon(home);
+  }
+});
+
+const BETA_NOTE = 'iPhone access is in beta: the Atelier iPhone app is available to selected users for now, and soon to everyone.';
+
+test('iPhone access says it is a beta where pairing starts: Settings › iPhone and the pairing sheet, dark and light', async () => {
+  test.setTimeout(120_000);
+  const { app, win, home } = await launch();
+  try {
+    // Settings › iPhone: a Beta chip beside the section's title, the note above its rows. No other section has one.
+    await openSection(app, win);
+    await expect(win.locator('.set-head .beta-chip')).toHaveText('Beta');
+    await expect(win.locator('.iph-beta')).toHaveText(BETA_NOTE);
+    await look(win, `${SHOTS}/beta-settings.png`, { settle: 300 });
+    await win.locator('.set-nav-item', { hasText: 'Notifications' }).click();
+    await expect(win.locator('.set-head h2')).toHaveText('Notifications');
+    await expect(win.locator('.set-head .beta-chip')).toHaveCount(0);
+
+    // The pairing sheet with access off: the chip beside its title, the note at its foot.
+    await openSection(app, win);
+    await win.getByRole('button', { name: 'Pair iPhone…' }).click();
+    const sheet = win.locator('.pair-sheet');
+    await expect(sheet.getByRole('heading', { name: 'iPhone access is off' })).toBeVisible();
+    await expect(sheet.locator('.pair-head .beta-chip')).toHaveText('Beta');
+    await expect(sheet.locator('.pair-beta')).toHaveText(BETA_NOTE);
+    await look(win, `${SHOTS}/beta-sheet-off.png`, { settle: 300 });
+    await win.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+
+    // With a code on screen (main's handlers stood in for), the note stays under it; once a phone asks, the question
+    // has the sheet to itself.
+    await standIn(app, statusOf({}), pairingOf('AAAA-BBBB-CCCC'));
+    await win.getByRole('button', { name: 'Pair iPhone…' }).click();
+    expect(await codeOnScreen(win)).toBe('AAAA-BBBB-CCCC');
+    await expect(sheet.locator('.pair-beta')).toHaveText(BETA_NOTE);
+    await look(win, `${SHOTS}/beta-sheet-code.png`, { settle: 400 });
+    await pushPairing(app, { kind: 'request', request: { id: 'req-1', name: 'Test iPhone', model: 'iPhone17,1', expiresAt: Date.now() + 60_000 } });
+    await expect(sheet.getByRole('heading', { name: 'Allow Test iPhone to use Atelier?' })).toBeVisible();
+    await expect(sheet.locator('.pair-beta')).toHaveCount(0);
+    await expect(sheet.locator('.pair-head .beta-chip')).toHaveText('Beta');
+    await win.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+
+    // The same in a light theme.
+    await setTheme(win, 'daylight');
+    await expect(win.locator('.iph-beta')).toHaveText(BETA_NOTE);
+    await win.locator('.iph-beta').scrollIntoViewIfNeeded();
+    await look(win, `${SHOTS}/beta-settings-light.png`, { settle: 400 });
+    await win.getByRole('button', { name: 'Pair iPhone…' }).click();
+    await codeOnScreen(win);
+    await expect(sheet.locator('.pair-beta')).toHaveText(BETA_NOTE);
+    await look(win, `${SHOTS}/beta-sheet-code-light.png`, { settle: 400 });
   } finally {
     await app.close();
     stopDaemon(home);
