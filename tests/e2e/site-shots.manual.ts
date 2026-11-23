@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { e2eEnv } from './env';
+import { rested } from './layout';
 import { makeDemoProject } from './site-shots/demo-project';
 import { LIVE_SELECTORS, liveSpots, type MeasuredSpot, type SpotKind } from './site-shots/live-spots';
 import { SENSITIVE, SHOTS_ONLY, findBanned } from '../support/banned-strings';
@@ -111,16 +112,6 @@ async function menu(app: ElectronApplication, top: string, label: string) {
     sub.submenu!.items.find((m) => m.label === l)!.click(undefined, BrowserWindow.getAllWindows()[0]);
   }, [top, label] as const);
 }
-
-/**
- * No script animation running: what was just split off, moved to a pane or switched to has come in and rests where it
- * is laid out (a pane springing in, the workspace sliding in from another activity: every move the app makes with
- * play()). CSS animations and transitions aside: the rows' cues and the lasting loops play on, and the Docker view's
- * stat bars ease to each new reading every probe, so the page is never free of them. Lists what still runs.
- */
-const rested = (win: Page) => expect.poll(() => win.evaluate(() => document.getAnimations()
-  .filter((a) => a.playState === 'running' && !(a instanceof CSSAnimation) && !(a instanceof CSSTransition))
-  .map((a) => ((a.effect as KeyframeEffect | null)?.target as Element | null)?.getAttribute('class') ?? '?')), { timeout: 10000 }).toEqual([]);
 
 /** Drags the first split divider until the right pane starts at `x` (CSS px), measured once the panes are at rest. */
 async function rightPaneAt(win: Page, x: number) {

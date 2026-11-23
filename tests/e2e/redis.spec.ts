@@ -4,6 +4,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { e2eEnv } from './env';
+import { rested } from './layout';
 import { FakeRedis } from '../support/fake-redis';
 import { acmeStore } from '../support/redis-fixtures';
 import type { AtelierApi } from '../../src/shared/api';
@@ -292,6 +293,8 @@ test('Redis: Queues in a narrow pane — cards in one row, the list above the jo
     await viewTab(win, 'Queues').click({ modifiers: ['Alt'] });
     await expect(win.locator('.pane-divider')).toHaveCount(1);
     await expect(win.locator('.rd-jrow:not(.is-head)')).toHaveCount(3, { timeout: 10000 });
+    // Measured once Queues' pane has sprung in and rests in its place.
+    await rested(win);
     const queues = win.locator('.rd-view[data-view="queues"]');
     const pane = (await queues.boundingBox())!;
     expect(pane.width).toBeLessThan(560);

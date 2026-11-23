@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { e2eEnv } from './env';
-import { layoutProblems, NO_PROBLEMS } from './layout';
+import { layoutProblems, NO_PROBLEMS, rested } from './layout';
 import { look } from './shots';
 
 // Split view in both directions: panes side by side or stacked, nested, up to four; every pane has its own strip on top
@@ -413,6 +413,8 @@ test('responsive: at the minimum window two columns and three stacked panes hold
     await size(app, win, 960, 600);
     await menu(app, 'Split Right');
     await expect.poll(() => win.locator('.workspace-body > .pane-strip').count()).toBe(2);
+    // Measured once the new panes have sprung in and rest in their places.
+    await rested(win);
     expect(await layoutProblems(body, paneParts)).toEqual(NO_PROBLEMS);
     expect(await reachable(win)).toEqual([]);
     await look(win.locator('.workspace'), `${SHOTS}/split-min-columns.png`, { settle: 300 });
@@ -420,6 +422,7 @@ test('responsive: at the minimum window two columns and three stacked panes hold
     await menu(app, 'Split Down');
     await menu(app, 'Split Down');
     await expect.poll(() => win.locator('.workspace-body > .pane-strip').count()).toBe(3);
+    await rested(win);
     expect(await layoutProblems(body, paneParts)).toEqual(NO_PROBLEMS);
     expect(await reachable(win)).toEqual([]);
     await look(win.locator('.workspace'), `${SHOTS}/split-min-stacked.png`, { settle: 300 });
@@ -446,6 +449,7 @@ test('responsive: at the minimum window two columns and three stacked panes hold
       await size(app, win, 1440, 900);
       for (const s of steps) await menu(app, s);
       await expect.poll(() => win.locator('.workspace-body > .pane-strip').count(), { message: name }).toBe(4);
+      await rested(win);
       const before = (await geometry(win)).frames;
       await size(app, win, 960, 600);
       await look(win.locator('.workspace'), `${SHOTS}/split-squeezed-${name}.png`, { settle: 300 });
