@@ -33,6 +33,7 @@ import { createPopoutWindow, createProjectWindow, isAppUrl, isGhostUrl, SessionE
 import { PopoutManager, popoutFileRules, type PopoutWin, type ProjectWin } from './popouts';
 import { commandFrom, commandPlan, forwardCommand, isPopoutWindow, mainWindows, openProjectRoots, pageReloading, projectWindowId, windowToFront, type WindowKind } from './popout-wiring';
 import { CloseGuard, type CloseAnswer } from './close-guard';
+import { QuitWaits } from './quit-waits';
 import { busyShells } from './foreground';
 import { effectiveCloseMode, projectBusy, type CloseSessionsAsk } from '@shared/close-sessions';
 import { installPopoutIpc } from './popout-ipc';
@@ -1085,14 +1086,11 @@ if (!app.requestSingleInstanceLock()) {
       if (go) { sessionsDecided = true; app.quit(); } else quitCalledOff();
     });
   });
-  // The stop requests of the windows that closed reach atelierd before the process goes (at most 3 s).
-  let stopsAwaited = false;
-  app.on('will-quit', (e) => {
-    if (stopsAwaited || !closeGuard.hasPending()) return;
-    stopsAwaited = true;
-    e.preventDefault();
-    void closeGuard.settle(3000).then(() => app.exit(0));
-  });
+  // What must end before the process goes, waited for together: the stop requests of the windows that closed reach
+  // atelierd (at most 3 s), and the paired phones are told (iPhone access adds its part below).
+  const quitWaits = new QuitWaits();
+  quitWaits.add(() => (closeGuard.hasPending() ? closeGuard.settle(3000) : null));
+  app.on('will-quit', (e) => quitWaits.willQuit(e, () => app.exit(0)));
 
   /** Service restart, only on request and with confirmation: sessions are closed and left to be resumed. */
   const restartDaemon = async (from: BrowserWindow | null) => {
@@ -1487,14 +1485,13 @@ if (!app.requestSingleInstanceLock()) {
     client.on('usageByConfigDir', () => remote?.usageChanged());
     installRemoteIpc(remote, { isTrusted: trusted, handle: (channel, fn) => ipcMain.handle(channel, fn), projectOf: (id) => (isPopoutWindow(windowsView, id) ? null : windowProjects.get(id) ?? null), places });
     remote.start();
-    // Quitting: every phone is told (`bye`), then the relay connection closes; the quit goes on right after.
-    let remoteClosed = false;
-    app.on('will-quit', (e) => {
-      if (remoteClosed || !remote) return;
-      remoteClosed = true;
-      if (!remote.hasPhones()) { void remote.dispose(); return; }
-      e.preventDefault();
-      void remote.dispose().finally(() => app.quit());
+    // Quitting: every phone is told (`bye`), then the relay connection closes; the exit waits for it only with a phone
+    // to tell.
+    quitWaits.add(() => {
+      if (!remote) return null;
+      const phones = remote.hasPhones();
+      const closing = remote.dispose();
+      return phones ? closing : null;
     });
     // Ask: a project window's pages, pop-outs included (a popped-out session has its panel too).
     // A binding's session and account come from main's own terminal list (and the session's transcript), never the page.
