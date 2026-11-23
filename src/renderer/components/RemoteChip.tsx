@@ -14,14 +14,14 @@ export function openRemote(term: TerminalInfo): void {
 
 /**
  * Remote Control on: a wifi glyph alone (its name only for screen readers, the tip says the rest), and a click opens
- * the session at claude.ai/code (where it goes on, as in the Claude app). A button in the session bar; in the sidebar
- * row (inside the row's own button) a plain span with a mouse-only click, like the Background chips: the keyboard goes
- * through the row's menu (Open on claude.ai).
+ * the session at claude.ai/code (where it goes on, as in the Claude app). `button` in the session bar; `inline` in the
+ * sidebar row (inside the row's own button): a plain span with a mouse-only click, like the Background chips, the
+ * keyboard going through the row's menu (Open on claude.ai).
  */
-export function RemoteChip({ term, side }: { term: TerminalInfo; side: 'below' | 'right' }) {
+export function RemoteChip({ term, kind }: { term: TerminalInfo; kind: 'button' | 'inline' }) {
   if (!remoteUrl(term.session?.remote)) return null;
   const body = <><Icon name="remote" size={13} stroke={1.9} /><span className="sr-only">{t.remote.chip}</span></>;
-  if (side === 'below') {
+  if (kind === 'button') {
     return <button type="button" className="remote-chip" aria-label={t.remote.open} data-tip={t.remote.tip} onClick={(e) => { e.stopPropagation(); openRemote(term); }}>{body}</button>;
   }
   return (

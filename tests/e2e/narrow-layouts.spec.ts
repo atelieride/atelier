@@ -125,7 +125,7 @@ test('a session’s folder, profile and account sit under its name: the name kee
   expect(await readable(docs.locator('.session-title'))).toBe(true);
   for (const c of ['.cwd-chip', '.profile-chip', '.account-chip']) await expect(docs.locator(`.session-details ${c} svg`)).toBeVisible();
   // Never a stub ("p…"): each name shows about five characters or more, or leaves its glyph alone.
-  for (const t of await docs.locator('.sd-who :is(.chip-text, .cwd-chip > bdi)').all()) {
+  for (const t of await docs.locator('.session-details :is(.chip-text, .cwd-chip > bdi)').all()) {
     expect(await t.evaluate((el) => getComputedStyle(el).display === 'none' || el.clientWidth >= 36 || el.scrollWidth <= el.clientWidth + 0.5)).toBe(true);
   }
   // Wide: every name in full.
@@ -188,25 +188,22 @@ test('after its close question the row still watches its name: ports arriving la
   expect(await readable(r.locator('.term-name'))).toBe(true);
 });
 
-test('the details line at 200 px: one rendering of each work chip; a crowded row compacts; the waiting reason keeps its words', async () => {
+test('the second line: one rendering of the work chip, PLAN as P, the waiting reason keeps its words', async () => {
   await sidebarByKeys(win, 200);
   await away();
   for (const chip of await win.locator('.sidebar .work-chip').all()) {
     expect(await chip.locator('.work-full, .work-short, .work-total').evaluateAll((els) => els.filter((e) => getComputedStyle(e).display !== 'none').length)).toBe(1);
   }
   const auth = row('Auth refactor');
-  // Plan mode, two agents and a shell, a wake-up: the work becomes its total, the wake-up its clock; PLAN stays a word.
-  await expect(auth).toHaveAttribute('data-crowded', '');
-  await expect(auth).not.toHaveAttribute('data-packed');
-  await expect(auth.locator('.work-chip .work-total')).toHaveText('3');
-  await expect(auth.locator('.sched-chip .sched-time')).toBeHidden();
-  await expect(auth.locator('.plan-badge .plan-full')).toBeVisible();
+  // PLAN as a bare P (the bypass mark's form); its text stays "plan" for the tooltip and screen readers.
+  await expect(auth.locator('.plan-badge .plan-full')).toBeHidden();
+  expect(await auth.locator('.plan-badge').evaluate((el) => getComputedStyle(el, '::after').content)).toBe('"P"');
+  expect((await auth.locator('.plan-badge').boundingBox())!.width).toBeLessThanOrEqual(16);
   await expect(auth.locator('.plan-badge')).toHaveAttribute('data-tip', /Plan mode/);
+  // Read as what it is, whatever its form (like the bypass mark).
   await expect(auth.locator('.plan-badge')).toHaveAttribute('role', 'img');
   await expect(auth.locator('.plan-badge')).toHaveAttribute('aria-label', 'Plan mode');
-  // The waiting reason has its own line: it fills it, nothing beside it.
-  expect(await auth.locator('.session-activity').evaluate((el) => el.scrollWidth <= el.clientWidth + 0.5 || el.getBoundingClientRect().width >= el.parentElement!.getBoundingClientRect().width - 0.5)).toBe(true);
-  expect(await auth.locator('.session-sub > *').count()).toBe(1);
+  expect(await shownWidth(auth.locator('.session-activity'))).toBeGreaterThanOrEqual(50);
 });
 
 test('a row’s close question beside a 200 px sidebar: no label leaves its button, nothing overlaps', async () => {

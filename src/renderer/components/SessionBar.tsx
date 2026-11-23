@@ -1,4 +1,3 @@
-import { RemoteChip } from './RemoteChip';
 import { Suspense, lazy, memo, useRef, useState, type CSSProperties, type RefObject } from 'react';
 import type { TerminalInfo } from '@shared/protocol';
 import type { SessionInfo } from '@shared/session';
@@ -13,6 +12,7 @@ import { useDayTurn } from '../minute';
 import { PlanBadge, ScheduledChip, WorkChip } from './StateChips';
 import { PromptChip } from './PromptChip';
 import { RestartChip } from './RestartChip';
+import { RemoteChip } from './RemoteChip';
 import { openScheduleSheet } from '../schedules';
 import { PortChips } from './PortChips';
 import { PrChip } from './PrChip';
@@ -106,7 +106,7 @@ function SessionTools({ term, s, bar, onRename }: { term: TerminalInfo; s: Sessi
   const canSchedule = useApp((st) => !!st.daemon.schedulesAvailable);
   return (
     <>
-      <RemoteChip term={term} side="below" />
+      <RemoteChip term={term} kind="button" />
       <PortChips id={term.id} />
       <PrChip id={term.id} />
       <button type="button" className={`sb-model ${panelOpen ? 'is-open' : ''}`} aria-haspopup="dialog" aria-expanded={panelOpen}

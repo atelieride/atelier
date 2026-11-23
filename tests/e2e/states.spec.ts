@@ -198,12 +198,12 @@ test('background subagents: the chip stays after the main Stop, its dot in the w
 
 /**
  * The boxes of a row's parts that are laid out, the pairs among them that overlap (by more than half a pixel), those
- * outside the row, what each of its three lines holds, whether the details line stays one line (its parts and the
- * ports on one band, nothing clipped), and where the avatar and the title sit.
+ * outside the row, whether the second line stays one line (its parts on one band, nothing clipped), and the title's
+ * visible width.
  */
-async function rowLayout(win: Page, name: string) {
+async function rowOverlaps(win: Page, name: string): Promise<{ parts: string[]; overlaps: string[]; outside: string[]; oneLine: boolean; clipped: boolean; titleW: number }> {
   return row(win, name).evaluate((el) => {
-    const sel = ['.avatar', '.session-title', '.cwd-chip', '.profile-chip', '.account-chip', '.plan-badge', '.work-chip', '.sched-chip', '.port-chip', '.session-activity', '.row-pending', '.row-pin', '.row-close'];
+    const sel = ['.avatar', '.session-title', '.cwd-chip', '.profile-chip', '.plan-badge', '.work-chip', '.sched-chip', '.port-chip', '.session-activity', '.row-pending', '.row-pin', '.row-close'];
     const boxes = sel.flatMap((s) => [...el.querySelectorAll(s)].map((n) => ({ s, r: n.getBoundingClientRect() }))).filter((b) => b.r.width > 0 && b.r.height > 0);
     const own = el.getBoundingClientRect();
     const overlaps: string[] = [];
@@ -214,52 +214,38 @@ async function rowLayout(win: Page, name: string) {
       if (w > 0.5 && h > 0.5) overlaps.push(`${boxes[i]!.s} × ${boxes[j]!.s}`);
     }
     const outside = boxes.filter((b) => b.r.left < own.left - 0.5 || b.r.right > own.right + 0.5).map((b) => b.s);
-    // What each line holds: the classes of its children that are laid out.
-    const kids = (s: string) => [...(el.querySelector(s)?.children ?? [])].filter((c) => (c as HTMLElement).offsetWidth > 0).map((c) => c.classList[0]!);
-    const detailParts = boxes.filter((b) => ['.plan-badge', '.work-chip', '.sched-chip', '.port-chip', '.cwd-chip', '.profile-chip', '.account-chip'].includes(b.s));
-    const mids = detailParts.map((b) => b.r.top + b.r.height / 2);
-    const details = el.querySelector('.session-details') as HTMLElement | null;
-    const box = (s: string) => el.querySelector(s)!.getBoundingClientRect();
-    return {
-      parts: boxes.map((b) => b.s), overlaps, outside,
-      title: kids('.session-line'), sub: kids('.session-sub'), hasDetails: !!details && details.offsetHeight > 0,
-      detailsOneLine: mids.every((y) => Math.abs(y - mids[0]!) < 2),
-      detailsBelow: !details || detailParts.every((b) => b.r.top >= box('.session-sub').bottom - 0.5),
-      detailsClipped: !!details && [details, ...details.children].some((c) => (c as HTMLElement).scrollWidth > (c as HTMLElement).clientWidth + 0.5),
-      titleW: box('.session-title').width,
-      // The avatar stands beside the name: their tops within a couple of pixels.
-      avatarToTitle: Math.abs(box('.avatar').top - box('.session-line').top)
-    };
+    const second = boxes.filter((b) => ['.plan-badge', '.work-chip', '.sched-chip', '.port-chip', '.session-activity'].includes(b.s)).map((b) => b.r.top + b.r.height / 2);
+    const oneLine = second.every((y) => Math.abs(y - second[0]!) < 2);
+    const sub = el.querySelector('.session-sub') as HTMLElement | null;
+    const clipped = !!sub && sub.scrollWidth > sub.clientWidth + 0.5;
+    const titleW = el.querySelector('.session-title')!.getBoundingClientRect().width;
+    return { parts: boxes.map((b) => b.s), overlaps, outside, oneLine, clipped, titleW };
   });
 }
 
-test('session rows: the name alone, then the activity alone, then a details line with every chip and the ports; nothing overlaps from 200 to 400 px', async () => {
+test('session rows: no context ring, and title, chips, ports and buttons never overlap at 200 and 264 px; the second line stays one line', async () => {
   const { app, home, win } = await launch({ ATELIER_TEST_PORTS_POLL_MS: '500' });
   try {
     await newSession(win, 'Brainstorming the layout');
     await newSession(win, 'Other');
-    await newSession(win, 'Plain');
-    for (const name of ['Brainstorming the layout', 'Other', 'Plain']) await typeInto(win, name, '\r');
+    await typeInto(win, 'Brainstorming the layout', '\r');
     await expect(row(win, 'Brainstorming the layout')).toHaveClass(/state-done/, { timeout: 10000 });
     // A subagent and a background shell, a scheduled wake-up (its Stop), three listening ports, plan mode, then a
-    // permission request: every part of the details line at once.
+    // permission request: every part of the second line at once.
     await typeInto(win, 'Brainstorming the layout', 'ev:work\rev:agents:1\rev:shell:b1\rev:cron\rev:listen:3\rev:mode:plan\rev:permission\r');
-    // A usual row: one background shell and a dev server.
-    await typeInto(win, 'Other', 'ev:work\rev:shell:o1\rev:listen:1\r');
     const busy = row(win, 'Brainstorming the layout');
-    await expect(busy.locator('.session-details .work-chip')).toHaveAttribute('data-tip', '1 agent · 1 shell\nagent · Explore\nshell · Running e2e suite b1\nClick for details');
-    await expect(busy.locator('.session-details .sched-chip')).toHaveAttribute('data-tip', /^1 scheduled wake-up · next at 12:30( tomorrow)? · check the deploy\nClick for details$/);
-    await expect(busy.locator('.session-details .plan-badge')).toHaveText('plan');
-    await expect(busy.locator('.session-sub .session-activity')).toHaveText('Needs permission: Bash npm test');
-    // The ports: the first one and +2, at the end of the details line (the hub polls every 4 s, 500 ms here).
+    await expect(busy.locator('.work-chip .work-full')).toHaveText('1 agent · 1 shell');
+    await expect(busy.locator('.work-chip')).toHaveAttribute('data-tip', '1 agent · 1 shell\nagent · Explore\nshell · Running e2e suite b1\nClick for details');
+    await expect(busy.locator('.sched-chip')).toHaveAttribute('data-tip', /^1 scheduled wake-up · next at 12:30( tomorrow)? · check the deploy\nClick for details$/);
+    await expect(busy.locator('.sched-chip .sched-time')).toHaveText('12:30');
+    await expect(busy.locator('.plan-badge')).toHaveText('plan');
+    await expect(busy.locator('.session-activity')).toHaveText('Needs permission: Bash npm test');
+    // The ports moved to the second line: the first one and +2 (the hub polls every 4 s, 500 ms here).
     await expect(busy.locator('.row-ports .port-more')).toHaveText('+2', { timeout: 10000 });
     await expect(busy.locator('.row-actions .port-chips')).toHaveCount(0);
     await busy.click({ button: 'right' });
     await win.getByRole('menuitem', { name: 'Pin', exact: true }).click();
     await expect(busy.locator('.row-pin')).toHaveAttribute('aria-pressed', 'true');
-    // Nothing to tell beyond its activity: two lines, no details line.
-    await expect(row(win, 'Plain').locator('.session-details')).toBeHidden();
-    await expect(row(win, 'Other').locator('.row-ports .port-chip').first()).toBeVisible({ timeout: 10000 });
 
     // The fake session reports 58% of context: the rows don't show it, the session bar still does.
     await busy.locator('.row-main').click();
@@ -284,67 +270,92 @@ test('session rows: the name alone, then the activity alone, then a details line
     await look(win.locator('.session-bar'), 'test-results/rows-bar.png');
     // Keyboard: the row's own buttons (pin, close) come before its ports in the tab order.
     expect(await busy.evaluate((el) => !!(el.querySelector('.row-actions')!.compareDocumentPosition(el.querySelector('.row-ports')!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+    // How each width compacts the line (container queries; everything stays in the tooltips): the work chip's
+    // rendering, and the ports as a dot, the first port alone, or the first port and +N.
+    const expected: Record<number, { work: 'total' | 'short'; ports: 'dot' | 'first' | 'more' }> = {
+      200: { work: 'total', ports: 'dot' }, 230: { work: 'total', ports: 'dot' }, 264: { work: 'total', ports: 'dot' },
+      300: { work: 'short', ports: 'dot' }, 340: { work: 'short', ports: 'first' }, 400: { work: 'short', ports: 'more' }
+    };
     for (const width of [200, 230, 264, 300, 340, 400]) {
       await win.locator('.body').evaluate((el, w) => (el as HTMLElement).style.setProperty('--sidebar-w', `${w}px`), width);
       await expect.poll(() => win.locator('.sidebar').evaluate((el) => el.getBoundingClientRect().width)).toBe(width);
       for (const hovered of [false, true]) {
         if (hovered) await busy.hover(); else await win.mouse.move(700, 500);
-        const r = await rowLayout(win, 'Brainstorming the layout');
+        const r = await rowOverlaps(win, 'Brainstorming the layout');
         const at = `at ${width}px${hovered ? ' (hover)' : ''}`;
         expect(r.parts).toEqual(expect.arrayContaining(['.session-title', '.plan-badge', '.work-chip', '.sched-chip', '.port-chip', '.session-activity', ...(hovered ? ['.row-pin', '.row-close'] : [])]));
-        // Each line holds one thing: the name, then the activity; every chip is on the details line, under them.
-        expect(r.title, `title line ${at}`).toEqual(['session-title']);
-        expect(r.sub, `activity line ${at}`).toEqual(['session-activity']);
-        expect(r.detailsBelow, `details under the activity ${at}`).toBe(true);
         // The buttons show only on hover, over the end of the title line, which fades out under them.
         if (!hovered) expect(r.parts.filter((p) => p === '.row-pin' || p === '.row-close'), `buttons hidden ${at}`).toEqual([]);
-        const titleLine = /^\.session-title × \.row-(pin|close|pending)$/;
+        const titleLine = /^\.(session-title|cwd-chip|profile-chip) × \.row-(pin|close|pending)$/;
         expect(r.overlaps.filter((o) => !(hovered && titleLine.test(o))), `overlaps ${at}`).toEqual([]);
         if (hovered) expect(await busy.locator('.session-line').evaluate((el) => getComputedStyle(el).webkitMaskImage), `title fades ${at}`).toContain('gradient');
         expect(r.outside, `outside the row ${at}`).toEqual([]);
-        expect(r.detailsOneLine, `details on one line ${at}`).toBe(true);
-        expect(r.detailsClipped, `details clipped ${at}`).toBe(false);
-        expect(r.avatarToTitle, `avatar beside the name ${at}`).toBeLessThan(3);
-        // The name has the whole line: whole where it fits, never crushed where it doesn't.
-        expect(r.titleW, `title width ${at}`).toBeGreaterThan(Math.min(140, width - 140));
-        const other = await rowLayout(win, 'Other');
-        expect(other.overlaps, `Other's overlaps ${at}`).toEqual([]);
-        expect(other.outside, `Other outside the row ${at}`).toEqual([]);
-        expect(other.detailsOneLine, `Other's details on one line ${at}`).toBe(true);
-        const plain = await rowLayout(win, 'Plain');
-        expect(plain.hasDetails).toBe(false);
-        expect(plain.overlaps).toEqual([]);
+        expect(r.oneLine, `second line on one line ${at}`).toBe(true);
+        expect(r.clipped, `second line clipped ${at}`).toBe(false);
+        // The title keeps real room (it used to be crushed to "Brain…" by two port chips).
+        expect(r.titleW, `title width ${at}`).toBeGreaterThan(width === 200 ? 50 : 90);
+        const other = await rowOverlaps(win, 'Other');
+        expect(other.overlaps).toEqual([]);
       }
-      // One form while the live parts fit: glyphs and numbers for the work, the wake-up's time. Only a crowd of them
-      // on a narrow row compacts them (the work's total, the clock alone); a usual row never, from the default width.
+      const want = expected[width]!;
       const chip = busy.locator('.work-chip');
-      const crowded = await busy.evaluate((el) => el.hasAttribute('data-crowded'));
-      if (width >= 340) expect(crowded, `crowded at ${width}px`).toBe(false);
-      if (width <= 200) expect(crowded, `crowded at ${width}px`).toBe(true);
-      if (crowded) {
-        await expect(chip.locator('.work-total')).toHaveText('2');
-        await expect(busy.locator('.sched-time')).toBeHidden();
-      } else {
+      if (want.work === 'short') {
+        await expect(chip.locator('.work-short')).toBeVisible();
+        // Glyph form: a glyph and a number per kind, evenly spaced, no separators.
         await expect(chip.locator('.work-short')).toHaveText('11');
-        await expect(busy.locator('.sched-time')).toHaveText('12:30');
+        await expect(chip.locator('.work-sep')).toHaveCount(0);
+      } else {
+        await expect(chip.locator('.work-total')).toBeVisible();
+        await expect(chip.locator('.work-total')).toHaveText('2');
       }
-      if (width >= 264) {
-        expect(await row(win, 'Other').evaluate((el) => el.hasAttribute('data-crowded')), `Other crowded at ${width}px`).toBe(false);
-        await expect(row(win, 'Other').locator('.work-chip .work-short')).toBeVisible();
-      }
-      // Narrower than the default and still too much: plan mode its "P", the first port naming the others.
-      const packed = await busy.evaluate((el) => el.hasAttribute('data-packed'));
-      if (width >= 264) expect(packed, `packed at ${width}px`).toBe(false);
-      await expect(busy.locator('.row-ports .port-more')).toBeVisible({ visible: !packed });
-      if (packed) await expect(busy.locator('.row-ports .port-chip').first()).toHaveAttribute('data-tip', /^Open localhost:\d+ · perl\nAlso listening: :\d+ · perl, :\d+ · perl$/);
       await expect(chip.locator('.work-full')).toBeHidden();
-      await expect(busy.locator('.row-ports .port-chip:not(.port-more):not(.port-all)')).toBeVisible();
-      await expect(busy.locator('.row-ports .port-all')).toBeHidden();
+      await expect(busy.locator('.sched-time')).toBeHidden();
       // The plan badge keeps one form (uppercase) at every width.
       expect(await busy.locator('.plan-badge').evaluate((el) => getComputedStyle(el).textTransform)).toBe('uppercase');
-      // The waiting reason has its line to itself: whole from the default width.
-      if (width >= 264) expect(await busy.locator('.session-activity').evaluate((el) => el.scrollWidth <= el.clientWidth), `activity whole at ${width}px`).toBe(true);
+      // The waiting reason is the row's most important text: at the default width it stays readable ("Needs permis…").
+      if (width >= 264) expect(await busy.locator('.session-activity').evaluate((el) => el.getBoundingClientRect().width), `activity at ${width}px`).toBeGreaterThan(55);
+      const firstPort = busy.locator('.row-ports .port-chip:not(.port-more):not(.port-all)');
+      await expect(busy.locator('.port-all')).toBeVisible({ visible: want.ports === 'dot' });
+      await expect(firstPort).toBeVisible({ visible: want.ports !== 'dot' });
+      await expect(busy.locator('.row-ports .port-more')).toBeVisible({ visible: want.ports === 'more' });
+      if (want.ports === 'dot') await expect(busy.locator('.port-all')).toHaveAttribute('data-tip', /^Listening: :\d+ · perl, :\d+ · perl, :\d+ · perl$/);
+      // Alone (without +N) the first port names the others.
+      if (want.ports === 'first') await expect(firstPort).toHaveAttribute('data-tip', /^Open localhost:\d+ · perl\nAlso listening: :\d+ · perl, :\d+ · perl$/);
       await look(win.locator('.sidebar'), `test-results/rows-${width}.png`);
+    }
+  } finally {
+    await stop(app, home);
+  }
+});
+
+test('session rows keep one height: plan mode, subagents and ports come and go without moving the rows below', async () => {
+  const { app, home, win } = await launch({ ATELIER_TEST_PORTS_POLL_MS: '500' });
+  try {
+    await newSession(win, 'Steady');
+    await newSession(win, 'Plain');
+    for (const name of ['Steady', 'Plain']) await typeInto(win, name, '\r');
+    const steady = row(win, 'Steady');
+    await expect(steady).toHaveClass(/state-done/, { timeout: 10000 });
+    await expect(row(win, 'Plain')).toHaveClass(/state-done/, { timeout: 10000 });
+    const height = (name: string) => row(win, name).evaluate((el) => el.getBoundingClientRect().height);
+    const h = await height('Plain');
+    expect(Math.abs(await height('Steady') - h)).toBeLessThan(0.5);
+    // Each live part comes, then goes, beside the activity: the row neither grows nor shrinks, so nothing under it
+    // moves. Only what a session runs as (account, folder, profile), which doesn't change, takes a line of its own.
+    const steps: [string, string, () => Promise<void>][] = [
+      ['plan mode on', 'ev:mode:plan\r', () => expect(steady.locator('.plan-badge')).toBeVisible()],
+      ['plan mode off', 'ev:mode:default\r', () => expect(steady.locator('.plan-badge')).toHaveCount(0)],
+      ['a subagent', 'ev:work\rev:agents:1\r', () => expect(steady.locator('.work-chip')).toBeVisible()],
+      ['the subagent done', 'ev:agent-done\rev:stop\r', () => expect(steady.locator('.work-chip')).toHaveCount(0)],
+      ['a port', 'ev:listen:1\r', () => expect(steady.locator('.row-ports .port-chip:visible').first()).toBeVisible({ timeout: 10000 })],
+      ['Remote Control', 'ev:rc:session_01SteadyRow\rev:stop\r', () => expect(steady.locator('.session-sub .remote-chip')).toBeVisible({ timeout: 10000 })]
+    ];
+    for (const [what, events, shown] of steps) {
+      await typeInto(win, 'Steady', events);
+      await shown();
+      // Within a rounding error of the layout (a line coming or going is 18 px).
+      expect(Math.abs(await height('Steady') - h), `height with ${what}`).toBeLessThan(0.5);
+      expect(Math.abs(await height('Plain') - h), `the other row with ${what}`).toBeLessThan(0.5);
     }
   } finally {
     await stop(app, home);
@@ -362,7 +373,8 @@ test('Remote Control: the wifi glyph alone on the row and the session bar while 
     await expect(r.locator('.remote-chip')).toHaveCount(0);
     // /remote-control: Claude Code puts the claude.ai session's id in its hooks' environment; the next hook says it.
     await typeInto(win, 'Couch', 'ev:rc:session_01TestRemoteCtl4Kp9Zq\rev:work\r');
-    const chip = r.locator('.session-details .remote-chip');
+    // Beside the activity, with the other live parts.
+    const chip = r.locator('.session-sub .remote-chip');
     await expect(chip.locator('svg')).toBeVisible({ timeout: 10000 });
     // The glyph alone, no word beside it; the row's name still says it to a screen reader.
     await expect(chip).toHaveText('Remote Control');

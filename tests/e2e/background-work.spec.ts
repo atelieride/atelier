@@ -199,16 +199,16 @@ test('a dev server started in the background is not work: the session finishes o
     expect(Date.now() - stopAt).toBeLessThan(15000);
     await expect(row(win, 'Dev').locator('.work-chip')).toHaveCount(0);
     await expect.poll(() => finished(l.notifyLog, 'Dev'), { timeout: 15000 }).toBe(2);
-    // Its port shows at the end of the details line, under the title and the activity (at 264 px too, the port itself).
+    // Its port shows on the second line, below the title (at 264 px, the live dot naming it).
     await setSidebar(win, 264);
-    const chip = row(win, 'Dev').locator('.row-ports .port-chip', { hasText: `:${port}` });
-    await expect(chip).toHaveAttribute('data-tip', `Open localhost:${port} · perl`, { timeout: 10000 });
+    const dot = row(win, 'Dev').locator('.row-ports .port-all');
+    await expect(dot).toHaveAttribute('data-tip', `Open localhost:${port} · perl`, { timeout: 10000 });
     await expect.poll(() => row(win, 'Dev').evaluate((el) => {
+      const line = el.querySelector('.session-line')!.getBoundingClientRect();
       const sub = el.querySelector('.session-sub')!.getBoundingClientRect();
-      const details = el.querySelector('.session-details')!.getBoundingClientRect();
-      const box = el.querySelector('.row-ports .port-chip')!.getBoundingClientRect();
-      return { belowActivity: box.top >= sub.bottom - 0.5, onDetails: Math.abs((box.top + box.bottom) / 2 - (details.top + details.bottom) / 2) < 3 };
-    })).toEqual({ belowActivity: true, onDetails: true });
+      const chip = el.querySelector('.row-ports .port-all')!.getBoundingClientRect();
+      return { belowTitle: chip.top >= line.bottom - 0.5, onSecondLine: Math.abs((chip.top + chip.bottom) / 2 - (sub.top + sub.bottom) / 2) < 3 };
+    })).toEqual({ belowTitle: true, onSecondLine: true });
     expect(await settledFinished(win, l, 'Dev')).toBe(2);
     await expect.poll(() => sections(win)).toEqual([['Needs you', ['Other']], ['Ready for review', ['Dev']]]);
   } finally {
@@ -237,7 +237,7 @@ test('a scheduled wake-up: the clock chip shows the next time, with its prompt i
   }
 });
 
-test('ephemeral ports stay hidden until "Show ephemeral ports"; at 264 px the first port names the others and +N opens a menu of them', async () => {
+test('ephemeral ports stay hidden until "Show ephemeral ports"; at 264 px the port dot opens a menu listing every port', async () => {
   // The ports hub polls every 500 ms here (4 s in the app).
   const l = await launch({ ATELIER_TEST_PORTS_POLL_MS: '500' });
   const { win } = l;
@@ -247,14 +247,10 @@ test('ephemeral ports stay hidden until "Show ephemeral ports"; at 264 px the fi
     await typeInto(win, 'Tests', '\rev:listen-ephemeral\rev:listen:2\r');
     await expect(row(win, 'Tests')).toHaveClass(/state-done/, { timeout: 10000 });
     await setSidebar(win, 264);
-    // The poll that shows the two others would show the ephemeral one too: it stays hidden. The first port's tooltip
-    // names the others; +N lists them.
-    const first = row(win, 'Tests').locator('.row-ports .port-chip:not(.port-more):not(.port-all)');
-    const more = row(win, 'Tests').locator('.row-ports .port-more');
-    const tipPorts = async () => [...((await first.getAttribute('data-tip')) ?? '').matchAll(/:(\d+) ·/g)].map((m) => Number(m[1]));
-    await expect(more).toHaveText('+1', { timeout: 10000 });
-    await expect(first).toHaveAttribute('data-tip', /^Open localhost:\d+ · perl\nAlso listening: :\d+ · perl$/);
-    const shown = await tipPorts();
+    // The poll that shows the two others would show the ephemeral one too: it stays hidden.
+    const dot = row(win, 'Tests').locator('.row-ports .port-all');
+    await expect(dot).toHaveAttribute('data-tip', /^Listening: :\d+ · perl, :\d+ · perl$/, { timeout: 10000 });
+    const shown = (await dot.getAttribute('data-tip'))!.match(/:(\d+) ·/g)!.map((x) => Number(x.slice(1, -2)));
     expect(shown.every((port) => port < 49152)).toBe(true);
 
     await win.getByRole('button', { name: 'Settings' }).click();
@@ -268,25 +264,22 @@ test('ephemeral ports stay hidden until "Show ephemeral ports"; at 264 px the fi
     await dialog.getByRole('button', { name: 'Claude' }).click();
     await expect(dialog.getByRole('switch', { name: 'Count background work as Working' })).toBeEnabled();
     await win.keyboard.press('Escape');
-    // Shown: three ports, +2 opens the menu of the two after the first.
-    await expect(more).toHaveText('+2', { timeout: 10000 });
-    const all = await tipPorts();
-    expect(all).toHaveLength(3);
-    const ephemeral = all.find((port) => !shown.includes(port))!;
+    // Shown: the dot lists all three, and a click opens the menu of them.
+    await expect(dot).toHaveAttribute('data-tip', /^Listening: :\d+ · perl, :\d+ · perl, :\d+ · perl$/, { timeout: 10000 });
+    const ephemeral = (await dot.getAttribute('data-tip'))!.match(/:(\d+) ·/g)!.map((x) => Number(x.slice(1, -2))).find((port) => !shown.includes(port))!;
     expect(ephemeral).toBeGreaterThanOrEqual(49152);
-    await expect(more).toHaveAttribute('aria-haspopup', 'menu');
-    await more.click();
+    await expect(dot).toHaveAttribute('aria-haspopup', 'menu');
+    await dot.click();
     const menu = win.getByRole('menu');
     const items = menu.getByRole('menuitem');
-    await expect(items).toHaveCount(2);
-    await expect(items).toHaveText([/^Open localhost:\d+ · perl$/, /^Open localhost:\d+ · perl$/]);
+    await expect(items).toHaveCount(3);
+    await expect(items).toHaveText([/^Open localhost:\d+ · perl$/, /^Open localhost:\d+ · perl$/, /^Open localhost:\d+ · perl$/]);
+    await expect(menu.getByRole('menuitem', { name: `Open localhost:${ephemeral} · perl` })).toHaveCount(1);
     await still(win);
     await look(win.locator('.sidebar'), 'test-results/background-work-port-menu.png');
-    // An entry opens localhost through main (logged, never a real browser): the ephemeral port from the menu, or from
-    // the first chip if it came first.
-    const target = all[0] === ephemeral ? all[1]! : ephemeral;
-    await menu.getByRole('menuitem', { name: `Open localhost:${target} · perl` }).click();
-    await expect.poll(() => (existsSync(l.urlLog) ? readFileSync(l.urlLog, 'utf8') : ''), { timeout: 5000 }).toContain(`http://localhost:${target}/`);
+    // An entry opens localhost through main (logged, never a real browser).
+    await menu.getByRole('menuitem', { name: `Open localhost:${ephemeral} · perl` }).click();
+    await expect.poll(() => (existsSync(l.urlLog) ? readFileSync(l.urlLog, 'utf8') : ''), { timeout: 5000 }).toContain(`http://localhost:${ephemeral}/`);
     await expect(menu).toHaveCount(0);
   } finally {
     await stop(l);

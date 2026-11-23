@@ -117,12 +117,10 @@ test('background work chips and row ports use tokens, pills, the pop entrance; n
   // A thin outline with the working dot: no shimmer, no pulse.
   expect(layout).not.toMatch(/\.work-chip[^{]*\.shimmer/);
   expect(rule('.work-dot')).toMatch(/background: var\(--working\)/);
-  // A session row's details line: one rendering of the work chip (glyphs and numbers), its total only on a crowded row,
-  // and no pill there (quiet glyphs and text, lit under the pointer).
-  expect(layout).toMatch(/\.session-details \.work-chip \.work-short \{ display: inline-flex;/);
-  expect(layout).toMatch(/\.session-row\[data-crowded\] \.session-details \.work-chip \.work-total \{ display: inline; \}/);
-  expect(layout).toMatch(/\.session-details :is\([^)]*\.work-chip[^)]*\) \{[^}]*border: 0;[^}]*background: none; box-shadow: none;/);
-  // A compact terminal row's folder glyph is quiet, its worktree glyph keeps the worktree's cyan.
+  // A summary of three kinds compacts a medium line on its own, like ports, a clock or the plan badge do (inside
+  // :where(), so the narrower renderings win over it).
+  expect(layout).toMatch(/:where\(:has\([^)]*\.work-chip\.is-long\)\) \.session-sub \.work-full \{ display: none; \}/);
+  // A compact row's folder glyph is quiet, its worktree glyph keeps the worktree's cyan.
   expect(layout).toMatch(/\[data-tight\] \.cwd-chip:not\(\.is-wt\) svg \{ color: var\(--text-3\); \}/);
   expect(layout).not.toMatch(/\[data-tight\] \.cwd-chip svg \{/);
   // The plan badge keeps its uppercase form at every width.

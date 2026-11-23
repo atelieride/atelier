@@ -79,6 +79,7 @@
 .sp-chip.tone-moved svg { color: var(--md-code); }
 .sp-chip.tone-due svg { color: var(--working); }
 .session-bar .sp-chip { flex-shrink: 0; }
+.session-sub .sp-chip { font-size: 10px; line-height: 15px; }
 
 /* The popover: like Background's, rows with their actions on hover or focus. */
 .sp-popover { position: fixed; z-index: 60; display: flex; flex-direction: column; border-radius: var(--r-lg); background: var(--bg-float-strong); backdrop-filter: blur(18px); border: 1px solid var(--line-strong); box-shadow: var(--shadow-float); overflow: hidden; animation: atl-pop var(--t-med) var(--ease) both; }

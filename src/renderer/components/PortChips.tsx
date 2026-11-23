@@ -7,8 +7,9 @@ import { afterLeavingApp } from '../pane-focus';
 /**
  * The ports a terminal (or the dev server it started) listens on: `:3000` chips, the first two, then a
  * `+N` chip listing the rest. A chip opens localhost in the browser through main, which opens only ports it listed.
- * `compact` (sidebar rows): the first port and `+N`; on a terminal row whose name needs the room, a single chip — the
- * live dot and how many — whose tooltip and menu list them all (data-tight picks it).
+ * `compact` (sidebar rows): the first port and `+N`; on the narrowest
+ * session rows, or a terminal row whose name needs the room, a single chip — the live dot and how many — whose tooltip
+ * and menu list them all (the row's container query or data-tight picks it).
  */
 export function PortChips({ id, compact = false }: { id: string; compact?: boolean }) {
   const ports = useApp((s) => (s.settings.showPorts ? s.ports[id] : undefined));
@@ -25,8 +26,8 @@ export function PortChips({ id, compact = false }: { id: string; compact?: boole
         <button key={p.port} type="button" className="port-chip mono" aria-label={t.ports.open(p.port, p.name)}
           data-tip={compact && rest.length > 0 ? `${t.ports.open(p.port, p.name)}\n${t.ports.moreTip(rest)}` : t.ports.open(p.port, p.name)}
           onClick={(e) => { e.stopPropagation(); open(p.port); }} onDoubleClick={(e) => e.stopPropagation()}>
-          {/* The live dot before the first port (a terminal row, short of room, hides it: layout.css). */}
-          {i === 0 && <i className="port-dot" aria-hidden />}:{p.port}
+          {/* Rows are short of room: the live dot only on the narrowest rows' single chip. */}
+          {i === 0 && !compact && <i className="port-dot" aria-hidden />}:{p.port}
         </button>
       ))}
       {rest.length > 0 && (
