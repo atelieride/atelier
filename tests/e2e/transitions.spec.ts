@@ -7,8 +7,8 @@ import { look } from './shots';
 
 // In-app transitions. A session picked in the sidebar: the selection glides from its row to the new one, the tab crown
 // follows it, and the workspace rises in. A tab picked: its crown stretches over to it, then catches up, and the content
-// slides in from the side it is on. They never hold a click (one mid-move goes where it lands), leave nothing once they end, and Reduce
-// motion plays none.
+// slides in from the side it is on. A new session: a spark arcs from the + to its row and its terminal opens from there.
+// They never hold a click (one mid-move goes where it lands), leave nothing once they end, and Reduce motion plays none.
 
 type Played = { on: string; kf: string };
 
@@ -74,7 +74,22 @@ const freeze = (win: Page, selector: string, ms: number) => win.evaluate(([sel, 
   return el ? { top: getComputedStyle(el).top, count: anims.length, box: el.getBoundingClientRect().toJSON() as DOMRect } : null;
 }, [selector, ms] as const);
 /** Whether one of a transition's own elements is what the pointer would hit at (x, y). */
-const hits = (win: Page, x: number, y: number) => win.evaluate(([px, py]) => !!document.elementFromPoint(px!, py!)?.closest('.motion-lane, .motion-pill, .tab-crown-fly'), [x, y]);
+const hits = (win: Page, x: number, y: number) => win.evaluate(([px, py]) => !!document.elementFromPoint(px!, py!)?.closest('.motion-lane, .motion-pill, .tab-crown-fly, .motion-fx, .motion-spark, .motion-ring'), [x, y]);
+/**
+ * Resolves once a new session's spark is on the page (false: none came), every script animation then held where it is
+ * (just started), so the test can look at any moment of it.
+ */
+const catchSpark = (win: Page) => win.evaluate(() => new Promise<boolean>((done) => {
+  const mo = new MutationObserver(() => {
+    if (!document.querySelector('.motion-spark')) return;
+    mo.disconnect();
+    for (const a of document.getAnimations()) if (!(a as CSSAnimation).animationName) a.pause();
+    done(true);
+  });
+  mo.observe(document.body, { childList: true, subtree: true });
+  setTimeout(() => { mo.disconnect(); done(false); }, 15000);
+}));
+const centre = (b: { x: number; y: number; width: number; height: number }) => [b.x + b.width / 2, b.y + b.height / 2] as const;
 const resume = (win: Page) => win.evaluate(() => { for (const a of document.getAnimations()) if (a.playState === 'paused') a.play(); });
 
 test('a session picked in the sidebar: the selection glides to its row, the tab crown follows, the workspace rises in, a click mid-glide goes to the next row', async () => {
@@ -186,6 +201,88 @@ test('a tab picked: the crown stretches to it and catches up, the content slides
   }
 });
 
+test('a new session: a spark arcs from the + to its row, a ring ripples there, its terminal opens in a circle from the sidebar\'s side, and nothing slides', async () => {
+  test.setTimeout(120000);
+  const { app, home, win } = await launch();
+  try {
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 800));
+    await newSession(win, 'One');
+    await settled(win);
+    await played(win);
+
+    // ⌘N (its menu item: synthetic keys don't reach NSMenu), a name, Enter.
+    await menu(app, 'New Claude Session');
+    await win.getByPlaceholder('Session name (optional)').fill('Two');
+    const caught = catchSpark(win);
+    await win.keyboard.press('Enter');
+    expect(await caught).toBe(true);
+    const two = row(win, 'Two');
+    await expect(two).toHaveCount(1);
+    const id = await two.getAttribute('data-term-row');
+    const slot = win.locator(`.terminal-slot[data-term-slot="${id}"]`);
+    const all = '.motion-spark, .motion-ring, .terminal-slot, .tab-crown-fly';
+
+    // In flight (held early on its way): the dot is at neither end; the new terminal is not open yet; nothing of it
+    // takes the pointer.
+    const mid = await freeze(win, all, 240);
+    expect(mid).not.toBeNull();
+    const dot = (await win.locator('.motion-spark').boundingBox())!;
+    const plus = (await win.locator('.btn-new').boundingBox())!;
+    const avatar = (await two.locator('.avatar').boundingBox())!;
+    const [dx, dy] = centre(dot);
+    expect(Math.hypot(dx - centre(plus)[0], dy - centre(plus)[1])).toBeGreaterThan(20);
+    expect(Math.hypot(dx - centre(avatar)[0], dy - centre(avatar)[1])).toBeGreaterThan(20);
+    expect(await slot.evaluate((el) => getComputedStyle(el).clipPath)).toMatch(/^circle\(0px at 0px /);
+    expect(await hits(win, dx, dy)).toBe(false);
+    await look(win, 'test-results/transitions-spark.png');
+
+    // Landed: the ring ripples out around the row's avatar, then the terminal opens from the sidebar's side.
+    await freeze(win, all, 640);
+    const ring = (await win.locator('.motion-ring').boundingBox())!;
+    // Where the avatar rests (the row has risen in by now).
+    const rest = (await two.locator('.avatar').boundingBox())!;
+    expect(Math.abs(centre(ring)[0] - centre(rest)[0])).toBeLessThan(1.5);
+    expect(Math.abs(centre(ring)[1] - centre(rest)[1])).toBeLessThan(1.5);
+    await look(win, 'test-results/transitions-spark-landed.png');
+    await freeze(win, all, 900);
+    expect(await slot.evaluate((el) => getComputedStyle(el).clipPath)).toMatch(/^circle\((?!0px)[\d.]+(px|%) at 0px /);
+    await look(win, 'test-results/transitions-spark-reveal.png');
+    await resume(win);
+
+    const log = await played(win);
+    expect(on(log, 'motion-spark')).toHaveLength(1);
+    expect(on(log, 'motion-ring')).toHaveLength(1);
+    const reveal = on(log, 'terminal-slot');
+    expect(reveal).toHaveLength(1);
+    expect(reveal[0]!.kf).toContain('clipPath');
+    // The crown goes over to the new tab; the reveal is what the content does: it neither slides nor rises.
+    expect(on(log, 'tab-crown-fly')).toHaveLength(1);
+    expect(log.some((p) => p.kf.includes('translateX'))).toBe(false);
+    expect(on(log, 'workspace-body')).toHaveLength(0);
+
+    // Then nothing of it is left: the dot, the ring and their lane are gone, the terminal rests unclipped.
+    await expect(win.locator('.motion-spark, .motion-ring, .motion-fx')).toHaveCount(0, { timeout: 1500 });
+    await settled(win);
+    expect(await slot.evaluate((el) => getComputedStyle(el).clipPath)).toBe('none');
+
+    // The sidebar hidden, the row is not on screen: no spark, and the terminal simply shows.
+    await menu(app, 'Sidebar');
+    await expect(win.locator('.sidebar')).toHaveCount(0);
+    await played(win);
+    await menu(app, 'New Claude Session');
+    await win.getByPlaceholder('Session name (optional)').fill('Three');
+    await win.keyboard.press('Enter');
+    await expect(tab(win.locator('.tabs .tab-strip'), 'Three')).toHaveClass(/is-active/, { timeout: 20000 });
+    await expect(win.locator('.sidebar')).toHaveCount(0);
+    await settled(win);
+    const hidden = await played(win);
+    expect(on(hidden, 'motion-spark')).toHaveLength(0);
+    expect(on(hidden, 'terminal-slot')).toHaveLength(0);
+  } finally {
+    await stop(app, home);
+  }
+});
+
 test('Reduce motion: picking a row or a tab plays nothing and leaves nothing', async () => {
   test.setTimeout(120000);
   const { app, home, win } = await launch();
@@ -196,8 +293,10 @@ test('Reduce motion: picking a row or a tab plays nothing and leaves nothing', a
     await expect(row(win, 'One')).toHaveClass(/is-selected/);
     await tab(win.locator('.tabs .tab-strip'), 'Two').click();
     await expect(tab(win.locator('.tabs .tab-strip'), 'Two')).toHaveClass(/is-active/);
+    // A new session too: no spark, no ring, no reveal.
+    await newSession(win, 'Four');
     expect(await played(win)).toEqual([]);
-    await expect(win.locator('.motion-pill, .motion-lane, .tab-crown-fly, .is-gliding, .is-crown-landing')).toHaveCount(0);
+    await expect(win.locator('.motion-pill, .motion-lane, .tab-crown-fly, .is-gliding, .is-crown-landing, .motion-fx, .motion-spark, .motion-ring')).toHaveCount(0);
   } finally {
     await stop(app, home);
   }

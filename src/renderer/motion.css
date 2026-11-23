@@ -27,3 +27,11 @@
    rounded top; the tab's own crown waits under it, the tab's top plain, until it lands. */
 .tab-crown-fly { position: absolute; z-index: 2; height: 2px; border-radius: 9px 9px 0 0 / 2px 2px 0 0; background: var(--tab-crown); pointer-events: none; }
 .tab.is-active.is-crown-landing { background: var(--bg-2); }
+/* A new session's spark (transitions.ts): a lane over the whole window, above the panels and under every popover, sheet
+   and toast, that takes no pointer; in it a small solid dot on its way from the header's + to the new row, and the thin
+   ring that ripples out where it lands. Each is placed by its animation and hidden without it; the lane goes once the
+   ring has faded. */
+.motion-fx { position: fixed; inset: 0; z-index: 35; overflow: hidden; contain: strict; pointer-events: none; }
+.motion-spark, .motion-ring { position: absolute; left: 0; top: 0; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; opacity: 0; pointer-events: none; }
+.motion-spark { background: var(--violet); }
+.motion-ring { box-sizing: border-box; border: 1.5px solid var(--violet-soft); }

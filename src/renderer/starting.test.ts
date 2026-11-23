@@ -63,6 +63,14 @@ test('store: launched() shows the terminal as a starting session; the session ar
   expect(st().starting).toEqual({});
 });
 
+test('store: launched() records the terminal last launched (its row is where the new session\'s spark lands)', () => {
+  useApp.setState({ launchedId: null });
+  st().launched(term('n', 1));
+  expect(st().launchedId).toBe('n');
+  st().launched(term('m', 2));
+  expect(st().launchedId).toBe('m');
+});
+
 test('store: 30 s without a session, it becomes a plain terminal (Claude failed to start)', () => {
   st().launched(term('n', 1));
   vi.advanceTimersByTime(STARTING_MS - 1000);

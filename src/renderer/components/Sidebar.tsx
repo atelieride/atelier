@@ -42,7 +42,7 @@ import { newTerminalIn } from '../launch';
 import { openBelow, openNewMenu, sessionPlusMenu } from '../menus';
 import type { MenuItem } from '../menu-model';
 import { useRowFit, type RowFitParts } from '../row-fit';
-import { glideSelection, markNav, takeNav } from '../transitions';
+import { glideSelection, markNav, sparkTo, takeNav } from '../transitions';
 
 // Automations are opt-in (2026-11-02): their list loads on first use (App.tsx does the same for the view and sheets).
 const AutomationsList = lazy(() => import('../automations/AutomationsList').then((m) => ({ default: m.AutomationsList })));
@@ -432,8 +432,23 @@ function useSelectionGlide(): void {
   }, [id]);
 }
 
+/**
+ * A session just started from New Session: a spark flies from the header's + to its row, and its terminal opens from
+ * there. Other launches (a resume, a past conversation, Resume all) arrive as any session picked does.
+ */
+function useLaunchSpark(): void {
+  const id = useApp((s) => s.launchedId);
+  useLayoutEffect(() => {
+    if (!id || takeNav() !== 'launch') return;
+    const plus = document.querySelector<HTMLElement>('.header .btn-new');
+    const to = sidebarRow(id);
+    if (plus && to) sparkTo(plus, to, document.querySelector<HTMLElement>(`.workspace-body [data-term-slot="${CSS.escape(id)}"]`));
+  }, [id]);
+}
+
 export function Sidebar() {
   useSelectionGlide();
+  useLaunchSpark();
   const activity = useApp((s) => s.activity);
   const terminals = useApp((s) => s.terminals);
   const resumables = useApp((s) => s.resumables);

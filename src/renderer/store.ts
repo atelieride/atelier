@@ -750,6 +750,8 @@ export interface AppState extends GitSlice, ConfirmsSlice, RestartSlice, Compani
   starting: Starting;
   /** A terminal launched as a Claude session (New Session, Resume, a past conversation): opened, and starting until its session arrives. */
   launched(info: TerminalInfo): void;
+  /** The terminal last launched as a session: where a new session's spark lands (Sidebar). */
+  launchedId: string | null;
   /**
    * Opening Files shows the project file in front there, unless `reveal: false` (Collapse Folders from the palette).
    * A hidden sidebar shows again, unless `keepHidden` (a jump to a session).
@@ -1078,6 +1080,7 @@ export const useApp = create<AppState>((set, get) => ({
   projectLoaded: false,
   terminals: [],
   starting: {},
+  launchedId: null,
   selectedId: null,
   activity: 'sessions',
   sidebarHidden: readSidebarHidden(),
@@ -2507,6 +2510,7 @@ export const useApp = create<AppState>((set, get) => ({
   launched: (info) => {
     // Marked before it is shown: its first render is already a session row, never a terminal one.
     if (!info.session) set({ starting: markStarting(get().starting, info.id, Date.now()) });
+    set({ launchedId: info.id });
     get().opened(info);
     // Claude did not start in time: from then on it is a plain terminal.
     setTimeout(() => {

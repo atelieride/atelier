@@ -230,7 +230,7 @@ export function TerminalView({ id, visible, focused = visible, place }: { id: st
       clear: () => { lt.term.clear(); lt.term.focus(); }
     }));
   };
-  return <div ref={slot} className={`terminal-slot ${dropping ? 'is-drop' : ''}${drawn ? ' is-phone-sized' : ''}`} style={{ display: visible ? 'block' : 'none', ...place }} onContextMenu={(e) => void onMenu(e)}
+  return <div ref={slot} className={`terminal-slot ${dropping ? 'is-drop' : ''}${drawn ? ' is-phone-sized' : ''}`} data-term-slot={id} style={{ display: visible ? 'block' : 'none', ...place }} onContextMenu={(e) => void onMenu(e)}
     onDragOver={onDragOver} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false); }} onDrop={onDrop}>
     {find !== null && Find && <Find id={id} nonce={find} visible={visible} onClose={() => setFind(null)} />}
     {/* Drawn at a phone's size: said where it covers none of the text, the corner its smaller screen leaves free or

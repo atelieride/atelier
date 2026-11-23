@@ -37,7 +37,10 @@ import { SENSITIVE, SHOTS_ONLY, findBanned } from '../support/banned-strings';
 // menu item, two glyphs, strings, and the names of those lazy chunks.
 // +1 KB of room for the chunk names again: a one-character change in a module shared by several lazy chunks renamed
 // all ninety of them, and the entry's list of names alone went 710 bytes heavier, past a budget met within 2 bytes.
-const BUDGET = 923 * 1024;
+// +2 KB for a new session's arrival: the dot's arc from the + to its row, the ring where it lands, the terminal's
+// circular reveal, and the launch noted as where that navigation came from. The second KB is the chunk names again:
+// a ten-byte change to the launch moved the first paint by 630 bytes.
+const BUDGET = 925 * 1024;
 const SHARED = resolve('src/shared');
 const INSTALL = resolve('src/demo/install.ts');
 

@@ -301,7 +301,7 @@ export const PaneStrip = memo(function PaneStrip({ pane, split, last, onNew }: {
   }, [front, order, fade, showClicked]);
   // Another tab in front, from one tab of this strip to another (however it was picked): the crown flies over to it.
   // What it shows comes in by where it was picked: rising from the sidebar, otherwise (a tab, the keyboard, the
-  // palette) from the side of the tab.
+  // palette) from the side of the tab. A session just launched comes in by its terminal's own reveal (sparkTo).
   const shown = useRef(front);
   useLayoutEffect(() => {
     const was = shown.current;
@@ -310,13 +310,14 @@ export const PaneStrip = memo(function PaneStrip({ pane, split, last, onNew }: {
     if (!el || !front || was === front) return;
     const body = el.closest('.workspace')?.querySelector<HTMLElement>('.workspace-body');
     const content = body ? paneContent(body, split ? pane : null) : [];
-    const sidebar = takeNav() === 'sidebar';
+    const origin = takeNav();
     const tabOf = (k: TabKey) => el.querySelector<HTMLElement>(`.tab[data-key="${CSS.escape(k)}"]`);
     const from = was ? tabOf(was) : null;
     const to = tabOf(front);
     // Only the focused pane's tab wears the brand crown; another pane's front tab has a quiet one of its own.
     if (from && to && to.classList.contains('is-active')) flyCrown(el, from, to);
-    if (sidebar) { for (const view of content) enterView(view, 'up'); return; }
+    if (origin === 'launch') return;
+    if (origin === 'sidebar') { for (const view of content) enterView(view, 'up'); return; }
     if (!from || !to) return;
     const dir = from.compareDocumentPosition(to) & Node.DOCUMENT_POSITION_FOLLOWING ? 'right' : 'left';
     for (const view of content) enterView(view, dir);
