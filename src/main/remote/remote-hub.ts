@@ -488,8 +488,8 @@ export class RemoteHub {
   /** Channels admitted, by channel, with their device's id, until opened. */
   private readonly admitted = new Map<number, string>();
   private pairing: Pairing | null = null;
-  /** The pairing channel waiting for the user's answer. */
-  private asking: SecureChannel | null = null;
+  /** The pairing channel waiting for the user's answer, and the pairing it asked. */
+  private asking: { c: SecureChannel; pairing: Pairing } | null = null;
   private stateTimer: ReturnType<typeof setTimeout> | null = null;
   private stateAt = 0;
   private usageTimer: ReturnType<typeof setTimeout> | null = null;
@@ -713,11 +713,15 @@ export class RemoteHub {
     }
     const pairing = this.pairing;
     if (!pairing) return { ok: false, reason: 'expired', code: CLOSE.normal };
-    this.asking = c;
+    // One phone at a time waits for the user's answer (the code is single use): another one is expired, and never
+    // takes the place of the one waiting, whose leaving must still take the question down.
+    if (this.asking) return { ok: false, reason: 'expired', code: CLOSE.normal };
+    const asking = { c, pairing };
+    this.asking = asking;
     const decision = await pairing.ask({ name: hello.name, model: hello.model });
-    if (this.asking === c) this.asking = null;
+    if (this.asking === asking) this.asking = null;
     if (decision !== 'allow') return { ok: false, reason: decision, code: CLOSE.normal };
-    if (c.state !== 'admitting') return { ok: false, reason: 'expired', code: CLOSE.normal };
+    if (c.state !== 'admitting') { pairing.lost(); return { ok: false, reason: 'expired', code: CLOSE.normal }; }
     const device = this.devices.add({ name: hello.name, model: hello.model, key });
     pairing.finish();
     if (this.pairing === pairing) this.pairing = null;
@@ -745,7 +749,7 @@ export class RemoteHub {
   private channelClosed(c: SecureChannel): void {
     if (this.channels.get(c.ch) === c) this.channels.delete(c.ch);
     this.admitted.delete(c.ch);
-    if (this.asking === c) { this.asking = null; this.pairing?.cancel(); }
+    if (this.asking?.c === c) { const { pairing } = this.asking; this.asking = null; pairing.cancel(); }
     const s = this.sessions.get(c.ch);
     if (s?.c === c) {
       this.sessions.delete(c.ch);

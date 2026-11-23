@@ -83,11 +83,20 @@ export class Pairing {
     if (this.request) this.answer('expired');
   }
 
+  /** Allowed, but the phone was gone by then: the sheet hears the request expired, and gets a fresh code. */
+  lost(): void {
+    if (this.stopped) return;
+    this.d.emit({ kind: 'denied', reason: 'expired' });
+    void this.renew().catch(() => {});
+  }
+
   private answer(d: Decision): void {
     const r = this.request;
     if (!r) return;
     clearTimeout(r.timer);
     this.request = null;
+    // Single use: Allow spends the code at once, whatever follows (the phone added, or found gone: lost()).
+    if (d === 'allow') this.retire();
     r.resolve(d);
     if (d === 'declined' || d === 'expired') {
       this.d.emit({ kind: 'denied', reason: d });
@@ -130,7 +139,8 @@ export class Pairing {
       this.d.offer(keys.lookup, Math.ceil(this.ttlMs / 1000));
       this.expiry = setTimeout(() => {
         this.expiry = null;
-        // In use by a phone waiting for an answer: replaced once answered (Deny, no answer), or gone with Allow.
+        // In use by a phone waiting for an answer: every answer ends it (Allow spends it; Deny, no answer or the phone
+        // leaving replace it; pairing off withdraws it), so it isn't replaced under that phone.
         if (this.request) return;
         void this.renew().catch(() => {});
       }, this.ttlMs);

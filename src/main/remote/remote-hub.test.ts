@@ -287,7 +287,7 @@ describe('pairing', () => {
       const k = await deriveCode(normalizeCode(code)!);
       const ws = new WebSocket(relay.url.replace(/^http/, 'ws') + `/v1/pair/${k.lookup}`);
       const ch = new PhoneChannel({ kind: 'pair', id: k.lookup, key: generateKeyPair(), psk: k.psk });
-      const s = { got: [] as Msg[], m3: null as Buffer | null, code: null as number | null, finish: () => ws.send(s.m3!) };
+      const s = { got: [] as Msg[], m3: null as Buffer | null, code: null as number | null, finish: () => ws.send(s.m3!), drop: () => ws.terminate() };
       ws.on('message', (data, binary) => {
         if (!binary) {
           if ((JSON.parse((data as Buffer).toString('utf8')) as Msg).host === 'online') ws.send(ch.start());
@@ -325,6 +325,25 @@ describe('pairing', () => {
       await until(() => late.code !== null);
       expect(late.got).toEqual([{ t: 'denied', reason: 'expired' }]);
       expect(requests(t)).toBe(1);
+      expect(t.hub.devices.list()).toEqual([]);
+    });
+
+    test('two phones with one code: the second is expired, and the first leaving still takes the question down', async () => {
+      const { t, code } = await online();
+      const first = await holding(code);
+      const second = await holding(code);
+      first.finish();
+      await until(() => requests(t) === 1);
+      second.finish();
+      await until(() => second.code !== null);
+      expect(second.got).toEqual([{ t: 'denied', reason: 'expired' }]);
+      // The phone the windows ask about leaves: the question goes, the code (it knew it) is replaced.
+      first.drop();
+      await until(() => t.pairing.some((e) => e.kind === 'denied'));
+      expect(t.pairing.filter((e) => e.kind === 'denied')).toEqual([{ kind: 'denied', reason: 'expired' }]);
+      await until(() => t.pairing.filter((e) => e.kind === 'code').length === 2);
+      // Allow on the question that was on screen adds nothing.
+      expect(t.hub.decide((t.pairing.find((e) => e.kind === 'request') as { request: { id: string } }).request.id, true)).toBe(false);
       expect(t.hub.devices.list()).toEqual([]);
     });
 

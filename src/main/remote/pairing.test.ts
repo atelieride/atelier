@@ -106,6 +106,32 @@ test('a code that expires while a phone asks waits for the answer', async () => 
   expect(await decision).toBe('allow');
 });
 
+test('Allow spends the code at once, even when its time ran out meanwhile: never offered or presented again', async () => {
+  const p = make({ ttlMs: 30, decideMs: 5000 });
+  await p.current();
+  const decision = p.ask({ name: 'X', model: 'm' });
+  await new Promise((r) => setTimeout(r, 80));
+  p.decide((events.find((e) => e.kind === 'request') as { request: { id: string } }).request.id, true);
+  expect(await decision).toBe('allow');
+  // Before the hub has added the phone (or found it gone): the code is no longer one to present.
+  expect(p.codes()).toEqual([]);
+  expect(withdrawn).toEqual([(await deriveCode('7K4Q9MXD2HTR')).lookup]);
+  await new Promise((r) => setTimeout(r, 80));
+  expect(events.filter((e) => e.kind === 'code')).toHaveLength(1);
+});
+
+test('allowed, but the phone was gone by then: the sheet hears it expired and gets a fresh code', async () => {
+  const p = make();
+  await p.current();
+  const decision = p.ask({ name: 'X', model: 'm' });
+  p.decide((events.at(-1) as { request: { id: string } }).request.id, true);
+  expect(await decision).toBe('allow');
+  p.lost();
+  expect(events.at(-1)).toEqual({ kind: 'denied', reason: 'expired' });
+  await vi.waitFor(() => expect(events.filter((e) => e.kind === 'code')).toHaveLength(2));
+  expect(p.codes()).toEqual([{ lookup: (await deriveCode('ABCDEFGHJKMN')).lookup, psk: (await deriveCode('ABCDEFGHJKMN')).psk }]);
+});
+
 test('stopped: the code withdrawn, a pending request answered disabled, nothing renewed', async () => {
   const p = make({ ttlMs: 30 });
   await p.current();
