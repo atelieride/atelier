@@ -1002,10 +1002,13 @@ export class TerminalHub {
     return key;
   }
 
-  /** The viewer is gone (its phone's channel ended): it leaves every terminal it watched, sizes given back. */
+  /**
+   * The viewer is gone (its phone's channel ended): it leaves every terminal it watched, sizes given back — those of
+   * the terminals it was still attaching to as well, since an attach takes the size before its screen arrives.
+   */
   removeRemoteViewer(key: number): void {
     if (!this.remotes.delete(key)) return;
-    const shown = this.attachments.terminalsOf(key);
+    const shown = new Set([...this.attachments.terminalsOf(key), ...this.sizes.owned((v) => v === key)]);
     for (const id of this.attachments.removeWindow(key)) void this.client.request({ t: 'detach', id }).catch(() => {});
     for (const id of shown) this.leaveSize(key, id);
     this.sizes.forgetViewer(key);
@@ -1051,6 +1054,8 @@ export class TerminalHub {
         if (done) return;
         this.client.off('snapshot', onSnap);
         this.attachments.abort(key, id);
+        // The size it took goes back, unless the viewer still watches the terminal (an attach asked again).
+        if (!this.attachments.has(key, id) && !this.attachments.attaching(key, id)) this.leaveSize(key, id);
         reject(err);
       });
     });
@@ -1120,10 +1125,14 @@ export class TerminalHub {
     return owner !== undefined && isRemote(owner);
   }
 
-  /** `viewer` stopped showing the terminal: when it owned the size, the most recent view still showing it takes it back. */
+  /**
+   * `viewer` stopped showing the terminal: when it owned the size, the most recent view still showing it takes it back
+   * (or about to show it: a window whose attach is on its way, as after atelierd reconnected).
+   */
   private leaveSize(viewer: number, id: string): void {
     const owned = this.sizes.owner(id) === viewer;
-    const next = this.sizes.leave(viewer, id, this.attachments.watchers(id));
+    const others = [...this.attachments.watchers(id), ...this.attachments.attachingTo(id)].filter((v) => v !== viewer);
+    const next = this.sizes.leave(viewer, id, others);
     if (next) this.applySize(id, next, null);
     else if (owned && isRemote(viewer)) this.onRemoteSized();
   }

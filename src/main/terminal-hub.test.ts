@@ -1058,6 +1058,50 @@ describe('remote viewers (a paired phone): watched like a window, with one size 
     expect(t.got.filter((g) => g[0] === 'data')).toEqual([]);
   });
 
+  test('a viewer removed while its attach is on its way gives the size it took back; its late screen goes nowhere', async () => {
+    const t = await withWindow();
+    const p = t.hub.remoteAttach(t.key, 'a', 60, 30);
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 60, rows: 30 }]);
+    t.client.send.mockClear();
+    t.hub.removeRemoteViewer(t.key);
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 120, rows: 40 }]);
+    expect(t.hub.remoteSized()).toEqual([]);
+    t.client.emit('snapshot', 'a', 'late screen');
+    await p;
+    expect(t.got).toEqual([]);
+    // The window still watches the terminal: atelierd keeps its stream.
+    expect(t.requests().filter((r) => r.t === 'detach')).toEqual([]);
+  });
+
+  test('an attach atelierd refuses gives the size it took back', async () => {
+    const t = await withWindow();
+    t.client.request.mockImplementation((async (m: { t: string }) => { if (m.t === 'attach') throw new Error('refused'); return {}; }) as never);
+    await expect(t.hub.remoteAttach(t.key, 'a', 60, 30)).rejects.toThrow('refused');
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 60, rows: 30 }, { t: 'resize', id: 'a', cols: 120, rows: 40 }]);
+    expect(t.hub.remoteSized()).toEqual([]);
+    // A key pressed in the window has nothing to take back.
+    t.client.send.mockClear();
+    t.winType('x', true);
+    expect(t.sent()).toEqual([{ t: 'input', id: 'a', data: 'x' }]);
+  });
+
+  test('atelierd reconnected and the phone\'s attach fails there: the terminal ends for the phone, the window gets the size', async () => {
+    const t = await withWindow();
+    await t.phoneAttach();
+    t.client.emit('status', 'disconnected');
+    t.client.emit('status', 'connected');
+    // The phone's attach is the first one asked (a window's starts a microtask later): refused. The window's is still
+    // on its way when that happens (no screen yet): the size goes to it all the same.
+    let attaches = 0;
+    t.client.request.mockImplementation((async (m: { t: string }) => { if (m.t === 'attach' && ++attaches === 1) throw new Error('gone'); return {}; }) as never);
+    t.client.send.mockClear();
+    t.client.emit('reconnected');
+    await vi.waitFor(() => expect(t.got.at(-1)).toEqual(['exit', 'a']));
+    expect(attaches).toBe(2);
+    expect(t.sent().at(-1)).toEqual({ t: 'resize', id: 'a', cols: 120, rows: 40 });
+    expect(t.hub.remoteSized()).toEqual([]);
+  });
+
   test('a terminal moved to another project\'s window keeps its phone', async () => {
     const t = await withWindow();
     await t.phoneAttach();

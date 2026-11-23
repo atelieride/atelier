@@ -84,9 +84,19 @@ export class Attachments {
     return this.pending.has(`${wcId} ${id}`);
   }
 
+  /** The windows (and remote viewers) whose attach of the terminal is on its way. */
+  attachingTo(id: string): number[] {
+    const out: number[] = [];
+    for (const k of this.pending.keys()) {
+      const at = k.indexOf(' ');
+      if (k.slice(at + 1) === id) out.push(Number(k.slice(0, at)));
+    }
+    return out;
+  }
+
   /** Nobody watches the terminal and no attach of it is on its way. */
   unwatched(id: string): boolean {
-    return !this.byTerm.has(id) && ![...this.pending.keys()].some((k) => k.endsWith(` ${id}`));
+    return !this.byTerm.has(id) && this.attachingTo(id).length === 0;
   }
 
   /** An attach failed: once the last one of this window ends, what was held goes. */
