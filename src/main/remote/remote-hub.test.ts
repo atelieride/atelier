@@ -14,6 +14,8 @@ import { testSafeStorage } from '../connectors/test-safe-storage';
 import type { RemoteViewer } from '../terminal-hub';
 import { RemoteHub, type RemoteHubDeps, type RemoteTerminals } from './remote-hub';
 import { projectIdOf } from './state';
+import { collapseKeyOf } from './push';
+import { openPush, pushKeyId } from './push-seal';
 
 const term = (id: string, projectRoot: string, o: Partial<TerminalInfo> = {}): TerminalInfo => ({
   id, projectRoot, cwd: projectRoot, title: `T ${id}`, name: null, color: '#fff', foreground: 'zsh', createdAt: 1, session: null, ...o
@@ -110,7 +112,7 @@ async function until(check: () => boolean, ms = 4000): Promise<void> {
   }
 }
 
-function setup(o: { settings?: Partial<Settings>; safe?: Parameters<typeof testSafeStorage>[0]; timing?: RemoteHubDeps['timing']; link?: RemoteHubDeps['link']; home?: string; deps?: Partial<RemoteHubDeps> } = {}) {
+function setup(o: { settings?: Partial<Settings>; safe?: Parameters<typeof testSafeStorage>[0]; timing?: RemoteHubDeps['timing']; link?: RemoteHubDeps['link']; home?: string; deps?: Partial<RemoteHubDeps>; away?: () => boolean } = {}) {
   const home = o.home ?? mkdtempSync(join(tmpdir(), 'atl-remote-hub-'));
   let settings: Settings = { ...DEFAULT_SETTINGS, remoteAccess: true, remoteRelay: relay.url, projectColors: { '/work/app': 4 }, ...o.settings };
   const terms = new FakeTerminals();
@@ -125,6 +127,7 @@ function setup(o: { settings?: Partial<Settings>; safe?: Parameters<typeof testS
     emitStatus: (s) => statuses.push(s), emitPairing: (e) => pairing.push(e),
     defaultDir: () => '/home/.claude',
     rows: (root, e) => rows.push([root, e]),
+    away: o.away ?? (() => true),
     timing: { stateMs: 30, usageMs: 30, ...o.timing }, ...(o.link ? { link: o.link } : {}), ...o.deps
   });
   hubs.push(hub);
@@ -619,5 +622,82 @@ describe('actions on rows (v1.1)', () => {
     expect(await phone.create(app, 'claude', { account: 'nobody' })).toMatchObject({ t: 'error', code: 'not-found' });
     expect(await phone.create(app, 'terminal', { account: 'work' })).toMatchObject({ t: 'error', code: 'invalid' });
     expect(t.terms.created).toHaveLength(2);
+  });
+});
+
+describe('push notifications (v1.1)', () => {
+  const token = 'ab'.repeat(32);
+  const key = Buffer.alloc(32, 7);
+  const waitingTerm = (id: string, title: string) => term(id, '/work/app', { title, session: { sessionId: 's', state: 'waiting', waitingFor: 'permission', title: null, activity: 'waiting: Bash npm test', contextPct: null, unread: false, updatedAt: 1 } as never });
+  const news = (...waiting: TerminalInfo[]) => ({ waiting, done: [], error: [] });
+  const roomOf = (t: ReturnType<typeof setup>) => (t.hub as unknown as { identity: { roomId: string } }).identity.roomId;
+
+  test('a registered phone gets a sealed notice through the relay: its token and environment, the key\'s id, a collapse key per session', async () => {
+    const t = setup();
+    const { phone } = await paired(t);
+    await phone.state();
+    expect(await phone.registerPush(token, 'sandbox', key)).toMatchObject({ t: 'ok' });
+    t.hub.attention(news(waitingTerm('w1', 'Refactor auth')));
+    await until(() => relay.pushes(roomOf(t)).length === 1);
+    const f = relay.pushes(roomOf(t))[0]!;
+    expect(f).toMatchObject({ t: 'push', to: token, env: 'sandbox', k: pushKeyId(key), c: collapseKeyOf('w1') });
+    expect(f.id).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(JSON.parse(openPush(key, f.p))).toMatchObject({ v: 1, kind: 'waiting', title: 'Refactor auth', subtitle: 'app', body: 'Needs permission · Bash npm test', project: projectIdOf('/work/app'), id: 'w1' });
+    // Nothing of it in the clear for the relay.
+    expect(JSON.stringify(f)).not.toContain('Refactor auth');
+  });
+
+  test('unregistering, removing the phone or a dead token forgets it; kept encrypted across restarts', async () => {
+    const t = setup();
+    const { phone } = await paired(t);
+    await phone.state();
+    await phone.registerPush(token, 'production', key);
+
+    // The relay says the token is dead: forgotten, nothing more goes to it.
+    relay.pushAnswer(() => ({ status: 410, reason: 'Unregistered' }));
+    t.hub.attention(news(waitingTerm('w3', 'Tests')));
+    await until(() => relay.pushes().length === 1);
+    await new Promise((r) => setTimeout(r, 50));
+    t.hub.attention(news(waitingTerm('w4', 'More')));
+    await new Promise((r) => setTimeout(r, 150));
+    expect(relay.pushes()).toHaveLength(1);
+
+    // Registered again, then unregistered: nothing.
+    relay.pushAnswer(() => ({ status: 200 }));
+    await phone.registerPush(token, 'sandbox', key);
+    await phone.unregisterPush();
+    t.hub.attention(news(waitingTerm('w5', 'Five')));
+    await new Promise((r) => setTimeout(r, 150));
+    expect(relay.pushes()).toHaveLength(1);
+
+    // Registered again: after a restart it is still there.
+    await phone.registerPush(token, 'production', key);
+    phone.drop();
+    await t.hub.dispose();
+    const again = setup({ home: t.home });
+    again.hub.start();
+    await until(() => again.hub.status().relay.state === 'online');
+    again.hub.attention(news(waitingTerm('w2', 'Docs')));
+    await until(() => relay.pushes(roomOf(again)).some((f) => f.env === 'production'));
+
+    // The phone removed in Settings: nothing.
+    again.hub.removeDevice(again.hub.status().devices[0]!.id);
+    again.hub.attention(news(waitingTerm('w6', 'Six')));
+    await new Promise((r) => setTimeout(r, 150));
+    expect(relay.pushes()).toHaveLength(2);
+  });
+
+  test('while the user is here (and the rule on), no notice', async () => {
+    let away = false;
+    const t = setup({ away: () => away });
+    const { phone } = await paired(t);
+    await phone.state();
+    await phone.registerPush(token, 'sandbox', key);
+    t.hub.attention(news(waitingTerm('w1', 'One')));
+    await new Promise((r) => setTimeout(r, 150));
+    expect(relay.pushes(roomOf(t))).toHaveLength(0);
+    away = true;
+    t.hub.attention(news(waitingTerm('w1', 'One')));
+    await until(() => relay.pushes(roomOf(t)).length === 1);
   });
 });

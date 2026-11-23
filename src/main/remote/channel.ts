@@ -25,6 +25,8 @@ export interface ChannelLimits {
   createsPerMin: number;
   /** Answer, rename, close, resume and dismiss together. */
   actionsPerMin: number;
+  /** Push registrations. */
+  pushesPerMin: number;
   /** Refused messages (busy, invalid) tolerated within strikeWindowMs before the channel closes. */
   strikes: number;
   strikeWindowMs: number;
@@ -35,7 +37,7 @@ export interface ChannelLimits {
 }
 
 const LIMITS: ChannelLimits = {
-  messagesPerSec: 200, inputBytesPerSec: 1024 * 1024, createsPerMin: 10, actionsPerMin: 30,
+  messagesPerSec: 200, inputBytesPerSec: 1024 * 1024, createsPerMin: 10, actionsPerMin: 30, pushesPerMin: 5,
   strikes: 50, strikeWindowMs: 10_000, handshakeMs: 30_000, maxMessages: 2 ** 32
 };
 
@@ -83,6 +85,7 @@ export class SecureChannel {
   private readonly inputBytes: TokenBucket;
   private readonly creates: TokenBucket;
   private readonly actions: TokenBucket;
+  private readonly pushes: TokenBucket;
   private strikesAt: number[] = [];
   private readonly timer: ReturnType<typeof setTimeout>;
   private readonly now: () => number;
@@ -95,6 +98,7 @@ export class SecureChannel {
     this.inputBytes = new TokenBucket(this.limits.inputBytesPerSec, this.limits.inputBytesPerSec, this.now);
     this.creates = new TokenBucket(this.limits.createsPerMin, this.limits.createsPerMin / 60, this.now);
     this.actions = new TokenBucket(this.limits.actionsPerMin, this.limits.actionsPerMin / 60, this.now);
+    this.pushes = new TokenBucket(this.limits.pushesPerMin, this.limits.pushesPerMin / 60, this.now);
     this.timer = setTimeout(() => { if (this.state === 'hello' || this.state === 'auth') this.close(CLOSE.timeout); }, this.limits.handshakeMs);
     this.timer.unref?.();
   }
@@ -187,6 +191,7 @@ export class SecureChannel {
     if (m.t === 'input' && !this.inputBytes.tryTake(Buffer.byteLength(m.data, 'utf8'))) { this.refuse(0, 'busy', 'Too much input at once; some was not typed.'); return; }
     if (m.t === 'create' && !this.creates.tryTake(1)) { this.refuse(m.rid, 'busy', 'Too many new sessions; try again in a minute.'); return; }
     if (ROW_ACTIONS.has(m.t) && 'rid' in m && !this.actions.tryTake(1)) { this.refuse(m.rid, 'busy', 'Too many changes at once; try again in a minute.'); return; }
+    if (m.t === 'push' && !this.pushes.tryTake(1)) { this.refuse(m.rid, 'busy', 'Too many registrations; try again in a minute.'); return; }
     this.d.message(this, m);
   }
 

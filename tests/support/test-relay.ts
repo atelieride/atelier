@@ -22,6 +22,9 @@ export interface TestRelayOptions {
   maxChannels?: number;
 }
 
+/** A push frame as a host sent it. */
+export interface PushFrame { t: 'push'; id: string; to: string; env: 'sandbox' | 'production'; k: string; p: string; c?: string }
+
 export interface TestRelay {
   /** http://127.0.0.1:<port>, the base URL both sides take. */
   url: string;
@@ -38,6 +41,10 @@ export interface TestRelay {
   closes: string[];
   /** Pongs stop: the host's keep-alive goes unanswered (a relay that hangs). */
   mutePongs(on: boolean): void;
+  /** The push frames a room's host sent, in order (every room's when none is named). */
+  pushes(roomId?: string): PushFrame[];
+  /** How the relay answers each push from now on (the default: 200, as APNs accepting it). */
+  pushAnswer(fn: (f: PushFrame) => { status: number; reason?: string }): void;
   /** Every connection dropped at once, as a relay restart or a network cut. */
   dropAll(): void;
   close(): Promise<void>;
@@ -45,7 +52,22 @@ export interface TestRelay {
 
 const ID = /^[A-Za-z0-9_-]{43}$/;
 const MAX_BINARY = 65535;
+/** Text frames: a device's at most 1024 bytes, a host's 4096 (a push carries a sealed payload). */
 const MAX_TEXT = 1024;
+const MAX_HOST_TEXT = 4096;
+
+/** A push frame's fields as the relay checks them. */
+function pushFrameOf(f: Record<string, unknown>): PushFrame | null {
+  const keys = Object.keys(f);
+  if (keys.some((k) => !['t', 'id', 'to', 'env', 'k', 'p', 'c'].includes(k))) return null;
+  if (typeof f.id !== 'string' || f.id.length < 1 || f.id.length > 64) return null;
+  if (typeof f.to !== 'string' || !/^[0-9a-fA-F]{64,200}$/.test(f.to)) return null;
+  if (f.env !== 'sandbox' && f.env !== 'production') return null;
+  if (typeof f.k !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(f.k)) return null;
+  if (typeof f.p !== 'string' || !/^[A-Za-z0-9_-]{1,2048}$/.test(f.p)) return null;
+  if (f.c !== undefined && (typeof f.c !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(f.c))) return null;
+  return f as unknown as PushFrame;
+}
 
 interface Channel { ch: number; kind: 'device' | 'pair'; lookup: string | null; ws: WebSocket; waitTimer: ReturnType<typeof setTimeout> | null }
 interface Room { id: string; host: WebSocket | null; channels: Map<number, Channel>; nextCh: number; offers: Map<string, number>; connections: number }
@@ -60,6 +82,8 @@ export async function startTestRelay(o: TestRelayOptions = {}): Promise<TestRela
   const rooms = new Map<string, Room>();
   const hostFrames: TestRelay['hostFrames'] = [];
   const closes: string[] = [];
+  const pushes: { roomId: string; frame: PushFrame }[] = [];
+  let answerPush: (f: PushFrame) => { status: number; reason?: string } = () => ({ status: 200 });
   let pongsMuted = false;
 
   const room = (id: string): Room => {
@@ -137,7 +161,7 @@ export async function startTestRelay(o: TestRelayOptions = {}): Promise<TestRela
         if (c && c.ws.readyState === c.ws.OPEN) c.ws.send(buf.subarray(4), { binary: true });
         return;
       }
-      if (buf.length > MAX_TEXT) { shut(ws, 'host', 4413); return; }
+      if (buf.length > MAX_HOST_TEXT) { shut(ws, 'host', 4413); return; }
       let f: Record<string, unknown>;
       try { f = JSON.parse(buf.toString('utf8')) as Record<string, unknown>; } catch { shut(ws, 'host', 4400); return; }
       if (!f || typeof f !== 'object' || typeof f.t !== 'string') { shut(ws, 'host', 4400); return; }
@@ -192,6 +216,15 @@ export async function startTestRelay(o: TestRelayOptions = {}): Promise<TestRela
         case 'ping':
           if (!pongsMuted) send(ws, { t: 'pong' });
           return;
+        case 'push': {
+          // Answered as APNs would, by id; nothing reaches Apple from a test.
+          const push = pushFrameOf(f);
+          if (!push) { shut(ws, 'host', 4400); return; }
+          pushes.push({ roomId: r.id, frame: push });
+          const a = answerPush(push);
+          send(ws, { t: 'pushed', id: push.id, status: a.status, ...(a.reason ? { reason: a.reason } : {}) });
+          return;
+        }
         default:
           shut(ws, 'host', 4400);
       }
@@ -261,6 +294,8 @@ export async function startTestRelay(o: TestRelayOptions = {}): Promise<TestRela
     hostFrames,
     closes,
     mutePongs: (on) => { pongsMuted = on; },
+    pushes: (id) => pushes.filter((x) => !id || x.roomId === id).map((x) => x.frame),
+    pushAnswer: (fn) => { answerPush = fn; },
     dropAll: () => { for (const ws of wss.clients) ws.terminate(); },
     close: () => new Promise<void>((resolve) => {
       for (const ws of wss.clients) ws.terminate();

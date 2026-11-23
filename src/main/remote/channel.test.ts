@@ -280,6 +280,34 @@ describe('messages', () => {
     expect(o.received.at(-1)).toMatchObject({ rid: 6 });
   });
 
+  test('push: a registration with a token, its environment and a 32-byte key, or unregistering; strict shapes; 5 a minute', async () => {
+    let now = 0;
+    const o = await open({ now: () => now, limits: { pushesPerMin: 2 } });
+    const key = Buffer.alloc(32, 1).toString('base64url');
+    const reg = { t: 'push', rid: 1, token: 'ab'.repeat(32), env: 'sandbox', key };
+    const off = { t: 'push', rid: 2, token: null };
+    o.send(reg);
+    o.send(off);
+    expect(o.received).toEqual([reg, off]);
+    const bad = [
+      { ...reg, rid: 3, token: 'xyz' },
+      { ...reg, rid: 4, token: 'ab'.repeat(101) },
+      { ...reg, rid: 5, env: 'development' },
+      { ...reg, rid: 6, key: Buffer.alloc(31, 1).toString('base64url') },
+      { ...reg, rid: 7, key: undefined },
+      { t: 'push', rid: 8, token: null, env: 'sandbox', key },
+      { ...reg, rid: 9, extra: 1 }
+    ];
+    for (const m of bad) o.send(m);
+    expect(o.received).toHaveLength(2);
+    expect(o.got.filter((m) => m.t === 'error').map((m) => [m.rid, m.code])).toEqual(bad.map((m) => [m.rid, 'invalid']));
+    o.send({ ...reg, rid: 10 });
+    expect(o.got.at(-1)).toMatchObject({ t: 'error', rid: 10, code: 'busy' });
+    now += 60_000;
+    o.send({ ...reg, rid: 11 });
+    expect(o.received.at(-1)).toMatchObject({ rid: 11 });
+  });
+
   test('bye: the message, then a normal close; the relay\'s own close is reported once', async () => {
     const o = await open();
     o.ch.bye('revoked');

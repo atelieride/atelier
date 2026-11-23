@@ -1247,3 +1247,24 @@ describe('a paired phone\'s actions on rows, as Atelier\'s own', () => {
     } finally { resetPlatformForTests(); }
   });
 });
+
+describe('the trackers\' news for a paired phone', () => {
+  test('a session starting to wait is news at once; one finishing once the queue settles it, past "only after working for"', async () => {
+    vi.useFakeTimers();
+    try {
+      const { hub, client } = setup();
+      hub.settings = () => ({ ...DEFAULT_SETTINGS, notifyDoneAfter: 'always' });
+      const news: { waiting: string[]; done: string[]; error: string[] }[] = [];
+      hub.onAttention = (n) => news.push({ waiting: n.waiting.map((t) => t.id), done: n.done.map((t) => t.id), error: n.error.map((t) => t.id) });
+      const s = (state: string, o: object = {}) => ({ sessionId: 's', state, title: null, activity: null, contextPct: null, unread: false, updatedAt: 0, ...o });
+      client.emit('status', 'connected');
+      client.emit('terminals', [{ ...term('a'), session: s('running') }, { ...term('b'), session: s('running') }]);
+      client.emit('terminals', [{ ...term('a'), session: s('waiting', { waitingFor: 'permission' }) }, { ...term('b'), session: s('done') }]);
+      expect(news).toEqual([{ waiting: ['a'], done: [], error: [] }]);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(news).toEqual([{ waiting: ['a'], done: [], error: [] }, { waiting: [], done: ['b'], error: [] }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

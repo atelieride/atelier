@@ -182,6 +182,11 @@ export class TerminalHub {
   /** Opens a project's window (provided by index.ts): for notifications and Dock entries of projects with no window. */
   openProject: (root: string) => void = () => {};
   newWindow: () => void = () => {};
+  /**
+   * Sessions just started waiting, or finished (past Settings' "only after working for") or stopped with an error, as
+   * the trackers decided them for the Mac's own notices (index.ts: a paired phone's push notifications).
+   */
+  onAttention: (news: { waiting: TerminalInfo[]; done: TerminalInfo[]; error: TerminalInfo[] }) => void = () => {};
   /** Windows: the sessions to look at changed (the Jump List's "Waiting for you"). */
   onDockEntries: (entries: { id: string; label: string }[]) => void = () => {};
   /** The session icons in the menu bar / notification area (spec session tray icons), from startTray. */
@@ -1332,6 +1337,7 @@ export class TerminalHub {
     this.turns.update(next, now);
     this.publishEntries(centerEntries(waitingNow, [], now, randomUUID));
     this.showNotes(notesFor(this.settings(), waitingNow, []));
+    if (waitingNow.length) this.onAttention({ waiting: waitingNow, done: [], error: [] });
     this.finishes.push(finished);
   }
 
@@ -1345,7 +1351,10 @@ export class TerminalHub {
     const items = longFinishes(settled, this.settings().notifyDoneAfter);
     const seen = new Set(this.lastList.filter((x) => x.session && !x.session.unread).map((x) => x.id));
     this.publishEntries(centerEntries([], items, Date.now(), randomUUID, seen));
-    this.showNotes(notesFor(this.settings(), [], items.filter((f) => f.kind === 'done').map((f) => f.term), items.filter((f) => f.kind === 'error').map((f) => f.term)));
+    const done = items.filter((f) => f.kind === 'done').map((f) => f.term);
+    const error = items.filter((f) => f.kind === 'error').map((f) => f.term);
+    this.showNotes(notesFor(this.settings(), [], done, error));
+    if (done.length || error.length) this.onAttention({ waiting: [], done, error });
   }
 
   /** Each window gets its project's entries (those of a session shown in a focused pop-out arrive seen). */

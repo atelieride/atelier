@@ -1,7 +1,9 @@
 // iPhone access shows what the sidebar shows, end to end, with a fake phone on Atelier's own Noise code
 // (tests/support/fake-phone.ts) through the test relay (tests/support/test-relay.ts): the sidebar's arrangement
-// (workspaces, an activity, grouping, pins) as a layout the phone groups rows by.
+// (workspaces, an activity, grouping, pins) as a layout the phone groups rows by; Allow and Deny on a permission, and
+// the other actions on rows; push notifications sealed for the phone, while the user is away.
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
@@ -9,6 +11,7 @@ import { e2eEnv } from './env';
 import { look } from './shots';
 import { startTestRelay, type TestRelay } from '../support/test-relay';
 import { FakePhone, type Msg } from '../support/fake-phone';
+import { openPush, pushKeyId } from '../../src/main/remote/push-seal';
 
 const SHOTS = 'test-results/iphone-sidebar';
 
@@ -236,6 +239,46 @@ test('from the phone: a new session in an activity lands there; rename and close
     await expect(act.locator(`[data-term-row="${back.id as string}"]`)).toBeVisible({ timeout: 15000 });
     expect(await phone.resume(ship.id)).toMatchObject({ t: 'error', code: 'not-found' });
     await look(win, `${SHOTS}/actions-resumed.png`, { settle: 300 });
+  } finally {
+    await close(l);
+  }
+});
+
+test('away from the Mac, a session that starts waiting rings the phone: a push only it can open, in the Mac\'s words; Settings › iPhone › Notifications', async () => {
+  test.setTimeout(180_000);
+  const l = await launch({ ATELIER_TEST_REMOTE_AWAY: '1' });
+  const { app, win, phone, root, relay } = l;
+  try {
+    await pair(l);
+    const project = projectOf(await phone.state(), root).id;
+    const key = randomBytes(32);
+    const token = randomBytes(32).toString('hex');
+    expect(await phone.registerPush(token, 'sandbox', key)).toMatchObject({ t: 'ok' });
+
+    const made = await phone.create(project, 'claude');
+    const id = made.id as string;
+    await expect.poll(() => relay.pushes().length, { timeout: 30000 }).toBeGreaterThan(0);
+    const push = relay.pushes()[0]!;
+    expect(push).toMatchObject({ t: 'push', to: token, env: 'sandbox', k: pushKeyId(key) });
+    expect(push.c).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
+    // Sealed: nothing of the session in the clear; the phone's key opens it.
+    expect(JSON.stringify(push)).not.toContain('Needs permission');
+    const notice = JSON.parse(openPush(key, push.p)) as Record<string, unknown>;
+    const row = rowsOf(await phone.state((s) => rowsOf(s).some((x) => x.id === id && x.state === 'waiting'), 15000)).find((x) => x.id === id)!;
+    expect(notice).toEqual({ v: 1, kind: 'waiting', title: row.title, subtitle: basename(root), body: 'Needs permission · Bash npm test', project, id, at: expect.any(Number) });
+
+    // Settings › iPhone: the Notifications group, every kind on and "only when away" on by default.
+    await command(app, 'open-settings');
+    await win.locator('.set-nav-item', { hasText: 'iPhone' }).click();
+    for (const name of ['When a session is waiting for you', 'When Claude finishes', 'When a session stops with an error', 'Only when I’m away from this Mac']) {
+      await expect(win.getByRole('switch', { name })).toHaveAttribute('aria-checked', 'true');
+    }
+    await win.getByRole('switch', { name: 'Only when I’m away from this Mac' }).scrollIntoViewIfNeeded();
+    await look(win, `${SHOTS}/settings-notifications.png`, { settle: 300 });
+    // Turned off: saved.
+    await win.getByRole('switch', { name: 'When Claude finishes' }).click();
+    await expect(win.getByRole('switch', { name: 'When Claude finishes' })).toHaveAttribute('aria-checked', 'false');
+    expect(await win.evaluate(() => (window as unknown as { atelier: { settings: { get(): Promise<{ remoteNotifyDone: boolean }> } } }).atelier.settings.get().then((s) => s.remoteNotifyDone))).toBe(false);
   } finally {
     await close(l);
   }

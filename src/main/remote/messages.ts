@@ -31,6 +31,8 @@ const placeId = z.string().regex(/^[\w-]{1,40}$/);
 const accountId = z.string().regex(ACCOUNT_ID);
 /** A wait's key, as the state gave it. */
 const waitKey = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
+/** A push key: 32 bytes, base64url without padding. */
+const pushKey = z.string().regex(/^[A-Za-z0-9_-]{43}$/).refine((k) => Buffer.from(k, 'base64url').length === 32 && Buffer.from(k, 'base64url').toString('base64url') === k, 'a 32-byte key');
 /** At most 60 characters (not UTF-16 units: an emoji counts once). */
 export const MAX_NAME = 60;
 
@@ -44,7 +46,11 @@ export const deviceMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('rename'), rid, id: terminalId, name: z.string().max(MAX_NAME * 4).refine((s) => [...s].length <= MAX_NAME, 'name too long') }).strict(),
   z.object({ t: z.literal('close'), rid, id: terminalId }).strict(),
   z.object({ t: z.literal('resume'), rid, id: terminalId }).strict(),
-  z.object({ t: z.literal('dismiss'), rid, id: terminalId }).strict()
+  z.object({ t: z.literal('dismiss'), rid, id: terminalId }).strict(),
+  // Push notifications: an APNs device token (hex), its environment and the 32-byte key notices are sealed with;
+  // a null token unregisters (nothing else then).
+  z.object({ t: z.literal('push'), rid, token: z.string().regex(/^[0-9a-fA-F]{64,200}$/).nullable(), env: z.enum(['sandbox', 'production']).optional(), key: pushKey.optional() }).strict()
+    .refine((m) => (m.token === null ? m.env === undefined && m.key === undefined : m.env !== undefined && m.key !== undefined), 'a token comes with its environment and key')
 ]);
 /** The requests that act on a row (answered `busy` past their shared limit). */
 export const ROW_ACTIONS: ReadonlySet<DeviceMessage['t']> = new Set(['answer', 'rename', 'close', 'resume', 'dismiss']);

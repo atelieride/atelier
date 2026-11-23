@@ -19,9 +19,13 @@ import { SecureChannel, type Admission } from './channel';
 import { DeviceStore, type PairedDevice } from './devices';
 import { IdentityStore, type RemoteIdentity } from './identity';
 import { LayoutStore } from './layouts';
+import { PushDecider, collapseKeyOf, noticeJson, type AttentionNews } from './push';
+import { pushKeyId, sealPush } from './push-seal';
+import { PushStore } from './push-store';
 import { CLOSE, type ByeReason, type DeviceMessage, type HostMessage, type RemoteAccount } from './messages';
 import { Pairing } from './pairing';
 import { RelayLink, type RelayLinkOptions } from './relay-link';
+import { randomBytes } from 'node:crypto';
 import { isPlanApproval, waitKeyOf } from './rows';
 import { remoteState, remoteUsage, type RemoteState } from './state';
 import { MAX_APP_MESSAGE, type ChannelKind } from './wire';
@@ -73,6 +77,8 @@ export interface RemoteHubDeps {
   realOf?(p: string): string;
   /** What a phone did to a project's rows, for its main window to follow (nothing when it isn't open). */
   rows?(root: string, e: RemoteRowsEvent): void;
+  /** The user is away from this computer (idle for 2 minutes, or its screen locked): phones may ring. */
+  away?(): boolean;
   emitStatus(s: RemoteStatus): void;
   emitPairing(e: RemotePairingEvent): void;
   log?(message: string): void;
@@ -84,6 +90,8 @@ export interface RemoteHubDeps {
 const STATE_MS = 200;
 /** Usage likewise, at most once a second. */
 const USAGE_MS = 1000;
+/** A push the relay hasn't answered within this long is forgotten. */
+const PUSH_ANSWER_MS = 120_000;
 /** One `out` per terminal at most this often: what arrives in between is concatenated, in order. */
 const OUT_MS = 16;
 /** More output than this queued for a phone (a slow link): its channel closes, it reconnects and attaches again. */
@@ -132,6 +140,8 @@ interface SessionHost {
   /** A Claude account a phone may start a session as (the ids `usage` lists). */
   accountKnown(id: string): boolean;
   rows(root: string, e: RemoteRowsEvent): void;
+  /** A phone's push registration (null token: unregistered). */
+  registerPush(deviceId: string, m: Extract<DeviceMessage, { t: 'push' }>): void;
   scheduleState(): void;
   statusChanged(): void;
   outMs: number;
@@ -266,6 +276,10 @@ class PhoneSession implements RemoteViewer {
         );
         return;
       }
+      case 'push':
+        this.host.registerPush(this.deviceId, m);
+        this.send({ t: 'ok', rid: m.rid });
+        return;
       case 'resume': {
         const root = this.host.resumableRoot(m.id);
         if (root === null) { this.error(m.rid, 'not-found', 'This session is not offered to resume any more.'); return; }
@@ -382,6 +396,10 @@ export class RemoteHub {
   private readonly identities: IdentityStore;
   readonly devices: DeviceStore;
   private readonly layouts: LayoutStore;
+  private readonly pushes: PushStore;
+  private readonly decider: PushDecider;
+  /** Pushes the relay hasn't answered yet: their id → the token they went to (a dead one is forgotten). */
+  private readonly pushing = new Map<string, { token: string; at: number }>();
   private identity: RemoteIdentity | null = null;
   private link: RelayLink | null = null;
   private linkFor = '';
@@ -409,6 +427,8 @@ export class RemoteHub {
     this.identities = new IdentityStore(d.secrets);
     this.devices = new DeviceStore(d.home);
     this.layouts = new LayoutStore(d.home);
+    this.pushes = new PushStore(d.secrets);
+    this.decider = new PushDecider({ settings: () => this.d.settings(), away: () => this.d.away?.() ?? false });
     this.stateMs = d.timing?.stateMs ?? STATE_MS;
     this.usageMs = d.timing?.usageMs ?? USAGE_MS;
     this.offShown = d.terminals.onShown(() => this.scheduleState());
@@ -424,6 +444,10 @@ export class RemoteHub {
       },
       accountKnown: (id) => accountsFor(this.d.settings().claudeAccounts, this.d.defaultDir()).list.some((a) => a.id === id),
       rows: (root, e) => this.d.rows?.(root, e),
+      registerPush: (deviceId, m) => {
+        if (m.token === null || !m.env || !m.key) this.pushes.forgetDevice(deviceId);
+        else this.pushes.set(deviceId, { token: m.token.toLowerCase(), env: m.env, key: Buffer.from(m.key, 'base64url') });
+      },
       scheduleState: () => this.scheduleState(),
       statusChanged: () => this.statusChanged(),
       outMs: d.timing?.outMs ?? OUT_MS
@@ -456,6 +480,38 @@ export class RemoteHub {
 
   /** A project's layout as phones get it (null: never shown with iPhone access on). */
   layoutOf(root: string): RemoteLayout | null { return this.layouts.get(root); }
+
+  // ── Push notifications ──
+
+  /**
+   * Sessions just started waiting, finished or stopped with an error (Atelier's own trackers): the notices they are
+   * worth go to every phone that registered for them, each sealed with that phone's key.
+   */
+  attention(news: AttentionNews): void {
+    const link = this.link;
+    if (!link || link.state !== 'online') return;
+    const devices = this.pushes.list();
+    if (devices.length === 0) return;
+    const now = Date.now();
+    for (const [id, p] of this.pushing) if (now - p.at > PUSH_ANSWER_MS) this.pushing.delete(id);
+    for (const n of this.decider.decide(news)) {
+      const plain = noticeJson(n);
+      for (const dev of devices) {
+        const id = randomBytes(16).toString('base64url');
+        if (!link.push({ id, to: dev.token, env: dev.env, k: pushKeyId(dev.key), p: sealPush(dev.key, plain), c: collapseKeyOf(n.id) })) return;
+        this.pushing.set(id, { token: dev.token, at: now });
+      }
+    }
+  }
+
+  /** The relay's answer to a push: a token Apple says is dead is forgotten (the phone registers again when it can). */
+  private pushed(id: string, status: number, reason?: string): void {
+    const p = this.pushing.get(id);
+    this.pushing.delete(id);
+    if (!p) return;
+    if (status === 410 || reason === 'BadDeviceToken' || reason === 'Unregistered') this.pushes.forgetToken(p.token);
+    else if (status !== 200) this.d.log?.(`push: the relay answered ${status}${reason ? ` ${reason}` : ''}`);
+  }
 
   /** A project window opened or closed, or the recent projects changed. */
   projectsChanged(): void { this.scheduleState(); }
@@ -494,6 +550,7 @@ export class RemoteHub {
       onClosed: (ch) => { if (this.link === link) this.channels.get(ch)?.relayClosed(); },
       onData: (ch, payload) => { if (this.link === link) this.channels.get(ch)?.receive(payload); },
       onDrain: (ch) => { if (this.link === link) this.sessions.get(ch)?.drained(); },
+      onPushed: (pushId, status, reason) => this.pushed(pushId, status, reason),
       ...this.d.link
     });
     this.link = link;
@@ -750,6 +807,7 @@ export class RemoteHub {
   /** Unpairs a phone: its connection ends at once (`bye revoked`). */
   removeDevice(id: string): boolean {
     for (const s of [...this.sessions.values()]) if (s.deviceId === id) s.c.bye('revoked');
+    this.pushes.forgetDevice(id);
     const removed = this.devices.remove(id);
     this.statusChanged();
     return removed;
@@ -760,6 +818,7 @@ export class RemoteHub {
     for (const s of [...this.sessions.values()]) s.c.bye('revoked');
     void this.shutDown('revoked', { keepState: true });
     this.devices.clear();
+    this.pushes.clear();
     this.identities.reset();
     this.identity = null;
     this.apply();

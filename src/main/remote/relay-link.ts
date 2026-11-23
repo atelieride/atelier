@@ -51,6 +51,8 @@ export interface RelayLinkOptions {
   onData(ch: number, payload: Buffer): void;
   /** Everything queued for a channel has left. */
   onDrain?(ch: number): void;
+  /** The relay's answer to a push: APNs's HTTP status, and its reason when it gave one. */
+  onPushed?(id: string, status: number, reason?: string): void;
   timing?: Partial<RelayTiming>;
   budget?: Partial<RelayBudget>;
   random?: () => number;
@@ -60,6 +62,9 @@ export interface RelayLinkOptions {
 export function relayEndpoint(base: string, roomId: string): string {
   return `${base.replace(/^http/, 'ws')}/v1/host/${roomId}`;
 }
+
+/** A push for the relay: its id, the device token, its environment, the key's id, the sealed payload, a collapse key. */
+export interface PushFrame { id: string; to: string; env: 'sandbox' | 'production'; k: string; p: string; c?: string }
 
 type Entry = { frame: Buffer } | { close: number };
 interface Queue { entries: Entry[]; bytes: number }
@@ -159,6 +164,16 @@ export class RelayLink {
     if (this.current === 'online') this.text({ t: 'offer', lookup, ttl });
   }
 
+  /**
+   * A push notification for the relay to hand to Apple's push service: sent at once while online (it is answered by
+   * `onPushed`), false otherwise (nothing to send it with; it isn't kept).
+   */
+  push(frame: PushFrame): boolean {
+    if (this.current !== 'online') return false;
+    this.text({ t: 'push', ...frame });
+    return true;
+  }
+
   withdraw(lookup: string): void {
     if (!this.offers.delete(lookup)) return;
     if (this.current === 'online') this.text({ t: 'withdraw', lookup });
@@ -228,7 +243,7 @@ export class RelayLink {
   }
 
   private onText(text: string): void {
-    let f: { t?: unknown; ch?: unknown; kind?: unknown; lookup?: unknown };
+    let f: { t?: unknown; ch?: unknown; kind?: unknown; lookup?: unknown; id?: unknown; status?: unknown; reason?: unknown };
     try { f = JSON.parse(text) as typeof f; } catch { return; }
     if (!f || typeof f !== 'object') return;
     switch (f.t) {
@@ -261,6 +276,11 @@ export class RelayLink {
         if (typeof ch !== 'number' || !this.channels.has(ch)) return;
         this.dropChannel(ch);
         this.o.onClosed(ch);
+        return;
+      }
+      case 'pushed': {
+        if (typeof f.id !== 'string' || typeof f.status !== 'number' || !Number.isInteger(f.status)) return;
+        this.o.onPushed?.(f.id, f.status, typeof f.reason === 'string' ? f.reason.slice(0, 100) : undefined);
         return;
       }
       default:

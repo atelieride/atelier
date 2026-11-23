@@ -186,6 +186,26 @@ describe('offers', () => {
   });
 });
 
+describe('push notifications', () => {
+  const frame = (id: string) => ({ id, to: 'ab'.repeat(32), env: 'sandbox' as const, k: 'kkkkkkkkkkk', p: 'cGF5bG9hZA', c: 'sAbC' });
+
+  test('a push frame goes to the relay while online; its answer comes back by id', async () => {
+    const pushed: [string, number, string | undefined][] = [];
+    const { link, roomId } = makeLink({ onPushed: (id, status, reason) => pushed.push([id, status, reason]) });
+    relay.pushAnswer(({ id }) => (id === 'dead' ? { status: 410, reason: 'Unregistered' } : { status: 200 }));
+    // Offline: nothing to send it with, and it says so.
+    expect(link.push(frame('early'))).toBe(false);
+    link.start();
+    await until(() => link.state === 'online');
+    expect(link.push(frame('p1'))).toBe(true);
+    expect(link.push(frame('dead'))).toBe(true);
+    await until(() => pushed.length === 2);
+    expect(pushed).toEqual([['p1', 200, undefined], ['dead', 410, 'Unregistered']]);
+    expect(relay.pushes(roomId).map((f) => f.id)).toEqual(['p1', 'dead']);
+    expect(relay.pushes(roomId)[0]).toEqual({ t: 'push', ...frame('p1') });
+  });
+});
+
 describe('the connection', () => {
   test('a dropped connection reports its channels closed, goes offline and comes back by itself', async () => {
     const { link, roomId, opened, closed, states } = makeLink();

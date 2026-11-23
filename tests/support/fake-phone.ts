@@ -243,6 +243,9 @@ export class FakePhone {
   /** Allow or Deny on a session's permission request, naming the wait the state showed. */
   answer(id: string, wait: string, choice: 'allow' | 'deny'): Promise<Msg> { return this.request({ t: 'answer', id, wait, choice }); }
   rename(id: string, name: string): Promise<Msg> { return this.request({ t: 'rename', id, name }); }
+  /** Registers for push notifications with an APNs token, its environment and the key notices are sealed with. */
+  registerPush(token: string, env: 'sandbox' | 'production', key: Buffer): Promise<Msg> { return this.request({ t: 'push', token, env, key: key.toString('base64url') }); }
+  unregisterPush(): Promise<Msg> { return this.request({ t: 'push', token: null }); }
   closeRow(id: string): Promise<Msg> { return this.request({ t: 'close', id }); }
   resume(id: string): Promise<Msg> { return this.request({ t: 'resume', id }); }
   dismiss(id: string): Promise<Msg> { return this.request({ t: 'dismiss', id }); }

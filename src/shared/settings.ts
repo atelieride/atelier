@@ -251,6 +251,15 @@ export interface Settings {
   /** Settings › iPhone: access from paired phones through the relay (off: no relay connection at all), the relay. */
   remoteAccess: boolean;
   remoteRelay: string;
+  /**
+   * Settings › iPhone › Notifications: what wakes a paired phone (a session waiting for you, finishing after Atelier's
+   * "only after working for", stopping with an error), and whether only while you are away from this computer (idle
+   * for 2 minutes, or its screen locked).
+   */
+  remoteNotifyWaiting: boolean;
+  remoteNotifyDone: boolean;
+  remoteNotifyError: boolean;
+  remoteNotifyAway: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -359,7 +368,11 @@ export const DEFAULT_SETTINGS: Settings = {
   dbPageSize: '100',
   dbTimeoutSec: 15,
   remoteAccess: false,
-  remoteRelay: DEFAULT_RELAY
+  remoteRelay: DEFAULT_RELAY,
+  remoteNotifyWaiting: true,
+  remoteNotifyDone: true,
+  remoteNotifyError: true,
+  remoteNotifyAway: true
 };
 
 export type Field =
@@ -516,7 +529,11 @@ export const SETTINGS_FIELDS: { [K in keyof Settings]: Field } = {
   dbPageSize: { kind: 'enum', values: ['50', '100', '250', '500'] },
   dbTimeoutSec: { kind: 'step', min: 5, max: 120, step: 5 },
   remoteAccess: { kind: 'bool' },
-  remoteRelay: { kind: 'relayUrl' }
+  remoteRelay: { kind: 'relayUrl' },
+  remoteNotifyWaiting: { kind: 'bool' },
+  remoteNotifyDone: { kind: 'bool' },
+  remoteNotifyError: { kind: 'bool' },
+  remoteNotifyAway: { kind: 'bool' }
 };
 
 const snap = (v: number, step: number) => Math.round(Math.round(v / step) * step * 100) / 100;

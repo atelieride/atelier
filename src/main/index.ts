@@ -1453,11 +1453,19 @@ if (!app.requestSingleInstanceLock()) {
       realOf: remoteRealOf,
       // What a phone did to a project's rows: its main window follows (a new row's place, a resume's pin and place).
       rows: (root, e) => { const b = projectWindow(root); if (b) sendTo(b, IPC.evRemoteRows, e); },
+      // Away from this computer: idle for 2 minutes, or its screen locked (tests: ATELIER_TEST_REMOTE_AWAY 1 or 0).
+      away: () => {
+        const test = devEnv('ATELIER_TEST_REMOTE_AWAY');
+        if (test !== undefined) return test === '1';
+        const idle = powerMonitor.getSystemIdleState(120);
+        return idle === 'idle' || idle === 'locked';
+      },
       emitStatus: (st) => { for (const b of BrowserWindow.getAllWindows()) sendTo(b, IPC.evRemote, st); },
       emitPairing: (ev) => { for (const b of BrowserWindow.getAllWindows()) sendTo(b, IPC.evRemotePairing, ev); },
       log: (message) => { appLog.write({ source: 'main:remote', message }); }
     });
     hub.onRemoteSized = () => remote?.statusChanged();
+    hub.onAttention = (news) => remote?.attention(news);
     client.on('usageByConfigDir', () => remote?.usageChanged());
     installRemoteIpc(remote, { isTrusted: trusted, handle: (channel, fn) => ipcMain.handle(channel, fn), projectOf: (id) => (isPopoutWindow(windowsView, id) ? null : windowProjects.get(id) ?? null) });
     remote.start();

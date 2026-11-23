@@ -39,3 +39,27 @@ test('a Noise handshake and its transport messages work on Electron\'s own crypt
   const run = execFileSync(electron, [out], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   expect(run.trim()).toBe('noise ok');
 }, 60_000);
+
+// A push's text is sealed in the main process too: the relay's vectors, sealed and opened on Electron's crypto.
+const PUSH_SCRIPT = `
+import { readFileSync } from 'node:fs';
+import { openPush, pushKeyId, sealPush } from ${JSON.stringify(resolve(__dirname, '../../src/main/remote/push-seal.ts'))};
+const { vectors } = JSON.parse(readFileSync(${JSON.stringify(resolve(__dirname, '../fixtures/push-vectors.json'))}, 'utf8'));
+for (const v of vectors) {
+  const key = Buffer.from(v.pushKey, 'base64url');
+  if (pushKeyId(key) !== v.keyId) throw new Error('key id');
+  if (sealPush(key, v.plaintext, Buffer.from(v.nonce, 'base64url')) !== v.p) throw new Error('sealed');
+  if (openPush(key, v.p) !== v.plaintext) throw new Error('opened');
+}
+console.log('push ok');
+`;
+
+test('a push\'s text is sealed as the vectors say on Electron\'s own crypto', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'atl-push-electron-'));
+  const entry = join(dir, 'entry.ts');
+  writeFileSync(entry, PUSH_SCRIPT);
+  const out = join(dir, 'push.cjs');
+  await build({ entryPoints: [entry], outfile: out, bundle: true, platform: 'node', format: 'cjs', target: 'node22', logLevel: 'silent' });
+  const run = execFileSync(electron, [out], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  expect(run.trim()).toBe('push ok');
+}, 60_000);

@@ -166,13 +166,20 @@ export const KIND_TEXT: Record<StateNoteKind, string> = { waiting: 'Waiting for 
 
 /** The notifications to show for whoever just started waiting or finished, according to the settings. */
 export function notesFor(s: Settings, waitingNow: TerminalInfo[], doneNow: TerminalInfo[], errorNow: TerminalInfo[] = []): Note[] {
-  const silent = !s.notifySound;
+  // Turn stopped by an error (rate limit, API): under the setting for finishes, said as a stop with the reason.
+  return stateNotes({ waiting: s.notifyWaiting, done: s.notifyDone, error: s.notifyDone }, !s.notifySound, waitingNow, doneNow, errorNow);
+}
+
+/**
+ * The notes for whoever just started waiting (permissions first), finished or stopped with an error, each kind on or
+ * off: the Mac's banners and a paired phone's notifications say the same words.
+ */
+export function stateNotes(on: Record<StateNoteKind, boolean>, silent: boolean, waitingNow: TerminalInfo[], doneNow: TerminalInfo[], errorNow: TerminalInfo[]): Note[] {
   const note = (kind: StateNoteKind) => (term: TerminalInfo): Note => ({ term, kind, body: noteText(kind, term.session?.activity ?? null, KIND_TEXT, kind === 'waiting' ? waitOf(term) : undefined), silent });
   return [
-    ...(s.notifyWaiting ? byUrgency(waitingNow).map(note('waiting')) : []),
-    ...(s.notifyDone ? doneNow.map(note('done')) : []),
-    // Turn stopped by an error (rate limit, API): under the setting for finishes, said as a stop with the reason.
-    ...(s.notifyDone ? errorNow.map(note('error')) : [])
+    ...(on.waiting ? byUrgency(waitingNow).map(note('waiting')) : []),
+    ...(on.done ? doneNow.map(note('done')) : []),
+    ...(on.error ? errorNow.map(note('error')) : [])
   ];
 }
 

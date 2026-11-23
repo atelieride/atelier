@@ -19,6 +19,11 @@ const strings = {
   openCount: (n: number) => (n === 1 ? '1 terminal open' : `${n} terminals open`),
   remove: 'Remove', removeTip: (name: string) => `Remove ${name}`,
   removeAsk: (name: string) => `Remove ${name}?`, removeBody: 'It disconnects now and has to pair again to come back.',
+  notifications: 'Notifications',
+  notifyWaiting: 'When a session is waiting for you', notifyWaitingHint: 'A permission or a question only you can answer.',
+  notifyDone: 'When Claude finishes', notifyDoneHint: 'After working at least as long as Settings › Notifications asks before saying “Finished”.',
+  notifyError: 'When a session stops with an error', notifyErrorHint: 'A rate limit, an overloaded API, a sign-in needed.',
+  notifyAway: 'Only when I’m away from this Mac', notifyAwayHint: 'When this Mac has been idle for 2 minutes, or its screen is locked. Off, your iPhone rings whenever something happens.',
   advanced: 'Advanced', relayServer: 'Relay server',
   relayServerHint: 'Passes the encrypted traffic between your iPhone and this computer, without being able to read it. Change it only to use a relay of your own.',
   relayBad: {

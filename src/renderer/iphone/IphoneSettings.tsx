@@ -46,9 +46,32 @@ export function IphoneSettings({ s }: { s: S }) {
         </div>
       )}
       {devices.length > 0 && <ul className="iph-devices" aria-label={tiph.devices}>{devices.map((d) => <DeviceRow key={d.id} d={d} live={!!status?.enabled} />)}</ul>}
+      <Notifications s={s} />
       <div className="set-group-title">{tiph.advanced}</div>
       <RelayField saved={s.remoteRelay} />
       <ForgetAll />
+    </>
+  );
+}
+
+/**
+ * What wakes a paired iPhone when Atelier on it is closed: each kind on its own, and by default only while you are away
+ * from this computer. The notifications are sealed for the phone: neither the relay nor Apple reads them.
+ */
+function Notifications({ s }: { s: S }) {
+  const row = (key: 'remoteNotifyWaiting' | 'remoteNotifyDone' | 'remoteNotifyError' | 'remoteNotifyAway', label: string, hint: string) => (
+    <Row label={label} hint={hint}><Toggle label={label} value={s[key]} onChange={(v) => set({ [key]: v })} /></Row>
+  );
+  const any = s.remoteNotifyWaiting || s.remoteNotifyDone || s.remoteNotifyError;
+  return (
+    <>
+      <div className="set-group-title">{tiph.notifications}</div>
+      {row('remoteNotifyWaiting', tiph.notifyWaiting, tiph.notifyWaitingHint)}
+      {row('remoteNotifyDone', tiph.notifyDone, tiph.notifyDoneHint)}
+      {row('remoteNotifyError', tiph.notifyError, tiph.notifyErrorHint)}
+      <Row label={tiph.notifyAway} hint={tiph.notifyAwayHint} disabled={!any}>
+        <Toggle label={tiph.notifyAway} value={s.remoteNotifyAway} disabled={!any} onChange={(v) => set({ remoteNotifyAway: v })} />
+      </Row>
     </>
   );
 }
