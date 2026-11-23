@@ -962,6 +962,18 @@ test('The command palette opens over a receding app; other sheets leave it be', 
     await expect(sheet).toBeVisible();
     expect(await sheet.evaluate((el) => getComputedStyle(el).animationName)).toBe('atl-pop');
     expect(await transform(body)).toBe('none');
+    await win.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+
+    // Under Reduce motion the results are simply there: none waits for its turn to show.
+    await win.emulateMedia({ reducedMotion: 'reduce' });
+    const shown = (await rows()).length;
+    await menu(app, 'Search…');
+    await expect(win.locator('.palette-backdrop.is-cmd .palette')).toBeVisible();
+    await expect.poll(async () => (await rows()).length).toBeGreaterThan(shown + 8);
+    const still = (await rows()).slice(shown);
+    expect(still.length).toBeGreaterThan(8);
+    expect(still.every((r) => r.delay === '0s'), JSON.stringify(still)).toBe(true);
   } finally {
     await stop(app, home);
   }

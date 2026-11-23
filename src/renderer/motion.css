@@ -50,6 +50,10 @@
 @keyframes atl-sheet-drop { from { opacity: 0; transform: translateY(-14px) scale(.97); } to { opacity: 1; transform: none; } }
 .palette-backdrop.is-cmd > .palette { animation: atl-sheet-drop 360ms cubic-bezier(.3, 1.3, .5, 1) both; }
 .palette-backdrop.is-cmd .palette-item.is-enter { animation: atl-enter var(--t-med) var(--ease) both; animation-delay: calc(60ms + var(--i) * 22ms); }
+/* Under Reduce motion (Atelier's or the system's) the results are simply there: the clamp would shorten their
+   entrance but not the wait before each one. */
+:root[data-motion="reduced"] .palette-backdrop.is-cmd .palette-item.is-enter { animation: none; }
+@media (prefers-reduced-motion: reduce) { .palette-backdrop.is-cmd .palette-item.is-enter { animation: none; } }
 
 /* A pane split off (transitions.ts): the divider it was split off on draws its line along the gap from the middle, a
    plain neutral hairline while it draws (never the brand line of a hover or a drag), then fades into the gap's own
