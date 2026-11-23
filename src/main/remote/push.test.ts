@@ -55,13 +55,26 @@ test('only while away from this computer, unless that rule is off', () => {
   expect(here.d.decide(news)).toHaveLength(1);
 });
 
-test('at most one notice per session every 30 s', () => {
+test('at most one notice of each kind per session every 30 s: a wait that flaps rings once', () => {
   const { d, tick } = setup();
   expect(d.decide({ waiting: [waiting('w')], done: [], error: [] })).toHaveLength(1);
   tick(PUSH_EVERY_MS - 1);
-  expect(d.decide({ waiting: [], done: [done('w'), done('other')], error: [] }).map((n) => n.id)).toEqual(['other']);
+  expect(d.decide({ waiting: [waiting('w'), waiting('other')], done: [], error: [] }).map((n) => n.id)).toEqual(['other']);
   tick(1);
-  expect(d.decide({ waiting: [], done: [done('w')], error: [] }).map((n) => n.id)).toEqual(['w']);
+  expect(d.decide({ waiting: [waiting('w')], done: [], error: [] }).map((n) => n.id)).toEqual(['w']);
+});
+
+test('a session that finishes, or stops with an error, right after a waiting notice still says so', () => {
+  // Allowed from the phone, the task finishes 20 s later: "Finished" is news, not a repeat of the wait.
+  const { d, tick } = setup();
+  expect(d.decide({ waiting: [waiting('w')], done: [], error: [] }).map((n) => n.kind)).toEqual(['waiting']);
+  tick(20_000);
+  expect(d.decide({ waiting: [], done: [done('w')], error: [] }).map((n) => [n.kind, n.id])).toEqual([['done', 'w']]);
+  tick(1000);
+  expect(d.decide({ waiting: [], done: [], error: [failed('w')] }).map((n) => [n.kind, n.id])).toEqual([['error', 'w']]);
+  // Each kind keeps its own 30 s.
+  tick(1000);
+  expect(d.decide({ waiting: [waiting('w')], done: [done('w')], error: [failed('w')] })).toEqual([]);
 });
 
 test('the notice as sent: at most 1024 bytes of UTF-8, the title at most 80 characters and the body 200', () => {
