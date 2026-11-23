@@ -125,3 +125,24 @@ export type RemoteRowsEvent =
   | { kind: 'join'; id: string; place: string }
   | { kind: 'resuming'; id: string }
   | { kind: 'resumed'; from: string; to: string | null };
+
+/**
+ * A change a paired phone asks of a project's workspaces and activities, which its main window applies as its own
+ * menus and drags would: a new workspace (workspaces turned on first when they are off; no name: "Workspace N"), a new
+ * activity in a workspace (activities turned on first; no name: "New activity"), a place renamed, a row (a terminal or
+ * a session to resume) moved into a place. Main has checked the names and that the places are this project's.
+ */
+export type RemotePlaceOp =
+  | { kind: 'workspace'; name?: string }
+  | { kind: 'activity'; workspace: string; name?: string }
+  | { kind: 'rename'; place: string; name: string }
+  | { kind: 'move'; id: string; place: string };
+
+/** One such change on its way to the window, by the id main gave it (its answer names it). */
+export interface RemotePlaceRequest { id: number; op: RemotePlaceOp }
+
+/** How a change went: done (`place`: the new workspace's or activity's id), or why not, in a few words. */
+export type RemotePlaceResult = { ok: true; place?: string } | { ok: false; code: 'not-found' | 'invalid' | 'failed'; message: string };
+
+/** The window's answer, with its sidebar's arrangement right after the change (what phones get next). */
+export interface RemotePlaceDone { id: number; result: RemotePlaceResult; layout: RemoteLayout }

@@ -388,7 +388,9 @@ const api: AtelierApi = {
     decide: (requestId, allow) => ipcRenderer.invoke(IPC.remoteDecide, { requestId, allow }),
     removeDevice: (id) => ipcRenderer.invoke(IPC.remoteRemoveDevice, { id }),
     reset: () => ipcRenderer.invoke(IPC.remoteReset),
-    layout: (l) => ipcRenderer.invoke(IPC.remoteLayout, l)
+    layout: (l) => ipcRenderer.invoke(IPC.remoteLayout, l),
+    placesReady: () => ipcRenderer.invoke(IPC.remotePlacesReady),
+    placeDone: (d) => ipcRenderer.invoke(IPC.remotePlaceDone, d)
   },
   // The request's fields one by one, as for companion: main's schema is strict.
   search: {
@@ -455,6 +457,7 @@ const api: AtelierApi = {
     remote: (cb) => listen(IPC.evRemote, cb),
     remotePairing: (cb) => listen(IPC.evRemotePairing, cb),
     remoteRows: (cb) => listen(IPC.evRemoteRows, cb),
+    remotePlaces: (cb) => listen(IPC.evRemotePlaces, cb),
     popouts: (cb) => listen(IPC.evPopouts, cb),
     dock: (cb) => listen(IPC.evDock, cb),
     dockHover: (cb) => listen(IPC.evDockHover, cb),

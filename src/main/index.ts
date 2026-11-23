@@ -129,6 +129,7 @@ import { branchAt, companionAccountDir, companionFacts, sessionFiles } from './c
 import { randomUUID } from 'node:crypto';
 import { installMedia, registerMediaScheme } from './media-ipc';
 import { RemoteHub } from './remote/remote-hub';
+import { PlaceRequests } from './remote/places';
 import { installRemoteIpc } from './remote/ipc';
 import { relayToDial } from '@shared/remote';
 
@@ -155,6 +156,8 @@ const settings = new SettingsStore(paths.preferences, { shells: () => shells().m
 let quitting = false;
 /** iPhone access, made once the app is ready (safeStorage needs it). */
 let remote: RemoteHub | null = null;
+/** A paired phone's changes to a project's workspaces and activities, on their way to its main window. */
+let remotePlaces: PlaceRequests | null = null;
 
 function isDir(p: string): boolean {
   try { return existsSync(p) && statSync(p).isDirectory(); } catch { return false; }
@@ -687,6 +690,7 @@ if (!app.requestSingleInstanceLock()) {
       windowKinds.delete(wcId);
       focusedAt.delete(wcId);
       opener.forget(wcId);
+      remotePlaces?.closed(wcId);
       announceWindows();
       if (root) lastWindowGone(root);
       // Really gone: its terminals stop when that was the answer (on a quit too).
@@ -699,7 +703,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     // A reload: the page asks for what was held for it again once it listens. A tab drag it had going ends (its ghost
     // goes), as when its page crashes.
-    win.webContents.on('did-start-loading', () => opener.pageLoading(wcId));
+    win.webContents.on('did-start-loading', () => { opener.pageLoading(wcId); remotePlaces?.pageLoading(wcId); });
     win.webContents.on('did-start-navigation', (d) => { if (root && pageReloading(d)) tear.end(root); });
     win.webContents.on('render-process-gone', () => { if (root) tear.end(root); });
     focusedAt.set(wcId, Date.now());
@@ -1436,6 +1440,18 @@ if (!app.requestSingleInstanceLock()) {
       return r;
     };
     const pairCodeMs = testMs('ATELIER_TEST_REMOTE_CODE_MS');
+    // A phone's changes to a project's places go to its main window, opened first when it is closed (as a recent
+    // project opens, without taking the welcome window's place).
+    const places = new PlaceRequests({
+      windowOf: (root) => projectWindow(root)?.webContents.id ?? null,
+      open: (root) => {
+        if (!isDir(root)) return null;
+        const w = openWindow(root);
+        return w && !w.isDestroyed() ? w.webContents.id : null;
+      },
+      send: (wcId, req) => { const b = windowById(wcId); if (b) sendTo(b, IPC.evRemotePlaces, req); }
+    });
+    remotePlaces = places;
     remote = new RemoteHub({
       home: paths.home,
       secrets: secretStoreFor(paths.home, safeStorage),
@@ -1453,6 +1469,8 @@ if (!app.requestSingleInstanceLock()) {
       realOf: remoteRealOf,
       // What a phone did to a project's rows: its main window follows (a new row's place, a resume's pin and place).
       rows: (root, e) => { const b = projectWindow(root); if (b) sendTo(b, IPC.evRemoteRows, e); },
+      // What a phone does to a project's workspaces and activities: applied in its main window.
+      places: (root, op) => places.apply(root, op),
       // Away from this computer: idle for 2 minutes, or its screen locked (tests: ATELIER_TEST_REMOTE_AWAY 1 or 0).
       away: () => {
         const test = devEnv('ATELIER_TEST_REMOTE_AWAY');
@@ -1467,7 +1485,7 @@ if (!app.requestSingleInstanceLock()) {
     hub.onRemoteSized = () => remote?.statusChanged();
     hub.onAttention = (news) => remote?.attention(news);
     client.on('usageByConfigDir', () => remote?.usageChanged());
-    installRemoteIpc(remote, { isTrusted: trusted, handle: (channel, fn) => ipcMain.handle(channel, fn), projectOf: (id) => (isPopoutWindow(windowsView, id) ? null : windowProjects.get(id) ?? null) });
+    installRemoteIpc(remote, { isTrusted: trusted, handle: (channel, fn) => ipcMain.handle(channel, fn), projectOf: (id) => (isPopoutWindow(windowsView, id) ? null : windowProjects.get(id) ?? null), places });
     remote.start();
     // Quitting: every phone is told (`bye`), then the relay connection closes; the quit goes on right after.
     let remoteClosed = false;

@@ -37,7 +37,7 @@ import type { Run } from './automation-run';
 import type { IfBusy, ScheduledPrompt } from './scheduled-prompts';
 import type { ScheduleNotice } from './schedule-notices';
 import type { Binding, CompanionEvent, CompanionModel, Thread } from './companion/types';
-import type { RemoteLayout, RemotePairingEvent, RemotePairingStart, RemoteRowsEvent, RemoteStatus } from './remote';
+import type { RemoteLayout, RemotePairingEvent, RemotePairingStart, RemotePlaceDone, RemotePlaceRequest, RemoteRowsEvent, RemoteStatus } from './remote';
 import type { SignalBookView } from './claude-signals';
 import type { SearchEvent, SearchRequest } from './search';
 
@@ -134,6 +134,13 @@ export interface RemoteApi {
   reset(): Promise<void>;
   /** A project's main window: its sidebar's arrangement now, while iPhone access is on (phones group rows by it). */
   layout(l: RemoteLayout): Promise<void>;
+  /**
+   * A project's main window is ready for a paired phone's changes to its workspaces and activities: the ones that
+   * waited for it (a window opened for one), in order; later ones come through on.remotePlaces.
+   */
+  placesReady(): Promise<RemotePlaceRequest[]>;
+  /** The window's answer to one of them, with its sidebar's arrangement right after it. */
+  placeDone(d: RemotePlaceDone): Promise<void>;
 }
 
 /** Install / Uninstall 'atelier' Command. */
@@ -465,6 +472,9 @@ export const IPC = {
    *   remote:decide          { requestId, allow }
    *   remote:remove-device   { id }
    *   remote:layout          RemoteLayout   (a project's main window only: its sidebar's arrangement, for the phones)
+   *   remote:places-ready    no argument → RemotePlaceRequest[]   (a project's main window, ready for a phone's
+   *                          changes to its workspaces: the ones that waited for it; later ones come as ev:remote-places)
+   *   remote:place-done      RemotePlaceDone   (that window's answer to one, with its sidebar's arrangement after it)
    */
   remoteStatus: 'remote:status',
   remoteStartPairing: 'remote:start-pairing',
@@ -476,6 +486,9 @@ export const IPC = {
   evRemote: 'ev:remote',
   evRemotePairing: 'ev:remote-pairing',
   evRemoteRows: 'ev:remote-rows',
+  remotePlacesReady: 'remote:places-ready',
+  remotePlaceDone: 'remote:place-done',
+  evRemotePlaces: 'ev:remote-places',
   // main → renderer events
   evTerminals: 'ev:terminals',
   evBackgroundFeed: 'ev:background-feed',
@@ -1209,6 +1222,8 @@ export interface AtelierApi {
     remotePairing(cb: (e: RemotePairingEvent) => void): () => void;
     /** What a paired phone did to this project's rows that the sidebar follows (the project's main window only). */
     remoteRows(cb: (e: RemoteRowsEvent) => void): () => void;
+    /** A paired phone's change to this project's workspaces and activities (its main window only, once ready). */
+    remotePlaces(cb: (r: RemotePlaceRequest) => void): () => void;
     /** The keys of the tabs in pop-outs changed. */
     popouts(cb: (keys: string[]) => void): () => void;
     /** A pop-out's tab is moved back here. */

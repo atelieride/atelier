@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Resumable, TerminalInfo } from '@shared/protocol';
 import type { UsageEntry } from '@shared/session';
 import type { PortsMap } from '@shared/ports';
-import type { RemoteLayout, RemotePairingEvent, RemoteRowsEvent, RemoteSized, RemoteStatus } from '@shared/remote';
+import type { RemoteLayout, RemotePairingEvent, RemotePlaceOp, RemotePlaceResult, RemoteRowsEvent, RemoteSized, RemoteStatus } from '@shared/remote';
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings';
 import { FakePhone, type Msg } from '../../../tests/support/fake-phone';
 import { startTestRelay, type TestRelay } from '../../../tests/support/test-relay';
@@ -654,6 +654,102 @@ describe('actions on rows (v1.1)', () => {
     expect(await phone.create(app, 'claude', { account: 'nobody' })).toMatchObject({ t: 'error', code: 'not-found' });
     expect(await phone.create(app, 'terminal', { account: 'work' })).toMatchObject({ t: 'error', code: 'invalid' });
     expect(t.terms.created).toHaveLength(2);
+  });
+});
+
+describe('workspaces and activities from the phone', () => {
+  const app = projectIdOf('/work/app');
+  const old = projectIdOf('/work/old');
+  const layoutApp: RemoteLayout = {
+    groupByState: true, pins: [], order: { sessions: [], terminals: [] },
+    workspaces: { active: 'w1', activities: true, places: [{ id: 'w1', name: 'Main', color: 1, open: true }, { id: 'a1', name: 'SSO', color: 2, parent: 'w1', open: false }], members: {} }
+  };
+  const layoutOld: RemoteLayout = { ...layoutApp, workspaces: { active: 'w9', activities: false, places: [{ id: 'w9', name: 'Other', color: 4, open: true }], members: {} } };
+
+  /** A paired phone whose window answers each change with `answer` (its calls kept). */
+  async function withPlaces(answer: (root: string, op: RemotePlaceOp) => Promise<RemotePlaceResult> = async (_r, op) => (op.kind === 'workspace' || op.kind === 'activity' ? { ok: true, place: 'new1' } : { ok: true })) {
+    const calls: [string, RemotePlaceOp][] = [];
+    const t = setup({ deps: { places: (root, op) => { calls.push([root, op]); return answer(root, op); } } });
+    t.terms.resumables = [{ id: 'r1', projectRoot: '/work/app', cwd: '/work/app', title: 'Old', color: '#F28FAD', sessionId: 's-r1', endedAt: 5 }];
+    t.hub.layoutChanged('/work/app', layoutApp);
+    t.hub.layoutChanged('/work/old', layoutOld);
+    const { phone } = await paired(t);
+    await phone.state();
+    return { t, phone, calls };
+  }
+
+  test('workspace: in any listed project (its window turns workspaces on when off), named or with Atelier\'s default', async () => {
+    const { phone, calls } = await withPlaces();
+    expect(await phone.request({ t: 'workspace', project: app })).toMatchObject({ t: 'created', id: 'new1' });
+    expect(await phone.request({ t: 'workspace', project: old, name: 'Billing' })).toMatchObject({ t: 'created', id: 'new1' });
+    expect(await phone.request({ t: 'workspace', project: app, name: '🚀'.repeat(60) })).toMatchObject({ t: 'created' });
+    expect(calls).toEqual([['/work/app', { kind: 'workspace' }], ['/work/old', { kind: 'workspace', name: 'Billing' }], ['/work/app', { kind: 'workspace', name: '🚀'.repeat(60) }]]);
+    expect(await phone.request({ t: 'workspace', project: 'nope' })).toMatchObject({ t: 'error', code: 'not-found' });
+    for (const name of ['', '   ', 'x'.repeat(61), 'two\nlines', 'tab\there']) {
+      expect(await phone.request({ t: 'workspace', project: app, name })).toMatchObject({ t: 'error', code: 'invalid', message: expect.stringMatching(/^A name /) });
+    }
+    expect(calls).toHaveLength(3);
+  });
+
+  test('activity: in a workspace of that project\'s layout; an activity, another project\'s workspace or an unknown one is refused', async () => {
+    const { phone, calls } = await withPlaces();
+    expect(await phone.request({ t: 'activity', project: app, workspace: 'w1' })).toMatchObject({ t: 'created', id: 'new1' });
+    expect(await phone.request({ t: 'activity', project: app, workspace: 'w1', name: 'Release' })).toMatchObject({ t: 'created' });
+    expect(calls).toEqual([['/work/app', { kind: 'activity', workspace: 'w1' }], ['/work/app', { kind: 'activity', workspace: 'w1', name: 'Release' }]]);
+    expect(await phone.request({ t: 'activity', project: app, workspace: 'a1' })).toMatchObject({ t: 'error', code: 'invalid', message: 'An activity goes inside a workspace.' });
+    expect(await phone.request({ t: 'activity', project: app, workspace: 'w9' })).toMatchObject({ t: 'error', code: 'invalid', message: 'This workspace is in another project.' });
+    expect(await phone.request({ t: 'activity', project: app, workspace: 'zz' })).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(await phone.request({ t: 'activity', project: 'nope', workspace: 'w1' })).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(await phone.request({ t: 'activity', project: app, workspace: 'w1', name: '' })).toMatchObject({ t: 'error', code: 'invalid' });
+    expect(calls).toHaveLength(2);
+  });
+
+  test('renamePlace: a workspace or an activity of that project, 1…60 characters', async () => {
+    const { phone, calls } = await withPlaces();
+    expect(await phone.request({ t: 'renamePlace', project: app, place: 'w1', name: 'Auth' })).toMatchObject({ t: 'ok' });
+    expect(await phone.request({ t: 'renamePlace', project: app, place: 'a1', name: 'Okta' })).toMatchObject({ t: 'ok' });
+    expect(calls).toEqual([['/work/app', { kind: 'rename', place: 'w1', name: 'Auth' }], ['/work/app', { kind: 'rename', place: 'a1', name: 'Okta' }]]);
+    expect(await phone.request({ t: 'renamePlace', project: app, place: 'w9', name: 'X' })).toMatchObject({ t: 'error', code: 'invalid', message: 'This workspace or activity is in another project.' });
+    expect(await phone.request({ t: 'renamePlace', project: app, place: 'zz', name: 'X' })).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(await phone.request({ t: 'renamePlace', project: app, place: 'w1', name: '' })).toMatchObject({ t: 'error', code: 'invalid' });
+    expect(calls).toHaveLength(2);
+  });
+
+  test('move: a terminal or a resumable into a place of its own project; another project\'s place is refused', async () => {
+    const { phone, calls } = await withPlaces();
+    expect(await phone.request({ t: 'move', id: 't1', place: 'a1' })).toMatchObject({ t: 'ok' });
+    expect(await phone.request({ t: 'move', id: 'r1', place: 'w1' })).toMatchObject({ t: 'ok' });
+    expect(calls).toEqual([['/work/app', { kind: 'move', id: 't1', place: 'a1' }], ['/work/app', { kind: 'move', id: 'r1', place: 'w1' }]]);
+    expect(await phone.request({ t: 'move', id: 't1', place: 'w9' })).toMatchObject({ t: 'error', code: 'invalid', message: 'This workspace or activity is in another project.' });
+    expect(await phone.request({ t: 'move', id: 't1', place: 'zz' })).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(await phone.request({ t: 'move', id: 'nope', place: 'w1' })).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(calls).toHaveLength(2);
+  });
+
+  test('a project with workspaces off has no place to name: not found until its window turns them on', async () => {
+    const { t, phone, calls } = await withPlaces();
+    t.hub.layoutChanged('/work/app', { groupByState: true, pins: [], order: { sessions: [], terminals: [] } });
+    await phone.waitFor((m) => m.t === 'layout' && m.project === app && !(m.layout as Msg).workspaces);
+    expect(await phone.request({ t: 'move', id: 't1', place: 'w1' })).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(await phone.request({ t: 'renamePlace', project: app, place: 'a1', name: 'X' })).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(calls).toEqual([]);
+  });
+
+  test('the window\'s refusals pass on as they are; no answer, or no window to ask, is `failed`', async () => {
+    const { phone } = await withPlaces(async (_r, op) => {
+      if (op.kind === 'rename') return { ok: false, code: 'not-found', message: 'This workspace is not in the project any more.' };
+      if (op.kind === 'activity') return { ok: false, code: 'invalid', message: 'This workspace has 20 activities already.' };
+      if (op.kind === 'move') throw new Error('window gone');
+      return { ok: false, code: 'failed', message: 'The project\'s window did not answer.' };
+    });
+    expect(await phone.request({ t: 'renamePlace', project: app, place: 'w1', name: 'A' })).toEqual({ t: 'error', rid: expect.any(Number), code: 'not-found', message: 'This workspace is not in the project any more.' });
+    expect(await phone.request({ t: 'activity', project: app, workspace: 'w1' })).toMatchObject({ t: 'error', code: 'invalid', message: 'This workspace has 20 activities already.' });
+    expect(await phone.request({ t: 'workspace', project: app })).toMatchObject({ t: 'error', code: 'failed', message: 'The project\'s window did not answer.' });
+    expect(await phone.request({ t: 'move', id: 't1', place: 'w1' })).toMatchObject({ t: 'error', code: 'failed' });
+    const t = setup();
+    const p = await paired(t);
+    await p.phone.state();
+    expect(await p.phone.request({ t: 'workspace', project: app })).toMatchObject({ t: 'error', code: 'failed' });
   });
 });
 

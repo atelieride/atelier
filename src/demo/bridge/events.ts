@@ -86,6 +86,7 @@ export function createEmitter(): Emitter {
     remote: listen('remote'),
     remotePairing: listen('remotePairing'),
     remoteRows: listen('remoteRows'),
+    remotePlaces: listen('remotePlaces'),
     popouts: listen('popouts'),
     dock: listen('dock'),
     dockHover: listen('dockHover'),

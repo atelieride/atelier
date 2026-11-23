@@ -318,6 +318,18 @@ export const remoteLayoutSchema = z.object({
     members: z.record(rowId, placeId).refine((m) => Object.keys(m).length <= 4000, 'too many members')
   }).strict().optional()
 }).strict();
+/**
+ * A project window's answer to a phone's change to its places (RemotePlaceDone): the request's id, how it went (a new
+ * place's id, or a short reason), and the sidebar's arrangement right after it.
+ */
+export const remotePlaceDoneSchema = z.object({
+  id: z.number().int().min(1).max(2 ** 31 - 1),
+  result: z.union([
+    z.object({ ok: z.literal(true), place: placeId.optional() }).strict(),
+    z.object({ ok: z.literal(false), code: z.enum(['not-found', 'invalid', 'failed']), message: shownName(200) }).strict()
+  ]),
+  layout: remoteLayoutSchema
+}).strict();
 
 // Automations: the shape is strict here, every value bounded; main then validates the values
 // field by field (normalizeAutomation), and a new automation must be the sender's project.

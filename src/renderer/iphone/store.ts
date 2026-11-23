@@ -67,15 +67,27 @@ export function openPairing(): void {
 
 /**
  * The window's iPhone plumbing: the status as main pushes it, and asked once at start when access is on (off, main
- * isn't asked: nothing shows it until Settings › iPhone opens); with access on, the sidebar's arrangement for the phones.
+ * isn't asked: nothing shows it until Settings › iPhone opens); with access on, the sidebar's arrangement for the phones
+ * and what they change in it.
  */
 export function installIphone(): () => void {
-  if (useApp.getState().settings.remoteAccess) refreshIphone();
+  let live = true;
+  let offPlaces: (() => void) | null = null;
+  let placesAsked = false;
+  // What phones change in the workspaces and activities: its module is fetched once access is on, so nobody without
+  // iPhone access (the live demo included) pays for it in the first paint. Main holds a change until the module asks.
+  const loadPlaces = () => {
+    if (placesAsked) return;
+    placesAsked = true;
+    import('./phone-places').then((m) => { if (live) offPlaces = m.installPhonePlaces(); }, () => { placesAsked = false; });
+  };
+  const accessOn = () => { refreshIphone(); loadPlaces(); };
+  if (useApp.getState().settings.remoteAccess) accessOn();
   const offStatus = window.atelier.on.remote((s) => useIphone.getState().setStatus(s));
   // The settings arrive after the window starts: access found on then (or turned on) asks for the status once.
-  const offSettings = useApp.subscribe((s, prev) => { if (s.settings.remoteAccess && !prev.settings.remoteAccess) refreshIphone(); });
+  const offSettings = useApp.subscribe((s, prev) => { if (s.settings.remoteAccess && !prev.settings.remoteAccess) accessOn(); });
   // The project's sidebar arrangement, for the phones' grouping; what a phone does to the rows, followed here.
   const offLayout = installLayoutSync();
   const offRows = installPhoneRows();
-  return () => { offStatus(); offSettings(); offLayout(); offRows(); };
+  return () => { live = false; offStatus(); offSettings(); offLayout(); offRows(); offPlaces?.(); };
 }

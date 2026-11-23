@@ -1,12 +1,13 @@
 // iPhone access in the main process: with Settings › iPhone on, this computer keeps one connection to the relay and
 // serves each paired phone that connects through it — the state of its projects and sessions as their sidebar rows
 // show them, each project's sidebar arrangement, the accounts' limits, a terminal's screen and output, typing, sizes,
-// new sessions and the actions on rows (Allow / Deny, rename, close, resume, dismiss) — sends the push notifications
-// phones registered for, and runs pairing (the code, the Allow/Deny question to the windows). Off, no relay connection
-// exists at all. A phone only names what the state listed: opaque project ids, terminal, place and account ids, never
-// paths, commands, directories or profiles.
+// new sessions, the actions on rows (Allow / Deny, rename, close, resume, dismiss) and on workspaces and activities
+// (new, renamed, a row moved in: applied by the project's window, opened for it when closed) — sends the push
+// notifications phones registered for, and runs pairing (the code, the Allow/Deny question to the windows). Off, no
+// relay connection exists at all. A phone only names what the state listed: opaque project ids, terminal, place and
+// account ids, never paths, commands, directories or profiles.
 import { randomBytes } from 'node:crypto';
-import type { RemoteDeviceInfo, RemoteLayout, RemotePairingEvent, RemotePairingStart, RemoteRelayState, RemoteRowsEvent, RemoteSized, RemoteStatus } from '@shared/remote';
+import type { RemoteDeviceInfo, RemoteLayout, RemotePairingEvent, RemotePairingStart, RemotePlace, RemotePlaceOp, RemotePlaceResult, RemoteRelayState, RemoteRowsEvent, RemoteSized, RemoteStatus } from '@shared/remote';
 import { accountsFor } from '@shared/claude-accounts';
 import { relayBase } from '@shared/remote';
 import type { Settings } from '@shared/settings';
@@ -24,7 +25,7 @@ import { LayoutStore } from './layouts';
 import { PushDecider, collapseKeyOf, noticeJson, type AttentionNews } from './push';
 import { pushKeyId, sealPush } from './push-seal';
 import { PushStore } from './push-store';
-import { CLOSE, type ByeReason, type DeviceMessage, type HostMessage, type RemoteAccount } from './messages';
+import { CLOSE, placeNameProblem, type ByeReason, type DeviceMessage, type HostMessage, type RemoteAccount } from './messages';
 import { Pairing } from './pairing';
 import { RelayLink, type RelayLinkOptions } from './relay-link';
 import { allowKey } from './prompt';
@@ -81,6 +82,11 @@ export interface RemoteHubDeps {
   realOf?(p: string): string;
   /** What a phone did to a project's rows, for its main window to follow (nothing when it isn't open). */
   rows?(root: string, e: RemoteRowsEvent): void;
+  /**
+   * A change to a project's workspaces and activities, applied by its main window (opened first when it is closed): the
+   * window's answer. Without it every such request is `failed`.
+   */
+  places?(root: string, op: RemotePlaceOp): Promise<RemotePlaceResult>;
   /** The user is away from this computer (idle for 2 minutes, or its screen locked): phones may ring. */
   away?(): boolean;
   emitStatus(s: RemoteStatus): void;
@@ -143,6 +149,11 @@ interface SessionHost {
   waitKey(t: TerminalInfo): string | null;
   /** A resumable the state lists: its project's root. */
   resumableRoot(id: string): string | null;
+  /** A row the state lists (a session, a terminal or a resumable): its project's root. */
+  rowRoot(id: string): string | null;
+  /** Place `id` as project `root`'s layout lists it; 'elsewhere' when only another project's layout does. */
+  placeIn(root: string, id: string): RemotePlace | 'elsewhere' | null;
+  places(root: string, op: RemotePlaceOp): Promise<RemotePlaceResult>;
   /** A Claude account a phone may start a session as (the ids `usage` lists). */
   accountKnown(id: string): boolean;
   rows(root: string, e: RemoteRowsEvent): void;
@@ -307,8 +318,55 @@ class PhoneSession implements RemoteViewer {
           (info) => { this.host.rows(root, { kind: 'resumed', from: m.id, to: info.id }); this.send({ t: 'created', rid: m.rid, id: info.id }); this.host.scheduleState(); },
           () => { this.host.rows(root, { kind: 'resumed', from: m.id, to: null }); this.error(m.rid, 'failed', 'The session could not be resumed.'); }
         );
+        return;
+      }
+      case 'workspace':
+      case 'activity':
+      case 'renamePlace': {
+        const root = this.host.rootOf(m.project);
+        if (!root) { this.error(m.rid, 'not-found', 'This project is not on this computer any more.'); return; }
+        const bad = m.name !== undefined ? placeNameProblem(m.name) : null;
+        if (bad) { this.error(m.rid, 'invalid', bad); return; }
+        const name = m.name !== undefined ? { name: m.name } : {};
+        if (m.t === 'workspace') { this.place(m.rid, root, { kind: 'workspace', ...name }); return; }
+        if (m.t === 'renamePlace') {
+          if (this.placeOf(m.rid, root, m.place, 'workspace or activity')) this.place(m.rid, root, { kind: 'rename', place: m.place, name: m.name });
+          return;
+        }
+        const ws = this.placeOf(m.rid, root, m.workspace, 'workspace');
+        if (!ws) return;
+        // Activities never hold activities.
+        if (ws.parent !== undefined) { this.error(m.rid, 'invalid', 'An activity goes inside a workspace.'); return; }
+        this.place(m.rid, root, { kind: 'activity', workspace: m.workspace, ...name });
+        return;
+      }
+      case 'move': {
+        // A row of a listed project, into a place of that same project.
+        const root = this.host.rowRoot(m.id);
+        if (!root) { this.error(m.rid, 'not-found', 'This session is not on this computer any more.'); return; }
+        if (this.placeOf(m.rid, root, m.place, 'workspace or activity')) this.place(m.rid, root, { kind: 'move', id: m.id, place: m.place });
       }
     }
+  }
+
+  /** Place `id` of project `root`'s layout; refused (another project's: invalid; else not found) when it isn't one. */
+  private placeOf(rid: number, root: string, id: string, what: string): RemotePlace | null {
+    const p = this.host.placeIn(root, id);
+    if (p === 'elsewhere') { this.error(rid, 'invalid', `This ${what} is in another project.`); return null; }
+    if (!p) { this.error(rid, 'not-found', `This ${what} is not in the project any more.`); return null; }
+    return p;
+  }
+
+  /** A change applied by the project's window: `created` with a new place's id, `ok`, or the window's reason. */
+  private place(rid: number, root: string, op: RemotePlaceOp): void {
+    this.host.places(root, op).then(
+      (r) => {
+        if (!r.ok) { this.error(rid, r.code, r.message); return; }
+        this.send(r.place !== undefined ? { t: 'created', rid, id: r.place } : { t: 'ok', rid });
+        this.host.scheduleState();
+      },
+      () => this.error(rid, 'failed', 'The project\'s window could not be reached.')
+    );
   }
 
   // ── RemoteViewer: what TerminalHub sends this phone ──
@@ -462,6 +520,17 @@ export class RemoteHub {
         const r = st.resumables.find((x) => x.id === id);
         return r ? st.roots.get(r.project) ?? null : null;
       },
+      rowRoot: (id) => {
+        const st = this.computeState();
+        const row = st.sessions.find((x) => x.id === id) ?? st.resumables.find((x) => x.id === id);
+        return row ? st.roots.get(row.project) ?? null : null;
+      },
+      placeIn: (root, id) => {
+        const here = this.layouts.get(root)?.workspaces?.places.find((p) => p.id === id);
+        if (here) return here;
+        return this.layouts.holders(id).some((r) => r !== root) ? 'elsewhere' : null;
+      },
+      places: (root, op) => this.d.places?.(root, op) ?? Promise.resolve({ ok: false, code: 'failed', message: 'The project\'s window could not be reached.' }),
       accountKnown: (id) => accountsFor(this.d.settings().claudeAccounts, this.d.defaultDir()).list.some((a) => a.id === id),
       rows: (root, e) => this.d.rows?.(root, e),
       registerPush: (deviceId, m) => {

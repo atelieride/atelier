@@ -40,6 +40,11 @@ export class LayoutStore {
     return this.load().get(root) ?? null;
   }
 
+  /** The projects whose layout lists place `id` (place ids are made unique, so one at most in practice). */
+  holders(id: string): string[] {
+    return [...this.load()].filter(([, l]) => l.workspaces?.places.some((p) => p.id === id)).map(([root]) => root);
+  }
+
   /** A window's layout for its project; false when it is the one kept already (nothing written). */
   set(root: string, layout: RemoteLayout): boolean {
     const all = this.load();

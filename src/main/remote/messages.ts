@@ -35,6 +35,10 @@ const waitKey = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 const pushKey = z.string().regex(/^[A-Za-z0-9_-]{43}$/).refine((k) => Buffer.from(k, 'base64url').length === 32 && Buffer.from(k, 'base64url').toString('base64url') === k, 'a 32-byte key');
 /** At most 60 characters (not UTF-16 units: an emoji counts once). */
 export const MAX_NAME = 60;
+/** A listed project, by the opaque id the state gave it. */
+const projectId = z.string().min(1).max(64);
+/** A workspace's or an activity's name as it travels (its rule: placeNameProblem). */
+const placeName = z.string().max(MAX_NAME * 4);
 
 export const deviceMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('attach'), rid, id: terminalId, cols: dim, rows: dim }).strict(),
@@ -50,11 +54,28 @@ export const deviceMessageSchema = z.discriminatedUnion('t', [
   // Push notifications: an APNs device token (hex), its environment and the 32-byte key notices are sealed with;
   // a null token unregisters (nothing else then).
   z.object({ t: z.literal('push'), rid, token: z.string().regex(/^[0-9a-fA-F]{64,200}$/).nullable(), env: z.enum(['sandbox', 'production']).optional(), key: pushKey.optional() }).strict()
-    .refine((m) => (m.token === null ? m.env === undefined && m.key === undefined : m.env !== undefined && m.key !== undefined), 'a token comes with its environment and key')
+    .refine((m) => (m.token === null ? m.env === undefined && m.key === undefined : m.env !== undefined && m.key !== undefined), 'a token comes with its environment and key'),
+  // Workspaces and activities, applied in the project's window. A name's own rule is placeNameProblem's, answered by
+  // the hub in words; here it is only bounded.
+  z.object({ t: z.literal('workspace'), rid, project: projectId, name: placeName.optional() }).strict(),
+  z.object({ t: z.literal('activity'), rid, project: projectId, workspace: placeId, name: placeName.optional() }).strict(),
+  z.object({ t: z.literal('renamePlace'), rid, project: projectId, place: placeId, name: placeName }).strict(),
+  z.object({ t: z.literal('move'), rid, id: terminalId, place: placeId }).strict()
 ]);
-/** The requests that act on a row (answered `busy` past their shared limit). */
-export const ROW_ACTIONS: ReadonlySet<DeviceMessage['t']> = new Set(['answer', 'rename', 'close', 'resume', 'dismiss']);
+/** The requests that change rows or places (answered `busy` past their shared limit). */
+export const ROW_ACTIONS: ReadonlySet<DeviceMessage['t']> = new Set(['answer', 'rename', 'close', 'resume', 'dismiss', 'workspace', 'activity', 'renamePlace', 'move']);
 export type DeviceMessage = z.infer<typeof deviceMessageSchema>;
+
+/**
+ * Why a workspace's or an activity's name from a phone can't be one, or null when it can: 1…60 characters (an emoji
+ * counts once), on one line, not only spaces.
+ */
+export function placeNameProblem(name: string): string | null {
+  const n = [...name].length;
+  if (n === 0 || n > MAX_NAME || name.trim().length === 0) return `A name has 1 to ${MAX_NAME} characters.`;
+  if (CONTROL.test(name)) return 'A name stays on one line, without control characters.';
+  return null;
+}
 
 export interface RemoteProject { id: string; name: string; color: number | null; open: boolean }
 /** A row of a project's sidebar as a phone draws it: what Atelier shows of it, by names and ids, never paths. */

@@ -280,6 +280,52 @@ describe('messages', () => {
     expect(o.received.at(-1)).toMatchObject({ rid: 6 });
   });
 
+  test('workspaces and activities: workspace, activity, renamePlace and move; strict shapes, names bounded', async () => {
+    const o = await open();
+    const ok = [
+      { t: 'workspace', rid: 1, project: 'p' },
+      { t: 'workspace', rid: 2, project: 'p', name: 'Billing' },
+      { t: 'activity', rid: 3, project: 'p', workspace: 'w1abc' },
+      { t: 'activity', rid: 4, project: 'p', workspace: 'w1abc', name: 'SSO with Okta' },
+      { t: 'renamePlace', rid: 5, project: 'p', place: 'w1abc', name: 'Auth' },
+      { t: 'move', rid: 6, id: 't1', place: 'a-1_x' },
+      // The name's own rule (1…60 characters on one line) is the hub's, with its own answer.
+      { t: 'renamePlace', rid: 7, project: 'p', place: 'w1abc', name: '' }
+    ];
+    for (const m of ok) o.send(m);
+    expect(o.received).toEqual(ok);
+    const bad = [
+      { t: 'workspace', rid: 11 },
+      { t: 'workspace', rid: 12, project: 'p', color: 3 },
+      { t: 'workspace', rid: 13, project: 'p', folder: '/work/app/wt' },
+      { t: 'activity', rid: 14, project: 'p', name: 'x' },
+      { t: 'activity', rid: 15, project: 'p', workspace: '../w1' },
+      { t: 'renamePlace', rid: 16, project: 'p', place: 'w1' },
+      { t: 'renamePlace', rid: 17, project: 'p', place: 'w1', name: 7 },
+      { t: 'renamePlace', rid: 18, project: 'p', place: 'w1', name: 'x'.repeat(241) },
+      { t: 'move', rid: 19, id: 't1' },
+      { t: 'move', rid: 20, id: 't1', place: 'w1', project: 'p' }
+    ];
+    for (const m of bad) o.send(m);
+    expect(o.received).toHaveLength(ok.length);
+    expect(o.got.filter((m) => m.t === 'error').map((m) => [m.rid, m.code])).toEqual(bad.map((m) => [m.rid, 'invalid']));
+  });
+
+  test('limits: workspace, activity, renamePlace and move share the row actions\' 30 a minute', async () => {
+    let now = 0;
+    const o = await open({ now: () => now, limits: { actionsPerMin: 4 } });
+    o.send({ t: 'rename', rid: 1, id: 't', name: 'x' });
+    o.send({ t: 'workspace', rid: 2, project: 'p' });
+    o.send({ t: 'activity', rid: 3, project: 'p', workspace: 'w1' });
+    o.send({ t: 'renamePlace', rid: 4, project: 'p', place: 'w1', name: 'A' });
+    o.send({ t: 'move', rid: 5, id: 't', place: 'w1' });
+    expect(o.received.map((m) => ('rid' in m ? m.rid : 0))).toEqual([1, 2, 3, 4]);
+    expect(o.got.filter((m) => m.t === 'error').map((m) => [m.rid, m.code])).toEqual([[5, 'busy']]);
+    now += 60_000;
+    o.send({ t: 'move', rid: 6, id: 't', place: 'w1' });
+    expect(o.received.at(-1)).toMatchObject({ rid: 6 });
+  });
+
   test('push: a registration with a token, its environment and a 32-byte key, or unregistering; strict shapes; 5 a minute', async () => {
     let now = 0;
     const o = await open({ now: () => now, limits: { pushesPerMin: 2 } });

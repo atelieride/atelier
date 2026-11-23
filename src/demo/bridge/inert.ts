@@ -76,7 +76,10 @@ export function createRemote(): AtelierApi['remote'] {
     decide: () => resolved(false),
     removeDevice: () => resolved(false),
     reset: noop,
-    // Access is off in the demo: no window ever sends its layout; one that did would go nowhere.
-    layout: noop
+    // Access is off in the demo: no window ever sends its layout; one that did would go nowhere. No phone either, so
+    // no change to the places ever waits for a window.
+    layout: noop,
+    placesReady: () => resolved([]),
+    placeDone: noop
   };
 }
