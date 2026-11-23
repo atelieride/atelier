@@ -10,7 +10,9 @@ export class TokenBucket {
 
   private refill(): void {
     const now = this.now();
-    this.tokens = Math.min(this.burst, this.tokens + ((now - this.at) / 1000) * this.perSec);
+    // A clock set back counts as no time passed (never as a debt that stalls what follows for as long as the jump).
+    const elapsed = Math.max(0, now - this.at);
+    this.tokens = Math.min(this.burst, this.tokens + (elapsed / 1000) * this.perSec);
     this.at = now;
   }
 
