@@ -947,6 +947,47 @@ describe('push notifications', () => {
     expect(relay.pushes()).toHaveLength(2);
   });
 
+  test('only phones still paired are woken: a registration left behind by a phone no longer in the list gets nothing', async () => {
+    const t = setup();
+    const { phone } = await paired(t);
+    await phone.state();
+    await phone.registerPush(token, 'sandbox', key);
+    // Gone from the paired phones by any other way than Remove (a damaged list, an older version's): its registration stays.
+    t.hub.devices.remove(t.hub.devices.list()[0]!.id);
+    t.hub.attention(news(waitingTerm('w1', 'One')));
+    await new Promise((r) => setTimeout(r, 150));
+    expect(relay.pushes(roomOf(t))).toHaveLength(0);
+  });
+
+  test('the 21st phone paired makes room like Remove: the phone seen longest ago is told revoked, its notices stop, Settings no longer lists it', async () => {
+    await relay.close();
+    relay = await startTestRelay({ maxChannels: 40 });
+    const t = setup();
+    const { phone: oldest } = await paired(t);
+    await oldest.state();
+    await oldest.registerPush(token, 'sandbox', key);
+    const oldestId = t.hub.devices.list()[0]!.id;
+    // Nineteen more, all seen after it.
+    await new Promise((r) => setTimeout(r, 20));
+    for (let i = 0; i < 19; i++) t.hub.devices.add({ name: `Phone ${i}`, model: 'iPhone17,1', key: Buffer.alloc(32, i + 1).toString('base64url') });
+    expect(t.hub.devices.list()).toHaveLength(20);
+    const start = await t.hub.startPairing();
+    if (!start.ok) throw new Error('no code');
+    const newest = t.phone();
+    const welcome = newest.pairByCode(start.pairing.code);
+    await until(() => t.pairing.filter((e) => e.kind === 'request').length === 2);
+    const req = t.pairing.filter((e) => e.kind === 'request').at(-1) as Extract<RemotePairingEvent, { kind: 'request' }>;
+    t.hub.decide(req.request.id, true);
+    expect((await welcome).t).toBe('welcome');
+    expect(await oldest.waitFor((m) => m.t === 'bye')).toEqual({ t: 'bye', reason: 'revoked' });
+    expect(t.hub.devices.byId(oldestId)).toBeNull();
+    await until(() => t.statuses.at(-1)!.devices.length === 20 && !t.statuses.at(-1)!.devices.some((d) => d.id === oldestId));
+    t.hub.attention(news(waitingTerm('w1', 'One')));
+    await new Promise((r) => setTimeout(r, 150));
+    expect(relay.pushes(roomOf(t))).toHaveLength(0);
+    expect((t.hub as unknown as { pushes: { list(): unknown[] } }).pushes.list()).toEqual([]);
+  });
+
   test('while the user is here (and the rule on), no notice', async () => {
     let away = false;
     const t = setup({ away: () => away });

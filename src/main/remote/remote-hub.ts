@@ -576,12 +576,13 @@ export class RemoteHub {
 
   /**
    * Sessions just started waiting, finished or stopped with an error (Atelier's own trackers): the notices they are
-   * worth go to every phone that registered for them, each sealed with that phone's key.
+   * worth go to every phone that registered for them and is still paired, each sealed with that phone's key.
    */
   attention(news: AttentionNews): void {
     const link = this.link;
     if (!link || link.state !== 'online') return;
-    const devices = this.pushes.list();
+    const paired = new Set(this.devices.list().map((d) => d.id));
+    const devices = this.pushes.list().filter((p) => paired.has(p.device));
     if (devices.length === 0) return;
     const now = Date.now();
     for (const [id, p] of this.pushing) if (now - p.at > PUSH_ANSWER_MS) this.pushing.delete(id);
@@ -722,7 +723,9 @@ export class RemoteHub {
     if (this.asking === asking) this.asking = null;
     if (decision !== 'allow') return { ok: false, reason: decision, code: CLOSE.normal };
     if (c.state !== 'admitting') { pairing.lost(); return { ok: false, reason: 'expired', code: CLOSE.normal }; }
-    const device = this.devices.add({ name: hello.name, model: hello.model, key });
+    const { device, evicted } = this.devices.add({ name: hello.name, model: hello.model, key });
+    // Full: the phone that made room goes as Remove takes it (its connection ends, its notices stop).
+    for (const d of evicted) this.letGo(d.id);
     pairing.finish();
     if (this.pairing === pairing) this.pairing = null;
     this.admitted.set(c.ch, device.id);
@@ -907,11 +910,16 @@ export class RemoteHub {
 
   /** Unpairs a phone: its connection ends at once (`bye revoked`). */
   removeDevice(id: string): boolean {
-    for (const s of [...this.sessions.values()]) if (s.deviceId === id) s.c.bye('revoked');
-    this.pushes.forgetDevice(id);
+    this.letGo(id);
     const removed = this.devices.remove(id);
     this.statusChanged();
     return removed;
+  }
+
+  /** A phone no longer paired: its connection ends at once (`bye revoked`) and it is woken no more. */
+  private letGo(id: string): void {
+    for (const s of [...this.sessions.values()]) if (s.deviceId === id) s.c.bye('revoked');
+    this.pushes.forgetDevice(id);
   }
 
   /** A new identity (a new room and key): every phone is unpaired and must pair again. */
