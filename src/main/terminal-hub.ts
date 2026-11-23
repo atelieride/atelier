@@ -738,8 +738,10 @@ export class TerminalHub {
       // Typed while this window's attach is still on its way (the terminal is on screen, its screen not yet): held
       // and sent once attached, never dropped (it was: a lost first keystroke right after opening a terminal).
       if (!this.attachments.has(wcId, o.data.id)) { this.attachments.hold(wcId, o.data.id, o.data.data); return; }
-      // Typing in a window takes the size back from a phone (never from another window: there only a resize does).
-      if (typesSomething(o.data.data)) this.applySize(o.data.id, this.sizes.takeBack(wcId, o.data.id, isRemote), wcId);
+      // A key pressed in a window (the renderer tells), or anything typing there (dictation, a drop…), takes the size
+      // back from a phone; never from another window: there only a resize does. The terminal's own answers to its
+      // program (device attributes, cursor and mode reports, colors, focus reports) are neither.
+      if (o.data.pressed || typesSomething(o.data.data)) this.applySize(o.data.id, this.sizes.takeBack(wcId, o.data.id, isRemote), wcId);
       this.typed(o.data.id, o.data.data);
       this.client.send({ t: 'input', id: o.data.id, data: o.data.data });
     });

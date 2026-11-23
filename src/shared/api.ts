@@ -1015,7 +1015,8 @@ export interface AtelierApi {
     kill(id: string): Promise<void>;
     /** Stops these terminals of the window's project as a window close does: Claude sessions come back under Resume. */
     stop(ids: string[]): Promise<void>;
-    input(id: string, data: string): void;
+    /** `pressed`: a key the user pressed in that terminal (or their paste there) sent it. */
+    input(id: string, data: string, pressed?: boolean): void;
     resize(id: string, cols: number, rows: number): void;
     /** A "notify" output trigger matched in this terminal: main may show an OS banner. */
     triggerMatched(id: string, rule: string, line: string): void;

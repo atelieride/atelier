@@ -313,7 +313,7 @@ const api: AtelierApi = {
     detach: (id) => ipcRenderer.invoke(IPC.termDetach, id),
     kill: (id) => ipcRenderer.invoke(IPC.termKill, id),
     stop: (ids) => ipcRenderer.invoke(IPC.termStop, ids),
-    input: (id, data) => ipcRenderer.send(IPC.termInput, { id, data }),
+    input: (id, data, pressed) => ipcRenderer.send(IPC.termInput, pressed ? { id, data, pressed: true } : { id, data }),
     resize: (id, cols, rows) => ipcRenderer.send(IPC.termResize, { id, cols, rows }),
     triggerMatched: (id, rule, line) => ipcRenderer.send(IPC.triggerNotify, { id, rule, line })
   },

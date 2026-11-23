@@ -158,6 +158,21 @@ test('held input (a Session panel command waiting for its Enter): kept in order,
   } finally { delete (globalThis as { window?: unknown }).window; }
 });
 
+test('a key pressed in the terminal is forwarded as one, also when held for a Session panel command', () => {
+  const input = vi.fn();
+  (globalThis as { window?: unknown }).window = { atelier: { terminals: { input } } };
+  try {
+    sendInput('a', '\t', true);
+    sendInput('a', '\x1b[A');
+    expect(input.mock.calls).toEqual([['a', '\t', true], ['a', '\x1b[A']]);
+    holdInput('a');
+    sendInput('a', '\x1b[B', true);
+    sendInput('a', 'typed by dictation');
+    releaseInput('a', '\r');
+    expect(input.mock.calls.slice(2)).toEqual([['a', '\r'], ['a', '\x1b[B', true], ['a', 'typed by dictation']]);
+  } finally { delete (globalThis as { window?: unknown }).window; }
+});
+
 test('sendInput notes and forwards to the terminal', () => {
   const input = vi.fn();
   (globalThis as { window?: unknown }).window = { atelier: { terminals: { input } } };

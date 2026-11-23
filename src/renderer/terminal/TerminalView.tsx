@@ -60,12 +60,13 @@ export function TerminalView({ id, visible, focused = visible, place }: { id: st
       e.preventDefault();
       e.stopImmediatePropagation();
       const files = copiedFilesText([...(e.clipboardData?.files ?? [])], (f) => window.atelier.pathForFile(f), shellKindOf(id));
+      // A paste here is the user's, like a key pressed (it takes the terminal's size back from a phone).
       if (files) {
-        for (const part of pasteSequence(files, bracketedPaste(id), 512 * 1024)) sendInput(id, part);
+        for (const part of pasteSequence(files, bracketedPaste(id), 512 * 1024)) sendInput(id, part, true);
         return;
       }
       void clipboardPayload(text, () => window.atelier.clipboard.saveImage(), () => useApp.getState().showToast(t.imageTooLarge)).then((out) => {
-        for (const part of pasteSequence(out ?? '', bracketedPaste(id), 512 * 1024)) sendInput(id, part);
+        for (const part of pasteSequence(out ?? '', bracketedPaste(id), 512 * 1024)) sendInput(id, part, true);
       });
     };
     lt.host.addEventListener('paste', onPaste, true);
@@ -113,8 +114,9 @@ export function TerminalView({ id, visible, focused = visible, place }: { id: st
   }, [id, visible, setSize]);
   // A phone owns the terminal's size: drawn at it, the terminal's one size, so what the program draws for it (a shell
   // redrawing its prompt, a full-screen app) lands where it does on the phone; drawn at the pane's size it went a line
-  // too high and wiped the output above. Only this view changes: the program has that size already. Taken back (typing
-  // here, a resize, Fit to Window) or the phone gone, main gives the program this window's size: the pane's here.
+  // too high and wiped the output above. Only this view changes: the program has that size already. Taken back (a key
+  // pressed or typing here, a resize, Fit to Window) or the phone gone, main gives the program this window's size: the
+  // pane's here.
   const phone = useIphone((x) => { const s = x.status?.enabled && x.status.sized.find((v) => v.id === id); return s ? `${s.cols}x${s.rows}` : ''; });
   useEffect(() => {
     if (!visible) return;
@@ -200,7 +202,7 @@ export function TerminalView({ id, visible, focused = visible, place }: { id: st
       // In chunks: a single oversized send would be rejected by term:input.
       paste: () => void window.atelier.clipboard.read().then((raw) => clipboardPayload(raw, () => window.atelier.clipboard.saveImage(), () => useApp.getState().showToast(t.imageTooLarge))).then((text) => {
         if (text === null) { useApp.getState().showToast(t.clipboardTooLarge); return; }
-        for (const part of pasteSequence(text, bracketedPaste(id), 512 * 1024)) sendInput(id, part);
+        for (const part of pasteSequence(text, bracketedPaste(id), 512 * 1024)) sendInput(id, part, true);
         lt.term.focus();
       }),
       selectAll: () => lt.term.selectAll(),

@@ -63,6 +63,10 @@ test('renderer errors for the app log: known kinds, bounded texts, nothing else'
 });
 test('input and resize', () => {
   expect(termInputSchema.safeParse({ id: 'a', data: 'ls\r' }).success).toBe(true);
+  // A key pressed in the window says so; nothing else rides along.
+  expect(termInputSchema.safeParse({ id: 'a', data: '\t', pressed: true }).success).toBe(true);
+  expect(termInputSchema.safeParse({ id: 'a', data: '\t', pressed: 'yes' }).success).toBe(false);
+  expect(termInputSchema.safeParse({ id: 'a', data: '\t', by: 'phone' }).success).toBe(false);
   expect(termResizeSchema.safeParse({ id: 'a', cols: 1, rows: 1 }).success).toBe(false);
   expect(idSchema.safeParse('').success).toBe(false);
 });

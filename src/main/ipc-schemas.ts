@@ -56,7 +56,8 @@ export const termCreateSchema = z.object({
   command: z.string().max(10000).optional(),
   profile: profileKeySchema.optional()
 }).strict();
-export const termInputSchema = z.object({ id: idSchema, data: z.string().max(1024 * 1024) }).strict();
+/** `pressed`: a key pressed in the window's terminal (or a paste there) sent it, never the terminal's own answers. */
+export const termInputSchema = z.object({ id: idSchema, data: z.string().max(1024 * 1024), pressed: z.literal(true).optional() }).strict();
 export const termResizeSchema = z.object({ id: idSchema, cols: dim, rows: dim }).strict();
 export const termResumeSchema = z.object({ id: idSchema, cols: dim, rows: dim }).strict();
 /** Scheduled prompts: the same fields atelierd checks; a restored prompt is checked there. */

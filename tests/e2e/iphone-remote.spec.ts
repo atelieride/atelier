@@ -459,8 +459,8 @@ async function phoneOpens(win: Page, phone: FakePhone, cols: number, rows: numbe
 
 // The window's terminal answers a program's queries (device attributes, cursor position, mode reports) through the
 // path keys take: an answer is no keystroke, so the phone keeps the size, and the window keeps drawing it at the
-// phone's. A key typed in the window takes it back.
-test('a phone keeps a terminal\'s size through the window\'s answers to its program; typing in the window takes it back', async () => {
+// phone's. Any key pressed in the window takes it back.
+test('a phone keeps a terminal\'s size through the window\'s answers to its program; any key pressed in the window takes it back', async () => {
   test.setTimeout(180_000);
   const relay = await startTestRelay();
   const { app, win, home } = await launch({ ATELIER_TEST_RELAY_URL: relay.url });
@@ -493,6 +493,19 @@ test('a phone keeps a terminal\'s size through the window\'s answers to its prog
     expect((await phone.waitFor((m) => m.t === 'size' && m.id === id, { since: typed, ms: 10000 })).cols).toBeGreaterThan(50);
     await expect(note).toHaveCount(0);
     await expect(rows.locator(':scope > div')).not.toHaveCount(20);
+    // Every key pressed in the window takes it back, the ones that type nothing too: an arrow, Tab (no file to complete
+    // in the empty project). The phone's view resized takes the size again before each.
+    for (const key of ['ArrowLeft', 'Tab']) {
+      phone.resize(id, 50, 20);
+      await expect(note).toContainText('Sized for iPhone');
+      await expect(rows.locator(':scope > div')).toHaveCount(20);
+      const pressed = phone.messages.length;
+      await win.keyboard.press(key);
+      expect((await phone.waitFor((m) => m.t === 'size' && m.id === id, { since: pressed, ms: 10000 })).cols, key).toBeGreaterThan(50);
+      await expect(note).toHaveCount(0);
+      await expect(rows.locator(':scope > div')).not.toHaveCount(20);
+    }
+    await look(win, `${SHOTS}/keys-took-size.png`, { settle: 300 });
     await win.keyboard.press('Enter');
     await expect(rows).toContainText(/\n\s*mac-typed\s*(\n|$)/, { useInnerText: true, timeout: 10000 });
   } finally {

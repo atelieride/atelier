@@ -2457,7 +2457,7 @@ const strings = {
   iphone: {
     pill: (n: number) => (n === 1 ? 'iPhone' : `${n} iPhones`), pillTip: (names: string[]) => `Connected now: ${names.join(', ')}`,
     badge: 'Open on iPhone',
-    sized: 'Sized for iPhone', sizedTip: 'An iPhone set this terminal\'s size. Typing here takes it back too.', fit: 'Fit to Window',
+    sized: 'Sized for iPhone', sizedTip: 'An iPhone set this terminal\'s size. Any key pressed here takes it back too.', fit: 'Fit to Window',
     command: 'Pair iPhone…'
   },
   set: {

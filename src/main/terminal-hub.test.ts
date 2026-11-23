@@ -863,7 +863,8 @@ describe('remote viewers (a paired phone): watched like a window, with one size 
     const winAttach = () => handler(ipcMain.handle, IPC.termAttach)(ev, 'a') as Promise<void>;
     const winDetach = () => handler(ipcMain.handle, IPC.termDetach)(ev, 'a') as Promise<void>;
     const winResize = (cols: number, rows: number) => handler(ipcMain.on, IPC.termResize)(ev, { id: 'a', cols, rows });
-    const winType = (data: string) => handler(ipcMain.on, IPC.termInput)(ev, { id: 'a', data });
+    // `pressed`: the renderer says a key pressed in the window (or a paste there) sent it.
+    const winType = (data: string, pressed = false) => handler(ipcMain.on, IPC.termInput)(ev, pressed ? { id: 'a', data, pressed: true } : { id: 'a', data });
     const w = wc(1); win(w); register(w);
     client.emit('status', 'connected');
     client.emit('terminals', [term('a'), term('b', '/q')]);
@@ -942,13 +943,39 @@ describe('remote viewers (a paired phone): watched like a window, with one size 
     expect(t.sent()).toEqual(answers.map((data) => ({ t: 'input', id: 'a', data })));
     expect(t.got.filter((g) => g[0] === 'size')).toEqual([]);
     expect(t.hub.remoteSized()).toEqual([{ id: 'a', cols: 60, rows: 30 }]);
-    // The person at the Mac: each takes the size back, before what it types.
+    // What types, from any path (dictation, a drop, Send to Terminal): each takes the size back, before what it types.
     for (const key of ['x', '\x1b[200~pasted\x1b[201~', '\x1b\r', '\r', '\x7f', '\x03']) {
       t.hub.remoteResize(t.key, 'a', 60, 30);
       t.client.send.mockClear();
       t.winType(key);
       expect(t.sent(), JSON.stringify(key)).toEqual([{ t: 'resize', id: 'a', cols: 120, rows: 40 }, { t: 'input', id: 'a', data: key }]);
     }
+  });
+
+  test('every key pressed in the window takes the size back, the ones that type nothing too; unpressed, they don\'t', async () => {
+    const t = await withWindow();
+    await t.phoneAttach();
+    // What xterm sends for each key the person at the Mac presses, and pastes (a lone tab, a bracketed one's start).
+    const keys: Record<string, string> = {
+      Tab: '\t', Up: '\x1b[A', Down: '\x1b[B', Right: '\x1b[C', Left: '\x1b[D', 'Up, application cursor keys': '\x1bOA',
+      Esc: '\x1b', 'Ctrl+C': '\x03', 'Ctrl+D': '\x04', 'Ctrl+L': '\x0c', 'Ctrl+R': '\x12', Enter: '\r', letter: 'a',
+      'paste of a tab': '\t', 'bracketed paste': '\x1b[200~'
+    };
+    for (const [name, data] of Object.entries(keys)) {
+      t.hub.remoteResize(t.key, 'a', 60, 30);
+      t.client.send.mockClear();
+      t.winType(data, true);
+      expect(t.sent(), name).toEqual([{ t: 'resize', id: 'a', cols: 120, rows: 40 }, { t: 'input', id: 'a', data }]);
+      expect(t.got.at(-1), name).toEqual(['size', 'a', 120, 40]);
+      expect(t.hub.remoteSized(), name).toEqual([]);
+    }
+    // The same navigation keys sent by no key press (the wheel over a full-screen program, a click that moves the
+    // cursor): the phone keeps the size.
+    t.hub.remoteResize(t.key, 'a', 60, 30);
+    t.client.send.mockClear();
+    for (const data of ['\x1b[A', '\x1b[B', '\x1b[C', '\x1b[D', '\x1bOA', '\t', '\x1b']) t.winType(data);
+    expect(t.sent().filter((m) => m.t === 'resize')).toEqual([]);
+    expect(t.hub.remoteSized()).toEqual([{ id: 'a', cols: 60, rows: 30 }]);
   });
 
   test('a window resize takes the size; the phone is told; the phone typing takes it back', async () => {
