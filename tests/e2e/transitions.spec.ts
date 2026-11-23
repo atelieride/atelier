@@ -512,8 +512,7 @@ test('The command palette opens over a receding app; other sheets leave it be', 
     expect(opened.slice(0, 8).map((r) => r.delay)).toEqual([0, 1, 2, 3, 4, 5, 6, 7].map((i) => `${(60 + i * 22) / 1000}s`));
     expect(opened.slice(0, 8).every((r, i) => r.enter && r.i === String(i))).toBe(true);
     expect(opened.slice(8).some((r) => r.enter)).toBe(false);
-    await win.waitForTimeout(400);
-    expect(await transform(body)).toMatch(/^matrix\(0\.985,/);
+    await expect.poll(() => transform(body)).toMatch(/^matrix\(0\.985,/);
     // The sheet itself is not scaled by the receding app (its own animation rests at the identity).
     expect(await transform(win.locator('.palette'))).toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);
     expect(await win.locator('.palette').evaluate((el) => getComputedStyle(el).animationName)).toBe('atl-sheet-drop');
@@ -526,14 +525,13 @@ test('The command palette opens over a receding app; other sheets leave it be', 
     expect((await rows()).slice(before).some((r) => r.enter)).toBe(false);
     await win.keyboard.press('Escape');
     await expect(win.locator('.palette')).toHaveCount(0);
-    await win.waitForTimeout(400);
+    // It returns at once, so what is measured right after a palette action is the app at rest.
     expect(await transform(body)).toBe('none');
 
     // Another sheet sharing the palette's classes keeps its own entrance and leaves the app where it is.
     await menu(app, 'New Claude Session');
     const sheet = win.locator('.palette.new-session');
     await expect(sheet).toBeVisible();
-    await win.waitForTimeout(400);
     expect(await sheet.evaluate((el) => getComputedStyle(el).animationName)).toBe('atl-pop');
     expect(await transform(body)).toBe('none');
   } finally {
