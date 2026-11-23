@@ -17,6 +17,16 @@ test('http only to loopback and private addresses', () => {
   }
 });
 
+test('a private address is the whole host: no look-alike name, no IPv4 inside IPv6, no short hextet read as unique local', () => {
+  // fc00::/7 is a first hextet of fcXX or fdXX; [fc::1] and [fd::] are 00fc and 00fd, public addresses.
+  for (const bad of ['http://127.0.0.1.relay.test', 'http://10.0.0.1.relay.test:8787', 'http://[::ffff:7f00:1]', 'http://[::ffff:127.0.0.1]', 'http://[fc::1]', 'http://[fd::]', 'http://[fd1::1]']) {
+    expect(relayBase(bad), bad).toBeNull();
+  }
+  for (const ok of ['http://[fd12:3456::1]', 'http://[fdff::1]:8787', 'http://[fc00::]']) {
+    expect(relayBase(ok), ok).not.toBeNull();
+  }
+});
+
 test('nothing else: other schemes, credentials, queries, fragments, garbage', () => {
   for (const bad of ['ws://localhost:8787', 'wss://relay.test', 'ftp://relay.test', 'https://user:pass@relay.test', 'https://relay.test/?a=1', 'https://relay.test/#x', 'relay.test', '', ' https://relay.test', 'https://']) {
     expect(relayBase(bad), bad).toBeNull();

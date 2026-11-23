@@ -59,20 +59,25 @@ export class DeviceStore {
     return this.list().find((d) => d.id === id) ?? null;
   }
 
-  /** A phone allowed in: added, or its name and model updated when its key is already known. */
-  add(o: { name: string; model: string; key: string }): PairedDevice {
+  /**
+   * A phone allowed in: added, or its name and model updated when its key is already known. Full, the device seen
+   * longest ago makes room: `evicted` names it, so whoever keeps more of it (its push registration, its connection)
+   * lets it go too.
+   */
+  add(o: { name: string; model: string; key: string }): { device: PairedDevice; evicted: PairedDevice[] } {
     const at = this.now();
     const id = deviceIdOf(o.key);
     const others = this.list().filter((d) => d.id !== id);
-    // Full: the device seen longest ago makes room.
+    const evicted: PairedDevice[] = [];
     while (others.length >= MAX_DEVICES) {
       const oldest = others.reduce((a, b) => (b.lastSeenAt < a.lastSeenAt ? b : a));
       others.splice(others.indexOf(oldest), 1);
+      evicted.push(oldest);
     }
     const known = this.byId(id);
     const device: PairedDevice = { id, name: o.name, model: o.model, key: o.key, pairedAt: known?.pairedAt ?? at, lastSeenAt: at };
     this.save([...others, device]);
-    return { ...device };
+    return { device: { ...device }, evicted };
   }
 
   remove(id: string): boolean {

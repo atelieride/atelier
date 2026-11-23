@@ -264,8 +264,11 @@ export class RelayLink {
       case 'open': {
         const ch = f.ch;
         if (typeof ch !== 'number' || !Number.isInteger(ch) || ch < 0 || ch > 0xffffffff || (f.kind !== 'device' && f.kind !== 'pair')) return;
-        // A channel id opened again: the earlier channel is over.
-        if (this.channels.has(ch)) { this.dropChannel(ch); this.o.onClosed(ch); }
+        // A channel id opened again: the earlier channel is over. What was still queued for it (a close this computer
+        // asked for included) is the earlier phone's, never the new one's: the new channel starts empty.
+        const reopened = this.channels.has(ch);
+        this.dropChannel(ch);
+        if (reopened) this.o.onClosed(ch);
         this.channels.add(ch);
         const lookup = f.kind === 'pair' && typeof f.lookup === 'string' && /^[A-Za-z0-9_-]{43}$/.test(f.lookup) ? f.lookup : undefined;
         this.o.onOpen(ch, f.kind, lookup);

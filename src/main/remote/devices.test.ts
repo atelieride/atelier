@@ -12,7 +12,7 @@ test('paired devices live in ATELIER_HOME/remote/devices.json, 0600 in a 0700 fo
   const h = home();
   let now = 1000;
   const store = new DeviceStore(h, () => now);
-  const d = store.add({ name: 'Test iPhone', model: 'iPhone17,1', key: key(1) });
+  const d = store.add({ name: 'Test iPhone', model: 'iPhone17,1', key: key(1) }).device;
   expect(d).toEqual({ id: deviceIdOf(key(1)), name: 'Test iPhone', model: 'iPhone17,1', key: key(1), pairedAt: 1000, lastSeenAt: 1000 });
   const file = join(h, 'remote', 'devices.json');
   expectMode(file, 0o600);
@@ -25,8 +25,8 @@ test('paired devices live in ATELIER_HOME/remote/devices.json, 0600 in a 0700 fo
 
 test('the allowlist is by key; pairing the same phone again keeps its id and takes its new name', () => {
   const store = new DeviceStore(home(), () => 1);
-  const a = store.add({ name: 'Old name', model: 'iPhone16,2', key: key(1) });
-  const b = store.add({ name: 'New name', model: 'iPhone16,2', key: key(1) });
+  const a = store.add({ name: 'Old name', model: 'iPhone16,2', key: key(1) }).device;
+  const b = store.add({ name: 'New name', model: 'iPhone16,2', key: key(1) }).device;
   expect(b.id).toBe(a.id);
   expect(store.list()).toHaveLength(1);
   expect(store.byKey(key(1))?.name).toBe('New name');
@@ -35,7 +35,7 @@ test('the allowlist is by key; pairing the same phone again keeps its id and tak
 
 test('removed one by one, or all at once', () => {
   const store = new DeviceStore(home(), () => 1);
-  const a = store.add({ name: 'A', model: 'm', key: key(1) });
+  const a = store.add({ name: 'A', model: 'm', key: key(1) }).device;
   store.add({ name: 'B', model: 'm', key: key(2) });
   expect(store.remove(a.id)).toBe(true);
   expect(store.remove(a.id)).toBe(false);
@@ -44,15 +44,20 @@ test('removed one by one, or all at once', () => {
   expect(store.list()).toEqual([]);
 });
 
-test('at most MAX_DEVICES: the one seen longest ago makes room', () => {
+test('at most MAX_DEVICES: the one seen longest ago makes room, and is named (its notices and connection go too)', () => {
   let now = 0;
   const store = new DeviceStore(home(), () => ++now);
-  for (let i = 1; i <= MAX_DEVICES; i++) store.add({ name: `D${i}`, model: 'm', key: key(i) });
+  for (let i = 1; i <= MAX_DEVICES; i++) expect(store.add({ name: `D${i}`, model: 'm', key: key(i) }).evicted).toEqual([]);
   store.seen(store.byKey(key(1))!.id);
-  store.add({ name: 'New', model: 'm', key: key(99) });
+  const second = store.byKey(key(2))!;
+  const { device, evicted } = store.add({ name: 'New', model: 'm', key: key(99) });
+  expect(evicted).toEqual([second]);
+  expect(device).toMatchObject({ name: 'New', key: key(99) });
   expect(store.list()).toHaveLength(MAX_DEVICES);
   expect(store.byKey(key(2))).toBeNull();
   expect(store.byKey(key(1))).not.toBeNull();
+  // Pairing a phone already listed again makes no room.
+  expect(store.add({ name: 'D1 again', model: 'm', key: key(1) }).evicted).toEqual([]);
 });
 
 test('an unreadable or foreign file reads as no devices (pair again), never a crash', () => {

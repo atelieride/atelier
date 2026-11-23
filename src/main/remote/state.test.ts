@@ -62,7 +62,7 @@ test('sessions: every terminal by age, its project by id, Claude or not, the sta
   expect('waitingFor' in s.sessions[0]!).toBe(false);
 });
 
-// ── v1.1: everything a sidebar row shows ──
+// ── Everything a sidebar row shows ──
 
 const NOW = Date.UTC(2026, 10, 23, 12, 0);
 const accounts = {

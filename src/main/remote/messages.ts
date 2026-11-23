@@ -154,8 +154,11 @@ export const CLOSE = {
   noCode: 4404,
   /** The handshake took too long. */
   timeout: 4408,
-  /** A message beyond 8 MiB. */
+  /** A message beyond 8 MiB, or a frame beyond a Noise message's 65535 bytes. */
   tooLarge: 4413,
-  /** Too many refused messages, or more output queued than the link carries (the phone reconnects). */
+  /**
+   * Too many refused messages, more output queued than the link carries, or too many handshakes at once (the phone
+   * reconnects).
+   */
   overloaded: 4429
 } as const;

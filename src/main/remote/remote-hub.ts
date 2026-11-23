@@ -113,6 +113,8 @@ const SNAPSHOT_MAX = MAX_APP_MESSAGE - 64 * 1024;
 const DEFAULT_SIZE: Size = { cols: 120, rows: 36 };
 /** While sessions are starting, the state is looked at again this often (a start that never came ends at 30 s). */
 const STARTING_RECHECK_MS = 5000;
+/** Channels still in their handshake (or waiting to be let in) at once, at most. */
+const MAX_HANDSHAKES = 16;
 
 /** What a phone's state is compared by: equal, it isn't sent again. */
 const stateKey = (st: RemoteState): string => JSON.stringify([st.projects, st.sessions, st.resumables]);
@@ -486,8 +488,10 @@ export class RemoteHub {
   /** Channels admitted, by channel, with their device's id, until opened. */
   private readonly admitted = new Map<number, string>();
   private pairing: Pairing | null = null;
-  /** The pairing channel waiting for the user's answer. */
-  private asking: SecureChannel | null = null;
+  /** The pages (webContents ids) that started the pairing in progress. */
+  private readonly pairingPages = new Set<number>();
+  /** The pairing channel waiting for the user's answer, and the pairing it asked. */
+  private asking: { c: SecureChannel; pairing: Pairing } | null = null;
   private stateTimer: ReturnType<typeof setTimeout> | null = null;
   private stateAt = 0;
   private usageTimer: ReturnType<typeof setTimeout> | null = null;
@@ -574,12 +578,13 @@ export class RemoteHub {
 
   /**
    * Sessions just started waiting, finished or stopped with an error (Atelier's own trackers): the notices they are
-   * worth go to every phone that registered for them, each sealed with that phone's key.
+   * worth go to every phone that registered for them and is still paired, each sealed with that phone's key.
    */
   attention(news: AttentionNews): void {
     const link = this.link;
     if (!link || link.state !== 'online') return;
-    const devices = this.pushes.list();
+    const paired = new Set(this.devices.list().map((d) => d.id));
+    const devices = this.pushes.list().filter((p) => paired.has(p.device));
     if (devices.length === 0) return;
     const now = Date.now();
     for (const [id, p] of this.pushing) if (now - p.at > PUSH_ANSWER_MS) this.pushing.delete(id);
@@ -682,6 +687,11 @@ export class RemoteHub {
 
   private openChannel(link: RelayLink, id: RemoteIdentity, ch: number, kind: ChannelKind, lookup?: string): void {
     this.channels.get(ch)?.relayClosed();
+    // Each handshake costs keys and a timer for up to 30 s, and the relay decides how many channels open: past the
+    // cap, new ones are closed at once (a phone told so reconnects). The relay's own limit per room is far below it.
+    let pending = 0;
+    for (const c of this.channels.values()) if (c.state !== 'open' && c.state !== 'closed') pending++;
+    if (pending >= MAX_HANDSHAKES) { link.closeChannel(ch, CLOSE.overloaded, { drop: true }); return; }
     const c = new SecureChannel(ch, kind, {
       link, host: id.host, roomId: id.roomId,
       hello: { name: this.d.host.name, app: this.d.host.app, platform: this.d.host.platform },
@@ -706,14 +716,20 @@ export class RemoteHub {
     }
     const pairing = this.pairing;
     if (!pairing) return { ok: false, reason: 'expired', code: CLOSE.normal };
-    this.asking = c;
+    // One phone at a time waits for the user's answer (the code is single use): another one is expired, and never
+    // takes the place of the one waiting, whose leaving must still take the question down.
+    if (this.asking) return { ok: false, reason: 'expired', code: CLOSE.normal };
+    const asking = { c, pairing };
+    this.asking = asking;
     const decision = await pairing.ask({ name: hello.name, model: hello.model });
-    if (this.asking === c) this.asking = null;
+    if (this.asking === asking) this.asking = null;
     if (decision !== 'allow') return { ok: false, reason: decision, code: CLOSE.normal };
-    if (c.state !== 'admitting') return { ok: false, reason: 'expired', code: CLOSE.normal };
-    const device = this.devices.add({ name: hello.name, model: hello.model, key });
+    if (c.state !== 'admitting') { pairing.lost(); return { ok: false, reason: 'expired', code: CLOSE.normal }; }
+    const { device, evicted } = this.devices.add({ name: hello.name, model: hello.model, key });
+    // Full: the phone that made room goes as Remove takes it (its connection ends, its notices stop).
+    for (const d of evicted) this.letGo(d.id);
     pairing.finish();
-    if (this.pairing === pairing) this.pairing = null;
+    if (this.pairing === pairing) { this.pairing = null; this.pairingPages.clear(); }
     this.admitted.set(c.ch, device.id);
     this.d.emitPairing({ kind: 'paired', device: this.info(device, new Map([[device.id, new Set()]])) });
     return { ok: true };
@@ -738,7 +754,7 @@ export class RemoteHub {
   private channelClosed(c: SecureChannel): void {
     if (this.channels.get(c.ch) === c) this.channels.delete(c.ch);
     this.admitted.delete(c.ch);
-    if (this.asking === c) { this.asking = null; this.pairing?.cancel(); }
+    if (this.asking?.c === c) { const { pairing } = this.asking; this.asking = null; pairing.cancel(); }
     const s = this.sessions.get(c.ch);
     if (s?.c === c) {
       this.sessions.delete(c.ch);
@@ -862,12 +878,18 @@ export class RemoteHub {
 
   // ── Pairing and devices (the windows' requests) ──
 
-  async startPairing(): Promise<RemotePairingStart> {
+  /**
+   * The pairing sheet opened (in `page`, a window's webContents id): the code, a fresh one when none is live. The
+   * pairing lasts while a page that started it is there (see pageGone).
+   */
+  async startPairing(page?: number): Promise<RemotePairingStart> {
     if (!this.d.settings().remoteAccess) return { ok: false, reason: 'disabled', message: 'Turn on access from iPhone first.' };
     const link = this.link;
     const id = this.identity;
     const base = relayBase(this.d.relayUrl());
     if (!link || !id || !base) return { ok: false, reason: 'unavailable', message: this.relay.message ?? 'iPhone access is unavailable right now.' };
+    if (!this.pairing) this.pairingPages.clear();
+    if (page !== undefined) this.pairingPages.add(page);
     this.pairing ??= new Pairing({
       offer: (lookup, ttl) => this.link?.offer(lookup, ttl),
       withdraw: (lookup) => this.link?.withdraw(lookup),
@@ -883,11 +905,22 @@ export class RemoteHub {
 
   /** The pairing sheet closed: the code goes; a phone waiting for an answer is told pairing is off. */
   stopPairing(): void {
+    this.pairingPages.clear();
     const p = this.pairing;
     if (!p) return;
     this.pairing = null;
     p.stop();
     this.d.emitPairing({ kind: 'stopped' });
+  }
+
+  /**
+   * A page is gone: its window closed, or the page reloaded, navigated or crashed, none of which lets the sheet say
+   * it closed. The last page that started the pairing gone, it stops as if its sheet had closed: no code is left
+   * renewing and offered to the relay with no window to show it, or to ask about a phone that presents it.
+   */
+  pageGone(page: number): void {
+    if (!this.pairingPages.delete(page)) return;
+    if (this.pairingPages.size === 0) this.stopPairing();
   }
 
   decide(requestId: string, allow: boolean): boolean {
@@ -896,11 +929,16 @@ export class RemoteHub {
 
   /** Unpairs a phone: its connection ends at once (`bye revoked`). */
   removeDevice(id: string): boolean {
-    for (const s of [...this.sessions.values()]) if (s.deviceId === id) s.c.bye('revoked');
-    this.pushes.forgetDevice(id);
+    this.letGo(id);
     const removed = this.devices.remove(id);
     this.statusChanged();
     return removed;
+  }
+
+  /** A phone no longer paired: its connection ends at once (`bye revoked`) and it is woken no more. */
+  private letGo(id: string): void {
+    for (const s of [...this.sessions.values()]) if (s.deviceId === id) s.c.bye('revoked');
+    this.pushes.forgetDevice(id);
   }
 
   /** A new identity (a new room and key): every phone is unpaired and must pair again. */

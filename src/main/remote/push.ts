@@ -1,7 +1,8 @@
 // When a paired phone is woken with a notification, and what it says. The news comes from Atelier's own attention
 // trackers (a session starting to wait, finishing after the "only after working for" time, stopping with an error),
 // grouped as the Mac groups its banners, in the same words; Settings › iPhone › Notifications picks the kinds, and by
-// default a phone rings only while its user is away from this computer. At most one notice per session every 30 s.
+// default a phone rings only while its user is away from this computer. At most one notice of each kind (waiting,
+// finished, error) per session every 30 s.
 import { createHash } from 'node:crypto';
 import type { TerminalInfo } from '@shared/protocol';
 import type { Settings } from '@shared/settings';
@@ -58,7 +59,7 @@ export interface PushDeciderDeps {
 }
 
 export class PushDecider {
-  /** When each session was last the subject of a notice. */
+  /** When each session was last the subject of a notice of each kind (kind, then the session's id). */
   private last = new Map<string, number>();
 
   constructor(private readonly d: PushDeciderDeps) {}
@@ -68,11 +69,13 @@ export class PushDecider {
     const s = this.d.settings();
     if (!s.remoteAccess || (s.remoteNotifyAway && !this.d.away())) return [];
     const now = this.d.now?.() ?? Date.now();
-    for (const [id, at] of this.last) if (now - at >= PUSH_EVERY_MS) this.last.delete(id);
-    const fresh = (t: TerminalInfo) => !this.last.has(t.id);
+    for (const [key, at] of this.last) if (now - at >= PUSH_EVERY_MS) this.last.delete(key);
+    // Per kind: a wait that flaps rings once, but a session finishing (or failing) right after it still says so.
+    const keyOf = (kind: PushNotice['kind'], id: string) => `${kind} ${id}`;
+    const fresh = (kind: PushNotice['kind']) => (t: TerminalInfo) => !this.last.has(keyOf(kind, t.id));
     const notes = stateNotes({ waiting: s.remoteNotifyWaiting, done: s.remoteNotifyDone, error: s.remoteNotifyError }, false,
-      news.waiting.filter(fresh), news.done.filter(fresh), news.error.filter(fresh));
-    for (const n of notes) this.last.set(n.term.id, now);
+      news.waiting.filter(fresh('waiting')), news.done.filter(fresh('done')), news.error.filter(fresh('error')));
+    for (const n of notes) this.last.set(keyOf(n.kind as PushNotice['kind'], n.term.id), now);
     return groupNotes(notes).map((n): PushNotice => ({
       v: 1, kind: n.kind as PushNotice['kind'], title: n.title ?? n.term.title, subtitle: nameOf(n.term.projectRoot), body: n.body,
       project: projectIdOf(n.term.projectRoot), id: n.term.id, at: now

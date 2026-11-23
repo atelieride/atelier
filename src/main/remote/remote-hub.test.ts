@@ -2,16 +2,19 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import WebSocket from 'ws';
 import type { Resumable, TerminalInfo } from '@shared/protocol';
 import type { UsageEntry } from '@shared/session';
 import type { PortsMap } from '@shared/ports';
 import type { RemoteLayout, RemotePairingEvent, RemotePlaceOp, RemotePlaceResult, RemoteRowsEvent, RemoteSized, RemoteStatus } from '@shared/remote';
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings';
-import { FakePhone, type Msg } from '../../../tests/support/fake-phone';
+import { FakePhone, PhoneChannel, type Msg } from '../../../tests/support/fake-phone';
 import { startTestRelay, type TestRelay } from '../../../tests/support/test-relay';
 import { createSecretStore } from '../connectors/secret-store';
 import { testSafeStorage } from '../connectors/test-safe-storage';
 import type { RemoteViewer } from '../terminal-hub';
+import { deriveCode, normalizeCode } from './code';
+import { generateKeyPair } from './noise';
 import { RemoteHub, type RemoteHubDeps, type RemoteTerminals } from './remote-hub';
 import { projectIdOf } from './state';
 import { collapseKeyOf } from './push';
@@ -277,6 +280,158 @@ describe('pairing', () => {
     expect(t.pairing.at(-1)).toEqual({ kind: 'stopped' });
     expect(t.pairing.some((e) => e.kind === 'denied')).toBe(false);
   });
+
+  describe('the pages that show the code', () => {
+    async function online() {
+      const t = setup();
+      t.hub.start();
+      await until(() => t.hub.status().relay.state === 'online');
+      return t;
+    }
+
+    test('the pairing lasts while a page that started it is there: the last one gone (closed, reloaded), it stops', async () => {
+      const t = await online();
+      expect(await t.hub.startPairing(1)).toMatchObject({ ok: true });
+      expect(await t.hub.startPairing(2)).toMatchObject({ ok: true });
+      await until(() => relay.offers().length === 1);
+      t.hub.pageGone(1);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(relay.offers()).toHaveLength(1);
+      expect(t.pairing.some((e) => e.kind === 'stopped')).toBe(false);
+      // A page that never showed it changes nothing.
+      t.hub.pageGone(7);
+      t.hub.pageGone(2);
+      expect(t.pairing.at(-1)).toEqual({ kind: 'stopped' });
+      await until(() => relay.offers().length === 0);
+    });
+
+    test('a phone waiting for Allow when the last page goes is told pairing is off', async () => {
+      const t = await online();
+      const start = await t.hub.startPairing(1);
+      if (!start.ok) throw new Error('no code');
+      const answer = t.phone().pairByCode(start.pairing.code);
+      await until(() => t.pairing.some((e) => e.kind === 'request'));
+      t.hub.pageGone(1);
+      expect(await answer).toEqual({ t: 'denied', reason: 'disabled' });
+    });
+
+    test('the pages of an earlier pairing are not this one\'s: stopped or paired, the next starts with none', async () => {
+      const t = await online();
+      await t.hub.startPairing(1);
+      t.hub.stopPairing();
+      await t.hub.startPairing(2);
+      t.hub.pageGone(1);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(relay.offers()).toHaveLength(1);
+      // Paired from page 2: the pairing is over; page 3's next one isn't held by page 2.
+      const again = await t.hub.startPairing(2);
+      if (!again.ok) throw new Error('no code');
+      const answer = t.phone().pairByCode(again.pairing.code);
+      await until(() => t.pairing.some((e) => e.kind === 'request'));
+      t.hub.decide((t.pairing.find((e) => e.kind === 'request') as { request: { id: string } }).request.id, true);
+      expect((await answer).t).toBe('welcome');
+      await t.hub.startPairing(3);
+      t.hub.pageGone(2);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(relay.offers()).toHaveLength(1);
+      t.hub.pageGone(3);
+      await until(() => relay.offers().length === 0);
+    });
+  });
+
+  describe('a phone that holds its last handshake message while the code goes', () => {
+    /** Presents `code` and stops after message 2; `finish()` sends its message 3 later, as a slow or wily phone may. */
+    async function holding(code: string) {
+      const k = await deriveCode(normalizeCode(code)!);
+      const ws = new WebSocket(relay.url.replace(/^http/, 'ws') + `/v1/pair/${k.lookup}`);
+      const ch = new PhoneChannel({ kind: 'pair', id: k.lookup, key: generateKeyPair(), psk: k.psk });
+      const s = { got: [] as Msg[], m3: null as Buffer | null, code: null as number | null, finish: () => ws.send(s.m3!), drop: () => ws.terminate() };
+      ws.on('message', (data, binary) => {
+        if (!binary) {
+          if ((JSON.parse((data as Buffer).toString('utf8')) as Msg).host === 'online') ws.send(ch.start());
+          return;
+        }
+        const r = ch.receive(data as Buffer);
+        if (r.reply) s.m3 = r.reply;
+        s.got.push(...r.messages);
+      });
+      ws.on('close', (c) => { s.code = c; });
+      ws.on('error', () => {});
+      await until(() => s.m3 !== null);
+      return s;
+    }
+    const requests = (t: ReturnType<typeof setup>) => t.pairing.filter((e) => e.kind === 'request').length;
+
+    async function online() {
+      const t = setup();
+      t.hub.start();
+      await until(() => t.hub.status().relay.state === 'online');
+      const start = await t.hub.startPairing();
+      if (!start.ok) throw new Error('no code');
+      return { t, code: start.pairing.code };
+    }
+
+    test('after another phone with the code was denied and the code replaced: expired, never asked about', async () => {
+      const { t, code } = await online();
+      const late = await holding(code);
+      const answer = t.phone().pairByCode(code);
+      await until(() => requests(t) === 1);
+      t.hub.decide((t.pairing.find((e) => e.kind === 'request') as { request: { id: string } }).request.id, false);
+      expect(await answer).toEqual({ t: 'denied', reason: 'declined' });
+      await until(() => t.pairing.filter((e) => e.kind === 'code').length === 2);
+      late.finish();
+      await until(() => late.code !== null);
+      expect(late.got).toEqual([{ t: 'denied', reason: 'expired' }]);
+      expect(requests(t)).toBe(1);
+      expect(t.hub.devices.list()).toEqual([]);
+    });
+
+    test('two phones with one code: the second is expired, and the first leaving still takes the question down', async () => {
+      const { t, code } = await online();
+      const first = await holding(code);
+      const second = await holding(code);
+      first.finish();
+      await until(() => requests(t) === 1);
+      second.finish();
+      await until(() => second.code !== null);
+      expect(second.got).toEqual([{ t: 'denied', reason: 'expired' }]);
+      // The phone the windows ask about leaves: the question goes, the code (it knew it) is replaced.
+      first.drop();
+      await until(() => t.pairing.some((e) => e.kind === 'denied'));
+      expect(t.pairing.filter((e) => e.kind === 'denied')).toEqual([{ kind: 'denied', reason: 'expired' }]);
+      await until(() => t.pairing.filter((e) => e.kind === 'code').length === 2);
+      // Allow on the question that was on screen adds nothing.
+      expect(t.hub.decide((t.pairing.find((e) => e.kind === 'request') as { request: { id: string } }).request.id, true)).toBe(false);
+      expect(t.hub.devices.list()).toEqual([]);
+    });
+
+    test('after the sheet closed: expired', async () => {
+      const { t, code } = await online();
+      const late = await holding(code);
+      t.hub.stopPairing();
+      late.finish();
+      await until(() => late.code !== null);
+      expect(late.got).toEqual([{ t: 'denied', reason: 'expired' }]);
+      expect(requests(t)).toBe(0);
+    });
+
+    test('after the sheet closed and opened again with a new code: expired, and the new code still pairs', async () => {
+      const { t, code } = await online();
+      const late = await holding(code);
+      t.hub.stopPairing();
+      const again = await t.hub.startPairing();
+      if (!again.ok) throw new Error('no code');
+      late.finish();
+      await until(() => late.code !== null);
+      expect(late.got).toEqual([{ t: 'denied', reason: 'expired' }]);
+      expect(requests(t)).toBe(0);
+      const answer = t.phone().pairByCode(again.pairing.code);
+      await until(() => requests(t) === 1);
+      t.hub.decide((t.pairing.find((e) => e.kind === 'request') as { request: { id: string } }).request.id, true);
+      expect((await answer).t).toBe('welcome');
+      expect(t.hub.devices.list()).toHaveLength(1);
+    });
+  });
 });
 
 describe('a paired phone', () => {
@@ -441,6 +596,38 @@ describe('a paired phone', () => {
   });
 });
 
+describe('what a relay can make this computer do', () => {
+  test('at most 16 handshakes at once: channels beyond them are closed overloaded until one ends', async () => {
+    await relay.close();
+    relay = await startTestRelay({ maxChannels: 40 });
+    const t = setup();
+    const { phone } = await paired(t);
+    await phone.close();
+    const room = phone.room!;
+    const dial = () => {
+      const ws = new WebSocket(relay.url.replace(/^http/, 'ws') + `/v1/device/${room}`);
+      const s = { ws, code: null as number | null };
+      ws.on('close', (code) => { s.code = code; });
+      ws.on('error', () => {});
+      return s;
+    };
+    // Channels that never send their first handshake message: each would hold a handshake for 30 s.
+    const idle = Array.from({ length: 16 }, dial);
+    const channels = () => (t.hub as unknown as { channels: Map<number, unknown> }).channels.size;
+    await until(() => channels() === 16);
+    const extra = dial();
+    await until(() => extra.code !== null);
+    expect(extra.code).toBe(4429);
+    expect(idle.every((s) => s.code === null)).toBe(true);
+    await expect(phone.connect()).rejects.toThrow(/4429/);
+    // One ends: there is room for a phone again.
+    idle[0]!.ws.terminate();
+    await until(() => channels() === 15);
+    expect((await phone.connect()).t).toBe('welcome');
+    for (const s of idle) s.ws.terminate();
+  });
+});
+
 test('the computer\'s name and app version reach the phone in the handshake', async () => {
   const t = setup();
   t.hub.start();
@@ -452,7 +639,7 @@ test('the computer\'s name and app version reach the phone in the handshake', as
   await vi.waitFor(() => expect((phone as unknown as { channel: { hostHello: unknown } | null }).channel?.hostHello).toEqual({ v: 1, name: 'Studio Mac', app: '0.3.0', platform: 'darwin' }));
 });
 
-describe('what the sidebar shows (v1.1)', () => {
+describe('what the sidebar shows', () => {
   const resetsAt = Math.floor(Date.now() / 1000) + 3600;
   const usage = (pct: number): UsageEntry => ({ configDir: '/home/.claude', usage: { fiveHour: { pct, resetsAt }, sevenDay: null, updatedAt: Date.now() } });
 
@@ -508,7 +695,7 @@ describe('what the sidebar shows (v1.1)', () => {
   });
 });
 
-describe('layouts (v1.1)', () => {
+describe('each project\'s sidebar arrangement', () => {
   const L = (o: Partial<RemoteLayout> = {}): RemoteLayout => ({
     groupByState: true, pins: ['t2'], order: { sessions: [], terminals: ['t1'] },
     workspaces: { active: 'w1', activities: true, places: [{ id: 'w1', name: 'Main', color: 1, open: true }, { id: 'a1', name: 'SSO', color: 3, parent: 'w1', open: false }], members: { t2: 'a1' } },
@@ -554,7 +741,7 @@ describe('layouts (v1.1)', () => {
   });
 });
 
-describe('actions on rows (v1.1)', () => {
+describe('actions on rows', () => {
   const waitingSession = (o: object = {}) => ({ sessionId: 's', state: 'waiting', waitingFor: 'permission', title: null, activity: 'waiting: Bash npm test', contextPct: null, unread: false, updatedAt: 1, ...o }) as never;
 
   test('answer: only for the very wait the state showed, which later events of it don\'t change; another wait is "The request changed"', async () => {
@@ -756,7 +943,7 @@ describe('workspaces and activities from the phone', () => {
   });
 });
 
-describe('push notifications (v1.1)', () => {
+describe('push notifications', () => {
   const token = 'ab'.repeat(32);
   const key = Buffer.alloc(32, 7);
   const waitingTerm = (id: string, title: string) => term(id, '/work/app', { title, session: { sessionId: 's', state: 'waiting', waitingFor: 'permission', title: null, activity: 'waiting: Bash npm test', contextPct: null, unread: false, updatedAt: 1 } as never });
@@ -816,6 +1003,47 @@ describe('push notifications (v1.1)', () => {
     again.hub.attention(news(waitingTerm('w6', 'Six')));
     await new Promise((r) => setTimeout(r, 150));
     expect(relay.pushes()).toHaveLength(2);
+  });
+
+  test('only phones still paired are woken: a registration left behind by a phone no longer in the list gets nothing', async () => {
+    const t = setup();
+    const { phone } = await paired(t);
+    await phone.state();
+    await phone.registerPush(token, 'sandbox', key);
+    // Gone from the paired phones by any other way than Remove (a damaged list, an older version's): its registration stays.
+    t.hub.devices.remove(t.hub.devices.list()[0]!.id);
+    t.hub.attention(news(waitingTerm('w1', 'One')));
+    await new Promise((r) => setTimeout(r, 150));
+    expect(relay.pushes(roomOf(t))).toHaveLength(0);
+  });
+
+  test('the 21st phone paired makes room like Remove: the phone seen longest ago is told revoked, its notices stop, Settings no longer lists it', async () => {
+    await relay.close();
+    relay = await startTestRelay({ maxChannels: 40 });
+    const t = setup();
+    const { phone: oldest } = await paired(t);
+    await oldest.state();
+    await oldest.registerPush(token, 'sandbox', key);
+    const oldestId = t.hub.devices.list()[0]!.id;
+    // Nineteen more, all seen after it.
+    await new Promise((r) => setTimeout(r, 20));
+    for (let i = 0; i < 19; i++) t.hub.devices.add({ name: `Phone ${i}`, model: 'iPhone17,1', key: Buffer.alloc(32, i + 1).toString('base64url') });
+    expect(t.hub.devices.list()).toHaveLength(20);
+    const start = await t.hub.startPairing();
+    if (!start.ok) throw new Error('no code');
+    const newest = t.phone();
+    const welcome = newest.pairByCode(start.pairing.code);
+    await until(() => t.pairing.filter((e) => e.kind === 'request').length === 2);
+    const req = t.pairing.filter((e) => e.kind === 'request').at(-1) as Extract<RemotePairingEvent, { kind: 'request' }>;
+    t.hub.decide(req.request.id, true);
+    expect((await welcome).t).toBe('welcome');
+    expect(await oldest.waitFor((m) => m.t === 'bye')).toEqual({ t: 'bye', reason: 'revoked' });
+    expect(t.hub.devices.byId(oldestId)).toBeNull();
+    await until(() => t.statuses.at(-1)!.devices.length === 20 && !t.statuses.at(-1)!.devices.some((d) => d.id === oldestId));
+    t.hub.attention(news(waitingTerm('w1', 'One')));
+    await new Promise((r) => setTimeout(r, 150));
+    expect(relay.pushes(roomOf(t))).toHaveLength(0);
+    expect((t.hub as unknown as { pushes: { list(): unknown[] } }).pushes.list()).toEqual([]);
   });
 
   test('while the user is here (and the rule on), no notice', async () => {
