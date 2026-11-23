@@ -468,8 +468,8 @@ export const SOURCES: Record<string, Area[]> = {
   'src/renderer/components/ReviewView.tsx': ['review'],
   'src/renderer/components/SaveAsSheet.tsx': ['editor'],
   'src/renderer/components/Services': ['background'],
-  // The segmented control Settings and the Databases sheet share (its importers lend their own areas).
   'src/renderer/components/RemoteChip.tsx': ['sessions'],
+  // The segmented control Settings and the Databases sheet share (its importers lend their own areas).
   'src/renderer/components/Segmented.tsx': ['settings'],
   'src/renderer/components/Session': ['sessions'],
   // Settings › Connectors' pages load with their section: its specs follow the sheet.
