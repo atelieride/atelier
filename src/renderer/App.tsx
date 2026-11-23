@@ -597,7 +597,8 @@ export function App() {
           case 'open-about': st.setSettingsOpen('about'); break;
           case 'whats-new': st.setWhatsNew({ since: null }); break;
           case 'open-connectors': st.setSettingsOpen('connectors'); break;
-          case 'pair-iphone': openPairing(); break;
+          // Its sheet is a project window's: the welcome window and pop-outs have none (the menu offers it there disabled).
+          case 'pair-iphone': if (st.project && !st.popout) openPairing(); break;
           case 'review-all': st.openReview('all'); break;
           case 'review-session': reviewSelected(); break;
           case 'comment-selection': commentOnSelection(); break;

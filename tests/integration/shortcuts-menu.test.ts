@@ -152,13 +152,13 @@ test('Connectors: reachable from the app menu, right after Settings…, opening 
   expect(app).toContain("case 'open-connectors': st.setSettingsOpen('connectors'); break;");
 });
 
-test('Pair iPhone…: in the app menu after Connectors…, no shortcut, opening the pairing sheet (over Settings too)', () => {
+test('Pair iPhone…: in the app menu after Connectors…, no shortcut, opening the pairing sheet in a project window (over Settings too)', () => {
   const appMenu = MENU_SPEC[0]!;
   const first = labels(appMenu && 'label' in appMenu ? appMenu.label : '');
   expect(first[first.indexOf('Connectors…') + 1]).toBe('Pair iPhone…');
-  expect(item('Pair iPhone…')).toEqual({ label: 'Pair iPhone…', command: 'pair-iphone' });
+  expect(item('Pair iPhone…')).toEqual({ label: 'Pair iPhone…', command: 'pair-iphone', enabledWhen: 'project' });
   const app = readFileSync(join(__dirname, '../../src/renderer/App.tsx'), 'utf8');
-  expect(app).toContain("case 'pair-iphone': openPairing(); break;");
+  expect(app).toContain("case 'pair-iphone': if (st.project && !st.popout) openPairing(); break;");
   expect(app).toContain("if (cmd === 'pair-iphone') { openPairing(); return; }");
 });
 

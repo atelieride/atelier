@@ -94,6 +94,14 @@ test('Go lists the workspaces with their keys; File › New Workspace… only wh
   expect(sub(off, 'Go').find((i) => i.label === 'Next Workspace')!.visible).toBe(false);
 });
 
+// Pair iPhone…: its sheet lives in a project's window; the welcome window and pop-outs have none to show.
+test('Pair iPhone… is enabled in a project window only', () => {
+  const actions = { openFolder() {}, newWindow() {}, restartDaemon() {}, checkForUpdates() {}, command() {} };
+  const pair = (state: MenuState) => (menuTemplate(actions, null, { appName: 'Atelier', isPackaged: true }, [], state)[0]!.submenu as MenuItemConstructorOptions[]).find((i) => i.label === 'Pair iPhone…')!;
+  expect(pair(ON).enabled).toBe(false);
+  expect(pair({ ...ON, project: true }).enabled).toBe(true);
+});
+
 // Services (tmux) and Automations (2026-11-02): off by default; View lists them only once turned on in Settings (main
 // adds the views to the front window's state). Hidden, not left out: the key still reaches the window, which refuses.
 test('View › Services and View › Automations show only while turned on in Settings', () => {
