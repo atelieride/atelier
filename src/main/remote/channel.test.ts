@@ -112,6 +112,37 @@ describe('the handshake', () => {
     expect(s.closes).toEqual([CLOSE.malformed]);
   });
 
+  test('pair: a code no longer live by message 3 (renewed, or pairing stopped) is expired: denied, never asked about', async () => {
+    for (const later of [[code(2)], []]) {
+      const codes = [code(1)];
+      const admit = vi.fn(async (): Promise<Admission> => ({ ok: true }));
+      const s = setup({ kind: 'pair', codes, admit });
+      const phone = new PhoneChannel({ kind: 'pair', id: code(1).lookup, key: generateKeyPair(), psk: code(1).psk });
+      s.ch.receive(phone.start());
+      const m3 = phone.receive(s.sent.shift()!).reply!;
+      // Between messages 2 and 3 the code went: denied and replaced, run out, or the sheet closed.
+      codes.splice(0, codes.length, ...later);
+      s.ch.receive(m3);
+      expect(admit).not.toHaveBeenCalled();
+      expect(phone.receive(s.sent.shift()!).messages).toEqual([{ t: 'denied', reason: 'expired' }]);
+      expect(s.closes).toEqual([CLOSE.normal]);
+      // Not an attempt at the code live now.
+      expect(s.events).toEqual(['closed']);
+    }
+  });
+
+  test('pair: a wrong code for one no longer live is no attempt at the code live now', () => {
+    const codes = [code(1)];
+    const s = setup({ kind: 'pair', codes });
+    const phone = new PhoneChannel({ kind: 'pair', id: code(1).lookup, key: generateKeyPair(), psk: Buffer.alloc(32, 99) });
+    s.ch.receive(phone.start());
+    const m3 = phone.receive(s.sent.shift()!).reply!;
+    codes.splice(0, 1, code(2));
+    s.ch.receive(m3);
+    expect(s.closes).toEqual([CLOSE.malformed]);
+    expect(s.events).toEqual(['closed']);
+  });
+
   test('pair: with no live code the channel closes at once, no attempt counted', () => {
     const s = setup({ kind: 'pair', codes: [] });
     s.ch.receive(new PhoneChannel({ kind: 'pair', id: code(1).lookup, key: generateKeyPair(), psk: code(1).psk }).start());

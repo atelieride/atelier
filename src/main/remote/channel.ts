@@ -149,10 +149,13 @@ export class SecureChannel {
   /** Message 3 (the phone's static key and hello) in: then the hub decides. */
   private third(frame: Buffer): void {
     const hs = this.hs!;
+    // Message 2 may have gone up to the handshake's time ago: the code it matched must still be live now (not denied
+    // and replaced, run out, or gone with the sheet). A phone that held on to message 3 is never asked about with it.
+    const live = this.kind === 'device' || this.d.pairCodes().some((c) => c.lookup === this.code?.lookup);
     let payload: Buffer;
     try { payload = hs.readMessage(frame); } catch {
-      // A wrong code fails here (the pre-shared key is mixed in with this message).
-      if (this.kind === 'pair') this.d.pairFailed();
+      // A wrong code fails here (the pre-shared key is mixed in with this message): an attempt at the live code only.
+      if (this.kind === 'pair' && live) this.d.pairFailed();
       this.close(CLOSE.malformed);
       return;
     }
@@ -164,6 +167,7 @@ export class SecureChannel {
     this.hs = null;
     this.state = 'admitting';
     clearTimeout(this.timer);
+    if (!live) { this.deny('expired'); return; }
     this.d.admit(this).then((a) => {
       if (this.state !== 'admitting') return;
       if (!a.ok) { this.deny(a.reason, a.code); return; }
