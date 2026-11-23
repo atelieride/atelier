@@ -823,7 +823,7 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
 
   let n = -1;
   return (
-    <div className="palette-backdrop" onMouseDown={close}>
+    <div className="palette-backdrop is-cmd" onMouseDown={close}>
       <div className="palette" role="dialog" aria-label={t.searchLabel} onMouseDown={(e) => e.stopPropagation()}>
         <div className="palette-search">
           <Icon name="search" size={15} />

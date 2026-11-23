@@ -301,3 +301,35 @@ test('Reduce motion: picking a row or a tab plays nothing and leaves nothing', a
     await stop(app, home);
   }
 });
+
+test('The command palette opens over a receding app; other sheets leave it be', async () => {
+  test.setTimeout(120000);
+  const { app, home, win } = await launch();
+  try {
+    const body = win.locator('.body');
+    const transform = (loc: Locator) => loc.evaluate((el) => getComputedStyle(el).transform);
+    await expect(win.locator('.btn-new')).toBeVisible();
+    await menu(app, 'Search…');
+    await expect(win.locator('.palette-backdrop.is-cmd .palette')).toBeVisible();
+    await win.waitForTimeout(400);
+    expect(await transform(body)).toMatch(/^matrix\(0\.985,/);
+    // The sheet itself is not scaled by the receding app (its own animation rests at the identity).
+    expect(await transform(win.locator('.palette'))).toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);
+    expect(await win.locator('.palette').evaluate((el) => getComputedStyle(el).animationName)).toBe('atl-sheet-drop');
+    await look(win, 'test-results/transitions-palette-open.png');
+    await win.keyboard.press('Escape');
+    await expect(win.locator('.palette')).toHaveCount(0);
+    await win.waitForTimeout(400);
+    expect(await transform(body)).toBe('none');
+
+    // Another sheet sharing the palette's classes keeps its own entrance and leaves the app where it is.
+    await menu(app, 'New Claude Session');
+    const sheet = win.locator('.palette.new-session');
+    await expect(sheet).toBeVisible();
+    await win.waitForTimeout(400);
+    expect(await sheet.evaluate((el) => getComputedStyle(el).animationName)).toBe('atl-pop');
+    expect(await transform(body)).toBe('none');
+  } finally {
+    await stop(app, home);
+  }
+});
