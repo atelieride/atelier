@@ -988,8 +988,9 @@ test('The command palette opens over a receding app; other sheets leave it be', 
     expect(opened.slice(0, 8).every((r, i) => r.enter && r.i === String(i))).toBe(true);
     expect(opened.slice(8).some((r) => r.enter)).toBe(false);
     await expect.poll(() => transform(body)).toMatch(/^matrix\(0\.985,/);
-    // The sheet itself is not scaled by the receding app (its own animation rests at the identity).
-    expect(await transform(win.locator('.palette'))).toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);
+    // The sheet itself is not scaled by the receding app: its own drop, a soft spring, comes to rest at the identity
+    // (waited on: read as the body has receded, the drop may still be settling past it).
+    await expect.poll(() => transform(win.locator('.palette'))).toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/);
     expect(await win.locator('.palette').evaluate((el) => getComputedStyle(el).animationName)).toBe('atl-sheet-drop');
     await look(win, 'test-results/transitions-palette-open.png');
     // Typing after the opening: the rows it brings have no entrance.
