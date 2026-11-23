@@ -18,3 +18,4 @@ import './automations/automations.css';
 import './databases-tabs.css';
 import './schedule.css';
 import './restart.css';
+import './motion.css';

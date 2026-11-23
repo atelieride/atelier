@@ -1,0 +1,16 @@
+/* Motion: the launch animation's layers (intro.ts) and the transitions' keyframes. Every animation here is finite;
+   script animations go through play() (motion.ts), and what they add to the page is gone once they end. */
+
+/* The launch overlay: the window's background with the mark at its centre, above every layer but the confirms' (a
+   question is never hidden) until its plates have become the columns. A click on it skips the launch, so it takes no
+   part in the window's drag region. */
+.intro { position: fixed; inset: 0; z-index: 450; background: var(--bg-0); -webkit-app-region: no-drag; }
+/* One of the mark's plates: the mark's paint inside, clipped to the plate's rounded box. */
+.intro-plate { position: absolute; overflow: hidden; }
+.intro-plate > svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* The Λ, one stroke as wide as the mark's (pathLength 1: the dash is the whole path, its offset how much is drawn). */
+.intro-lambda { position: absolute; overflow: visible; }
+.intro-lambda path { fill: none; stroke: var(--mark-lambda); stroke-width: 3.6; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 1; }
+/* A hairline drawing along an inner edge between two columns as the plates land; it fades into that edge's own border
+   while the parts rise in, then is removed. */
+.intro-seam { position: fixed; z-index: 451; background: var(--line-strong); opacity: 0; pointer-events: none; }

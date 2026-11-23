@@ -24,6 +24,15 @@ export function reducedMotion(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
+/**
+ * Every script animation goes through here: none under Reduce motion (null), and nothing held once it ends (fill
+ * 'none' unless asked, so an element at rest shows its own style, never a leftover transform).
+ */
+export function play(el: Element, kf: Keyframe[], o: KeyframeAnimationOptions): Animation | null {
+  if (reducedMotion()) return null;
+  return el.animate(kf, { fill: 'none', ...o });
+}
+
 /** A key that moves only when `count` rises: a cue keyed on it replays for each arrival, never for a departure. */
 export function nextRisingKey(prev: { count: number; key: number }, count: number): { count: number; key: number } {
   return { count, key: count > prev.count ? prev.key + 1 : prev.key };
