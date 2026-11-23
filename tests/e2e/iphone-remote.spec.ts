@@ -42,9 +42,9 @@ test('Settings › iPhone: access on, an unreachable relay said, the relay field
     // An address Atelier won't dial is explained and never saved; the test relay is, and Atelier connects to it.
     const field = win.getByRole('textbox', { name: 'Relay server' });
     await field.fill('http://relay.test');
+    await field.press('Enter');
     await expect(win.locator('#iph-relay-warn')).toContainText('http:// works only for this computer or your local network');
     await look(win, `${SHOTS}/settings-relay-invalid.png`, { settle: 200 });
-    await field.press('Enter');
     expect(await saved(win, 'remoteRelay')).toBe('https://relay.useatelier.dev');
     await field.fill(relay.url);
     await expect(win.locator('#iph-relay-warn')).toHaveCount(0);
@@ -226,6 +226,7 @@ test('main\'s news on screen: the Allow question, Deny, no answer, paired; the p
     const pill = win.locator('.foot-iphone');
     await expect(pill).toHaveText('iPhone');
     await expect(pill).toHaveAttribute('data-tip', 'Connected now: Test iPhone');
+    await expect(pill).toHaveAccessibleName('iPhone connected: Test iPhone');
     await expect(win.locator('.tab.is-active .phone-badge')).toHaveAttribute('data-tip', 'Open on iPhone');
     await expect(win.locator(`[data-term-row="${id}"] .phone-badge`)).toBeVisible();
     const note = win.locator('.terminal-slot:visible .size-note');

@@ -184,6 +184,8 @@ export const SPECS: Record<string, Area[]> = {
   'iphone-places.spec.ts': ['iphone', 'workspace'],
   // A terminal a phone has open, in the window: clipped in its pane, shown again without a flash, the badges, the pill.
   'iphone-terminal.spec.ts': ['iphone', 'terminal', 'workspace'],
+  // The pairing sheet and Settings › iPhone at the keyboard: commands, Esc, the relay field, Forget All, two windows.
+  'iphone-sheet.spec.ts': ['iphone', 'settings'],
   'terminal-font.spec.ts': ['settings', 'terminal'],
   'window.spec.ts': ['workspace'],
   'word-wrap.spec.ts': ['editor', 'settings'],

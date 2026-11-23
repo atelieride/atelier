@@ -59,9 +59,9 @@ export const useIphone = create<IphoneState>((set, get) => ({
   setPairOpen: (pairOpen) => set({ pairOpen })
 }));
 
-/** Asks main for the status now (Settings › iPhone opening, access turned on). */
-export function refreshIphone(): void {
-  void window.atelier.remote.status().then((s) => useIphone.getState().setStatus(s)).catch(() => {});
+/** Asks main for the status now (Settings › iPhone shown, the pairing sheet off, access turned on); settled either way. */
+export function refreshIphone(): Promise<void> {
+  return window.atelier.remote.status().then((s) => useIphone.getState().setStatus(s)).catch(() => {});
 }
 
 /**
@@ -102,7 +102,7 @@ export function installIphone(): () => void {
       for (const e of early.splice(0)) on.rows(e);
     }, () => { asked = false; });
   };
-  const accessOn = () => { refreshIphone(); load(); };
+  const accessOn = () => { void refreshIphone(); load(); };
   if (useApp.getState().settings.remoteAccess) accessOn();
   const offStatus = window.atelier.on.remote((s) => useIphone.getState().setStatus(s));
   // The settings arrive after the window starts: access found on then (or turned on) asks for the status once.
