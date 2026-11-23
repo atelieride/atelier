@@ -44,7 +44,7 @@ which git ignores.
 | Part | Where | Notes |
 |---|---|---|
 | Main process | `src/main/` | Windows, IPC (zod schemas in `ipc-schemas.ts`), git (reads through `git/exec.ts`; writes only through Source Control's fetch, `git/fetch.ts` + `fetch-scheduler.ts`, and `git/write.ts` behind `git-ops.ts`: commit, push, pull, stash, branches, discard; ✦ messages in `scm/message.ts`), tmux services (read-only), settings, updates, dictation. |
-| iPhone access | `src/main/remote/` | Off by default (`remoteAccess`). Atelier dials out to a relay and never listens: `relay-link.ts` holds the only WebSocket. Each paired phone talks to it end to end over Noise (`noise.ts`: X25519, AES-256-GCM, SHA-256), so the relay forwards bytes it cannot read. Pairing by a 12-symbol code or its QR (`code.ts`, `pairing.ts`, confirmed with Allow in the app), keys through the secret store (`identity.ts`), paired phones in `ATELIER_HOME/remote/devices.json`, sessions and terminals for the phone in `remote-hub.ts` (the last view to attach, resize or type owns a terminal's size). UI in `src/renderer/iphone/`. |
+| iPhone access | `src/main/remote/` | Off by default (`remoteAccess`). Atelier dials out to a relay and never listens: `relay-link.ts` holds the only WebSocket. Each paired phone talks to it end to end over Noise (`noise.ts`: X25519, AES-256-GCM, SHA-256), so the relay forwards bytes it cannot read. Pairing by a 12-symbol code or its QR (`code.ts`, `pairing.ts`, confirmed with Allow in the app), keys through the secret store (`identity.ts`), paired phones in `ATELIER_HOME/remote/devices.json`, sessions and terminals for the phone in `remote-hub.ts` (the last view to attach, resize or type owns a terminal's size), the rows' text and sections in `rows.ts`, push notifications in `push*.ts`, Allow reading the dialog from the screen in `prompt.ts`. Each project's sidebar arrangement (`ATELIER_HOME/remote/layouts.json`, `layouts.ts`) comes from its window (`src/renderer/iphone/layout-sync.ts`). UI in `src/renderer/iphone/`. |
 | `atelierd` | `src/daemon/` | The daemon that owns the PTYs, started as a launchd job of its own. Each terminal's shell runs in its own one-shot launchd job (`session-pty.ts`, `native/atelier-pty-host.c`), node-pty spawn as fallback. Survives app quits and updates. Unix socket 0600 + tokens. Protocol version in `src/shared/version.ts`. |
 | Renderer | `src/renderer/` | React + zustand store (`store.ts`), xterm.js terminals (`terminal/`), CodeMirror editor (`editor/`), components. |
 | Preload | `src/preload/index.ts` | The only bridge (`window.atelier`), typed in `src/shared/api.ts`. |
@@ -186,3 +186,8 @@ tile + white Λ).
 - A view that draws a terminal at a size other than its program's breaks the shell's redraws (zsh moves up by the
   rows its prompt took at the program's width) and wipes output: while a phone owns a terminal's size, the window
   draws it at the phone's size.
+- Claude Code's selection lists take a digit as the choice: answering from the phone presses the digit of the option
+  labelled "Yes", read from the screen, never Enter (a moved cursor would pick another row).
+- atelierd only resumes a session with a UUID session id: e2e that resume need `ATELIER_FAKE_UUID_SESSIONS=1`.
+- The live demo's first-paint budget moves by hundreds of bytes with no code change: a new hash for any lazy chunk
+  renames nearly every chunk the entry lists. Compare the first-paint files before concluding code grew.
