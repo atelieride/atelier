@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest';
-import { nextRisingKey, play, trackWindowActivity } from './motion';
+import { nextArrivalKey, nextRisingKey, play, trackWindowActivity } from './motion';
 
 /** The page as reducedMotion() reads it: Atelier's setting on the root, the system's through matchMedia. */
 function page(o: { setting?: 'reduced'; system?: boolean } = {}) {
@@ -37,6 +37,29 @@ test('the cue key moves only when the count rises: a new waiting session replays
   let k = { count: 0, key: 0 };
   const seq = [1, 2, 1, 1, 3, 0, 1].map((n) => (k = nextRisingKey(k, n)).key);
   expect(seq).toEqual([1, 2, 2, 2, 3, 3, 4]);
+});
+
+/** The keys a row would key its cue on, one per state it shows in turn, starting from nothing seen. */
+const arrivals = (states: string[], target = 'done') => {
+  let k: { state: string | null; key: number } = { state: null, key: 0 };
+  return states.map((s) => (k = nextArrivalKey(k, s, target)).key);
+};
+
+test('the arrival key stays put the first time a state is seen: a row mounted on a finished session plays nothing', () => {
+  expect(arrivals(['done'])).toEqual([0]);
+  expect(nextArrivalKey({ state: null, key: 0 }, 'done', 'done')).toEqual({ state: 'done', key: 0 });
+});
+
+test('the arrival key moves when the target is reached from another state, and only then', () => {
+  expect(arrivals(['running', 'done'])).toEqual([0, 1]);
+  // Staying there is no arrival.
+  expect(arrivals(['running', 'done', 'done'])).toEqual([0, 1, 1]);
+  // Leaving and coming back is another.
+  expect(arrivals(['done', 'running', 'done'])).toEqual([0, 0, 1]);
+  expect(arrivals(['running', 'done', 'running', 'done'])).toEqual([0, 1, 1, 2]);
+  // Other states never move it.
+  expect(arrivals(['running', 'waiting', 'idle', 'error'])).toEqual([0, 0, 0, 0]);
+  expect(arrivals(['running', 'waiting'], 'waiting')).toEqual([0, 1]);
 });
 
 function fakeWindow() {

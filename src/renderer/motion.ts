@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 
 // Idle motion budget: at rest nothing moves. Attention cues are finite
 // (--cue-cycles in theme.css); these are the only animations allowed to loop, each bounded by a visible operation or
@@ -43,6 +43,33 @@ export function useRisingKey(count: number): number {
   const last = useRef({ count: 0, key: 0 });
   last.current = nextRisingKey(last.current, count);
   return last.current.key;
+}
+
+/**
+ * A key that moves each time `state` becomes `target` from another state seen before: never the first time a state is
+ * seen (a row mounted on a finished session, a reload), never while it stays there.
+ */
+export function nextArrivalKey(prev: { state: string | null; key: number }, state: string, target: string): { state: string; key: number } {
+  return { state, key: state === target && prev.state !== null && prev.state !== state ? prev.key + 1 : prev.key };
+}
+
+/**
+ * `nextArrivalKey` across renders. No state (a row without its session yet) forgets the one before, so the next state
+ * shown is a first sighting.
+ */
+export function useArrivalKey(state: string | null, target: string): number {
+  const last = useRef<{ state: string | null; key: number }>({ state: null, key: 0 });
+  last.current = state === null ? { state: null, key: last.current.key } : nextArrivalKey(last.current, state, target);
+  return last.current.key;
+}
+
+/**
+ * A finite CSS cue keyed on `key` (remounted for each arrival): `on` from each rise of the key until `ended` hears the
+ * end of the cue's own animation, so nothing of it stays mounted to replay when its row is moved in the list.
+ */
+export function useCue(key: number): { on: boolean; ended: (e: { target: EventTarget; currentTarget: EventTarget }) => void } {
+  const [over, setOver] = useState(0);
+  return { on: key > over, ended: (e) => { if (e.target === e.currentTarget) setOver(key); } };
 }
 
 export type WindowActivity = 'active' | 'inactive';

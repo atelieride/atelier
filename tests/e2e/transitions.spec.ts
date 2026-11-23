@@ -9,7 +9,8 @@ import { look } from './shots';
 // follows it, and the workspace rises in. A tab picked: its crown stretches over to it, then catches up, and the content
 // slides in from the side it is on. A new session: a spark arcs from the + to its row and its terminal opens from there.
 // A split: the layout is there at once, the new pane's content springs in past its place and settles, its line draws.
-// They never hold a click (one mid-move goes where it lands), leave nothing once they end, and Reduce motion plays none.
+// A session that finishes: a flat green wave crosses its row and a check takes its avatar a moment; one that waits for
+// you keeps an amber edge on its row. They never hold a click (one mid-move goes where it lands), leave nothing once they end, and Reduce motion plays none.
 
 type Played = { on: string; kf: string };
 
@@ -104,6 +105,66 @@ const centre = (b: { x: number; y: number; width: number; height: number }) => [
 const resume = (win: Page) => win.evaluate(() => { for (const a of document.getAnimations()) if (a.playState === 'paused') a.play(); });
 /** Holds every script animation the page starts from now on at its start (on), or lets the next ones play (off). */
 const hold = (win: Page, on: boolean) => win.evaluate((h) => { (window as unknown as { hold: boolean }).hold = h; }, on);
+type Api = { terminals: { list(): Promise<{ id: string; title: string }[]>; input(id: string, data: string): void } };
+/** Types into session `title`'s terminal (the fake Claude reads its lines). */
+async function typeInto(win: Page, title: string, text: string) {
+  await win.evaluate(async ({ title, text }) => {
+    const api = (window as unknown as { atelier: Api }).atelier;
+    const id = (await api.terminals.list()).find((x) => x.title === title)!.id;
+    api.terminals.input(id, text);
+  }, { title, text });
+}
+
+type Cues = { added: { cls: string; row: string; rowCls: string }[]; ended: { name: string; on: string }[] };
+/**
+ * From this document's start on, every finished session's wave and avatar check that mounts (its class, its row's title
+ * and classes) and every animation of theirs that ends. Recorded as it happens, so nothing depends on when it is read.
+ */
+function recordCues() {
+  const w = window as unknown as { cues: Cues };
+  const CUE = '.row-wave, .av-done-check';
+  w.cues = { added: [], ended: [] };
+  new MutationObserver((list) => {
+    for (const m of list) for (const n of m.addedNodes) {
+      if (!(n instanceof Element)) continue;
+      for (const el of [n, ...n.querySelectorAll(CUE)].filter((e) => e.matches(CUE))) {
+        const row = el.closest('.session-row');
+        w.cues.added.push({ cls: el.getAttribute('class') ?? '', row: row?.querySelector('.session-title')?.textContent ?? '', rowCls: row?.getAttribute('class') ?? '' });
+      }
+    }
+  }).observe(document, { childList: true, subtree: true });
+  document.addEventListener('animationend', (e) => {
+    const el = e.target as Element;
+    if (el.closest?.(CUE)) w.cues.ended.push({ name: e.animationName, on: el.closest(CUE)!.getAttribute('class') ?? '' });
+  }, true);
+}
+const cues = (win: Page) => win.evaluate(() => (window as unknown as { cues: Cues }).cues);
+/**
+ * Resolves once a finished session's wave is on the page (null: none came), its animations and its avatar check's held
+ * at their start: the title of its row, whether that row shows it finished, whether the check is on its avatar.
+ */
+const catchWave = (win: Page) => win.evaluate(() => new Promise<{ title: string; done: boolean; check: boolean } | null>((done) => {
+  const mo = new MutationObserver(() => {
+    const wave = document.querySelector('.row-wave');
+    if (!wave) return;
+    mo.disconnect();
+    const row = wave.closest('.session-row');
+    for (const el of [wave, ...(row?.querySelectorAll('.av-done-check, .av-done-check *') ?? [])]) for (const a of el.getAnimations()) a.pause();
+    done({ title: row?.querySelector('.session-title')?.textContent ?? '', done: !!row?.classList.contains('state-done'), check: !!row?.querySelector('.avatar > .av-done-check') });
+  });
+  mo.observe(document.body, { childList: true, subtree: true });
+  setTimeout(() => { mo.disconnect(); done(null); }, 15000);
+}));
+/** What a box-shadow written as `value` computes to here (tokens resolved). */
+const shadowOf = (win: Page, value: string) => win.evaluate((v) => {
+  const probe = document.createElement('div');
+  probe.style.boxShadow = v;
+  document.body.append(probe);
+  const out = getComputedStyle(probe).boxShadow;
+  probe.remove();
+  return out;
+}, value);
+const shadow = (loc: Locator) => loc.evaluate((el) => getComputedStyle(el).boxShadow);
 
 type Layout = { columns: string[]; rows: string[]; first: string[] | null; fits: Record<string, string[]> };
 /**
@@ -454,6 +515,86 @@ test('a split: the layout is there at once, the new pane\'s content springs in f
     await win.keyboard.press('ArrowLeft');
     await expect.poll(async () => (await layoutLog(win)).columns.length).toBe(given + 1);
     expect(await played(win)).toEqual([]);
+  } finally {
+    await stop(app, home);
+  }
+});
+
+test('a session that finishes: a flat wave crosses its row, a check takes its avatar a moment, both go; never at a reload. A waiting row keeps an amber edge', async () => {
+  test.setTimeout(120000);
+  const { app, home, win } = await launch();
+  try {
+    await win.evaluate(recordCues);
+    // The same recorder in the documents a reload brings.
+    await win.addInitScript(recordCues);
+    await newSession(win, 'One');
+    await newSession(win, 'Two');
+
+    // Waiting, not the row selected: a calm amber edge on the row. The selected one keeps its own.
+    const waitingEdge = await shadowOf(win, 'inset 0 0 0 1px var(--edge-waiting)');
+    await expect.poll(() => shadow(row(win, 'One'))).toBe(waitingEdge);
+    await expect(row(win, 'Two')).toHaveClass(/is-selected/);
+    expect(await shadow(row(win, 'Two'))).not.toBe(waitingEdge);
+    expect(await shadow(row(win, 'Two'))).not.toBe('none');
+    await look(win.locator('.sidebar'), 'test-results/transitions-waiting-edge.png');
+
+    // Answered, working: the edge goes. Nothing of the finish has played yet (waiting and working are no finish).
+    await typeInto(win, 'One', 'hold\r');
+    await expect(row(win, 'One')).toHaveClass(/state-running/, { timeout: 10000 });
+    await expect.poll(() => shadow(row(win, 'One'))).toBe('none');
+    expect((await cues(win)).added).toEqual([]);
+
+    // Finished: the wave mounts on its row (moved to its new section meanwhile), the check on its avatar.
+    const caught = catchWave(win);
+    await typeInto(win, 'One', '\r');
+    const wave = await caught;
+    expect(wave).toEqual({ title: 'One', done: true, check: true });
+    // Mid-sweep: a flat layer drawn part of the way across, the check over the avatar; neither takes the pointer.
+    await freeze(win, '.row-wave, .av-done-check, .av-done-check > *', 300);
+    const mid = await row(win, 'One').evaluate((el) => {
+      const w = el.querySelector('.row-wave')!;
+      const c = el.querySelector('.av-done-check')!;
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      const av = c.getBoundingClientRect();
+      const onCheck = document.elementFromPoint(av.left + av.width / 2, av.top + av.height / 2);
+      return { clip: getComputedStyle(w).clipPath, bg: getComputedStyle(w).backgroundImage, check: Number(getComputedStyle(c).opacity), hit: !!hit?.closest('.row-wave, .av-done-check'), onCheck: !!onCheck?.closest('.row-wave, .av-done-check') };
+    });
+    const right = Number(/^inset\(0px ([\d.]+)%/.exec(mid.clip)?.[1] ?? NaN);
+    expect(right).toBeGreaterThan(5);
+    expect(right).toBeLessThan(95);
+    expect(mid.bg).toBe('none');
+    expect(mid.check).toBeGreaterThan(0.9);
+    expect(mid.hit).toBe(false);
+    expect(mid.onCheck).toBe(false);
+    await look(win.locator('.sidebar'), 'test-results/transitions-done-wave.png');
+    await resume(win);
+
+    // Then both have played to their end and are gone.
+    await expect(win.locator('.row-wave, .av-done-check')).toHaveCount(0, { timeout: 3000 });
+    let log = await cues(win);
+    expect(log.added.map((a) => `${a.cls} on ${a.row}`).sort()).toEqual(['av-done-check on One', 'row-wave on One']);
+    expect(log.added.every((a) => /\bstate-done\b/.test(a.rowCls))).toBe(true);
+    expect(log.ended.filter((e) => e.on === 'row-wave').map((e) => e.name)).toEqual(['atl-row-wave']);
+    expect(log.ended.filter((e) => e.on === 'av-done-check').map((e) => e.name).sort()).toEqual(['atl-check', 'atl-check-cover']);
+
+    // Working again, then finished again: the wave plays again.
+    await typeInto(win, 'One', 'ev:work\r');
+    await expect(row(win, 'One')).toHaveClass(/state-running/, { timeout: 10000 });
+    await typeInto(win, 'One', 'ev:stop\r');
+    await expect(row(win, 'One')).toHaveClass(/state-done/, { timeout: 10000 });
+    await expect.poll(async () => (await cues(win)).ended.filter((e) => e.on === 'row-wave').length).toBe(2);
+    await expect(win.locator('.row-wave, .av-done-check')).toHaveCount(0, { timeout: 3000 });
+    expect((await cues(win)).added.map((a) => `${a.cls} on ${a.row}`).sort()).toEqual(['av-done-check on One', 'av-done-check on One', 'row-wave on One', 'row-wave on One']);
+
+    // A reload shows the finished row as it is: no wave, no check (a mount is no finish). Recorded from the new
+    // document's start, so a cue played and gone before this reads would still be counted.
+    await win.reload();
+    await expect(row(win, 'One')).toHaveClass(/state-done/, { timeout: 20000 });
+    await expect(row(win, 'Two')).toHaveClass(/state-waiting/);
+    log = await cues(win);
+    expect(log.added).toEqual([]);
+    await expect(win.locator('.row-wave, .av-done-check')).toHaveCount(0);
   } finally {
     await stop(app, home);
   }
