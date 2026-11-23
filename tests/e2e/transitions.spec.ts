@@ -5,12 +5,13 @@ import { join, resolve } from 'node:path';
 import { e2eEnv, writePrefs } from './env';
 import { look } from './shots';
 
-// In-app transitions. A session picked in the sidebar: the selection glides from its row to the new one, the tab crown
-// follows it, and the workspace rises in. A tab picked: its crown stretches over to it, then catches up, and the content
-// slides in from the side it is on. A new session: a spark arcs from the + to its row and its terminal opens from there.
-// A split: the layout is there at once, the new pane's content springs in past its place and settles, its line draws.
-// A session that finishes: a flat green wave crosses its row and a check takes its avatar a moment; one that waits for
-// you keeps an amber edge on its row. They never hold a click (one mid-move goes where it lands), leave nothing once they end, and Reduce motion plays none.
+// In-app transitions. A session picked in the sidebar: the selection glides from its row to the new one, the tab
+// crown follows it, and the workspace rises in. A tab picked: its crown stretches over to it, then catches up, and the
+// content slides in from the side it is on. A new session: a spark arcs from the + to its row and its terminal opens
+// from there. A split: the layout is there at once, the new pane's content springs in past its place and settles, its
+// line draws. A session that finishes: a flat green wave crosses its row and a check takes its avatar a moment; one
+// that waits for you keeps an amber edge on its row. They never hold a click (one mid-move goes where it lands), paint
+// nothing outside their box, leave nothing once they end, and Reduce motion plays none.
 
 type Played = { on: string; kf: string };
 
@@ -515,7 +516,7 @@ test('a tab picked: the crown stretches to it and catches up, the content slides
   }
 });
 
-test('a new session: a spark arcs from the + to its row, a ring ripples there, its terminal opens in a circle from the sidebar\'s side, and nothing slides', async () => {
+test('a new session: a spark arcs from the + to its row, a ring ripples, its terminal opens from the sidebar\'s side', async () => {
   test.setTimeout(120000);
   const { app, home, win } = await launch();
   try {

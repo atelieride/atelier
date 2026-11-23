@@ -42,7 +42,8 @@
 /* The command palette: the app behind it recedes a little from its top edge (on top of the backdrop's own blur, so no
    extra full-window filter), the sheet drops in on a soft spring and the first results rise one after another. The
    header, body and footer are siblings of the palette, never its ancestors, so the sheet itself is not scaled. A
-   transform leaves the observed boxes alone: terminals do not refit. The palette unmounts on close, which returns it. Other sheets share the palette's classes and are not touched (only .is-cmd). */
+   transform leaves the observed boxes alone: terminals do not refit. Closing unmounts the palette, and the app is back
+   in place. Other sheets share the palette's classes and are not touched (only .is-cmd). */
 :is(.header, .body, .footer) { transform-origin: 50% 0; }
 /* It eases in while the palette is open and returns at once on close, so a measure taken right after a palette action
    reads the app at rest. */
@@ -69,10 +70,9 @@
 .session-row.state-waiting:not(.is-selected, .is-asking, :has(> .row-main:focus-visible)) { box-shadow: inset 0 0 0 1px var(--edge-waiting); }
 
 /* A session that finished just now (SessionRow): a flat green layer is revealed across its row from the left in
-   520 ms, then fades by 900 ms, under the row's content (the row stacks on its own while it holds one); a check takes
+   520 ms, then fades by 900 ms, under the row's content (the row, a size container, stacks on its own); a check takes
    its avatar's place a moment, on a cover of the avatar's own tile, and hands it back by 1100 ms. Both take no pointer,
    rest unseen (their last frame holds) and are removed once the last of them has played. */
-.session-row:has(> .row-wave) { isolation: isolate; }
 @keyframes atl-row-wave {
   0% { clip-path: inset(0 100% 0 0); opacity: 1; animation-timing-function: cubic-bezier(.7, 0, .2, 1); }
   57.8% { clip-path: inset(0 0% 0 0); opacity: 1; animation-timing-function: ease-out; }
