@@ -1197,9 +1197,10 @@ export class TerminalHub {
     const key = this.nextRemote--;
     this.attachments.begin(key, id);
     let attached = false;
+    let late = false;
     try {
       const data = await new Promise<string>((resolve, reject) => {
-        const timer = setTimeout(() => { this.client.off('snapshot', onSnap); reject(new Error('no screen')); }, SCREEN_MS);
+        const timer = setTimeout(() => { late = true; this.client.off('snapshot', onSnap); reject(new Error('no screen')); }, SCREEN_MS);
         timer.unref?.();
         const onSnap = (sid: string, snap: string) => {
           if (sid !== id) return;
@@ -1213,8 +1214,13 @@ export class TerminalHub {
       attached = this.attachments.complete(key, id) !== null;
       return await screenLines(data, this.sizeOf(id));
     } finally {
-      if (!attached) this.attachments.abort(key, id);
-      else if (this.attachments.remove(key, id)) void this.client.request({ t: 'detach', id }).catch(() => {});
+      if (!attached) {
+        this.attachments.abort(key, id);
+        // atelierd took the attach but its screen came too late: its stream would stay with nobody reading it. It
+        // goes (atelierd answers requests in order: the detach follows the attach), unless another view watches the
+        // terminal or is attaching to it, since atelierd keeps one stream per terminal.
+        if (late && this.attachments.unwatched(id)) void this.client.request({ t: 'detach', id }).catch(() => {});
+      } else if (this.attachments.remove(key, id)) void this.client.request({ t: 'detach', id }).catch(() => {});
     }
   }
 

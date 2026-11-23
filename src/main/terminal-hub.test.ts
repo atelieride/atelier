@@ -1248,6 +1248,42 @@ describe('a paired phone\'s actions on rows, as Atelier\'s own', () => {
     await expect(hub.permissionScreen('gone')).rejects.toThrow();
   });
 
+  test('a screen later than the read waits for: atelierd\'s attach goes again, unless a window watches the terminal', async () => {
+    vi.useFakeTimers();
+    try {
+      const { hub, register, client } = setup();
+      client.emit('terminals', [waiting('w'), waiting('v')]);
+      const requests = () => (client.request.mock.calls as unknown as unknown[][]).map((c) => c[0]);
+      // atelierd takes the attach and sends no screen in time.
+      const read = hub.permissionScreen('w');
+      const failed = expect(read).rejects.toThrow();
+      await vi.advanceTimersByTimeAsync(5000);
+      await failed;
+      expect(requests()).toEqual([{ t: 'attach', id: 'w' }, { t: 'detach', id: 'w' }]);
+      // Its screen arriving late changes nothing more.
+      client.emit('snapshot', 'w', 'late');
+      expect(requests()).toHaveLength(2);
+      // A terminal a window watches keeps atelierd's stream.
+      const w = wc(1); win(w); register(w);
+      client.request.mockImplementation((async (m: { t: string; id: string }) => {
+        if (m.t === 'attach' && m.id === 'v' && !requests().some((r) => (r as { t: string }).t === 'detach' && (r as { id: string }).id === 'v')) queueMicrotask(() => client.emit('snapshot', m.id, 'screen'));
+        return {};
+      }) as never);
+      hub.installIpc();
+      const attach = (vi.mocked(ipcMain.handle).mock.calls as unknown as [string, (e: unknown, arg: unknown) => Promise<void>][]).findLast((c) => c[0] === IPC.termAttach)![1];
+      await attach({ sender: w }, 'v');
+      client.request.mockClear();
+      client.request.mockImplementation((async () => ({})) as never);
+      const second = hub.permissionScreen('v');
+      const failed2 = expect(second).rejects.toThrow();
+      await vi.advanceTimersByTimeAsync(5000);
+      await failed2;
+      expect(requests()).toEqual([{ t: 'attach', id: 'v' }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test('a screen read while a window watches the terminal leaves its stream alone (no detach)', async () => {
     const { hub, register, client } = setup();
     const w = wc(1); win(w); register(w);

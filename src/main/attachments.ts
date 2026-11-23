@@ -84,6 +84,11 @@ export class Attachments {
     return this.pending.has(`${wcId} ${id}`);
   }
 
+  /** Nobody watches the terminal and no attach of it is on its way. */
+  unwatched(id: string): boolean {
+    return !this.byTerm.has(id) && ![...this.pending.keys()].some((k) => k.endsWith(` ${id}`));
+  }
+
   /** An attach failed: once the last one of this window ends, what was held goes. */
   abort(wcId: number, id: string): void {
     const key = `${wcId} ${id}`;
