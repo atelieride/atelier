@@ -3,6 +3,15 @@
 Release notes for Atelier. Each version has a `## <version>` section: the release workflow requires it and the app
 shows it in Settings › About and in "What's new".
 
+## 0.2.0-beta.34
+
+- **Session rows read at a glance**: a session's name has its line to itself, with what it is doing and its live chips
+  beneath; its account, folder and profile go on a third line, and an account every session of a workspace or
+  activity shares shows once, on its head.
+- **Remote Control at a glance**: a session with Claude Code's Remote Control on wears a wifi glyph on its row and its
+  bar; a click opens it at claude.ai.
+- Screen readers hear the account a workspace or activity head names.
+
 ## 0.2.0-beta.33
 
 - **Split in both directions**: stack panes as well as setting them side by side, up to four in rows and columns, each
