@@ -60,13 +60,15 @@ print "FAKE-CLAUDE args=@shown\n" if $resume || $ENV{ATELIER_FAKE_PRINT_ARGS};
 print "FAKE-CLAUDE cwd=" . Cwd::getcwd() . "\n";
 my ($line, $denied) = ('', 0);
 if (my $mode = $ENV{ATELIER_FAKE_PERMISSION_KEYS}) {
-  # ATELIER_FAKE_PERMISSION_KEYS (opt-in): the permission waits as Claude Code's dialog does, its options drawn as it
-  # draws them and chosen one key at a time (raw mode, nothing echoed): a digit chooses that option, Esc declines.
-  # "no-first" lists No before Yes; "always-only" offers no plain Yes; anything else is the usual three options.
+  # ATELIER_FAKE_PERMISSION_KEYS (opt-in): the permission waits as Claude Code's dialog does, the request and its
+  # options drawn as it draws them and chosen one key at a time (raw mode, nothing echoed): a digit chooses that
+  # option, Esc declines. "no-first" lists No before Yes; "always-only" offers no plain Yes; "other-request" shows
+  # another agent's request (asked first) than the one its hook reported; anything else is the usual three options.
   my @options = $mode eq 'no-first' ? ('No', 'Yes')
     : $mode eq 'always-only' ? ("Yes, and don't ask again for this session", 'No, and tell Claude what to do differently (esc)')
     : ('Yes', "Yes, and don't ask again for npm test commands", 'No, and tell Claude what to do differently (esc)');
-  print "Do you want to proceed?\n";
+  my $shown = $mode eq 'other-request' ? 'rm -rf build' : 'npm test';
+  print "Bash command\n\n  $shown\n  Run the requested command\n\nDo you want to proceed?\n";
   # The cursor mark (U+276F) and the hints' dot (U+00B7) as UTF-8 bytes, as the terminal gets them.
   for my $i (0..$#options) { printf "%s %d. %s\n", ($i == 0 ? "\xE2\x9D\xAF" : ' '), $i + 1, $options[$i]; }
   print "\nEsc to cancel \xC2\xB7 Tab to amend\n";

@@ -107,10 +107,14 @@ export function permissionOf(s: SessionInfo | null): string | null {
 /** A plan waiting for approval: its dialog asks something else than a tool's permission. */
 export const isPlanApproval = (s: SessionInfo | null): boolean => waitKind(s) === 'permission' && waitTarget(s?.activity) === 'plan approval';
 
-/** What an answerable wait is about (its kind and target), or null when the row can't answer it. */
+/**
+ * What an answerable wait is about (its kind and target), or null when the row can't answer it: an answer goes only to
+ * the request the dialog on screen shows, so one that names none (only "Needs permission") is answered in the session.
+ */
 function answerable(s: SessionInfo | null): string | null {
   if (!s || isLimitPaused(s) || waitKind(s) !== 'permission' || isPlanApproval(s)) return null;
-  return `permission\u0000${waitTarget(s.activity) ?? ''}`;
+  const target = waitTarget(s.activity);
+  return target === null ? null : `permission\u0000${target}`;
 }
 
 /**

@@ -1,7 +1,10 @@
-// Allow from a phone picks the option Claude Code's permission dialog labels "Yes" (allow once), read from the
-// terminal's screen: a digit chooses an option of its selection lists outright, and the dialog doesn't always list
-// "Yes" first. Refused (nothing typed) when the screen shows no such option at its bottom, or when the cursor is in a
-// field — after Tab, an option turns into a field for feedback, and a digit would be typed into it.
+// Allow and Deny from a phone answer Claude Code's permission dialog with its own keys, read from the terminal's
+// screen. Allow picks the option the dialog labels "Yes" (allow once): a digit chooses an option of its selection lists
+// outright, and the dialog doesn't always list "Yes" first. Deny is Esc. Either is sent only for the request the phone
+// showed: the dialog's text above its options must name it (its command, its file, or the tool alone), since the
+// phone shows the latest request while Claude Code asks in turn (parallel agents) and a question may sit in front.
+// Refused (nothing typed) when the screen shows no such dialog at its bottom, and Allow when the cursor is in a field
+// — after Tab, an option turns into a field for feedback, and a digit would be typed into it.
 import { Terminal as Headless } from '@xterm/headless';
 
 export type AllowKey = { ok: true; key: string } | { ok: false; message: string };
@@ -18,16 +21,26 @@ const FRAME = /^[│┃|]\s?|\s?[│┃|]$/g;
 const NEAR_BOTTOM = 4;
 /** A row the dialog always draws as it is: "Yes", "No", or a label ending in its key hint ("(esc)", "(shift+tab)"). */
 const PLAIN = /^(Yes|No)$|\((?:esc|[a-z]+(?:\+[a-z]+)+)\)$/;
+/** A row that only draws a line: the dialog's top edge, a frame's or a box's edge. The dialog starts below it. */
+const RULE = /^[─━═╌╍┄┅┈┉╭╮╰╯┌┐└┘┏┓┗┛├┤┬┴\s]*[─━═╌╍┄┅┈┉][─━═╌╍┄┅┈┉╭╮╰╯┌┐└┘┏┓┗┛├┤┬┴\s]*$/;
+/** The transcript's marks (a message, a tool call, its result): above the dialog, never part of it. */
+const TRANSCRIPT = /^[⏺●⎿]/;
+/** At most this many rows above its options are the dialog's. */
+const DIALOG_ROWS = 100;
+/** Tools whose request names a file by its last part ("Edit upload.ts"), as their dialog names it. */
+const FILE_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit', 'Read']);
 
 interface Row { n: number; label: string; focused: boolean }
 
-/** The digit that chooses "Yes" in the permission dialog at the bottom of the screen, or why it can't be chosen. */
-export function allowKey(lines: readonly string[]): AllowKey {
+/** The dialog at the bottom of the screen: its options, the rows of its own above them, and the cursor in a field. */
+interface Dialog { options: Row[]; above: string[]; inField: boolean }
+
+function dialogAtBottom(lines: readonly string[]): Dialog | null {
   const rows = lines.map((l) => l.replace(FRAME, '').trim()).filter((l) => l.length > 0);
   // The last row numbered 1, and the rows that follow it in order: the dialog's options.
   let first = -1;
   for (let i = rows.length - 1; i >= 0 && first === -1; i--) if (OPTION.exec(rows[i]!)?.[2] === '1') first = i;
-  if (first === -1) return REFUSED;
+  if (first === -1) return null;
   const options: Row[] = [];
   let last = first;
   for (let i = first; i < rows.length; i++) {
@@ -37,12 +50,77 @@ export function allowKey(lines: readonly string[]): AllowKey {
     options.push({ n: Number(m[2]), label: m[3]!.trim(), focused: m[1] !== undefined });
     last = i;
   }
-  if (rows.length - 1 - last > NEAR_BOTTOM) return REFUSED;
-  // The cursor in a field: a digit would be typed there instead of choosing.
+  if (rows.length - 1 - last > NEAR_BOTTOM) return null;
   const focused = options.find((o) => o.focused);
-  if (focused && !PLAIN.test(focused.label)) return REFUSED;
-  const yes = options.find((o) => o.label === 'Yes');
+  const above: string[] = [];
+  for (let i = first - 1; i >= 0 && above.length < DIALOG_ROWS; i--) {
+    if (RULE.test(rows[i]!) || TRANSCRIPT.test(rows[i]!)) break;
+    above.unshift(rows[i]!);
+  }
+  return { options, above, inField: !!focused && !PLAIN.test(focused.label) };
+}
+
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** Rows compared as text alone: no spaces (a command wraps anywhere), no frame sides (a row may end with its "|"). */
+const flat = (s: string) => s.replace(/[\s│┃|]+/g, '');
+
+/**
+ * A command the dialog shows as whole rows: a run of rows reads exactly as the command, wrapped or not; one cut short
+ * ("…", as long ones are named) by its start. Only starting or containing it is another command.
+ */
+function commandIn(rows: readonly string[], command: string): boolean {
+  const cut = command.endsWith('…');
+  const want = flat(cut ? command.slice(0, -1) : command);
+  if (!want) return false;
+  for (let i = 0; i < rows.length; i++) {
+    let seen = '';
+    for (let j = i; j < rows.length; j++) {
+      seen += flat(rows[j]!);
+      if (cut ? seen.startsWith(want) : seen === want) return true;
+      if (!want.startsWith(seen)) break;
+    }
+  }
+  return false;
+}
+
+/** A file's name as a path's last part on a row ("src/upload.ts", "edit to upload.ts?"), not the start of another. */
+const fileIn = (row: string, name: string) => new RegExp(`(?:^|[\\s/\\\\(\`'"])${escape(name)}(?=$|[\\s?:,;)\`'"]|\\.(?:\\s|$))`).test(row);
+/** A tool's name as a word of its own. */
+const wordIn = (row: string, word: string) => new RegExp(`(?:^|[^\\w-])${escape(word)}(?![\\w-])`).test(row);
+
+/**
+ * Whether the dialog's rows name the request `target` names, as a session's wait does: "Bash npm test" (a command),
+ * "Edit upload.ts" (a file), or the tool alone ("Deploy"). Nothing named: nothing to check, false.
+ */
+function shows(above: readonly string[], target: string | null): boolean {
+  if (!target) return false;
+  const space = target.indexOf(' ');
+  const tool = space === -1 ? target : target.slice(0, space);
+  const what = space === -1 ? '' : target.slice(space + 1).trim();
+  if (!what) return above.some((r) => wordIn(r, tool));
+  if (FILE_TOOLS.has(tool)) {
+    const name = what.split(/[\\/]/).filter(Boolean).at(-1) ?? what;
+    return above.some((r) => fileIn(r, name));
+  }
+  return commandIn(above, what);
+}
+
+/** The digit that chooses "Yes" in the permission dialog at the bottom of the screen for `target`, or why it can't. */
+export function allowKey(lines: readonly string[], target: string | null): AllowKey {
+  const d = dialogAtBottom(lines);
+  if (!d || d.inField || !shows(d.above, target)) return REFUSED;
+  const yes = d.options.find((o) => o.label === 'Yes');
   return yes ? { ok: true, key: String(yes.n) } : REFUSED;
+}
+
+/**
+ * Esc, which declines the permission dialog at the bottom of the screen for `target`, whatever it lists and wherever
+ * its cursor is. Without that dialog on screen (answered already, the tool running) an Esc would interrupt Claude
+ * instead: refused.
+ */
+export function denyKey(lines: readonly string[], target: string | null): AllowKey {
+  const d = dialogAtBottom(lines);
+  return !d || !shows(d.above, target) ? REFUSED : { ok: true, key: '\x1b' };
 }
 
 /**

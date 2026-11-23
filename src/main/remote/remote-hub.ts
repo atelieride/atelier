@@ -15,6 +15,7 @@ import type { PortsMap } from '@shared/ports';
 import type { PrEntry } from '@shared/pr';
 import type { Resumable, TerminalInfo } from '@shared/protocol';
 import type { UsageEntry } from '@shared/session';
+import { waitTarget } from '@shared/session-view';
 import type { SecretStore } from '../connectors/secret-store';
 import type { RemoteViewer } from '../terminal-hub';
 import type { Size } from '../terminal-sizes';
@@ -28,7 +29,8 @@ import { PushStore } from './push-store';
 import { CLOSE, placeNameProblem, type ByeReason, type DeviceMessage, type HostMessage, type RemoteAccount } from './messages';
 import { Pairing } from './pairing';
 import { RelayLink, type RelayLinkOptions } from './relay-link';
-import { allowKey } from './prompt';
+import { AnswerBook } from './answers';
+import { allowKey, denyKey } from './prompt';
 import { WaitBook } from './rows';
 import { remoteState, remoteUsage, type RemoteState } from './state';
 import { MAX_APP_MESSAGE, type ChannelKind } from './wire';
@@ -147,6 +149,8 @@ interface SessionHost {
   terminal(id: string): TerminalInfo | undefined;
   /** The key of the wait a session is in, when the row may answer it. */
   waitKey(t: TerminalInfo): string | null;
+  /** The answers given to waits, every phone's. */
+  answers: AnswerBook;
   /** A resumable the state lists: its project's root. */
   resumableRoot(id: string): string | null;
   /** A row the state lists (a session, a terminal or a resumable): its project's root. */
@@ -271,19 +275,25 @@ class PhoneSession implements RemoteViewer {
         // Only the very request the phone saw, while it is still waiting for an answer (no key: not one to answer here).
         const still = () => { const now = this.host.terminal(m.id); return !!now && this.host.waitKey(now) === m.wait; };
         if (!still()) { this.error(m.rid, 'busy', 'The request changed'); return; }
-        // Deny is Esc, whatever the dialog lists.
-        if (m.choice === 'deny') { this.terms.answerKey(m.id, '\x1b'); this.send({ t: 'ok', rid: m.rid }); return; }
-        // Allow chooses the dialog's own "Yes", read from the screen; checked again once it is read.
+        // One answer at a time per terminal, and once per wait (from any phone).
+        const refused = this.host.answers.begin(m.id, m.wait);
+        if (refused) { this.error(m.rid, 'busy', refused); return; }
+        // The request the phone's row named: the key of a wait is made of it, so it is the same while `still` holds.
+        const target = waitTarget(t.session?.activity);
+        let typed = false;
+        // Read from the screen: the dialog must be there and be that request's. Allow chooses its own "Yes"; Deny is
+        // Esc, whatever it lists. Checked again once the screen is read.
         this.terms.permissionScreen(m.id).then(
           (lines) => {
             if (!still()) { this.error(m.rid, 'busy', 'The request changed'); return; }
-            const k = allowKey(lines);
+            const k = m.choice === 'allow' ? allowKey(lines, target) : denyKey(lines, target);
             if (!k.ok) { this.error(m.rid, 'invalid', k.message); return; }
             this.terms.answerKey(m.id, k.key);
+            typed = true;
             this.send({ t: 'ok', rid: m.rid });
           },
           () => this.error(m.rid, 'invalid', 'Open the session to answer')
-        );
+        ).finally(() => this.host.answers.end(m.id, m.wait, typed));
         return;
       }
       case 'rename':
@@ -515,6 +525,7 @@ export class RemoteHub {
       layoutOf: (root) => this.layouts.get(root),
       terminal: (id) => this.d.terminals.allTerminals().find((t) => t.id === id),
       waitKey: (t) => this.waits.keyOf(t),
+      answers: new AnswerBook(),
       resumableRoot: (id) => {
         const st = this.computeState();
         const r = st.resumables.find((x) => x.id === id);
