@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, expect, test } from 'vitest';
 import type { TerminalInfo } from '@shared/protocol';
 import { useApp } from './store';
 import { newSessionIn, newTerminalIn } from './launch';
+import { takeNav } from './transitions';
 import type { WorkspacesState } from './workspaces';
 
 // A workspace with a folder: New Session and New Terminal start there; "in Folder…" still picks.
@@ -71,4 +72,13 @@ test('any other failure (atelierd not connected) is not the folder: no second st
   await expect(newTerminalIn()).rejects.toThrow(/not connected/);
   expect(calls).toHaveLength(1);
   expect(useApp.getState().toast).toBeNull();
+});
+
+test('New Session marks its arrival as a launch (its spark and reveal); one opened to the side does not', async () => {
+  takeNav();
+  await newSessionIn('x');
+  expect(takeNav()).toBe('launch');
+  await Promise.resolve();
+  await newSessionIn('y', undefined, { side: true });
+  expect(takeNav()).toBeNull();
 });

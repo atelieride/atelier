@@ -434,7 +434,7 @@ function useSelectionGlide(): void {
 
 /**
  * A session just started from New Session: a spark flies from the header's + to its row, and its terminal opens from
- * there. Other launches (a resume, a past conversation, Resume all) arrive as any session picked does.
+ * there. Other launches (to the side, a resume, a past conversation, Resume all) arrive as any session picked does.
  */
 function useLaunchSpark(): void {
   const id = useApp((s) => s.launchedId);

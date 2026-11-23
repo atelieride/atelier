@@ -76,19 +76,26 @@ const freeze = (win: Page, selector: string, ms: number) => win.evaluate(([sel, 
 /** Whether one of a transition's own elements is what the pointer would hit at (x, y). */
 const hits = (win: Page, x: number, y: number) => win.evaluate(([px, py]) => !!document.elementFromPoint(px!, py!)?.closest('.motion-lane, .motion-pill, .tab-crown-fly, .motion-fx, .motion-spark, .motion-ring'), [x, y]);
 /**
- * Resolves once a new session's spark is on the page (false: none came), every script animation then held where it is
- * (just started), so the test can look at any moment of it.
+ * Resolves once a new session's spark is on the page (null: none came), every script animation then held where it is
+ * (just started), so the test can look at any moment of it. Read in that same task, before anything else can move
+ * the list (the session's first state soon moves its row to another section): the middle of the ring's box and of the
+ * avatar of row `name` where it rests (its own entrance, a short rise, taken to its end first).
  */
-const catchSpark = (win: Page) => win.evaluate(() => new Promise<boolean>((done) => {
+const catchSpark = (win: Page, name: string) => win.evaluate((title) => new Promise<{ ring: number[]; avatar: number[] } | null>((done) => {
+  const mid = (r: DOMRect) => [r.left + r.width / 2, r.top + r.height / 2];
   const mo = new MutationObserver(() => {
-    if (!document.querySelector('.motion-spark')) return;
+    const ring = document.querySelector('.motion-ring');
+    if (!document.querySelector('.motion-spark') || !ring) return;
     mo.disconnect();
     for (const a of document.getAnimations()) if (!(a as CSSAnimation).animationName) a.pause();
-    done(true);
+    const row = [...document.querySelectorAll('.sidebar .session-row')].find((r) => r.querySelector('.session-title')?.textContent === title);
+    for (const a of row?.getAnimations() ?? []) if ((a as CSSAnimation).animationName === 'atl-enter') a.finish();
+    const avatar = row?.querySelector('.avatar');
+    done(avatar ? { ring: mid(ring.getBoundingClientRect()), avatar: mid(avatar.getBoundingClientRect()) } : null);
   });
   mo.observe(document.body, { childList: true, subtree: true });
-  setTimeout(() => { mo.disconnect(); done(false); }, 15000);
-}));
+  setTimeout(() => { mo.disconnect(); done(null); }, 15000);
+}), name);
 const centre = (b: { x: number; y: number; width: number; height: number }) => [b.x + b.width / 2, b.y + b.height / 2] as const;
 const resume = (win: Page) => win.evaluate(() => { for (const a of document.getAnimations()) if (a.playState === 'paused') a.play(); });
 
@@ -213,9 +220,13 @@ test('a new session: a spark arcs from the + to its row, a ring ripples there, i
     // ⌘N (its menu item: synthetic keys don't reach NSMenu), a name, Enter.
     await menu(app, 'New Claude Session');
     await win.getByPlaceholder('Session name (optional)').fill('Two');
-    const caught = catchSpark(win);
+    const caught = catchSpark(win, 'Two');
     await win.keyboard.press('Enter');
-    expect(await caught).toBe(true);
+    // The ring is centred on the avatar, where the row comes to rest.
+    const placed = await caught;
+    expect(placed).not.toBeNull();
+    expect(Math.abs(placed!.ring[0]! - placed!.avatar[0]!)).toBeLessThan(0.5);
+    expect(Math.abs(placed!.ring[1]! - placed!.avatar[1]!)).toBeLessThan(0.5);
     const two = row(win, 'Two');
     await expect(two).toHaveCount(1);
     const id = await two.getAttribute('data-term-row');
@@ -236,13 +247,17 @@ test('a new session: a spark arcs from the + to its row, a ring ripples there, i
     expect(await hits(win, dx, dy)).toBe(false);
     await look(win, 'test-results/transitions-spark.png');
 
-    // Landed: the ring ripples out around the row's avatar, then the terminal opens from the sidebar's side.
+    // Landed: the ring ripples out around the row's avatar, then the terminal opens from the sidebar's side. It grows
+    // as a box, never by scaling: its edge stays a hairline as it spreads.
     await freeze(win, all, 640);
-    const ring = (await win.locator('.motion-ring').boundingBox())!;
-    // Where the avatar rests (the row has risen in by now).
-    const rest = (await two.locator('.avatar').boundingBox())!;
-    expect(Math.abs(centre(ring)[0] - centre(rest)[0])).toBeLessThan(1.5);
-    expect(Math.abs(centre(ring)[1] - centre(rest)[1])).toBeLessThan(1.5);
+    const spread = await win.locator('.motion-ring').evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { scale: new DOMMatrixReadOnly(cs.transform).a, edge: cs.borderTopWidth, width: el.getBoundingClientRect().width };
+    });
+    expect(spread.scale).toBe(1);
+    // At most its 1.5 px (a screen of 1x draws it as 1).
+    expect(parseFloat(spread.edge)).toBeLessThanOrEqual(1.5);
+    expect(spread.width).toBeGreaterThan(14);
     await look(win, 'test-results/transitions-spark-landed.png');
     await freeze(win, all, 900);
     expect(await slot.evaluate((el) => getComputedStyle(el).clipPath)).toMatch(/^circle\((?!0px)[\d.]+(px|%) at 0px /);

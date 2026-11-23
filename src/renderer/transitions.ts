@@ -147,6 +147,9 @@ const middle = (r: DOMRect): Pt => [r.left + r.width / 2, r.top + r.height / 2];
 let spark: { anims: Animation[]; end: () => void } | null = null;
 /** The arc's points: enough for a smooth curve between WAAPI's straight steps. */
 const ARC_STEPS = 12;
+/** The ring's size as the dot lands and once spread (five times): it grows its box, so its edge stays as thin. */
+const RING_FROM = 7;
+const RING_TO = 35;
 
 /**
  * A new session arrives: a small dot leaves `from` (the header's +) and arcs to `row`, a thin ring ripples out around
@@ -181,7 +184,7 @@ export function sparkTo(from: HTMLElement, row: HTMLElement, slot: HTMLElement |
   flight.push({ transform: `translate(${px(p2[0])}, ${px(p2[1])}) scale(0)`, opacity: 0 });
   const anims = [
     play(dot, flight, { duration: SPARK_MS, easing: IN_OUT }),
-    play(ring, [{ transform: 'scale(1)', opacity: 0.9 }, { transform: 'scale(5)', opacity: 0 }], { duration: RING_MS, delay: SPARK_MS - 40, easing: EASE })
+    play(ring, [{ width: px(RING_FROM), height: px(RING_FROM), opacity: 0.9 }, { width: px(RING_TO), height: px(RING_TO), opacity: 0 }], { duration: RING_MS, delay: SPARK_MS - 40, easing: EASE })
   ];
   const s = slot?.getBoundingClientRect();
   if (slot && s?.width) {

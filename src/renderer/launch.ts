@@ -72,8 +72,14 @@ export async function reloadShellEnv(): Promise<void> {
  * account picked in New Session (absent: the one set for new sessions); `noFlags`: without launch flags (⌥↵).
  */
 export function newSessionIn(name: string, cwd?: string, opts: { side?: boolean; account?: string; noFlags?: boolean } = {}): Promise<TerminalInfo | null> {
-  // Marked with the launch, in the same commit: it arrives with its own spark and reveal, never a tab's slide.
-  const show = (info: TerminalInfo) => { const st = useApp.getState(); markNav('launch'); if (opts.side) st.launchedToSide(info); else st.launched(info); };
+  // In front where it was asked for, it is marked with the launch, in the same commit: it arrives with its own spark and
+  // reveal, never a tab's slide. To the side (a new pane), it arrives with its pane.
+  const show = (info: TerminalInfo) => {
+    const st = useApp.getState();
+    if (opts.side) { st.launchedToSide(info); return; }
+    markNav('launch');
+    st.launched(info);
+  };
   const folder = cwd ? undefined : workspaceFolder();
   const make = (dir?: string) => () => window.atelier.terminals.createSession({ ...dims(), name: name.trim() || undefined, ...(dir ? { cwd: dir } : {}), ...(opts.account ? { account: opts.account } : {}), ...(opts.noFlags ? { noFlags: true as const } : {}) });
   return start(make(cwd ?? folder), !!cwd, show, folder ? make() : undefined);

@@ -29,12 +29,13 @@
 .tab.is-active.is-crown-landing { background: var(--bg-2); }
 /* A new session's spark (transitions.ts): a lane over the whole window, above the panels and under every popover, sheet
    and toast, that takes no pointer; in it a small solid dot on its way from the header's + to the new row, and the thin
-   ring that ripples out where it lands. Each is placed by its animation and hidden without it; the lane goes once the
-   ring has faded. */
+   ring that ripples out where it lands. Both are hidden without their animations; the lane goes once the ring has
+   faded. The dot is placed by its animation's translate, its middle on the point. The ring is centred where it is
+   placed and spreads by growing its own box inside the contained lane, never by scaling: its edge stays a hairline. */
 .motion-fx { position: fixed; inset: 0; z-index: 35; overflow: hidden; contain: strict; pointer-events: none; }
-.motion-spark, .motion-ring { position: absolute; left: 0; top: 0; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; opacity: 0; pointer-events: none; }
-.motion-spark { background: var(--violet); }
-.motion-ring { box-sizing: border-box; border: 1.5px solid var(--violet-soft); }
+.motion-spark, .motion-ring { position: absolute; left: 0; top: 0; width: 7px; height: 7px; border-radius: 50%; opacity: 0; pointer-events: none; }
+.motion-spark { margin: -3.5px 0 0 -3.5px; background: var(--violet); }
+.motion-ring { transform: translate(-50%, -50%); box-sizing: border-box; border: 1.5px solid var(--violet-soft); }
 
 /* The command palette: the app behind it recedes a little from its top edge (on top of the backdrop's own blur, so no
    extra full-window filter), the sheet drops in on a soft spring and the first results rise one after another. The
