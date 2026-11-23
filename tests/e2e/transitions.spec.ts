@@ -753,6 +753,60 @@ test('a tab moved to a new pane: under its terminal on its way in, the terminal\
   }
 });
 
+test('a finished row\'s wave whose end never comes still goes: cancelled, never started, or not drawn at all while its row asks', async () => {
+  test.setTimeout(120000);
+  // Without avatars the wave is the last of the cue: its end is what ends the cue.
+  const { app, home, win } = await launch({ sessionAvatars: false });
+  try {
+    await win.evaluate(recordCues);
+    await newSession(win, 'One');
+    await newSession(win, 'Two');
+    await settled(win);
+
+    // Cancelled (its row hidden mid-way): the wave goes at once, nothing of it left to play later.
+    const caught = catchWave(win);
+    await typeInto(win, 'One', '\r');
+    expect((await caught)?.title).toBe('One');
+    await win.locator('.row-wave').evaluate((el) => { (el as HTMLElement).style.display = 'none'; });
+    await expect(win.locator('.row-wave')).toHaveCount(0);
+
+    // Never started (hidden from its first frame, so no end ever comes): it goes once the longest cue is over.
+    await typeInto(win, 'One', 'ev:work\r');
+    await expect(row(win, 'One')).toHaveClass(/state-running/, { timeout: 10000 });
+    await win.evaluate(() => {
+      const s = document.createElement('style');
+      s.id = 'no-wave';
+      s.textContent = '.row-wave { display: none !important; }';
+      document.head.append(s);
+    });
+    const mounted = (await cues(win)).added.length;
+    await typeInto(win, 'One', 'ev:stop\r');
+    await expect.poll(async () => (await cues(win)).added.length, { timeout: 10000 }).toBe(mounted + 1);
+    await expect(win.locator('.row-wave')).toHaveCount(0, { timeout: 5000 });
+    await win.evaluate(() => document.getElementById('no-wave')?.remove());
+
+    // Not drawn at all: it finishes while its row asks whether to restart (that form of the row has no wave). Once
+    // the question is gone, no wave plays late.
+    await typeInto(win, 'One', 'ev:agents:1\r');
+    await expect(row(win, 'One')).toContainText('1 agent', { timeout: 10000 });
+    await row(win, 'One').locator('.row-main').click({ button: 'right' });
+    await win.getByRole('menuitem', { name: 'Restart Session' }).click();
+    const ask = win.locator('.session-row.is-restart-ask');
+    await expect(ask).toContainText('Restart now?');
+    const asking = (await cues(win)).added.length;
+    await typeInto(win, 'One', 'ev:agent-done\r');
+    // Its agent done, it is finished again: the question no longer names an agent.
+    await expect(ask).toContainText('Its background work', { timeout: 10000 });
+    await ask.locator('button.is-cancel').click();
+    await expect(ask).toHaveCount(0);
+    await expect(row(win, 'One')).toHaveClass(/state-done/);
+    expect((await cues(win)).added.slice(asking)).toEqual([]);
+    await expect(win.locator('.row-wave')).toHaveCount(0);
+  } finally {
+    await stop(app, home);
+  }
+});
+
 test('a session that finishes: a flat wave crosses its row, a check takes its avatar a moment, both go; never at a reload. A waiting row keeps an amber edge', async () => {
   test.setTimeout(120000);
   const { app, home, win } = await launch();

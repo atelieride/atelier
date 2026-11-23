@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /** The script animations' curves, as WAAPI takes them: --ease (theme.css), a soft spring, an elastic one, an in-out. */
 export const EASE = 'cubic-bezier(.2,.8,.2,1)';
@@ -70,12 +70,41 @@ export function useArrivalKey(state: string | null, target: string): number {
 }
 
 /**
- * A finite CSS cue keyed on `key` (remounted for each arrival): `on` from each rise of the key until `ended` hears the
- * end of the cue's own animation, so nothing of it stays mounted to replay when its row is moved in the list.
+ * A finite CSS cue keyed on `key` (remounted for each arrival): `on` from each rise of the key until its last part (the
+ * element given `ender` as its ref) ends its own animation, or has it cancelled (hidden mid-way), so nothing of it stays
+ * mounted to replay when its row is moved in the list. A cue that cannot end so ends anyway: at once when its last part
+ * is not drawn (its row shows another form), and `longest` ms after the rise when its last part is not playing by then
+ * (never started), so it never plays later.
  */
-export function useCue(key: number): { on: boolean; ended: (e: { target: EventTarget; currentTarget: EventTarget }) => void } {
+export function useCue(key: number, longest: number): { on: boolean; ender: (el: Element | null) => (() => void) | undefined } {
   const [over, setOver] = useState(0);
-  return { on: key > over, ended: (e) => { if (e.target === e.currentTarget) setOver(key); } };
+  const on = key > over;
+  const part = useRef<Element | null>(null);
+  const ender = useCallback((el: Element | null) => {
+    if (!el) return undefined;
+    part.current = el;
+    // Its own animation's end, not one of its children's bubbling up.
+    const end = (e: Event) => { if (e.target === el) setOver((o) => Math.max(o, key)); };
+    el.addEventListener('animationend', end);
+    el.addEventListener('animationcancel', end);
+    return () => {
+      el.removeEventListener('animationend', end);
+      el.removeEventListener('animationcancel', end);
+      if (part.current === el) part.current = null;
+    };
+  }, [key]);
+  // On, and its last part not drawn by this commit (the row in another form): nothing would end it. Before paint.
+  useLayoutEffect(() => { if (on && !part.current) setOver(key); });
+  // The latest: past the longest cue, unless its last part is still playing (held back), whose own end then ends it.
+  useEffect(() => {
+    if (!on) return undefined;
+    const id = window.setTimeout(() => {
+      const playing = part.current?.getAnimations().some((a) => a.playState === 'running' || a.playState === 'paused');
+      if (!playing) setOver((o) => Math.max(o, key));
+    }, longest);
+    return () => window.clearTimeout(id);
+  }, [on, key, longest]);
+  return { on, ender };
 }
 
 export type WindowActivity = 'active' | 'inactive';
