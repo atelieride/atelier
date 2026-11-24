@@ -159,7 +159,7 @@ test('a key skips it too: that key goes no further, the next one does', async ()
   }
 });
 
-test('a shortcut skips it and still reaches the app: a key with ⌘ or Ctrl held is never swallowed', async () => {
+test('a shortcut pressed during it reaches the app: the modifier\'s own keydown is what skips it, the key with ⌘ or Ctrl held goes on', async () => {
   const { app, home, win } = await launch();
   try {
     await expect(win.locator('.intro')).toBeAttached();

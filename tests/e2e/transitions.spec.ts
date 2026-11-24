@@ -152,8 +152,8 @@ function recordCues() {
 }
 const cues = (win: Page) => win.evaluate(() => (window as unknown as { cues: Cues }).cues);
 /**
- * Resolves once a finished session's wave is on the page (null: none came), its animations and its avatar check's held
- * at their start: the title of its row, whether that row shows it finished, whether the check is on its avatar.
+ * Resolves once a finished session's wave is on the page (null: none came), its animations held at their start: the
+ * title of its row, whether that row shows it finished, and whether a check sits on its avatar (none should).
  */
 const catchWave = (win: Page) => win.evaluate(() => new Promise<{ title: string; done: boolean; check: boolean } | null>((done) => {
   const mo = new MutationObserver(() => {
@@ -161,7 +161,7 @@ const catchWave = (win: Page) => win.evaluate(() => new Promise<{ title: string;
     if (!wave) return;
     mo.disconnect();
     const row = wave.closest('.session-row');
-    for (const el of [wave, ...(row?.querySelectorAll('.av-done-check, .av-done-check *') ?? [])]) for (const a of el.getAnimations()) a.pause();
+    for (const a of wave.getAnimations()) a.pause();
     done({ title: row?.querySelector('.session-title')?.textContent ?? '', done: !!row?.classList.contains('state-done'), check: !!row?.querySelector('.avatar > .av-done-check') });
   });
   mo.observe(document.body, { childList: true, subtree: true });
@@ -932,23 +932,43 @@ test('a session that finishes: a flat wave crosses its row and goes, no check on
   }
 });
 
-test('only what the user does here moves: a click on the row in front lends no mark to a jump, Resume all brings its sessions back in place, a session picked in the palette slides in', async () => {
+test('only navigation in the list and the tabs moves: what changes nothing lends no mark to a jump, jumps and Resume all change the front in place, a session picked in the palette slides in', async () => {
   test.setTimeout(120000);
-  // One session id for all three, so atelierd can resume each of them.
-  const { app, home, win } = await launch(undefined, { ATELIER_FAKE_SESSION_ID: '99999999-9999-4999-8999-999999999999' });
+  // Sessions with UUID ids: atelierd resumes only those.
+  const { app, home, win } = await launch(undefined, { ATELIER_FAKE_UUID_SESSIONS: '1' });
   try {
     await threeSessions(win);
-    // A click on the row already in front leaves no mark behind: a jump right after it (⌘J, to a session waiting for
-    // you) is the app's own change of front, and moves nothing.
+    // What brings the tab already in front forward leaves no mark behind (a row, Tab n, a palette pick): the jump
+    // right after it (⌘J, to a session waiting for you, a jump from elsewhere and no navigation in the list or the
+    // tabs) changes the front in place. The palette's own Next session needing attention does the same.
+    const front = () => win.evaluate(() => document.querySelector('.tabs .tab.is-active')?.getAttribute('data-key') ?? null);
+    const frontName = () => win.locator('.tabs .tab.is-active .tab-name').innerText();
+    const still = async (jump: () => Promise<void>) => {
+      const before = await front();
+      await jump();
+      await expect.poll(front).not.toBe(before);
+      const jumped = await played(win);
+      expect(on(jumped, 'motion-pill')).toEqual([]);
+      expect(on(jumped, 'tab-crown-fly')).toEqual([]);
+      expect(on(jumped, 'workspace-body')).toEqual([]);
+    };
+    const attention = () => menu(app, 'Next Session Needing Attention');
     await expect(row(win, 'Three')).toHaveClass(/is-selected/);
     await row(win, 'Three').click();
-    const before = await win.evaluate(() => document.querySelector('.tabs .tab.is-active')?.getAttribute('data-key'));
-    await menu(app, 'Next Session Needing Attention');
-    await expect.poll(() => win.evaluate(() => document.querySelector('.tabs .tab.is-active')?.getAttribute('data-key'))).not.toBe(before);
-    const jumped = await played(win);
-    expect(on(jumped, 'motion-pill')).toEqual([]);
-    expect(on(jumped, 'tab-crown-fly')).toEqual([]);
-    expect(on(jumped, 'workspace-body')).toEqual([]);
+    await still(attention);
+    const at = await win.evaluate(() => [...document.querySelectorAll('.tabs .tab')].findIndex((t) => t.classList.contains('is-active')) + 1);
+    await menu(app, `Tab ${at}`);
+    await still(attention);
+    const name = await frontName();
+    await menu(app, 'Search…');
+    await win.locator('.palette-item').filter({ has: win.locator('.avatar') }).filter({ hasText: name }).first().click();
+    await expect(win.locator('.palette')).toHaveCount(0);
+    await still(attention);
+    await still(async () => {
+      await menu(app, 'Search…');
+      await win.locator('.palette-input').fill('needing attention');
+      await win.locator('.palette-item', { hasText: 'Next session needing attention' }).click();
+    });
     // atelierd restarts: the three wait under Resume.
     const first = daemonPid(home);
     process.kill(first, 'SIGTERM');

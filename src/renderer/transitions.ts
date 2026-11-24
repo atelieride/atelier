@@ -38,6 +38,14 @@ export function markNav(origin: NavOrigin): void {
 }
 
 /**
+ * Whether bringing tab `key` forward changes the tab in front: it is not there already, nor in a window of its own.
+ * Only then is a navigation marked: a mark nothing reads would be lent to the next change, the app's own included.
+ */
+export function changesFront<K extends string>(s: { activeKey(): K | null; poppedOut: readonly K[] }, key: K | null): boolean {
+  return key !== null && key !== s.activeKey() && !s.poppedOut.includes(key);
+}
+
+/**
  * Where the navigation now committing came from; null for any other (Resume all, a dictation, a notification…). The
  * sidebar and the tab strips it changes read it in the same commit, so it stays until that commit is done (a
  * microtask), then is cleared; unread, it lapses after NAV_MS.

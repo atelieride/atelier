@@ -42,7 +42,7 @@ import { newTerminalIn } from '../launch';
 import { openBelow, openNewMenu, sessionPlusMenu } from '../menus';
 import type { MenuItem } from '../menu-model';
 import { useRowFit, type RowFitParts } from '../row-fit';
-import { glideSelection, markNav, sparkTo, takeNav } from '../transitions';
+import { changesFront, glideSelection, markNav, sparkTo, takeNav } from '../transitions';
 
 // Automations are opt-in (2026-11-02): their list loads on first use (App.tsx does the same for the view and sheets).
 const AutomationsList = lazy(() => import('../automations/AutomationsList').then((m) => ({ default: m.AutomationsList })));
@@ -271,9 +271,13 @@ function Sections({ terminals, toResume, entered, scope, inGroup = false, empty 
   const poppedOut = useApp((s) => s.poppedOut);
   const isPopped = (id: string) => poppedOut.includes(`t:${id}`);
   const isFront = (id: string) => front === `t:${id}` && !isPopped(id);
-  // Picked here: the selection glides to its row, the workspace rises in (transitions.ts). The row already in front
-  // marks nothing: no navigation follows to read the mark, which would otherwise lend it to the next one.
-  const onSelect = useCallback((id: string) => { if (frontRow(useApp.getState()) !== id) markNav('sidebar'); useApp.getState().select(id); }, []);
+  // Picked here: the selection glides to its row, the workspace rises in (transitions.ts), unless nothing changes (the
+  // row already in front, or in a window of its own).
+  const onSelect = useCallback((id: string) => {
+    const st = useApp.getState();
+    if (changesFront(st, `t:${id}` as const)) markNav('sidebar');
+    st.select(id);
+  }, []);
   // When each row entered its section: rows keep their place while they stay in it (a tool call doesn't reorder them).
   // Kept by the always-mounted Sidebar, one map per workspace (or the whole project's): another view, a workspace
   // switch or a folded block never resets it.
@@ -435,7 +439,7 @@ function useSelectionGlide(): void {
 
 /**
  * A session just started from New Session: a spark flies from the header's + to its row, and its terminal opens from
- * there. Other launches (to the side, a resume, a past conversation, Resume all) arrive as any session picked does.
+ * there. Other launches (to the side, a resume, a past conversation, Resume all) arrive in place, with no move.
  */
 function useLaunchSpark(): void {
   const id = useApp((s) => s.launchedId);

@@ -129,7 +129,7 @@ import { AskHost } from './components/companion/AskHost';
 import { ASK_INSET } from './components/companion/inset';
 import { askSelected } from './companion/actions';
 import { sheetIn } from './companion/view';
-import { markNav } from './transitions';
+import { changesFront, markNav } from './transitions';
 // Change Terminal Font… loads on its first opening: it stays out of the first paint (the live demo's budget).
 const FontSheet = lazy(() => import('./components/FontSheet').then((m) => ({ default: m.FontSheet })));
 // Context usage: lazy, with its own CSS, out of the first paint (the live demo's budget).
@@ -592,8 +592,12 @@ export function App() {
           case 'open-file': void window.atelier.files.openPicker().catch(() => {}); break;
           case 'install-shell-command': void runShellCommand('install'); break;
           case 'uninstall-shell-command': void runShellCommand('uninstall'); break;
-          case 'next-tab': markNav('switch'); st.activate(cycle(st.focusedStrip(), st.activeKey(), 1)); break;
-          case 'prev-tab': markNav('switch'); st.activate(cycle(st.focusedStrip(), st.activeKey(), -1)); break;
+          case 'next-tab': case 'prev-tab': {
+            const k = cycle(st.focusedStrip(), st.activeKey(), cmd === 'next-tab' ? 1 : -1);
+            if (changesFront(st, k)) markNav('switch');
+            st.activate(k);
+            break;
+          }
           case 'new-terminal': void newTerminalIn(); break;
           case 'reload-shell-env': void reloadShellEnv(); break;
           case 'toggle-changes': st.toggleChanges(); break;
@@ -651,7 +655,7 @@ export function App() {
           case 'toggle-ws-activities': toggleWsActivities(); break;
           case 'next-workspace': case 'prev-workspace': stepWorkspace(cmd === 'next-workspace' ? 1 : -1); break;
           default:
-            if (cmd.startsWith('tab-')) { const k = nth(st.focusedStrip(), Number(cmd.slice(4))); if (k) { markNav('switch'); st.activate(k); } }
+            if (cmd.startsWith('tab-')) { const k = nth(st.focusedStrip(), Number(cmd.slice(4))); if (k) { if (changesFront(st, k)) markNav('switch'); st.activate(k); } }
             else if (cmd.startsWith('workspace-')) goToWorkspaceAt(Number(cmd.slice('workspace-'.length)));
             else if (cmd.startsWith('new-terminal-profile:')) void newTerminalIn(undefined, cmd.slice('new-terminal-profile:'.length));
             else if (cmd.startsWith('new-session-account:')) st.setNewSessionOpen(true, cmd.slice('new-session-account:'.length));

@@ -12,7 +12,8 @@ import { viewCommand } from '../scm/all-view';
 import { lastUndo } from '../git/actions';
 import { commandRepo, gitPaletteCommands, runPaletteGit, sessionWork } from '../git/commands';
 import { useApp, type PaletteSend } from '../store';
-import { markNav } from '../transitions';
+import { changesFront, markNav } from '../transitions';
+import type { TabKey } from '../tabs-model';
 import { iphoneOffered, openPairing } from '../iphone/store';
 import type { ClaudeConversation } from '@shared/history';
 import type { TerminalInfo } from '@shared/protocol';
@@ -99,6 +100,16 @@ import { closeWorkspaceInFront, renameWorkspaceInFront, stepWorkspace, wsActivit
 import { activitiesOf, workspacesOf, type Dot } from '../workspaces';
 import { canMoveStep, lift } from '../split';
 import { neighbour, type Side } from '../split-tree';
+
+/**
+ * A session, terminal or file picked here: brought to the front as a tab switched to from the keyboard (its crown flies,
+ * its content slides in), marked only when it changes the tab in front. A command is no navigation in the tabs: what it
+ * brings forward (Next session needing attention) changes in place, as from its key.
+ */
+function pickTab(key: TabKey, open: () => void): void {
+  if (changesFront(useApp.getState(), key)) markNav('switch');
+  open();
+}
 
 interface Item {
   key: string; kind: 'session' | 'terminal' | 'file' | 'command' | 'resume' | 'history' | 'line' | 'task' | 'workspace'; label: string; hint: string; color?: string; icon?: IconName; run: () => void;
@@ -762,13 +773,13 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
       const out: Group[] = [{ title: t.paletteResume, items: textFilter(rs, text, (s) => [s.label], 20) }, { title: t.paletteHistory, items: cs }].filter((s) => s.items.length > 0);
       return out.length ? out : [{ title: t.paletteResume, items: [], empty: t.paletteEmpty }];
     }
-    const termItem = (kind: 'session' | 'terminal') => (x: TerminalInfo): Item => ({ key: `s-${x.id}`, kind, label: x.title, hint: x.session?.activity ?? x.foreground.split('/').at(-1) ?? '', color: x.color, run: () => useApp.getState().select(x.id), side: () => useApp.getState().openToSide(`t:${x.id}`) });
+    const termItem = (kind: 'session' | 'terminal') => (x: TerminalInfo): Item => ({ key: `s-${x.id}`, kind, label: x.title, hint: x.session?.activity ?? x.foreground.split('/').at(-1) ?? '', color: x.color, run: () => pickTab(`t:${x.id}`, () => useApp.getState().select(x.id)), side: () => useApp.getState().openToSide(`t:${x.id}`) });
     const split = splitTerminals(terminals, starting);
     const sessions = split.sessions.map(termItem('session'));
     const plain = split.plain.map(termItem('terminal'));
     const fileItem = (key: string, f: { path: string; rel: string }): Item => ({
       key, kind: 'file', label: f.rel.split('/').at(-1) ?? f.rel, hint: f.rel,
-      run: () => useApp.getState().openFile(f.path, f.rel, null, undefined, { preview: true }), side: () => useApp.getState().openFileToSide(f.path, f.rel)
+      run: () => pickTab(`f:${f.path}`, () => useApp.getState().openFile(f.path, f.rel, null, undefined, { preview: true })), side: () => useApp.getState().openFileToSide(f.path, f.rel)
     });
     const out: Group[] = [];
     if (q.mode === 'all' || q.mode === 'sessions') {
@@ -814,8 +825,6 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
   // anything else runs as usual.
   const pick = (item: Item | undefined, side = false, send = false) => {
     if (!item) return;
-    // The user's own move: a tab it brings to the front comes in as one switched to from the keyboard.
-    markNav('switch');
     // A task's own Enter leads to its actions; ⌘ and ⌥ on it act at once (and close) — unless they lead to the account
     // step too (`stays`). A step with neither (Paste into Session…) just goes on, whatever the modifiers.
     if (!item.keep || (!item.stays && ((side && item.side) || (send && item.send)))) close();
