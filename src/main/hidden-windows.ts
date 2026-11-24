@@ -40,10 +40,13 @@ interface Showable { show(): void; focus(): void; webContents?: { id: number } }
 
 /**
  * A window just created (ready-to-show): it appears, unless in e2e; maximized (zoomed on macOS) when it was left so.
- * maximize() shows the window too, so it never runs in e2e either; show() then makes it the active one.
+ * maximize() shows the window too, so it never runs in e2e either; show() then makes it the active one. `inactive` (a
+ * window a paired phone opened): it appears without taking the focus from whoever works at this computer, at its
+ * normal size, since maximizing activates the window on Windows.
  */
-export function presentNewWindow(win: Showable & { maximize(): void }, maximized = false): void {
+export function presentNewWindow(win: Showable & { maximize(): void; showInactive(): void }, maximized = false, inactive = false): void {
   if (hiddenWindows()) return;
+  if (inactive) { win.showInactive(); return; }
   if (maximized) win.maximize();
   win.show();
 }

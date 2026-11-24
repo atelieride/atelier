@@ -104,11 +104,11 @@ export function frameOptions(zoom: number, platform: NodeJS.Platform = process.p
 
 /**
  * `place`: where it opens (the welcome window it replaces, or where it was last time), maximized when it was so; else
- * centered.
+ * centered. `inactive` (a window a paired phone opened): it appears without taking the focus.
  */
-export function createProjectWindow(projectRoot: string | null, zoomFactor = 1, place?: Rectangle & { maximized?: boolean }, hooks: WindowHooks = {}, theme: ThemeId = 'aurora', intro: number | null = null): BrowserWindow {
+export function createProjectWindow(projectRoot: string | null, zoomFactor = 1, place?: Partial<Rectangle> & { maximized?: boolean; inactive?: boolean }, hooks: WindowHooks = {}, theme: ThemeId = 'aurora', intro: number | null = null): BrowserWindow {
   const chrome = chromeOf(theme);
-  const { maximized = false, ...bounds }: Partial<Rectangle> & { maximized?: boolean } = place ?? {};
+  const { maximized = false, inactive = false, ...bounds }: Partial<Rectangle> & { maximized?: boolean; inactive?: boolean } = place ?? {};
   return createAppWindow({
     width: 1600, height: 980, ...bounds, minWidth: 960, minHeight: 600,
     title: projectRoot ? basename(projectRoot) : 'Atelier',
@@ -118,7 +118,7 @@ export function createProjectWindow(projectRoot: string | null, zoomFactor = 1, 
     // The page sets its theme before its first paint: the preload reads this argument; `intro` (the hold in ms) asks it to
     // play the launch animation, which only the first window of an app start gets.
     webPreferences: { ...secureWebPreferences(join(__dirname, '../preload/index.js')), zoomFactor, ...hiddenWebPreferences(), additionalArguments: [themeArg(theme), ...(intro === null ? [] : [introArg(intro)])] }
-  }, hooks, maximized);
+  }, hooks, maximized, inactive);
 }
 
 /** A pop-out's one bar (its caption buttons on Windows sit in it, as tall). */
@@ -160,7 +160,7 @@ export function createGhostWindow(bounds: Rectangle, zoomFactor = 1): BrowserWin
   return win;
 }
 
-function createAppWindow(options: BrowserWindowConstructorOptions, hooks: WindowHooks = {}, maximized = false): BrowserWindow {
+function createAppWindow(options: BrowserWindowConstructorOptions, hooks: WindowHooks = {}, maximized = false, inactive = false): BrowserWindow {
   if (!sessionHardened) { hardenSession(session.defaultSession, { isApp: isAppUrl, enabled: () => dictationGate() }); sessionHardened = true; }
   const win = new BrowserWindow(options);
   hardenWebContents(win.webContents, isAppUrl);
@@ -219,7 +219,7 @@ function createAppWindow(options: BrowserWindowConstructorOptions, hooks: Window
     else if (response === 2) hooks.onUnloadCancel?.();
   });
   // In e2e tests the window is never shown: the tests run while working on the Mac.
-  win.once('ready-to-show', () => presentNewWindow(win, maximized));
+  win.once('ready-to-show', () => presentNewWindow(win, maximized, inactive));
   const devUrl = devEnv('ELECTRON_RENDERER_URL');
   if (devUrl) void win.loadURL(devUrl);
   else void win.loadFile(rendererFile());

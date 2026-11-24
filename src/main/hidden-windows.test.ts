@@ -129,3 +129,14 @@ test('a window left maximized comes back maximized (zoomed on macOS), shown and 
   presentNewWindow(hidden, true);
   expect([hidden.maximize, hidden.show].map((f) => f.mock.calls.length)).toEqual([0, 0]);
 });
+
+test('a window a paired phone opens appears without taking the focus or activating the app (no maximize, which would); never in e2e', () => {
+  delete process.env.ATELIER_TEST_BACKGROUND;
+  const quiet = fakeWin();
+  presentNewWindow(quiet, true, true);
+  expect([quiet.show, quiet.focus, quiet.maximize, quiet.showInactive].map((f) => f.mock.calls.length)).toEqual([0, 0, 0, 1]);
+  process.env.ATELIER_TEST_BACKGROUND = '1';
+  const hidden = fakeWin();
+  presentNewWindow(hidden, true, true);
+  expect([hidden.show, hidden.focus, hidden.maximize, hidden.showInactive].map((f) => f.mock.calls.length)).toEqual([0, 0, 0, 0]);
+});

@@ -1,16 +1,19 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 // A fake BrowserWindow: its webContents' listeners and messages recorded.
-const made = vi.hoisted(() => [] as { listeners: Map<string, (e: { preventDefault(): void }) => void>; winListeners: Map<string, (e: { preventDefault(): void }) => void>; sent: unknown[][]; opts?: Record<string, unknown>; calls: string[] }[]);
+const made = vi.hoisted(() => [] as { listeners: Map<string, (e: { preventDefault(): void }) => void>; winListeners: Map<string, (e: { preventDefault(): void }) => void>; sent: unknown[][]; opts?: Record<string, unknown>; calls: string[]; ready?: () => void }[]);
 vi.mock('electron', () => {
   class BrowserWindow {
-    readonly rec = { listeners: new Map<string, (e: { preventDefault(): void }) => void>(), winListeners: new Map<string, (e: { preventDefault(): void }) => void>(), sent: [] as unknown[][], opts: undefined as Record<string, unknown> | undefined, calls: [] as string[] };
+    readonly rec = { listeners: new Map<string, (e: { preventDefault(): void }) => void>(), winListeners: new Map<string, (e: { preventDefault(): void }) => void>(), sent: [] as unknown[][], opts: undefined as Record<string, unknown> | undefined, calls: [] as string[], ready: undefined as (() => void) | undefined };
     readonly webContents = { on: (ev: string, fn: (e: { preventDefault(): void }) => void) => { this.rec.listeners.set(ev, fn); }, send: (...a: unknown[]) => { this.rec.sent.push(a); }, reload: () => { this.rec.calls.push('reload'); }, isDestroyed: () => false };
     on(ev: string, fn: (e: { preventDefault(): void }) => void) { this.rec.winListeners.set(ev, fn); }
     close() { this.rec.calls.push('close'); }
     isDestroyed() { return false; }
     constructor(opts?: Record<string, unknown>) { this.rec.opts = opts; made.push(this.rec); }
-    once() {}
+    once(ev: string, fn: () => void) { if (ev === 'ready-to-show') this.rec.ready = fn; }
+    show() { this.rec.calls.push('show'); }
+    showInactive() { this.rec.calls.push('showInactive'); }
+    maximize() { this.rec.calls.push('maximize'); }
     loadFile(f: string) { this.rec.calls.push(`loadFile ${f}`); return Promise.resolve(); }
     loadURL() { return Promise.resolve(); }
     setIgnoreMouseEvents(v: boolean) { this.rec.calls.push(`ignoreMouse ${v}`); }
@@ -303,4 +306,24 @@ describe('the session end guard (Windows)', () => {
     await new Promise((r) => setImmediate(r));
     expect(quits).toBe(2);
   });
+});
+
+test('a project window a paired phone opens appears without taking the focus; others appear in front, maximized when left so', () => {
+  const saved = process.env.ATELIER_TEST_BACKGROUND;
+  delete process.env.ATELIER_TEST_BACKGROUND;
+  try {
+    createProjectWindow('/p', 1, { x: 10, y: 20, width: 1200, height: 800, maximized: true, inactive: true });
+    const quiet = made[made.length - 1]!;
+    expect(quiet.opts).toMatchObject({ x: 10, y: 20, width: 1200, height: 800 });
+    expect(quiet.opts).not.toHaveProperty('inactive');
+    expect(quiet.opts).not.toHaveProperty('maximized');
+    quiet.ready!();
+    expect(quiet.calls.filter((c) => ['show', 'showInactive', 'maximize'].includes(c))).toEqual(['showInactive']);
+    createProjectWindow('/p', 1, { x: 10, y: 20, width: 1200, height: 800, maximized: true });
+    const front = made[made.length - 1]!;
+    front.ready!();
+    expect(front.calls.filter((c) => ['show', 'showInactive', 'maximize'].includes(c))).toEqual(['maximize', 'show']);
+  } finally {
+    if (saved !== undefined) process.env.ATELIER_TEST_BACKGROUND = saved;
+  }
 });
