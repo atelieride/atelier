@@ -69,9 +69,8 @@
 
 /* A session that finished just now (SessionRow): a flat green layer is revealed across its row from the left in
    520 ms, then fades by 900 ms, under the row's content and over its own fill (selected, hovered): the row stacks on
-   its own while the cue plays (is-finishing; its size container does not make it a stacking context). A check takes
-   its avatar's place a moment, on a cover of the avatar's own tile, and hands it back by 1100 ms. Both take no pointer,
-   rest unseen (their last frame holds) and are removed once the last of them has played. */
+   its own while the cue plays (is-finishing; its size container does not make it a stacking context). It takes no
+   pointer, rests unseen (its last frame holds) and is removed once it has played. */
 .session-row.is-finishing { isolation: isolate; }
 @keyframes atl-row-wave {
   0% { clip-path: inset(0 100% 0 0); opacity: 1; animation-timing-function: cubic-bezier(.7, 0, .2, 1); }
@@ -79,6 +78,3 @@
   100% { clip-path: inset(0 0% 0 0); opacity: 0; }
 }
 .row-wave { position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: color-mix(in srgb, var(--done) 16%, transparent); opacity: 0; pointer-events: none; animation: atl-row-wave 900ms linear both; }
-@keyframes atl-check-cover { 0% { opacity: 0; } 15%, 78% { opacity: 1; } 100% { opacity: 0; } }
-.av-done-check { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; border-radius: inherit; background: inherit; color: var(--done); opacity: 0; pointer-events: none; animation: atl-check-cover 1100ms var(--ease) both; }
-.av-done-check > svg { animation: atl-check 320ms var(--ease) both; }

@@ -9,7 +9,7 @@ import { look } from './shots';
 // crown follows it, and the workspace rises in. A tab picked: its crown stretches over to it, then catches up, and the
 // content slides in from the side it is on. A new session: a spark arcs from the + to its row and its terminal opens
 // from there. A split: the layout is there at once, the new pane's content springs in past its place and settles, its
-// line draws. A session that finishes: a flat green wave crosses its row and a check takes its avatar a moment. They
+// line draws. A session that finishes: a flat green wave crosses its row, its avatar left as it is. They
 // never hold a click (one mid-move goes where it lands), paint nothing outside their box, leave nothing once they end,
 // and Reduce motion plays none. Only the user's own navigation moves anything.
 
@@ -785,7 +785,7 @@ test('a tab moved to a new pane: under its terminal on its way in, the terminal\
 
 test('a finished row\'s wave whose end never comes still goes: cancelled, never started, or not drawn at all while its row asks', async () => {
   test.setTimeout(120000);
-  // Without avatars the wave is the last of the cue: its end is what ends the cue.
+  // Without avatars too: the wave's end is what ends the cue.
   const { app, home, win } = await launch({ sessionAvatars: false });
   try {
     await win.evaluate(recordCues);
@@ -837,7 +837,7 @@ test('a finished row\'s wave whose end never comes still goes: cancelled, never 
   }
 });
 
-test('a session that finishes: a flat wave crosses its row, a check takes its avatar a moment, both go; never at a reload. A waiting row wears no amber box', async () => {
+test('a session that finishes: a flat wave crosses its row and goes, no check on its avatar; never at a reload. A waiting row wears no amber box', async () => {
   test.setTimeout(120000);
   const { app, home, win } = await launch();
   try {
@@ -863,29 +863,29 @@ test('a session that finishes: a flat wave crosses its row, a check takes its av
     await expect(row(win, 'One')).toHaveClass(/state-running/, { timeout: 10000 });
     expect((await cues(win)).added).toEqual([]);
 
-    // Finished: the wave mounts on its row (moved to its new section meanwhile), the check on its avatar.
+    // Finished: the wave mounts on its row (moved to its new section meanwhile). Its avatar stays as it is: a finished
+    // session wears no check (Ready for review and the unread dot say it), not even for a moment.
     const caught = catchWave(win);
     await typeInto(win, 'One', '\r');
     const wave = await caught;
-    expect(wave).toEqual({ title: 'One', done: true, check: true });
-    // Mid-sweep: a flat layer drawn part of the way across, the check over the avatar; neither takes the pointer.
-    await freeze(win, '.row-wave, .av-done-check, .av-done-check > *', 300);
+    expect(wave).toEqual({ title: 'One', done: true, check: false });
+    // Mid-sweep: a flat layer drawn part of the way across, taking no pointer.
+    await freeze(win, '.row-wave', 300);
     const mid = await row(win, 'One').evaluate((el) => {
       const w = el.querySelector('.row-wave')!;
-      const c = el.querySelector('.av-done-check')!;
       const r = el.getBoundingClientRect();
       const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-      const av = c.getBoundingClientRect();
-      const onCheck = document.elementFromPoint(av.left + av.width / 2, av.top + av.height / 2);
-      return { clip: getComputedStyle(w).clipPath, bg: getComputedStyle(w).backgroundImage, check: Number(getComputedStyle(c).opacity), hit: !!hit?.closest('.row-wave, .av-done-check'), onCheck: !!onCheck?.closest('.row-wave, .av-done-check') };
+      const av = el.querySelector('.avatar')!.getBoundingClientRect();
+      const onAvatar = document.elementFromPoint(av.left + av.width / 2, av.top + av.height / 2);
+      return { clip: getComputedStyle(w).clipPath, bg: getComputedStyle(w).backgroundImage, hit: !!hit?.closest('.row-wave'), onAvatar: !!onAvatar?.closest('.row-wave') };
     });
     const right = Number(/^inset\(0px ([\d.]+)%/.exec(mid.clip)?.[1] ?? NaN);
     expect(right).toBeGreaterThan(5);
     expect(right).toBeLessThan(95);
     expect(mid.bg).toBe('none');
-    expect(mid.check).toBeGreaterThan(0.9);
     expect(mid.hit).toBe(false);
-    expect(mid.onCheck).toBe(false);
+    expect(mid.onAvatar).toBe(false);
+    await expect(row(win, 'One').locator('.av-done-check')).toHaveCount(0);
     // Over the row's own fill (hovered here; selected alike), not under it: the row stacks on its own while the cue
     // plays (a size container does not), and only then.
     await row(win, 'One').hover();
@@ -894,14 +894,13 @@ test('a session that finishes: a flat wave crosses its row, a check takes its av
     await win.mouse.move(1, 1);
     await resume(win);
 
-    // Then both have played to their end and are gone.
-    await expect(win.locator('.row-wave, .av-done-check')).toHaveCount(0, { timeout: 3000 });
+    // Then it has played to its end and is gone.
+    await expect(win.locator('.row-wave')).toHaveCount(0, { timeout: 3000 });
     expect(await row(win, 'One').evaluate((el) => getComputedStyle(el).isolation)).toBe('auto');
     let log = await cues(win);
-    expect(log.added.map((a) => `${a.cls} on ${a.row}`).sort()).toEqual(['av-done-check on One', 'row-wave on One']);
+    expect(log.added.map((a) => `${a.cls} on ${a.row}`)).toEqual(['row-wave on One']);
     expect(log.added.every((a) => /\bstate-done\b/.test(a.rowCls))).toBe(true);
     expect(log.ended.filter((e) => e.on === 'row-wave').map((e) => e.name)).toEqual(['atl-row-wave']);
-    expect(log.ended.filter((e) => e.on === 'av-done-check').map((e) => e.name).sort()).toEqual(['atl-check', 'atl-check-cover']);
 
     // Working again, then finished again: the wave plays again.
     await typeInto(win, 'One', 'ev:work\r');
@@ -909,8 +908,8 @@ test('a session that finishes: a flat wave crosses its row, a check takes its av
     await typeInto(win, 'One', 'ev:stop\r');
     await expect(row(win, 'One')).toHaveClass(/state-done/, { timeout: 10000 });
     await expect.poll(async () => (await cues(win)).ended.filter((e) => e.on === 'row-wave').length).toBe(2);
-    await expect(win.locator('.row-wave, .av-done-check')).toHaveCount(0, { timeout: 3000 });
-    expect((await cues(win)).added.map((a) => `${a.cls} on ${a.row}`).sort()).toEqual(['av-done-check on One', 'av-done-check on One', 'row-wave on One', 'row-wave on One']);
+    await expect(win.locator('.row-wave')).toHaveCount(0, { timeout: 3000 });
+    expect((await cues(win)).added.map((a) => `${a.cls} on ${a.row}`)).toEqual(['row-wave on One', 'row-wave on One']);
 
     // A reload shows the finished row as it is: no wave, no check (a mount is no finish). Recorded from the new
     // document's start, so a cue played and gone before this reads would still be counted.
