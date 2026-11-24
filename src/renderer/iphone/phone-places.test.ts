@@ -250,6 +250,14 @@ describe('close', () => {
     expect(st().ws!.list.map((x) => x.id)).toEqual(['w1']);
   });
 
+  test('stop, when this atelierd can\'t keep stopped sessions under Resume: refused in words, nothing stops; move still goes', async () => {
+    useApp.setState({ daemon: { ...st().daemon, closeStopAvailable: false } });
+    const before = st().ws;
+    expect(await applyPlaceOp({ kind: 'close', place: 'a1', how: 'stop' })).toEqual({ ok: false, code: 'invalid', message: 'This computer can\'t keep stopped sessions under Resume: move them instead, or stop them on this computer.' });
+    expect([stopped, st().ws]).toEqual([[], before]);
+    expect(await applyPlaceOp({ kind: 'close', place: 'a1', how: 'move' })).toEqual({ ok: true });
+  });
+
   test('the last workspace stays; a place that is gone, or workspaces off, is not found', async () => {
     expect(await applyPlaceOp({ kind: 'close', place: 'w2', how: 'move' })).toEqual({ ok: true });
     expect(await applyPlaceOp({ kind: 'close', place: 'w1', how: 'stop' })).toEqual({ ok: false, code: 'invalid', message: 'A project\'s last workspace stays.' });

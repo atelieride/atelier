@@ -234,3 +234,23 @@ test('a close decided elsewhere whose window went meanwhile leaves nothing for t
   expect(await decided).toBe(false);
   expect(guard.onClose('/p', 'w2', () => {})).toBe(false);
 });
+
+test('a phone\'s stop never stops what Atelier keeps: an atelierd that can\'t give sessions back, a keep setting, an update\'s restart', async () => {
+  const kept = setup({ mode: 'keep', busy: { '/p': 2 } });
+  expect(await kept.guard.decideFor('/p', 'stop')).toBe(true);
+  expect(kept.guard.onClose('/p', 'win', () => {})).toBe(true);
+  kept.guard.onClosed('/p');
+  expect(kept.stopped).toEqual([]);
+  const restart = setup({ mode: 'stop', busy: { '/p': 2 } });
+  restart.guard.keepFor(60_000);
+  expect(await restart.guard.decideFor('/p', 'stop')).toBe(true);
+  expect(restart.guard.onClose('/p', 'win', () => {})).toBe(true);
+  restart.guard.onClosed('/p');
+  expect(restart.stopped).toEqual([]);
+  // Its keep holds whatever the setting says.
+  const stopMode = setup({ mode: 'stop', busy: { '/p': 2 } });
+  expect(await stopMode.guard.decideFor('/p', 'keep')).toBe(true);
+  expect(stopMode.guard.onClose('/p', 'win', () => {})).toBe(true);
+  stopMode.guard.onClosed('/p');
+  expect(stopMode.stopped).toEqual([]);
+});

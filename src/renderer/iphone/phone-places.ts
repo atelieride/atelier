@@ -120,6 +120,8 @@ export async function applyPlaceOp(op: RemotePlaceOp): Promise<RemotePlaceResult
       const place = s.ws?.on ? s.ws.list.find((w) => w.id === op.place) : undefined;
       if (!place || !s.ws?.on) return notFound(GONE);
       if (place.parent === undefined && workspacesOf(s.ws).length <= 1) return invalid('A project\'s last workspace stays.');
+      // Here Close… warns that such sessions stop for good; the phone can't, so it may only move them.
+      if (op.how === 'stop' && s.daemon.closeStopAvailable === false) return invalid('This computer can\'t keep stopped sessions under Resume: move them instead, or stop them on this computer.');
       // Closing asks about unsaved files in this window: no one may be here to answer, so the phone is told instead.
       if (unsavedOnPlaceClose(op.place, op.how).length) return invalid('It has unsaved files: save or close them on this computer first.');
       await (place.parent === undefined ? s.closeWorkspace(op.place, op.how) : s.closeWsActivity(op.place, op.how));

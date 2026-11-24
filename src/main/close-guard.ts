@@ -86,11 +86,13 @@ export class CloseGuard<W> {
    * A close decided away from the window (a paired phone): the next `onClose` of `root` goes at once, with no question.
    * `how`: the phone's user answered. Without it, the mode in force; where that is to ask, anything busy keeps running
    * (no one at this computer is there to be asked), nothing busy stops, and a busy read that fails keeps everything.
+   * Where the mode in force keeps (the setting, an atelierd that can't give stopped sessions back under Resume, an
+   * update's restart) everything keeps, whatever the phone answered: a phone never stops more than a close here would.
    * False when the window went meanwhile: nothing is left decided for the project's next window.
    */
   async decideFor(root: string, how?: Decision): Promise<boolean> {
     const gen = this.generation.get(root) ?? 0;
-    const d = how ?? await this.decideAway(root);
+    const d = this.mode() === 'keep' ? 'keep' : how ?? await this.decideAway(root);
     if ((this.generation.get(root) ?? 0) !== gen) return false;
     this.decided.set(root, d);
     return true;
