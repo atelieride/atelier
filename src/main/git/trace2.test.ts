@@ -107,6 +107,9 @@ describe('listenTrace2', () => {
 
   const run = (repo: string, args: string[], env: NodeJS.ProcessEnv, input: string) => new Promise<number>((resolve) => {
     const ch = spawn('git', ['-C', repo, ...args], { env, stdio: ['pipe', 'ignore', 'ignore'] });
+    // A git that doesn't read its input (rev-parse) may exit before it is written: the write's EPIPE is no failure,
+    // the exit code says how it went.
+    ch.stdin.on('error', () => {});
     ch.stdin.end(input);
     ch.on('close', (code) => resolve(code ?? -1));
   });
@@ -231,5 +234,12 @@ describe('listenTrace2', () => {
     expect(await run(repo, ['rev-parse', 'HEAD'], writeEnv(process.env, { isolated: true, trace2: t.path }), '')).not.toBe(-1);
     await t.close();
     expect(n).toBeGreaterThan(1);
+  });
+
+  test('a git that exits without reading its input still gives its exit code', async () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'atl-tr2i-')));
+    git(repo, 'init', '-q', '-b', 'main');
+    // More than a pipe holds: git (no HEAD yet) is gone before it is all written, and the write fails.
+    expect(await run(repo, ['rev-parse', 'HEAD'], process.env, 'x'.repeat(1 << 20))).not.toBe(-1);
   });
 });
