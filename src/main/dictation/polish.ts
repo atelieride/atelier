@@ -79,6 +79,7 @@ export function polishEnv(claudeBin: string, base: NodeJS.ProcessEnv = process.e
 const defaultRun: Runner = (bin, args, input, timeoutMs, configDir) => new Promise((resolve, reject) => {
   const child = execFile(bin, args, { timeout: timeoutMs, maxBuffer: 1024 * 1024, env: polishEnv(bin, process.env, configDir), cwd: tmpdir(), windowsHide: true },
     (err, stdout) => (err ? reject(err) : resolve(String(stdout))));
+  child.stdin?.on('error', () => { /* claude exited before reading it all: its exit tells */ });
   child.stdin?.end(input);
 });
 

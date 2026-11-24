@@ -81,6 +81,12 @@ test('polished, raw if it fails or comes out odd, no call for empty text', async
   expect(calls).toBe(0);
 });
 
+test('a claude that exits without reading the dictation leaves it as dictated, and the app running', async () => {
+  // Node refuses claude's options and exits at once; the dictation is more than a pipe holds, so writing it fails.
+  const long = 'parola '.repeat(200_000);
+  expect(await polish(long, '', { claudeBin: process.execPath })).toEqual({ text: long.trim(), polished: false });
+});
+
 // POSIX: executable-bit lookup and POSIX PATH (Windows: claude.exe).
 posixTest('findClaude: the first real executable among the candidates', () => {
   const d = mkdtempSync(join(tmpdir(), 'atl-cl-'));
