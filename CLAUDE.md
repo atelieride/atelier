@@ -127,6 +127,9 @@ npm --prefix site run perf -- --out x.json --against <baseline.json>   # Lightho
 - A new spec or source file gets its line in `tests/e2e/areas.ts` (`tests/integration/e2e-areas.test.ts` names it).
 - A red in a run of many: rerun that spec alone before investigating; a red that passes alone is a race to fix, not a
   reason to add a wait.
+- The app's transitions are script animations (`play()` in `src/renderer/motion.ts`): a spec that measures or clicks
+  right after a split, a new session, the palette or a tab switch waits for them with `rested()`
+  (`tests/e2e/layout.ts`). The launch animation stays off in e2e unless the spec sets `ATELIER_TEST_INTRO=1`.
 - Run long suites (`npm run e2e`, packaged checks) as background tasks **without redirecting their output**: Atelier's
   Background inspector shows the task's own output live, and Claude Code keeps it for reading later.
 - Test runs use a private temp root (`atl-run-*`, `tests/support/temp-root.ts`, vitest/Playwright global setup) removed
@@ -194,3 +197,8 @@ tile + white Λ).
 - atelierd only resumes a session with a UUID session id: e2e that resume need `ATELIER_FAKE_UUID_SESSIONS=1`.
 - The live demo's first-paint budget moves by hundreds of bytes with no code change: a new hash for any lazy chunk
   renames nearly every chunk the entry lists. Compare the first-paint files before concluding code grew.
+- A `:has()` on `:root`, `html` or `body` is re-matched on every DOM change: one cost the live demo 244 ms of blocking
+  time. Page-wide state goes in a root data attribute the component sets (the palette's `data-palette`);
+  `tests/integration/motion-budget.test.ts` refuses a root `:has()`.
+- A size container (`container-type`) doesn't make a stacking context in Chromium: a `z-index: -1` layer inside one
+  (the finished row's wave) needs `isolation: isolate` on its parent, or it paints under the parent's own fill.
