@@ -159,6 +159,25 @@ test('a key skips it too: that key goes no further, the next one does', async ()
   }
 });
 
+test('a shortcut skips it and still reaches the app: a key with ⌘ or Ctrl held is never swallowed', async () => {
+  const { app, home, win } = await launch();
+  try {
+    await expect(win.locator('.intro')).toBeAttached();
+    await pageAt(win, 200);
+    await win.evaluate(() => {
+      const w = window as unknown as { heard: string[] };
+      w.heard = [];
+      window.addEventListener('keydown', (e) => { w.heard.push(`${e.metaKey ? 'Meta+' : ''}${e.ctrlKey ? 'Control+' : ''}${e.key}`); }, true);
+    });
+    await win.keyboard.press('Meta+b');
+    await expect(win.locator('.intro')).toHaveCount(0, { timeout: 300 });
+    await win.keyboard.press('Control+b');
+    expect(await win.evaluate(() => (window as unknown as { heard: string[] }).heard.filter((k) => k.endsWith('b')))).toEqual(['Meta+b', 'Control+b']);
+  } finally {
+    await stop(app, home);
+  }
+});
+
 for (const phase of ['morph', 'landing'] as const) {
   test(`one of its animations cancelled from outside mid-${phase}: the launch ends there, nothing left`, async () => {
     const { app, home, win } = await launch();
