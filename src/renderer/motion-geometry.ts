@@ -56,3 +56,34 @@ export function revealOrigin(slot: Box, row: Box): Pt {
   const y = row.y + row.h / 2 - slot.y;
   return [0, Math.min(Math.max(y, 0), slot.h)];
 }
+
+/** A CSS cubic-bezier(x1, y1, x2, y2) timing function's value at time `x` (0…1). */
+export function bezierAt([x1, y1, x2, y2]: readonly [number, number, number, number], x: number): number {
+  const at = (a: number, b: number, t: number) => 3 * (1 - t) * (1 - t) * t * a + 3 * (1 - t) * t * t * b + t * t * t;
+  // x(t) only climbs for a timing function (x1, x2 within 0…1): halve towards the t whose x is `x`.
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 40; i++) {
+    const t = (lo + hi) / 2;
+    if (at(x1, x2, t) < x) lo = t; else hi = t;
+  }
+  return at(y1, y2, (lo + hi) / 2);
+}
+
+/**
+ * A move from `shift` px along `axis` back to rest on `curve`, in `steps` linear steps, each with the clip that keeps
+ * what moves inside its own box. A clip moves with its element, so each step cuts what the move puts past the box:
+ * shifted right (down), its right (bottom) side; past its place the other way (a curve that overshoots), the other.
+ */
+export function clippedShift(axis: 'x' | 'y', shift: number, curve: readonly [number, number, number, number], steps = 32): Keyframe[] {
+  const px = (v: number) => `${Math.abs(v) < 0.005 ? 0 : +v.toFixed(2)}px`;
+  return Array.from({ length: steps + 1 }, (_, i) => {
+    const offset = i / steps;
+    const d = shift * (1 - bezierAt(curve, offset));
+    const far = Math.max(d, 0);
+    const near = Math.max(-d, 0);
+    return axis === 'x'
+      ? { offset, transform: `translateX(${px(d)})`, clipPath: `inset(0px ${px(far)} 0px ${px(near)})` }
+      : { offset, transform: `translateY(${px(d)})`, clipPath: `inset(${px(near)} 0px ${px(far)} 0px)` };
+  });
+}

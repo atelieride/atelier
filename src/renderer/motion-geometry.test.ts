@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { arc, crownKeyframes, markPlates, plateTargets, revealOrigin, type Box } from './motion-geometry';
+import { arc, bezierAt, clippedShift, crownKeyframes, markPlates, plateTargets, revealOrigin, type Box } from './motion-geometry';
 
 const col = (x: number): Box => ({ x, y: 0, w: 100, h: 200 });
 
@@ -49,4 +49,35 @@ test('revealOrigin sits at the row\'s middle on the slot\'s left edge, clamped t
   expect(revealOrigin(slot, { x: 0, y: 150, w: 10, h: 20 })).toEqual([0, 60]);
   expect(revealOrigin(slot, { x: 0, y: 0, w: 10, h: 20 })).toEqual([0, 0]);
   expect(revealOrigin(slot, { x: 0, y: 900, w: 10, h: 20 })).toEqual([0, 200]);
+});
+
+test('bezierAt reads a CSS cubic-bezier curve at a point in time', () => {
+  // The linear curve is its own time; every curve starts at 0 and ends at 1.
+  for (const x of [0, 0.25, 0.5, 0.9, 1]) expect(bezierAt([0, 0, 1, 1], x)).toBeCloseTo(x, 6);
+  expect(bezierAt([0.3, 1.7, 0.45, 1], 0)).toBeCloseTo(0, 6);
+  expect(bezierAt([0.3, 1.7, 0.45, 1], 1)).toBeCloseTo(1, 6);
+  // An elastic curve goes past its end before it settles.
+  expect(Math.max(...Array.from({ length: 50 }, (_, i) => bezierAt([0.3, 1.7, 0.45, 1], i / 49)))).toBeGreaterThan(1.05);
+});
+
+test('clippedShift: from its shift back to rest along the curve, every step clipped to the element\'s own box', () => {
+  const kf = clippedShift('x', 48, [0.3, 1.7, 0.45, 1]);
+  expect(kf[0]).toEqual({ offset: 0, transform: 'translateX(48px)', clipPath: 'inset(0px 48px 0px 0px)' });
+  expect(kf.at(-1)).toEqual({ offset: 1, transform: 'translateX(0px)', clipPath: 'inset(0px 0px 0px 0px)' });
+  // Past its place (the overshoot, towards the line it was split off on): what passes the near edge is cut.
+  const past = kf.find((k) => parseFloat(/translateX\((-?[\d.]+)px\)/.exec(k.transform as string)![1]!) < -3);
+  expect(past).toBeDefined();
+  // At every step the clip takes off exactly what the move puts outside the box, on that side.
+  for (const k of kf) {
+    const d = parseFloat(/translateX\((-?[\d.]+)px\)/.exec(k.transform as string)![1]!);
+    const [, right, , left] = /inset\(([^)]*)\)/.exec(k.clipPath as string)![1]!.split(' ').map(parseFloat);
+    expect(right).toBeCloseTo(Math.max(d, 0), 2);
+    expect(left).toBeCloseTo(Math.max(-d, 0), 2);
+  }
+  // Up and down alike: shifted down, its bottom is cut; past its place upwards, its top.
+  const down = clippedShift('y', 48, [0.3, 1.7, 0.45, 1]);
+  expect(down[0]).toEqual({ offset: 0, transform: 'translateY(48px)', clipPath: 'inset(0px 0px 48px 0px)' });
+  expect(down.some((k) => /^inset\([1-9][\d.]*px 0px 0px 0px\)$/.test(k.clipPath as string))).toBe(true);
+  // From the other side (a pane put before its neighbour): its left is cut first.
+  expect(clippedShift('x', -48, [0.3, 1.7, 0.45, 1])[0]).toEqual({ offset: 0, transform: 'translateX(-48px)', clipPath: 'inset(0px 0px 0px 48px)' });
 });

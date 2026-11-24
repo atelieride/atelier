@@ -665,6 +665,9 @@ test('a split: the layout is there at once, the new pane\'s content springs in f
     await freeze(win, entrance, 0);
     expect(await pickerAt(win, 1)).toMatchObject({ x: 48, y: 0, opacity: 0 });
     expect((await lineAt(win, 'row')).scale).toBe(0);
+    // It paints only inside its own pane: what the move puts past the window's edge (over Changes) is cut away.
+    const start = await paints(win, '.workspace-body > .pane-picker[style*="p1l"]');
+    expect(within(start.painted, start.rest), JSON.stringify(start)).toBe(true);
     // Where the content has not arrived yet, the pane's cell shows the pane's own background (not the body's, the colour
     // of the lines between panes), under the strip; it takes no pointer.
     const under = win.locator('.workspace-body > .pane-under');
@@ -687,6 +690,9 @@ test('a split: the layout is there at once, the new pane\'s content springs in f
     const bounce = await pickerAt(win, 1);
     expect(bounce.x).toBeLessThan(-3);
     expect(bounce.opacity).toBe(1);
+    // Past its place it never paints over the line or the pane it was split from.
+    const past = await paints(win, '.workspace-body > .pane-picker[style*="p1l"]');
+    expect(within(past.painted, past.rest), JSON.stringify(past)).toBe(true);
     expect((await lineAt(win, 'row')).scale).toBeGreaterThan(0.95);
     await look(win.locator('.workspace'), 'test-results/transitions-split.png');
     await hold(win, false);
@@ -717,6 +723,8 @@ test('a split: the layout is there at once, the new pane\'s content springs in f
     expect(await pickerAt(win, 2)).toMatchObject({ x: 0, y: 48, opacity: 0 });
     await freeze(win, entrance, 240);
     expect((await pickerAt(win, 2)).y).toBeLessThan(-3);
+    const above = await paints(win, '.workspace-body > .pane-picker[style*="p2l"]');
+    expect(within(above.painted, above.rest), JSON.stringify(above)).toBe(true);
     expect((await lineAt(win, 'column')).scale).toBeGreaterThan(0.95);
     await look(win.locator('.workspace'), 'test-results/transitions-split-down.png');
     await hold(win, false);

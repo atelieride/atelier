@@ -1,5 +1,5 @@
-import { EASE, ELASTIC, IN_OUT, play, reducedMotion, SOFT_SPRING } from './motion';
-import { arc, crownKeyframes, revealOrigin, type Box, type Pt } from './motion-geometry';
+import { EASE, ELASTIC_CURVE, IN_OUT, play, reducedMotion, SOFT_SPRING } from './motion';
+import { arc, clippedShift, crownKeyframes, revealOrigin, type Box, type Pt } from './motion-geometry';
 
 // The in-app transitions: short moves that show where something went. A session picked in the sidebar has the
 // selection glide to its row and the workspace rise in; a tab picked has the content slide in from its side; either
@@ -295,9 +295,9 @@ export function paneContent(body: HTMLElement, pane: number | null): HTMLElement
 
 type Edge = 'left' | 'top' | 'right' | 'bottom';
 /** Where a pane's content starts from, by the edge of the pane its line is on: from the far side of that line. */
-const FROM: Record<Edge, string> = {
-  left: `translateX(${PANE_SHIFT}px)`, top: `translateY(${PANE_SHIFT}px)`,
-  right: `translateX(${-PANE_SHIFT}px)`, bottom: `translateY(${-PANE_SHIFT}px)`
+const FROM: Record<Edge, { axis: 'x' | 'y'; shift: number }> = {
+  left: { axis: 'x', shift: PANE_SHIFT }, top: { axis: 'y', shift: PANE_SHIFT },
+  right: { axis: 'x', shift: -PANE_SHIFT }, bottom: { axis: 'y', shift: -PANE_SHIFT }
 };
 
 /** Pane `pane`'s box in the body: what of it carries its index (its strip on top, its frame down to its bottom). */
@@ -369,14 +369,22 @@ export function enterPane(body: HTMLElement, index: number): void {
   const box = paneRect(body, index);
   if (!box) return;
   const line = splitLine(body, box);
-  const from = FROM[line?.edge ?? 'left'];
+  const { axis, shift } = FROM[line?.edge ?? 'left'];
+  // The elastic curve step by step, each step with its clip: neither the start (past the window's edge, over Changes)
+  // nor the overshoot (over the line and the pane beside it) paints outside the pane. The move and the clip in two
+  // animations on one timing, as a view's entrance: a clip the compositor does not run keeps only itself on the main
+  // thread.
+  const steps = clippedShift(axis, shift, ELASTIC_CURVE);
+  const moveKf = steps.map(({ offset, transform }) => ({ offset, transform }));
+  const clipKf = steps.map(({ offset, clipPath }) => ({ offset, clipPath }));
   const content = paneContent(body, index);
   const moves: { el: HTMLElement; anim: Animation }[] = [];
   for (const el of content) {
     for (const a of entering.get(el) ?? []) if (a.playState === 'running') a.cancel();
-    const anim = play(el, [{ transform: from }, { transform: 'none' }], { duration: PANE_MS, easing: ELASTIC });
+    const anim = play(el, moveKf, { duration: PANE_MS, easing: 'linear' });
+    const clip = play(el, clipKf, { duration: PANE_MS, easing: 'linear' });
     play(el, [{ opacity: 0 }, { opacity: 1 }], { duration: PANE_FADE_MS, easing: EASE });
-    if (anim) { entering.set(el, [anim]); moves.push({ el, anim }); }
+    if (anim) { entering.set(el, clip ? [anim, clip] : [anim]); moves.push({ el, anim }); }
   }
   if (moves[0]) underPane(body, index, moves[0].el, moves[0].anim);
   if (line) drawLine(line.el);
