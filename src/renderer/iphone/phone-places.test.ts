@@ -21,6 +21,9 @@ const done: RemotePlaceDone[] = [];
 let held: RemotePlaceRequest[] = [];
 const listeners = new Set<(r: RemotePlaceRequest) => void>();
 let readyAsked = 0;
+/** The terminals main was asked to stop; how often the unsaved-files question was asked. */
+const stopped: string[] = [];
+let unsavedAsked = 0;
 beforeAll(() => {
   had = g.window;
   hadStorage = g.localStorage;
@@ -41,7 +44,8 @@ beforeAll(() => {
         placesReady: async () => { readyAsked++; const h = held; held = []; return h; },
         placeDone: async (d: RemotePlaceDone) => { done.push(d); }
       },
-      on: { remotePlaces: (cb: (r: RemotePlaceRequest) => void) => { listeners.add(cb); return () => listeners.delete(cb); } }
+      on: { remotePlaces: (cb: (r: RemotePlaceRequest) => void) => { listeners.add(cb); return () => listeners.delete(cb); } },
+      terminals: { stop: async (ids: string[]) => { stopped.push(...ids); } }
     }
   };
 });
@@ -70,11 +74,14 @@ beforeEach(() => {
   done.length = 0;
   held = [];
   readyAsked = 0;
+  stopped.length = 0;
+  unsavedAsked = 0;
   listeners.clear();
   useApp.setState({
     project: { root: '/p', name: 'p', realRoot: '/p' }, popout: null, terminals: [], selectedId: null, activeTab: 'term', tabOrder: [], hidden: [], pins: [],
     openFiles: [], preview: null, pendingAnchor: null, review: null, servicesOpen: false, split: single(), toast: null, dirty: {}, ws: null,
-    resumables: [], resumablesKnown: false, space: 'sessions', wsRenaming: null
+    resumables: [], resumablesKnown: false, space: 'sessions', wsRenaming: null, closing: {}, wsCloseAsk: null, wsActCloseAsk: null,
+    askUnsaved: async () => { unsavedAsked++; return 'cancel'; }
   });
   useApp.setState({ settings: { ...st().settings, wsActivities: false, workspacesEverywhere: false, remoteAccess: true } });
 });
@@ -209,6 +216,62 @@ describe('move', () => {
     expect(await applyPlaceOp({ kind: 'move', id: 'auth', place: 'gone' })).toMatchObject({ ok: false, code: 'not-found' });
     useApp.setState({ ws: { ...st().ws!, on: false } });
     expect(await applyPlaceOp({ kind: 'move', id: 'auth', place: 'w2' })).toMatchObject({ ok: false, code: 'not-found' });
+  });
+});
+
+describe('close', () => {
+  beforeEach(() => {
+    useApp.setState({ ws: twoWorkspaces(), settings: { ...st().settings, wsActivities: true }, tabOrder: k('t:auth'), activeTab: 'term', selectedId: 'auth' });
+    st().setTerminals([term('auth', 1), term('okta', 2), term('bill', 3)]);
+  });
+
+  test('a workspace: what is in it joins the workspace above, nothing stops, no question, no toast', async () => {
+    expect(await applyPlaceOp({ kind: 'close', place: 'w2', how: 'move' })).toEqual({ ok: true });
+    expect(st().ws!.list.map((x) => x.id)).toEqual(['w1', 'a1']);
+    expect(memberOf(st().ws!, 'bill')).toBe('w1');
+    expect(stopped).toEqual([]);
+    expect([st().wsCloseAsk, st().toast]).toEqual([null, null]);
+  });
+
+  test('the first workspace goes to the one below, its activities with it; an activity moves into its workspace', async () => {
+    expect(await applyPlaceOp({ kind: 'close', place: 'a1', how: 'move' })).toEqual({ ok: true });
+    expect(memberOf(st().ws!, 'okta')).toBe('w1');
+    expect(await applyPlaceOp({ kind: 'close', place: 'w1', how: 'move' })).toEqual({ ok: true });
+    expect(st().ws!.list.map((x) => x.id)).toEqual(['w2']);
+    expect(memberOf(st().ws!, 'auth')).toBe('w2');
+    expect(stopped).toEqual([]);
+  });
+
+  test('stop: its terminals stop (sessions come back under Resume) and the place goes', async () => {
+    expect(await applyPlaceOp({ kind: 'close', place: 'a1', how: 'stop' })).toEqual({ ok: true });
+    expect(stopped).toEqual(['okta']);
+    expect(await applyPlaceOp({ kind: 'close', place: 'w2', how: 'stop' })).toEqual({ ok: true });
+    expect(stopped).toEqual(['okta', 'bill']);
+    expect(st().ws!.list.map((x) => x.id)).toEqual(['w1']);
+  });
+
+  test('the last workspace stays; a place that is gone, or workspaces off, is not found', async () => {
+    expect(await applyPlaceOp({ kind: 'close', place: 'w2', how: 'move' })).toEqual({ ok: true });
+    expect(await applyPlaceOp({ kind: 'close', place: 'w1', how: 'stop' })).toEqual({ ok: false, code: 'invalid', message: 'A project\'s last workspace stays.' });
+    expect(stopped).toEqual([]);
+    expect(await applyPlaceOp({ kind: 'close', place: 'gone', how: 'move' })).toMatchObject({ ok: false, code: 'not-found' });
+    useApp.setState({ ws: { ...st().ws!, on: false } });
+    expect(await applyPlaceOp({ kind: 'close', place: 'a1', how: 'move' })).toMatchObject({ ok: false, code: 'not-found' });
+  });
+
+  test('an unsaved file the close would take: refused in words, nothing asked on this computer, nothing changes', async () => {
+    const ws = twoWorkspaces();
+    useApp.setState({
+      ws: { ...ws, list: ws.list.map((x) => (x.id === 'w2' ? { ...x, order: k('t:bill', 'f:/p/notes.md') } : x)) },
+      openFiles: [{ path: '/p/notes.md' } as never], dirty: { '/p/notes.md': true }
+    });
+    const before = st().ws;
+    expect(await applyPlaceOp({ kind: 'close', place: 'w2', how: 'move' })).toEqual({ ok: false, code: 'invalid', message: 'It has unsaved files: save or close them on this computer first.' });
+    expect(unsavedAsked).toBe(0);
+    expect(st().ws).toBe(before);
+    // Saved: it goes, its file tab with it.
+    useApp.setState({ dirty: {} });
+    expect(await applyPlaceOp({ kind: 'close', place: 'w2', how: 'move' })).toEqual({ ok: true });
   });
 });
 

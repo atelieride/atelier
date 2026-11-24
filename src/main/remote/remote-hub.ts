@@ -1,8 +1,9 @@
 // iPhone access in the main process: with Settings › iPhone on, this computer keeps one connection to the relay and
 // serves each paired phone that connects through it — the state of its projects and sessions as their sidebar rows
 // show them, each project's sidebar arrangement, the accounts' limits, a terminal's screen and output, typing, sizes,
-// new sessions, the actions on rows (Allow / Deny, rename, close, resume, dismiss) and on workspaces and activities
-// (new, renamed, a row moved in: applied by the project's window, opened for it when closed) — sends the push
+// new sessions, the actions on rows (Allow / Deny, rename, close, resume, dismiss), on workspaces and activities (new,
+// renamed, closed, a row moved in: applied by the project's window, opened for it when closed) and on the project
+// windows themselves (opened as a recent project opens, closed as their own close does) — sends the push
 // notifications phones registered for, and runs pairing (the code, the Allow/Deny question to the windows). Off, no
 // relay connection exists at all. A phone only names what the state listed: opaque project ids, terminal, place and
 // account ids, never paths, commands, directories or profiles.
@@ -63,6 +64,9 @@ export interface RemoteTerminals {
   dismissRemote(id: string): Promise<void>;
 }
 
+/** How opening or closing a project's window went: done, or why not, in a few words a phone shows. */
+export type RemoteWindowResult = { ok: true } | { ok: false; code: 'not-found' | 'invalid' | 'failed'; message: string };
+
 export interface RemoteHubDeps {
   home: string;
   secrets: Pick<SecretStore, 'available' | 'read' | 'write' | 'remove'>;
@@ -89,6 +93,15 @@ export interface RemoteHubDeps {
    * window's answer. Without it every such request is `failed`.
    */
   places?(root: string, op: RemotePlaceOp): Promise<RemotePlaceResult>;
+  /**
+   * The project windows: `open` as opening a recent project does (an open one comes to the front); `close` as the
+   * window's own close does, `sessions` being the phone's user's answer about what is still busy in it. Without them
+   * every such request is `failed`.
+   */
+  windows?: {
+    open(root: string): Promise<RemoteWindowResult>;
+    close(root: string, sessions?: 'keep' | 'stop'): Promise<RemoteWindowResult>;
+  };
   /** The user is away from this computer (idle for 2 minutes, or its screen locked): phones may ring. */
   away?(): boolean;
   emitStatus(s: RemoteStatus): void;
@@ -164,6 +177,10 @@ interface SessionHost {
   accountKnown(id: string): boolean;
   /** The project's main window is open. */
   windowOpen(root: string): boolean;
+  /** Opens or closes the project's main window. */
+  openWindow(root: string): Promise<RemoteWindowResult>;
+  closeWindow(root: string, sessions?: 'keep' | 'stop'): Promise<RemoteWindowResult>;
+  log(message: string): void;
   rows(root: string, e: RemoteRowsEvent): void;
   /** A phone's push registration (null token: unregistered). */
   registerPush(deviceId: string, m: Extract<DeviceMessage, { t: 'push' }>): void;
@@ -265,7 +282,9 @@ class PhoneSession implements RemoteViewer {
         this.terms.createRemoteSession({ project: root, kind: m.kind, cols: size.cols, rows: size.rows, ...(m.account !== undefined ? { account: m.account } : {}) }).then(
           (info) => {
             this.send({ t: 'created', rid: m.rid, id: info.id });
+            // A place's move opens a closed window itself; otherwise it opens here, so the row is seen in a window.
             if (m.place !== undefined) this.joinPlace(root, info.id, m.place);
+            else this.showWindow(root);
             this.host.scheduleState();
           },
           () => this.error(m.rid, 'failed', m.kind === 'claude' ? 'The session could not be started.' : 'The terminal could not be started.')
@@ -328,7 +347,7 @@ class PhoneSession implements RemoteViewer {
         // The project's window keeps the row alive while it resumes, then gives the new terminal its pin and place.
         this.host.rows(root, { kind: 'resuming', id: m.id });
         this.terms.resumeRemote(m.id, size.cols, size.rows).then(
-          (info) => { this.host.rows(root, { kind: 'resumed', from: m.id, to: info.id }); this.send({ t: 'created', rid: m.rid, id: info.id }); this.host.scheduleState(); },
+          (info) => { this.host.rows(root, { kind: 'resumed', from: m.id, to: info.id }); this.send({ t: 'created', rid: m.rid, id: info.id }); this.showWindow(root); this.host.scheduleState(); },
           () => { this.host.rows(root, { kind: 'resumed', from: m.id, to: null }); this.error(m.rid, 'failed', 'The session could not be resumed.'); }
         );
         return;
@@ -358,8 +377,39 @@ class PhoneSession implements RemoteViewer {
         const root = this.host.rowRoot(m.id);
         if (!root) { this.error(m.rid, 'not-found', 'This session is not on this computer any more.'); return; }
         if (this.placeOf(m.rid, root, m.place, 'workspace or activity')) this.place(m.rid, root, { kind: 'move', id: m.id, place: m.place });
+        return;
+      }
+      case 'closePlace': {
+        const root = this.host.rootOf(m.project);
+        if (!root) { this.error(m.rid, 'not-found', 'This project is not on this computer any more.'); return; }
+        // As Close… without a choice does: what is in it moves; it stops only when the phone's user said so.
+        if (this.placeOf(m.rid, root, m.place, 'workspace or activity')) this.place(m.rid, root, { kind: 'close', place: m.place, how: m.sessions ?? 'move' });
+        return;
+      }
+      case 'openWindow':
+      case 'closeWindow': {
+        const root = this.host.rootOf(m.project);
+        if (!root) { this.error(m.rid, 'not-found', 'This project is not on this computer any more.'); return; }
+        const done = m.t === 'openWindow' ? this.host.openWindow(root) : this.host.closeWindow(root, m.sessions);
+        done.then(
+          (r) => {
+            if (!r.ok) { this.error(m.rid, r.code, r.message); return; }
+            this.send({ t: 'ok', rid: m.rid });
+            this.host.scheduleState();
+          },
+          () => this.error(m.rid, 'failed', m.t === 'openWindow' ? 'The project\'s window could not be opened.' : 'The project\'s window could not be closed.')
+        );
       }
     }
+  }
+
+  /** A new row in a project whose window is closed: the window opens, as Atelier's own New Session is in one. */
+  private showWindow(root: string): void {
+    if (this.host.windowOpen(root)) return;
+    this.host.openWindow(root).then(
+      (r) => { if (!r.ok) this.host.log(`the window of a phone's new row did not open: ${r.message}`); },
+      (err: unknown) => this.host.log(`the window of a phone's new row did not open: ${String(err)}`)
+    );
   }
 
   /**
@@ -559,6 +609,9 @@ export class RemoteHub {
       places: (root, op) => this.d.places?.(root, op) ?? Promise.resolve({ ok: false, code: 'failed', message: 'The project\'s window could not be reached.' }),
       accountKnown: (id) => accountsFor(this.d.settings().claudeAccounts, this.d.defaultDir()).list.some((a) => a.id === id),
       windowOpen: (root) => this.d.projects().open.includes(root),
+      openWindow: (root) => this.d.windows?.open(root) ?? Promise.resolve({ ok: false, code: 'failed', message: 'The project\'s window could not be opened.' }),
+      closeWindow: (root, sessions) => this.d.windows?.close(root, sessions) ?? Promise.resolve({ ok: false, code: 'failed', message: 'The project\'s window could not be closed.' }),
+      log: (message) => this.d.log?.(message),
       rows: (root, e) => this.d.rows?.(root, e),
       registerPush: (deviceId, m) => {
         if (m.token === null || !m.env || !m.key) this.pushes.forgetDevice(deviceId);

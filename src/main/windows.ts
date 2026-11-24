@@ -79,6 +79,9 @@ export class SessionEndGuard {
 
   drop(id: number): void { this.unsaved.delete(id); }
 
+  /** Whether the window has unsaved files now, as its page last said. */
+  has(id: number): boolean { return this.unsaved.has(id); }
+
   /** A window's query-session-end: true when it must hold the session end. The quit runs after Windows' message. */
   query(id: number, quit: () => void): boolean {
     if (!this.unsaved.has(id)) return false;

@@ -82,6 +82,32 @@ export class CloseGuard<W> {
     return answer === 'cancel' ? null : answer;
   }
 
+  /**
+   * A close decided away from the window (a paired phone): the next `onClose` of `root` goes at once, with no question.
+   * `how`: the phone's user answered. Without it, the mode in force; where that is to ask, anything busy keeps running
+   * (no one at this computer is there to be asked), nothing busy stops, and a busy read that fails keeps everything.
+   * False when the window went meanwhile: nothing is left decided for the project's next window.
+   */
+  async decideFor(root: string, how?: Decision): Promise<boolean> {
+    const gen = this.generation.get(root) ?? 0;
+    const d = how ?? await this.decideAway(root);
+    if ((this.generation.get(root) ?? 0) !== gen) return false;
+    this.decided.set(root, d);
+    return true;
+  }
+
+  private async decideAway(root: string): Promise<Decision> {
+    const mode = this.mode();
+    if (mode !== 'ask') return mode;
+    try {
+      const list = await this.deps.busy([root]);
+      return list.every((p) => p.busy.length === 0) ? 'stop' : 'keep';
+    } catch (err) {
+      this.deps.log?.(`close: busy read failed, kept running: ${String(err)}`);
+      return 'keep';
+    }
+  }
+
   /** The window is gone: its decision is applied (stop → its terminals stop) and forgotten. */
   onClosed(root: string): void {
     const d = this.decided.get(root);

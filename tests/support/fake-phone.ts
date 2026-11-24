@@ -252,6 +252,10 @@ export class FakePhone {
   newActivity(project: string, workspace: string, name?: string): Promise<Msg> { return this.request({ t: 'activity', project, workspace, ...(name !== undefined ? { name } : {}) }, 15000); }
   renamePlace(project: string, place: string, name: string): Promise<Msg> { return this.request({ t: 'renamePlace', project, place, name }, 15000); }
   move(id: string, place: string): Promise<Msg> { return this.request({ t: 'move', id, place }, 15000); }
+  closePlace(project: string, place: string, sessions?: 'move' | 'stop'): Promise<Msg> { return this.request({ t: 'closePlace', project, place, ...(sessions ? { sessions } : {}) }, 15000); }
+  // A project's window, opened as a recent project opens or closed as its own close does (up to 10 s).
+  openWindow(project: string): Promise<Msg> { return this.request({ t: 'openWindow', project }, 15000); }
+  closeWindow(project: string, sessions?: 'keep' | 'stop'): Promise<Msg> { return this.request({ t: 'closeWindow', project, ...(sessions ? { sessions } : {}) }, 15000); }
   resume(id: string): Promise<Msg> { return this.request({ t: 'resume', id }); }
   dismiss(id: string): Promise<Msg> { return this.request({ t: 'dismiss', id }); }
 

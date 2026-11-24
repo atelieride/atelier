@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { commandFrom, commandPlan, forwardCommand, isPopoutWindow, mainWindows, openProjectRoots, pageReloading, projectWindowId, windowToFront, type WindowKind } from './popout-wiring';
+import { commandFrom, commandPlan, forwardCommand, isPopoutWindow, mainWindows, openProjectRoots, pageReloading, projectWindowId, projectWindowIds, windowToFront, type WindowKind } from './popout-wiring';
 
 describe('the window the app comes forward with (a second launch, Open Atelier)', () => {
   const w = (id: number, usedAt: number, popout = false) => ({ id, popout, usedAt });
@@ -42,6 +42,12 @@ describe('pop-out windows among the windows', () => {
     expect(projectWindowId(view(), '/c')).toBeNull();
     const onlyPopout = { projects: new Map<number, string | null>([[2, '/a']]), kinds: new Map<number, WindowKind>([[2, 'popout']]) };
     expect(projectWindowId(onlyPopout, '/a')).toBeNull();
+  });
+
+  test('every window of a project: its own and its pop-outs (what a close takes with it)', () => {
+    expect(projectWindowIds(view(), '/a').sort()).toEqual([1, 2, 3]);
+    expect(projectWindowIds(view(), '/b')).toEqual([4]);
+    expect(projectWindowIds(view(), '/c')).toEqual([]);
   });
 
   test('isPopoutWindow', () => {

@@ -19,7 +19,9 @@
 //   4. it renames that session: the row says so (phone-renamed → mac-renamed);
 //   5. it starts a terminal in Release: the row lands in that activity (phone-created → mac-created);
 //   6. it types in the plain terminal: the output and the phone's marks here (mac-typed);
-//   7. once the phone side has passed (the app quit, as a phone in a pocket): a session that starts waiting sends a
+//   7. it closes Release from its head's swipe, moving its rows: the activity is gone, the terminal it started is in
+//      Workspace 1 (phone-closedPlace → mac-closedPlace);
+//   8. once the phone side has passed (the app quit, as a phone in a pocket): a session that starts waiting sends a
 //      push for the phone's registration, the local relay (no APNs credentials) answers 503 NotConfigured, and the
 //      registration is kept: a second session's push goes out too.
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
@@ -240,6 +242,13 @@ test('live: the iOS app pairs through the relay, mirrors the sidebar, acts on it
     await look(win, join(LIVE, 'mac-8-typed.png'), { settle: 400 });
     // The phone stays in the terminal until this side has its screenshot: leaving earlier would take the marks away.
     macSaw('typed');
+
+    // The phone closes Release, moving what is in it: the activity goes, the terminal it started stays, in Workspace 1.
+    await phoneDid('closedPlace');
+    await expect(activity).toHaveCount(0, { timeout: 30_000 });
+    await expect(ws.locator(`[data-term-row="${created}"]`)).toBeVisible({ timeout: 30_000 });
+    await look(win, join(LIVE, 'mac-8b-activity-closed.png'), { settle: 300 });
+    macSaw('closedPlace');
 
     // Atelier stays up until the phone side has checked its own screen.
     await expect.poll(phoneOutcome, { timeout: 15 * 60_000, intervals: [1000] }).not.toBe('');

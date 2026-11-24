@@ -15,7 +15,7 @@ import { testSafeStorage } from '../connectors/test-safe-storage';
 import type { RemoteViewer } from '../terminal-hub';
 import { deriveCode, normalizeCode } from './code';
 import { generateKeyPair } from './noise';
-import { RemoteHub, type RemoteHubDeps, type RemoteTerminals } from './remote-hub';
+import { RemoteHub, type RemoteHubDeps, type RemoteWindowResult, type RemoteTerminals } from './remote-hub';
 import { projectIdOf } from './state';
 import { collapseKeyOf } from './push';
 import { openPush, pushKeyId } from './push-seal';
@@ -992,6 +992,23 @@ describe('workspaces and activities from the phone', () => {
     expect(calls).toEqual([]);
   });
 
+  test('closePlace: a workspace or an activity of that project; what is in it moves unless the phone says stop', async () => {
+    const { phone, calls } = await withPlaces();
+    expect(await phone.request({ t: 'closePlace', project: app, place: 'w1' })).toMatchObject({ t: 'ok' });
+    expect(await phone.request({ t: 'closePlace', project: app, place: 'a1', sessions: 'stop' })).toMatchObject({ t: 'ok' });
+    expect(await phone.request({ t: 'closePlace', project: app, place: 'a1', sessions: 'move' })).toMatchObject({ t: 'ok' });
+    expect(calls).toEqual([['/work/app', { kind: 'close', place: 'w1', how: 'move' }], ['/work/app', { kind: 'close', place: 'a1', how: 'stop' }], ['/work/app', { kind: 'close', place: 'a1', how: 'move' }]]);
+    expect(await phone.request({ t: 'closePlace', project: app, place: 'w9' })).toMatchObject({ t: 'error', code: 'invalid', message: 'This workspace or activity is in another project.' });
+    expect(await phone.request({ t: 'closePlace', project: app, place: 'zz' })).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(await phone.request({ t: 'closePlace', project: 'nope', place: 'w1' })).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(calls).toHaveLength(3);
+  });
+
+  test('closePlace: the window\'s refusal (the last workspace stays) passes on as it is', async () => {
+    const { phone } = await withPlaces(async () => ({ ok: false, code: 'invalid', message: 'A project\'s last workspace stays.' }));
+    expect(await phone.request({ t: 'closePlace', project: app, place: 'w1' })).toMatchObject({ t: 'error', code: 'invalid', message: 'A project\'s last workspace stays.' });
+  });
+
   test('the window\'s refusals pass on as they are; no answer, or no window to ask, is `failed`', async () => {
     const { phone } = await withPlaces(async (_r, op) => {
       if (op.kind === 'rename') return { ok: false, code: 'not-found', message: 'This workspace is not in the project any more.' };
@@ -1007,6 +1024,89 @@ describe('workspaces and activities from the phone', () => {
     const p = await paired(t);
     await p.phone.state();
     expect(await p.phone.request({ t: 'workspace', project: app })).toMatchObject({ t: 'error', code: 'failed' });
+  });
+});
+
+describe('project windows from the phone', () => {
+  const app = projectIdOf('/work/app');
+  const old = projectIdOf('/work/old');
+  type Call = ['open', string] | ['close', string, 'keep' | 'stop' | undefined];
+
+  /** A paired phone whose computer opens and closes windows with `answer` (its calls kept). */
+  async function withWindows(answer: (call: Call) => Promise<RemoteWindowResult> = async () => ({ ok: true }), deps: Partial<RemoteHubDeps> = {}) {
+    const calls: Call[] = [];
+    const t = setup({
+      deps: {
+        windows: {
+          open: (root) => { const c: Call = ['open', root]; calls.push(c); return answer(c); },
+          close: (root, sessions) => { const c: Call = ['close', root, sessions]; calls.push(c); return answer(c); }
+        },
+        ...deps
+      }
+    });
+    t.terms.resumables = [{ id: 'r-old', projectRoot: '/work/old', cwd: '/work/old', title: 'Old', color: '#F28FAD', sessionId: 's-r', endedAt: 5 }];
+    const { phone } = await paired(t);
+    await phone.state();
+    return { t, phone, calls };
+  }
+
+  test('openWindow: a listed project\'s window, a recent one included; an unknown project is not found', async () => {
+    const { phone, calls } = await withWindows();
+    expect(await phone.request({ t: 'openWindow', project: old })).toMatchObject({ t: 'ok' });
+    expect(await phone.request({ t: 'openWindow', project: app })).toMatchObject({ t: 'ok' });
+    expect(calls).toEqual([['open', '/work/old'], ['open', '/work/app']]);
+    expect(await phone.request({ t: 'openWindow', project: 'nope' })).toMatchObject({ t: 'error', code: 'not-found', message: 'This project is not on this computer any more.' });
+    expect(calls).toHaveLength(2);
+  });
+
+  test('closeWindow: with the phone\'s answer about what is busy, or without one; an unknown project is not found', async () => {
+    const { phone, calls } = await withWindows();
+    expect(await phone.request({ t: 'closeWindow', project: app })).toMatchObject({ t: 'ok' });
+    expect(await phone.request({ t: 'closeWindow', project: app, sessions: 'keep' })).toMatchObject({ t: 'ok' });
+    expect(await phone.request({ t: 'closeWindow', project: old, sessions: 'stop' })).toMatchObject({ t: 'ok' });
+    expect(calls).toEqual([['close', '/work/app', undefined], ['close', '/work/app', 'keep'], ['close', '/work/old', 'stop']]);
+    expect(await phone.request({ t: 'closeWindow', project: 'nope' })).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(calls).toHaveLength(3);
+  });
+
+  test('the computer\'s refusals pass on as they are; a failure, or no way to reach the windows, is `failed`', async () => {
+    const { phone } = await withWindows(async (c) => {
+      if (c[0] === 'close') return { ok: false, code: 'invalid', message: 'It has unsaved files: save or close them on this computer first.' };
+      throw new Error('gone');
+    });
+    expect(await phone.request({ t: 'closeWindow', project: app })).toEqual({ t: 'error', rid: expect.any(Number), code: 'invalid', message: 'It has unsaved files: save or close them on this computer first.' });
+    expect(await phone.request({ t: 'openWindow', project: old })).toMatchObject({ t: 'error', code: 'failed' });
+    const t = setup();
+    const p = await paired(t);
+    await p.phone.state();
+    expect(await p.phone.request({ t: 'openWindow', project: old })).toMatchObject({ t: 'error', code: 'failed' });
+    expect(await p.phone.request({ t: 'closeWindow', project: app })).toMatchObject({ t: 'error', code: 'failed' });
+  });
+
+  // Atelier's own New Session always happens in a window: one the phone starts in a closed project opens it there.
+  test('create in a project whose window is closed opens it after the start; an open one, or a create in a place, opens nothing more', async () => {
+    const places: [string, RemotePlaceOp][] = [];
+    const { t, phone, calls } = await withWindows(undefined, { places: async (root, op) => { places.push([root, op]); return { ok: true }; } });
+    t.hub.layoutChanged('/work/old', { groupByState: true, pins: [], order: { sessions: [], terminals: [] }, workspaces: { active: 'w9', activities: false, places: [{ id: 'w9', name: 'Other', color: 4, open: true }, { id: 'w8', name: 'Release', color: 2, open: true }], members: {} } });
+    expect(await phone.create(old, 'claude')).toMatchObject({ t: 'created', id: 'new1' });
+    await until(() => calls.length === 1);
+    expect(calls).toEqual([['open', '/work/old']]);
+    expect(await phone.create(app, 'terminal')).toMatchObject({ t: 'created' });
+    // The place's move opens the window itself: not twice.
+    expect(await phone.create(old, 'claude', { place: 'w8' })).toMatchObject({ t: 'created' });
+    await until(() => places.length === 1);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toEqual([['open', '/work/old']]);
+  });
+
+  test('resume in a project whose window is closed opens it once resumed; a window that won\'t open still leaves the session created', async () => {
+    const logs: string[] = [];
+    const { phone, calls } = await withWindows(async () => ({ ok: false, code: 'failed', message: 'The project\'s folder isn\'t there any more.' }), { log: (m) => logs.push(m) });
+    expect(await phone.resume('r-old')).toMatchObject({ t: 'created', id: 'from-r-old' });
+    await until(() => calls.length === 1);
+    expect(calls).toEqual([['open', '/work/old']]);
+    await until(() => logs.some((l) => l.includes('window')));
+    expect(await phone.create(old, 'terminal')).toMatchObject({ t: 'created' });
   });
 });
 
