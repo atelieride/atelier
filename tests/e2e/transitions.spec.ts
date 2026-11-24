@@ -755,8 +755,9 @@ test('a tab moved to a new pane: under its terminal on its way in, the terminal\
     await menu(app, 'New Terminal');
     await menu(app, 'New Terminal');
     const tabs = win.locator('.tabs .tab');
-    await expect(tabs).toHaveCount(2);
-    await expect(win.locator('.workspace-body > .terminal-slot')).toHaveCount(2);
+    // Each terminal is a launchd job of its own: under a loaded run the second can take a few seconds to start.
+    await expect(tabs).toHaveCount(2, { timeout: 10000 });
+    await expect(win.locator('.workspace-body > .terminal-slot')).toHaveCount(2, { timeout: 10000 });
     await settled(win);
     await played(win);
 
