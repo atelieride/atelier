@@ -3,8 +3,9 @@
 // remote hub feeds it the terminals, the open windows, the recent projects, the settings and what the other hubs know
 // (ports, pull requests), and sends the result whenever it changes.
 import { createHash } from 'node:crypto';
-import { effectiveState } from '@shared/background';
+import { effectiveState, workCounts, type BackgroundWork } from '@shared/background';
 import { accountOf, accountsFor, type ClaudeAccounts } from '@shared/claude-accounts';
+import type { RepoStatus } from '@shared/git';
 import type { PortInfo } from '@shared/ports';
 import type { PrEntry } from '@shared/pr';
 import { projectColorOf, type ProjectColors } from '@shared/project-color';
@@ -12,7 +13,7 @@ import type { Resumable, TerminalInfo } from '@shared/protocol';
 import type { UsageEntry, UsageWindow } from '@shared/session';
 import { isLimitPaused, modeBadge, waitKind } from '@shared/session-view';
 import { isShell } from '@shared/shells';
-import { samePath } from '@shared/paths';
+import { isBelow, samePath } from '@shared/paths';
 import type { RemoteAccount, RemoteProject, RemoteResumable, RemoteSession } from './messages';
 import { WaitBook, detailOf, permissionOf, sectionOf } from './rows';
 
@@ -65,6 +66,10 @@ export interface StateInput {
   realOf?(p: string): string;
   /** The keys of the waits rows can answer, kept across states (a wait's key lasts the whole wait). */
   waits?: WaitBook;
+  /** The terminal profile's label as its row's chip shows it: null for the default one. */
+  profileOf?(t: TerminalInfo): string | null;
+  /** The working trees Source Control knows in a project (none for a window it hasn't read). */
+  repos?(root: string): readonly RepoStatus[];
 }
 
 export interface RemoteState {
@@ -81,6 +86,31 @@ function folderOf(t: TerminalInfo, realOf: (p: string) => string): string | null
   const root = t.projectRoot.replace(/\/+$/, '');
   if (!cwd || samePath(cwd, root) || samePath(realOf(cwd), realOf(root))) return null;
   return clip(lastSegment(cwd), 64);
+}
+
+/** The linked worktree a folder lies in (the deepest working tree holding it): its folder's name. */
+function worktreeOf(cwd: string, repos: readonly RepoStatus[]): string | null {
+  const tree = repos
+    .filter((r) => samePath(r.root, cwd) || isBelow(r.root, cwd))
+    .sort((a, b) => b.root.length - a.root.length)[0];
+  return tree?.worktreeOf ? clip(lastSegment(tree.root), 64) : null;
+}
+
+const KIND_KEY = { agent: 'agents', shell: 'shells', monitor: 'monitors', other: 'tasks' } as const;
+
+/** The work chip's counts per kind, as the desktop row shows them; idle when only items past their cap remain. */
+function workOf(w: BackgroundWork | undefined): RemoteSession['work'] | null {
+  if (!w || w.items.length === 0) return null;
+  const counts = Object.fromEntries(workCounts(w).map(([kind, n]) => [KIND_KEY[kind], n]));
+  return { ...counts, ...(w.items.some((i) => i.counted) ? {} : { idle: true as const }) };
+}
+
+/** How many wake-ups are set, and the soonest that has a time (a fired loop has none until it sets the next). */
+function wakeOf(w: BackgroundWork | undefined): { scheduled?: number; wakeAt?: number } {
+  const crons = w?.crons ?? [];
+  if (crons.length === 0) return {};
+  const timed = crons.flatMap((c) => (c.next === null ? [] : [c.next]));
+  return { scheduled: crons.length, ...(timed.length > 0 ? { wakeAt: Math.min(...timed) } : {}) };
 }
 
 const PR_STATE = { OPEN: 'open', MERGED: 'merged', CLOSED: 'closed' } as const;
@@ -125,7 +155,13 @@ export function remoteState(i: StateInput): RemoteState {
     const key = waits.keyOf(t);
     const mode = modeBadge(s?.permissionMode);
     const account = s || starting ? accountIdOf(t.configDir, i.accounts, i.defaultDir) : null;
-    const folder = folderOf(t, realOf);
+    const plainFolder = folderOf(t, realOf);
+    // A folder inside a linked worktree is named as the worktree, as the desktop row does.
+    const worktree = plainFolder ? worktreeOf((s?.cwd ?? t.cwd).replace(/\/+$/, ''), i.repos?.(t.projectRoot) ?? []) : null;
+    const folder = worktree ?? plainFolder;
+    const work = s ? workOf(t.work) : null;
+    const wake = s ? wakeOf(t.work) : {};
+    const profile = i.profileOf?.(t);
     const command = !s && !starting ? commandOf(t) : null;
     const ports = i.ports?.(t.id)?.map((p) => ({ port: p.port, ...(p.name ? { name: clip(p.name, 64) } : {}) }));
     const pr = s ? prOf(i.pr?.(t.id)) : null;
@@ -145,9 +181,15 @@ export function remoteState(i: StateInput): RemoteState {
       ...(s?.model ? { model: clip(s.model, 40) } : {}),
       ...(typeof s?.contextPct === 'number' ? { contextPct: Math.max(0, Math.min(100, Math.round(s.contextPct))) } : {}),
       ...(mode ? { mode } : {}),
-      ...(s?.subagents ? { agents: s.subagents } : {}),
+      // With the work known, the subagents its chip counts (one kept only for a server it started isn't); from an
+      // atelierd without it, the session's own count, as the desktop's chip falls back to.
+      ...(t.work ? (work?.agents ? { agents: work.agents } : {}) : s?.subagents ? { agents: s.subagents } : {}),
+      ...(work ? { work } : {}),
+      ...wake,
+      ...(profile ? { profile: clip(profile, 40) } : {}),
       ...(account ? { account } : {}),
       ...(folder ? { folder } : {}),
+      ...(worktree ? { worktree: true as const } : {}),
       ...(command ? { command } : {}),
       ...(ports?.length ? { ports } : {}),
       ...(pr ? { pr } : {}),

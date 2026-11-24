@@ -151,6 +151,64 @@ test('ports and the pull request, as the row shows them', () => {
   expect(JSON.stringify(s)).not.toContain('https://');
 });
 
+// ── The details the desktop row shows that the phone gets too: work, wake-ups, profile, worktree ──
+
+const item = (kind: 'agent' | 'shell' | 'monitor' | 'other', counted = true) => ({ kind, label: kind, counted });
+const cron = (next: number | null) => ({ id: `c${next}`, label: 'check', schedule: '*/5 * * * *', recurring: true, next });
+const withWork = (work: object) => term('w', '/a', { session: session({}), work: { counting: false, crons: [], ...work } as never });
+
+test('sends the work chip\'s counts, idle when only capped items remain, nothing without work', () => {
+  const counts = (work: object | undefined) => remoteState(full({ terminals: [work ? withWork(work) : term('w', '/a', { session: session({}) })] })).sessions[0]!.work;
+  expect(counts({ items: [item('agent'), item('agent'), item('shell')] })).toEqual({ agents: 2, shells: 1 });
+  expect(counts({ items: [item('monitor'), item('other'), item('other')] })).toEqual({ monitors: 1, tasks: 2 });
+  expect(counts({ items: [item('shell', false)] })).toEqual({ shells: 1, idle: true });
+  expect(counts({ items: [] })).toBeUndefined();
+  expect(counts(undefined)).toBeUndefined();
+});
+
+test('with work known, the subagent count is the work chip\'s; without it (an older atelierd), the session\'s own', () => {
+  const row = (t: TerminalInfo) => remoteState(full({ terminals: [t] })).sessions[0]!;
+  // A subagent kept for a server it started: the desktop's chip shows nothing, so the phone gets no agent either.
+  const kept = row(term('w', '/a', { session: session({ subagents: 1 } as never), work: { counting: false, crons: [], items: [] } as never }));
+  expect('agents' in kept).toBe(false);
+  expect('work' in kept).toBe(false);
+  const counted = row(term('w', '/a', { session: session({ subagents: 3 } as never), work: { counting: true, crons: [], items: [item('agent'), item('agent')] } as never }));
+  expect(counted).toMatchObject({ agents: 2, work: { agents: 2 } });
+  const older = row(term('w', '/a', { session: session({ subagents: 2 } as never) }));
+  expect(older.agents).toBe(2);
+});
+
+test('sends how many wake-ups are set and the soonest with a time', () => {
+  const row = (crons: object[]) => remoteState(full({ terminals: [withWork({ items: [], crons })] })).sessions[0]!;
+  expect(row([cron(NOW + 3 * 3_600_000), cron(NOW + 3_600_000), cron(null)])).toMatchObject({ scheduled: 3, wakeAt: NOW + 3_600_000 });
+  const untimed = row([cron(null)]);
+  expect(untimed.scheduled).toBe(1);
+  expect('wakeAt' in untimed).toBe(false);
+  const none = row([]);
+  expect('scheduled' in none).toBe(false);
+});
+
+test('sends the profile only when not the default, for sessions and terminals alike', () => {
+  const s = remoteState(full({
+    terminals: [term('a', '/a', { session: session({}) }), term('b', '/a'), term('c', '/a', { session: session({}) })],
+    profileOf: (t) => (t.id === 'c' ? null : 'bash')
+  }));
+  expect(s.sessions.map((x) => x.profile ?? null)).toEqual(['bash', 'bash', null]);
+});
+
+test('marks a folder that is a linked worktree, named as its worktree', () => {
+  const s = remoteState(full({
+    terminals: [
+      term('wt', '/a', { cwd: '/a/.claude/worktrees/fix-a/src', session: session({}) }),
+      term('sub', '/a', { cwd: '/a/apps/web', session: session({}) })
+    ],
+    repos: (root) => (root === '/a' ? [{ root: '/a' }, { root: '/a/.claude/worktrees/fix-a', worktreeOf: '/a' }] as never : [])
+  }));
+  expect(s.sessions[0]).toMatchObject({ folder: 'fix-a', worktree: true });
+  expect(s.sessions[1]).toMatchObject({ folder: 'web' });
+  expect('worktree' in s.sessions[1]!).toBe(false);
+});
+
 test('resumables of the listed projects, newest first, with their account; never another project\'s', () => {
   const r = (id: string, projectRoot: string, endedAt: number, o: object = {}) => ({ id, projectRoot, cwd: projectRoot, title: `R ${id}`, color: '#F28FAD', sessionId: `s-${id}`, endedAt, ...o });
   const s = remoteState(full({

@@ -14,6 +14,7 @@ import { relayBase } from '@shared/remote';
 import type { Settings } from '@shared/settings';
 import type { PortsMap } from '@shared/ports';
 import type { PrEntry } from '@shared/pr';
+import type { RepoStatus } from '@shared/git';
 import type { Resumable, TerminalInfo } from '@shared/protocol';
 import type { UsageEntry } from '@shared/session';
 import { waitTarget } from '@shared/session-view';
@@ -86,6 +87,10 @@ export interface RemoteHubDeps {
   prs?(root: string): Record<string, PrEntry>;
   /** A path with its links resolved. */
   realOf?(p: string): string;
+  /** A terminal's profile label as its row's chip shows it: null for the default one. */
+  profileOf?(t: TerminalInfo): string | null;
+  /** The working trees Source Control knows in a project: a row in a linked worktree is named as it. */
+  repos?(root: string): readonly RepoStatus[];
   /** What a phone did to a project's rows, for its main window to follow (nothing when it isn't open). */
   rows?(root: string, e: RemoteRowsEvent): void;
   /**
@@ -864,7 +869,9 @@ export class RemoteHub {
       waits: this.waits,
       ports: (id) => of(ports, this.d.ports, id)?.[id],
       pr: (id) => of(prs, this.d.prs, id)?.[id],
-      ...(this.d.realOf ? { realOf: this.d.realOf } : {})
+      ...(this.d.realOf ? { realOf: this.d.realOf } : {}),
+      ...(this.d.profileOf ? { profileOf: this.d.profileOf } : {}),
+      ...(this.d.repos ? { repos: this.d.repos } : {})
     });
   }
 
