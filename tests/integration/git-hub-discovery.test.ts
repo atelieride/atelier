@@ -227,19 +227,37 @@ test('changes during a scan run one more scan after it, not one each', async () 
   const root = folder();
   repoAt(join(root, 'a'));
   const real = repos.discoverRepos;
+  // The scan the first new repository starts is held until the watcher has seen every change below, so they all happen
+  // during it however slow git and the file events are; `done` counts the scans that ended. File events come in order:
+  // once a file written after a change has reached the window, the watcher has dealt with that change, in a batch of
+  // its own, which asks for a scan of its own.
+  let held: Promise<void> | null = null;
+  let release = () => {};
+  let done = 0;
   const scans = vi.spyOn(repos, 'discoverRepos').mockImplementation(async (...args) => {
-    await new Promise((r) => setTimeout(r, 800));
-    return real(...args);
+    if (held) await held;
+    try { return await real(...args); } finally { done++; }
   });
-  const { h } = open(root);
+  const { h, w } = open(root);
+  const seen = async (name: string) => {
+    const mark = join(root, `${name}.txt`);
+    writeFileSync(mark, '1\n');
+    await until(() => w.files.some((f) => f.includes(mark)));
+  };
   await until(() => shown(h, root, join(root, 'a')));
   const first = scans.mock.calls.length;
-  for (const n of ['x', 'y', 'z']) {
+  held = new Promise((r) => { release = r; });
+  repoAt(join(root, 'x'));
+  await until(() => scans.mock.calls.length > first);
+  for (const n of ['y', 'z']) {
     repoAt(join(root, n));
-    await new Promise((r) => setTimeout(r, 400));
+    await seen(n);
   }
-  await until(() => ['x', 'y', 'z'].every((n) => shown(h, root, join(root, n))));
-  expect(scans.mock.calls.length - first).toBeLessThanOrEqual(2);
+  held = null;
+  release();
+  // No scan running or about to start (the one after a scan starts as it ends), and the new repositories shown.
+  await until(() => scans.mock.calls.length === done && ['x', 'y', 'z'].every((n) => shown(h, root, join(root, n))));
+  expect(scans.mock.calls.length - first).toBe(2);
 });
 
 test('a window coming to the front looks again when no event said a repository came, once the last look is old', async () => {
