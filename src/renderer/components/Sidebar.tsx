@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Resumable, TerminalInfo } from '@shared/protocol';
 import { Icon } from './Icon';
 import { PoppedMarker, SessionRow } from './SessionRow';
@@ -26,7 +26,7 @@ import { RenameInput } from './RenameInput';
 import { commitRename } from '../names';
 import { t } from '../i18n/en';
 import { enterClass } from '../seen';
-import { useApp } from '../store';
+import { useApp, type AppState } from '../store';
 import { sessionRowMenu } from '../menus';
 import { nameTip } from '../names';
 import { pinnedFirst } from '../pins';
@@ -42,6 +42,7 @@ import { newTerminalIn } from '../launch';
 import { openBelow, openNewMenu, sessionPlusMenu } from '../menus';
 import type { MenuItem } from '../menu-model';
 import { useRowFit, type RowFitParts } from '../row-fit';
+import { glideSelection, markNav, sparkTo, takeNav } from '../transitions';
 
 // Automations are opt-in (2026-11-02): their list loads on first use (App.tsx does the same for the view and sheets).
 const AutomationsList = lazy(() => import('../automations/AutomationsList').then((m) => ({ default: m.AutomationsList })));
@@ -270,7 +271,8 @@ function Sections({ terminals, toResume, entered, scope, inGroup = false, empty 
   const poppedOut = useApp((s) => s.poppedOut);
   const isPopped = (id: string) => poppedOut.includes(`t:${id}`);
   const isFront = (id: string) => front === `t:${id}` && !isPopped(id);
-  const onSelect = useCallback((id: string) => useApp.getState().select(id), []);
+  // Picked here: the selection glides to its row, the workspace rises in (transitions.ts).
+  const onSelect = useCallback((id: string) => { markNav('sidebar'); useApp.getState().select(id); }, []);
   // When each row entered its section: rows keep their place while they stay in it (a tool call doesn't reorder them).
   // Kept by the always-mounted Sidebar, one map per workspace (or the whole project's): another view, a workspace
   // switch or a folded block never resets it.
@@ -409,7 +411,44 @@ function Workspaces({ ws, entered }: { ws: WorkspacesState; entered: Map<string,
   );
 }
 
+/** The session row shown selected: its tab in front, not in a window of its own (as `Sections` draws it). */
+const frontRow = (s: AppState): string | null => {
+  const k = s.activeKey();
+  return k?.startsWith('t:') && !s.poppedOut.includes(k) ? k.slice(2) : null;
+};
+const sidebarRow = (id: string) => document.querySelector<HTMLElement>(`.sidebar [data-term-row="${CSS.escape(id)}"]`);
+
+/** A session picked in the sidebar: the selection glides from the row selected before to the new one. */
+function useSelectionGlide(): void {
+  const id = useApp(frontRow);
+  const last = useRef(id);
+  useLayoutEffect(() => {
+    const was = last.current;
+    last.current = id;
+    if (!was || !id || was === id || takeNav() !== 'sidebar') return;
+    const from = sidebarRow(was);
+    const to = sidebarRow(id);
+    if (from && to) glideSelection(from, to);
+  }, [id]);
+}
+
+/**
+ * A session just started from New Session: a spark flies from the header's + to its row, and its terminal opens from
+ * there. Other launches (to the side, a resume, a past conversation, Resume all) arrive as any session picked does.
+ */
+function useLaunchSpark(): void {
+  const id = useApp((s) => s.launchedId);
+  useLayoutEffect(() => {
+    if (!id || takeNav() !== 'launch') return;
+    const plus = document.querySelector<HTMLElement>('.header .btn-new');
+    const to = sidebarRow(id);
+    if (plus && to) sparkTo(plus, to, document.querySelector<HTMLElement>(`.workspace-body [data-term-slot="${CSS.escape(id)}"]`));
+  }, [id]);
+}
+
 export function Sidebar() {
+  useSelectionGlide();
+  useLaunchSpark();
   const activity = useApp((s) => s.activity);
   const terminals = useApp((s) => s.terminals);
   const resumables = useApp((s) => s.resumables);

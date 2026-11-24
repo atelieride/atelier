@@ -1,0 +1,89 @@
+/* Motion: the launch animation's layers (intro.ts) and the transitions' keyframes. Every animation here is finite;
+   script animations go through play() (motion.ts), and what they add to the page is gone once they end. */
+
+/* The launch overlay: the window's background with the mark at its centre, above every layer but the confirms' (a
+   question is never hidden) until its plates have become the columns. A click on it skips the launch, so it takes no
+   part in the window's drag region. */
+.intro { position: fixed; inset: 0; z-index: 450; background: var(--bg-0); -webkit-app-region: no-drag; }
+/* One of the mark's plates: the mark's paint inside, clipped to the plate's rounded box. */
+.intro-plate { position: absolute; overflow: hidden; }
+.intro-plate > svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* The Λ, one stroke as wide as the mark's (pathLength 1: the dash is the whole path, its offset how much is drawn). */
+.intro-lambda { position: absolute; overflow: visible; }
+.intro-lambda path { fill: none; stroke: var(--mark-lambda); stroke-width: 3.6; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 1; }
+/* A hairline drawing along an inner edge between two columns as the plates land; it fades into that edge's own border
+   while the parts rise in, then is removed. */
+.intro-seam { position: fixed; z-index: 451; background: var(--line-strong); opacity: 0; pointer-events: none; }
+
+/* The selection on its way to a session row (transitions.ts): a lane laid over the sidebar's visible box, first in the
+   sidebar so the rows paint over it and cut at its edges as they are, and in it a pill drawn as a selected row is (the
+   same fill and edge as layout.css's selected row, in every theme: nothing changes as it lands). Neither takes the
+   pointer; both go once the pill lands. Contained, the pill's moves lay out nothing outside it. */
+.motion-lane { position: fixed; overflow: hidden; contain: strict; pointer-events: none; }
+.motion-pill { position: absolute; background: var(--bg-sel); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--violet-soft) 28%, transparent); pointer-events: none; }
+/* The row it glides to (data-gliding) waits with its own fill and edge hidden until the pill lands; a keyboard focus
+   ring stays. */
+.session-row.is-selected[data-gliding], .term-row.is-selected[data-gliding] { background: transparent; }
+.session-row.is-selected[data-gliding]:not(:has(> .row-main:focus-visible)), .term-row.is-selected[data-gliding]:not(:has(> .row-main:focus-visible)) { box-shadow: none; }
+/* The tab crown on its way to the tab in front: as thin as the crown, its ends tapering as the crown's do along a tab's
+   rounded top; the tab's own crown waits under it (data-crown-landing), the tab's top plain, until it lands. */
+.tab-crown-fly { position: absolute; z-index: 2; height: 2px; border-radius: 9px 9px 0 0 / 2px 2px 0 0; background: var(--tab-crown); pointer-events: none; }
+.tab.is-active[data-crown-landing] { background: var(--bg-2); }
+/* A new session's spark (transitions.ts): a lane over the whole window, above the panels and under every popover, sheet
+   and toast, that takes no pointer; in it a small solid dot on its way from the header's + to the new row, and the thin
+   ring that ripples out where it lands. Both are hidden without their animations; the lane goes once the ring has
+   faded. The dot is placed by its animation's translate, its middle on the point. The ring is centred where it is
+   placed and spreads by growing its own box inside the contained lane, never by scaling: its edge stays a hairline. */
+.motion-fx { position: fixed; inset: 0; z-index: 35; overflow: hidden; contain: strict; pointer-events: none; }
+.motion-spark, .motion-ring { position: absolute; left: 0; top: 0; width: 7px; height: 7px; border-radius: 50%; opacity: 0; pointer-events: none; }
+.motion-spark { margin: -3.5px 0 0 -3.5px; background: var(--violet); }
+.motion-ring { transform: translate(-50%, -50%); box-sizing: border-box; border: 1.5px solid var(--violet-soft); }
+
+/* The command palette: the app behind it recedes a little from its top edge (on top of the backdrop's own blur, so no
+   extra full-window filter), the sheet drops in on a soft spring and the first results rise one after another. The
+   header, body and footer are siblings of the palette, never its ancestors, so the sheet itself is not scaled. A
+   transform leaves the observed boxes alone: terminals do not refit. Closing unmounts the palette, and the app is back
+   in place. Other sheets share the palette's classes and are not touched (only .is-cmd, and only the command palette
+   marks the root). */
+:is(.header, .body, .footer) { transform-origin: 50% 0; }
+/* It eases in while the palette is open (the root's data-palette, set by the palette itself: a :has() on the root would
+   be checked against the whole page after every change) and returns at once on close, so a measure taken right after
+   a palette action reads the app at rest. */
+:root[data-palette="open"] :is(.header, .body, .footer) { transform: scale(.985); transition: transform var(--t-slow) var(--ease); }
+@keyframes atl-sheet-drop { from { opacity: 0; transform: translateY(-14px) scale(.97); } to { opacity: 1; transform: none; } }
+.palette-backdrop.is-cmd > .palette { animation: atl-sheet-drop 360ms cubic-bezier(.3, 1.3, .5, 1) both; }
+.palette-backdrop.is-cmd .palette-item.is-enter { animation: atl-enter var(--t-med) var(--ease) both; animation-delay: calc(60ms + var(--i) * 22ms); }
+/* Under Reduce motion (Atelier's or the system's) the results are simply there: the clamp would shorten their
+   entrance but not the wait before each one. */
+:root[data-motion="reduced"] .palette-backdrop.is-cmd .palette-item.is-enter { animation: none; }
+@media (prefers-reduced-motion: reduce) { .palette-backdrop.is-cmd .palette-item.is-enter { animation: none; } }
+
+/* A pane split off (transitions.ts): the divider it was split off on draws its line along the gap from the middle, a
+   plain neutral hairline while it draws (never the brand line of a hover or a drag), then fades into the gap's own
+   line. Only the line's pseudo-element moves; its mark (data-drawing) goes when it ends. Under the pane's content on
+   its way in, a background fills its cell (the body behind is the colour of the lines between panes): the content's
+   own when it has one (a terminal's, given inline), else the pane's; first in the body, under all the pane shows,
+   taking no pointer, removed once the content rests. */
+.pane-divider[data-drawing]::after { background: var(--text-4); transition: none; }
+.pane-under { position: absolute; inset: 0; background: var(--bg-2); pointer-events: none; }
+
+/* A session waiting for you: besides its avatar's ring cue, its row keeps a calm amber edge for as long as it waits.
+   The selected row keeps its own edge, a row asking to close its red one, a focused row its focus ring. A row being
+   closed waits no more: neither it nor the copy that folds away in its place (RowConfirm) wears the edge. */
+.session-row.state-waiting:not(.is-selected, .is-asking, .is-closing, :has(> .row-main:focus-visible)) { box-shadow: inset 0 0 0 1px var(--edge-waiting); }
+
+/* A session that finished just now (SessionRow): a flat green layer is revealed across its row from the left in
+   520 ms, then fades by 900 ms, under the row's content and over its own fill (selected, hovered): the row stacks on
+   its own while the cue plays (is-finishing; its size container does not make it a stacking context). A check takes
+   its avatar's place a moment, on a cover of the avatar's own tile, and hands it back by 1100 ms. Both take no pointer,
+   rest unseen (their last frame holds) and are removed once the last of them has played. */
+.session-row.is-finishing { isolation: isolate; }
+@keyframes atl-row-wave {
+  0% { clip-path: inset(0 100% 0 0); opacity: 1; animation-timing-function: cubic-bezier(.7, 0, .2, 1); }
+  57.8% { clip-path: inset(0 0% 0 0); opacity: 1; animation-timing-function: ease-out; }
+  100% { clip-path: inset(0 0% 0 0); opacity: 0; }
+}
+.row-wave { position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: color-mix(in srgb, var(--done) 16%, transparent); opacity: 0; pointer-events: none; animation: atl-row-wave 900ms linear both; }
+@keyframes atl-check-cover { 0% { opacity: 0; } 15%, 78% { opacity: 1; } 100% { opacity: 0; } }
+.av-done-check { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; border-radius: inherit; background: inherit; color: var(--done); opacity: 0; pointer-events: none; animation: atl-check-cover 1100ms var(--ease) both; }
+.av-done-check > svg { animation: atl-check 320ms var(--ease) both; }

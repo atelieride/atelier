@@ -144,6 +144,7 @@ export function Appearance({ s }: { s: S }) {
       {/* Session avatars: off, titles get the room. */}
       <Row label={t.set.sessionAvatars} hint={t.set.sessionAvatarsHint}><Toggle label={t.set.sessionAvatars} value={s.sessionAvatars} onChange={(v) => set({ sessionAvatars: v })} /></Row>
       <Row label={t.set.motion} hint={t.set.motionHint}><Segmented label={t.set.motion} value={s.motion} options={opts(t.set.motions)} onChange={(v) => set({ motion: v })} /></Row>
+      <Row label={t.set.launchAnimation} hint={t.set.launchAnimationHint}><Toggle label={t.set.launchAnimation} value={s.launchAnimation} onChange={(v) => set({ launchAnimation: v })} /></Row>
       <Row label={t.set.hiddenFiles} hint={t.set.hiddenFilesHint}><Toggle label={t.set.hiddenFiles} value={s.showHiddenFiles} onChange={(v) => set({ showHiddenFiles: v })} /></Row>
       <Row label={t.set.swapSidePanels} hint={t.set.swapSidePanelsHint}><Toggle label={t.set.swapSidePanels} value={s.swapSidePanels} onChange={(v) => set({ swapSidePanels: v })} /></Row>
       {/* Services (2026-11-02): off until turned on; Windows has no tmux view at all. */}

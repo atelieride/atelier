@@ -1,7 +1,7 @@
 // The layout at every width (asked for after the FK peek card's name, plan chip and "Open ›" collided in a
 // mockup): what a surface shows must never overlap, spill out of its box, wrap inside a control
 // or be cut without an ellipsis. Generalizes the session rows' rowOverlaps (states.spec.ts) to any root and its parts.
-import type { Locator } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 export interface LayoutProblems {
   /** Two parts drawn over each other by more than half a pixel each way ("a × b"); a part inside another doesn't count. */
@@ -124,3 +124,14 @@ export function layoutProblems(root: Locator, parts: string[]): Promise<LayoutPr
 
 /** No problem at all: the empty lists (what a test expects). */
 export const NO_PROBLEMS: LayoutProblems = { overlaps: [], outside: [], wrapped: [], clipped: [] };
+
+/**
+ * No script animation running: what was just split off, started or switched to has come in and rests where it is laid
+ * out (a pane springing in, a new session's terminal opening, a view sliding in: every move the app makes with play()),
+ * so what is measured or clicked is where it stays. CSS animations and transitions aside: the rows' cues and the lasting
+ * loops play on, and the Docker view's stat bars ease to each new reading every probe, so the page is never free of them.
+ * Lists what still runs.
+ */
+export const rested = (win: Page) => expect.poll(() => win.evaluate(() => document.getAnimations()
+  .filter((a) => a.playState === 'running' && !(a instanceof CSSAnimation) && !(a instanceof CSSTransition))
+  .map((a) => ((a.effect as KeyframeEffect | null)?.target as Element | null)?.getAttribute('class') ?? '?')), { timeout: 10000 }).toEqual([]);

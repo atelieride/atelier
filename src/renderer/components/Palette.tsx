@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { newAutomation, setPaused } from '../automations/actions';
 import { themeOf } from '@shared/themes';
 import { currentProjectColor, openProjectColorMenu } from '../project-color-menu';
@@ -235,6 +235,16 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
   const [query, setQuery] = useState(() => useApp.getState().paletteQuery);
   const [files, setFiles] = useState<{ path: string; rel: string }[]>([]);
   const [active, setActive] = useState(0);
+  // The first results rise in only as the palette opens: rows that appear while typing do not fade in late.
+  const [opening, setOpening] = useState(true);
+  useEffect(() => { const id = window.setTimeout(() => setOpening(false), 450); return () => window.clearTimeout(id); }, []);
+  // While it is open the app behind it recedes (motion.css): a mark on the root, set before the first paint and gone
+  // with the palette, never a selector that looks for the palette across the whole page after every change.
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    root.dataset.palette = 'open';
+    return () => { delete root.dataset.palette; };
+  }, []);
   const moved = usePointerGate();
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -823,7 +833,7 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
 
   let n = -1;
   return (
-    <div className="palette-backdrop" onMouseDown={close}>
+    <div className="palette-backdrop is-cmd" onMouseDown={close}>
       <div className="palette" role="dialog" aria-label={t.searchLabel} onMouseDown={(e) => e.stopPropagation()}>
         <div className="palette-search">
           <Icon name="search" size={15} />
@@ -870,14 +880,14 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
                 if (it.task) {
                   const { row, stale } = it.task;
                   return (
-                    <button key={it.key} type="button" className={`palette-item task-item ${idx === active ? 'is-active' : ''} ${stale ? 'is-stale' : ''}`}
+                    <button key={it.key} type="button" className={`palette-item task-item ${idx === active ? 'is-active' : ''} ${stale ? 'is-stale' : ''} ${opening && idx < 8 ? 'is-enter' : ''}`} style={{ '--i': idx } as CSSProperties}
                       onMouseMove={(e) => { if (moved(e)) setActive(idx); }} onClick={(e) => pick(it, e.altKey, isMod(e))}>
                       <TaskCells row={row} now={now} />
                     </button>
                   );
                 }
                 return (
-                  <button key={it.key} type="button" className={`palette-item ${idx === active ? 'is-active' : ''} ${it.off ? 'is-off' : ''}`}
+                  <button key={it.key} type="button" className={`palette-item ${idx === active ? 'is-active' : ''} ${it.off ? 'is-off' : ''} ${opening && idx < 8 ? 'is-enter' : ''}`} style={{ '--i': idx } as CSSProperties}
                     onMouseMove={(e) => { if (moved(e)) setActive(idx); }} onClick={(e) => pick(it, e.altKey, isMod(e) && !!it.send)}>
                     {(it.kind === 'session' || it.kind === 'resume') && <Avatar title={it.label} color={it.color ?? 'var(--violet)'} size={18} dim={it.kind === 'resume'} />}
                     {it.kind === 'file' && <FileIcon name={it.label} />}

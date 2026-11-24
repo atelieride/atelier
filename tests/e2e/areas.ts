@@ -92,6 +92,8 @@ export const SPECS: Record<string, Area[]> = {
   'git-sync.spec.ts': ['scm'],
   'idle-work.spec.ts': ['sessions', 'changes'],
   'inbox.spec.ts': ['sessions'],
+  // The launch animation: the first window's plates into the columns or the Welcome mark, skip, off, reload, hold.
+  'intro.spec.ts': ['workspace'],
   'quiet-sidebar.spec.ts': ['sessions', 'workspace'],
   // Session avatars off.
   'session-avatars.spec.ts': ['sessions', 'settings', 'workspace'],
@@ -164,6 +166,8 @@ export const SPECS: Record<string, Area[]> = {
   'starting.spec.ts': ['sessions'],
   'states.spec.ts': ['sessions'],
   'tab-strip.spec.ts': ['workspace'],
+  // The in-app transitions: the sidebar's selection gliding, the tab crown's move, the content rising or sliding in.
+  'transitions.spec.ts': ['workspace', 'sessions'],
   'tasks.spec.ts': ['connectors'],
   'tree-git.spec.ts': ['files', 'changes'],
   'tray.spec.ts': ['notifications'],
@@ -236,7 +240,7 @@ export const HUBS = ['src/renderer/components/Palette.tsx', 'src/renderer/compon
 export const PKG_AREAS: Area[] = ['updates', 'workspace'];
 
 /** Styles: no area by themselves (CSS only → smoke + CSS_AREAS). */
-export const CSS = ['src/renderer/styles.ts', 'src/renderer/theme.css', 'src/renderer/themes.css', 'src/renderer/themes-docsy.css', 'src/renderer/layout.css', 'src/renderer/markdown.css', 'src/renderer/json.css', 'src/renderer/csv.css', 'src/renderer/schedule.css'];
+export const CSS = ['src/renderer/styles.ts', 'src/renderer/theme.css', 'src/renderer/themes.css', 'src/renderer/themes-docsy.css', 'src/renderer/layout.css', 'src/renderer/markdown.css', 'src/renderer/json.css', 'src/renderer/csv.css', 'src/renderer/schedule.css', 'src/renderer/motion.css'];
 export const CSS_AREAS: Area[] = ['workspace'];
 
 /** No app e2e: their own tests (site, demo, unit, release scripts, packaging) or no code at all. */
@@ -328,6 +332,9 @@ export const SOURCES: Record<string, Area[]> = {
   'src/renderer/mention.ts': ['editor', 'sessions'],
   'src/renderer/minute.ts': ['sessions'],
   'src/renderer/motion.ts': ['workspace', 'sessions'],
+  'src/renderer/motion-geometry.ts': ['workspace', 'sessions'],
+  'src/renderer/intro.ts': ['workspace'],
+  'src/renderer/transitions.ts': ['workspace', 'sessions'],
   'src/renderer/names.ts': ['sessions'],
   'src/renderer/jira-view.ts': ['connectors', 'settings'],
   'src/renderer/notion-view.ts': ['connectors'],
@@ -581,6 +588,7 @@ export const SOURCES: Record<string, Area[]> = {
   // Themes: the tokens resolved for xterm, main's window colors, the theme list and setting.
   'src/shared/theme-resolve.ts': ['terminal', 'editor', 'workspace'],
   'src/shared/themes.ts': ['settings', 'terminal', 'workspace'],
+  'src/shared/intro.ts': ['settings', 'terminal', 'workspace'],
   'src/shared/project-color.ts': ['settings', 'workspace'],
   'src/shared/themes-docsy.ts': ['settings', 'terminal', 'workspace'],
   'src/main/theme-chrome.ts': ['workspace'],

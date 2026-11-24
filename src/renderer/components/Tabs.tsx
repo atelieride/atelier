@@ -46,6 +46,7 @@ import type { DockerContainer } from '@shared/docker';
 import type { AutoTabRef, DockerTabRef } from '../store';
 import type { AutomationView } from '@shared/api';
 import { autoTabTitle } from '../automations/tabs';
+import { enterView, flyCrown, markNav, paneContent, takeNav } from '../transitions';
 
 const NO_DOCKER_TABS: DockerTabRef[] = [];
 const NO_CONTAINERS: DockerContainer[] = [];
@@ -99,8 +100,9 @@ const Tab = memo(function Tab({ k, active, front, drop, lifted, leaving, term, s
       // A table's: its connection, schema and name.
       aria-description={outsideTip}
       data-tip={wt ?? outsideTip ?? file?.rel ?? db?.tip ?? (term ? nameTip(name, [term.session?.cwd ?? term.cwd, syncTip(term)].filter(Boolean).join('\n')) : k === 'services' ? undefined : nameTip(name))}
-      // ⌥-click: Move to Right Pane (from the last pane, a new pane on the right).
-      onClick={(e) => (e.altKey ? st().moveTabSide(k, 'right') : st().activate(k))}
+      // ⌥-click: Move to Right Pane (from the last pane, a new pane on the right). Picked here, the crown flies to it
+      // and the content slides in from its side (transitions.ts).
+      onClick={(e) => { if (e.altKey) st().moveTabSide(k, 'right'); else { markNav('tab'); st().activate(k); } }}
       // Double click on the preview tab keeps it open as a normal tab.
       onDoubleClick={() => keepTabOpen(k)}
       onContextMenu={(e) => st().openMenu(e, tabMenu(k))}
@@ -294,9 +296,33 @@ export const PaneStrip = memo(function PaneStrip({ pane, split, last, onNew }: {
       const left = revealLeft({ left: tab.offsetLeft, width: tab.offsetWidth }, { scrollLeft: el.scrollLeft, width: el.clientWidth }, REVEAL_PAD);
       if (left !== null) el.scrollTo({ left, behavior: 'instant' });
     }
-    if (el) for (const child of el.children) sizes.current?.observe(child);
+    // Its tabs, not a crown flying over them (transitions.ts): that one's width moves every frame and it soon goes.
+    if (el) for (const child of el.children) if (!child.classList.contains('tab-crown-fly')) sizes.current?.observe(child);
     fade();
   }, [front, order, fade, showClicked]);
+  // Another tab in front, from one tab of this strip to another (however it was picked): the crown flies over to it.
+  // What it shows comes in by where it was picked: rising from the sidebar, otherwise (a tab, the keyboard, the
+  // palette) from the side of the tab. A session just launched comes in by its terminal's own reveal (sparkTo).
+  const shown = useRef(front);
+  useLayoutEffect(() => {
+    const was = shown.current;
+    shown.current = front;
+    const el = strip.current;
+    if (!el || !front || was === front) return;
+    const body = el.closest('.workspace')?.querySelector<HTMLElement>('.workspace-body');
+    const content = body ? paneContent(body, split ? pane : null) : [];
+    const origin = takeNav();
+    const tabOf = (k: TabKey) => el.querySelector<HTMLElement>(`.tab[data-key="${CSS.escape(k)}"]`);
+    const from = was ? tabOf(was) : null;
+    const to = tabOf(front);
+    // Only the focused pane's tab wears the brand crown; another pane's front tab has a quiet one of its own.
+    if (from && to && to.classList.contains('is-active')) flyCrown(el, from, to, fade);
+    if (origin === 'launch') return;
+    if (origin === 'sidebar') { for (const view of content) enterView(view, 'up'); return; }
+    if (!from || !to) return;
+    const dir = from.compareDocumentPosition(to) & Node.DOCUMENT_POSITION_FOLLOWING ? 'right' : 'left';
+    for (const view of content) enterView(view, dir);
+  }, [front, split, pane, fade]);
   // The tab already in front, clicked: nothing renders for it, so it is shown from here (from the keyboard, no pointer).
   const clickedFront = (e: MouseEvent<HTMLDivElement>) => {
     const tab = (e.target as HTMLElement).closest<HTMLElement>('.tab');

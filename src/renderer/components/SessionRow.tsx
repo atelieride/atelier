@@ -33,6 +33,11 @@ import { openAskFor, shownTerminals } from '../companion/actions';
 import { useRowClick, useRowDrag } from './WorkspaceGroup';
 import { bandAttr, sameBand, type Band } from '../row-order';
 import { useReorder } from '../reorder-drag';
+import { useArrivalKey, useCue } from '../motion';
+import { cutGlide } from '../transitions';
+
+/** How long a finish's cue lasts: its longest part, the avatar's check (motion.css). */
+const FINISH_MS = 1100;
 
 /**
  * section: the row's section in the grouped list; when it changes, the row enters its new place with the motion.
@@ -97,6 +102,8 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
     const was = lastSection.current;
     lastSection.current = section;
     if (was === section || was === undefined || section === undefined) return;
+    // Moving to its new place: a selection on its way to the row would land where it was.
+    cutGlide(rowEl.current);
     setEnter('enter');
     // Already carrying the class: play the entrance again.
     for (const a of rowEl.current?.getAnimations() ?? []) if ((a as CSSAnimation).animationName === 'atl-enter') { a.cancel(); a.play(); }
@@ -105,6 +112,11 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
   // "Pending review": comments written for this session and not sent yet.
   const pending = useApp((st) => st.comments.reduce((n, c) => n + (isPending(c, term.id) ? 1 : 0), 0));
   const state = shownState(term);
+  // Finished just now (a state seen before became done; never at mount, so not at a reload or a workspace opened): a
+  // flat green wave crosses the row and a check takes the avatar's place a moment (motion.css). The row keeps its element
+  // when it moves to its new section, so what it saw before is still here. Both go once the last of them has played.
+  const doneKey = useArrivalKey(state, 'done');
+  const finish = useCue(doneKey, FINISH_MS);
   // Its close sent: "Closing…" until atelierd drops it (seconds on Windows), and nothing closes it again.
   const shutting = useApp((st) => !!st.closing[term.id]);
   // Restart Session: "Restarting…" from the `/exit` until the session is back.
@@ -132,7 +144,11 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
   // mark and the pin move to the end of the title line.
   const avatars = useApp((st) => st.settings.sessionAvatars);
   // 22 px like a terminal row's icon: sessions and terminals line up in one column of icons.
-  const lead = avatars ? <Avatar title={term.title} color={term.color} state={state} pinned={pinned} auto={automated} size={22} /> : null;
+  const lead = avatars ? (
+    <Avatar title={term.title} color={term.color} state={state} pinned={pinned} auto={automated} size={22}>
+      {finish.on && <i key={doneKey} className="av-done-check" aria-hidden="true" ref={finish.ender}><Icon name="check" size={14} stroke={2.4} /></i>}
+    </Avatar>
+  ) : null;
   const stop = () => { setEditing(false); if (asked) useApp.getState().setRenaming(null); };
   const commit = (v: string) => { stop(); commitRename(term, v); };
   const inner = (
@@ -222,8 +238,10 @@ function SessionRowImpl({ term, selected, pinned, popped = false, onSelect, sect
   // List item with side-by-side buttons (select, pin, close): never a button inside another. While
   // renaming, the field is not inside a button.
   return (
-    <div ref={rowEl} role="listitem" data-term-row={term.id} className={`session-row ${enter} ${s ? `state-${state}` : 'is-starting'} ${selected ? 'is-selected' : ''} ${s?.unread ? 'is-unread' : ''} ${popped ? 'is-popped' : ''} ${shutting ? 'is-closing' : ''} ${closing ? 'is-asking' : ''} ${askMark ? 'has-ask' : ''}${avatars ? '' : ' no-avatar'}${dragged ? ' is-dragging' : ''}${caret ? ` is-caret-${caret}` : ''}`}
+    <div ref={rowEl} role="listitem" data-term-row={term.id} className={`session-row ${enter} ${s ? `state-${state}` : 'is-starting'} ${selected ? 'is-selected' : ''} ${s?.unread ? 'is-unread' : ''} ${popped ? 'is-popped' : ''} ${shutting ? 'is-closing' : ''} ${closing ? 'is-asking' : ''} ${askMark ? 'has-ask' : ''}${finish.on ? ' is-finishing' : ''}${avatars ? '' : ' no-avatar'}${dragged ? ' is-dragging' : ''}${caret ? ` is-caret-${caret}` : ''}`}
       data-tip={nameTip(term.title)} {...bandAttr(band)} onContextMenu={(e) => useApp.getState().openMenu(e, sessionRowMenu(term, shutting ? undefined : band))} {...(editing ? {} : drag)}>
+      {/* Without the avatar's check, the wave is the last to end. */}
+      {finish.on && <i key={doneKey} className="row-wave" aria-hidden="true" ref={avatars ? undefined : finish.ender} />}
       {editing
         ? <div className="row-main">{inner}</div>
         // ⌥-click: Open to the Side (split view).

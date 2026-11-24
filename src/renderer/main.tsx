@@ -16,7 +16,11 @@ if (window.atelier.bootTheme !== 'aurora') document.documentElement.dataset.them
 document.documentElement.dataset.platform = currentPlatform();
 // Lasting motion stops while the window is inactive; set before the first frame.
 trackWindowActivity(window, document.documentElement, document.hasFocus());
-void loadFonts().catch(() => { /* without fonts the system font is used */ }).finally(() => {
+// The first window of an app start plays the launch animation. Its code loads only then, and the app renders once
+// the animation's overlay is up: the overlay covers the app's first frame.
+const hold = window.atelier.bootIntro;
+const intro = hold === null ? null : import('./intro').then(({ startIntro }) => startIntro(document, window, hold)).catch(() => { /* no launch animation */ });
+void Promise.all([loadFonts().catch(() => { /* without fonts the system font is used */ }), intro]).finally(() => {
   createRoot(document.getElementById('root')!).render(<ErrorBoundary id="app" panel={t.appName} root><App /></ErrorBoundary>);
   loadTestFault();
   // File icons arrive after the first frame: startup does not wait for them. The markup is sanitized (shapes only).

@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { e2eEnv } from './env';
+import { rested } from './layout';
 import { makeDemoProject } from './site-shots/demo-project';
 import { LIVE_SELECTORS, liveSpots, type MeasuredSpot, type SpotKind } from './site-shots/live-spots';
 import { SENSITIVE, SHOTS_ONLY, findBanned } from '../support/banned-strings';
@@ -112,8 +113,10 @@ async function menu(app: ElectronApplication, top: string, label: string) {
   }, [top, label] as const);
 }
 
-/** Drags the first split divider until the right pane starts at `x` (CSS px). */
+/** Drags the first split divider until the right pane starts at `x` (CSS px), measured once the panes are at rest. */
 async function rightPaneAt(win: Page, x: number) {
+  await expect(win.locator('.pane-divider').first()).toBeVisible();
+  await rested(win);
   const split = (await win.locator('.workspace-body > .pane-frame').nth(1).boundingBox())!;
   const divider = (await win.locator('.pane-divider').first().boundingBox())!;
   const y = divider.y + divider.height / 2;

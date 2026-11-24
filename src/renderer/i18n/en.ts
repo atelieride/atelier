@@ -2487,6 +2487,7 @@ const strings = {
     sizes: { small: 'Small', default: 'Default', large: 'Large', larger: 'Larger' },
     motion: 'Reduce motion', motionHint: 'Waiting cues and transitions. "System" follows macOS Accessibility.',
     motions: { system: 'System', reduced: 'Always' },
+    launchAnimation: 'Launch animation', launchAnimationHint: 'Plays once when Atelier starts. Off with Reduce motion.',
     hiddenFiles: 'Show hidden files', hiddenFilesHint: 'Start the file tree with dotfiles, node_modules and build folders visible.',
     projectTint: 'Tint windows by project', projectTintHint: 'Each project’s window wears its own color: the project chip, and a faint tint of the header. Right-click the chip to change it.',
     swapSidePanels: 'Swap side panels', swapSidePanelsHint: 'Changes on the left; sessions, files and the other views on the right.',

@@ -72,11 +72,13 @@ export function stripKeys(s: Split, order: TabKey[], i: number): TabKey[] {
 
 /**
  * One pane made real from the strip order and the active key (so it can be split); a split as it is. An active key not
- * in the order (a terminal launched, not listed yet) leaves the last tab in front: never tabs without one.
+ * in the order (a terminal launched, not listed yet) leaves the last tab in front: never tabs without one. It keeps the
+ * one pane's leaf, so a split of it has a single new pane (arrivedPane).
  */
 export function lift(s: Split, order: TabKey[], active: PaneKey): Split {
   if (isSplit(s)) return s;
-  return one({ tabs: [...order], front: active !== null && order.includes(active) ? active : order.at(-1) ?? null });
+  const pane = one({ tabs: [...order], front: active !== null && order.includes(active) ? active : order.at(-1) ?? null });
+  return s.tree.kind === 'pane' ? { ...pane, tree: s.tree } : pane;
 }
 
 const samePane = (a: Pane, b: Pane) => a.front === b.front && a.tabs.length === b.tabs.length && a.tabs.every((k, i) => k === b.tabs[i]);

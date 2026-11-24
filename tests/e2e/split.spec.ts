@@ -12,6 +12,9 @@ import { look } from './shots';
 const SHOTS = 'test-results';
 type Api = { terminals: { list(): Promise<{ id: string; title: string; createdAt: number }[]>; input(id: string, data: string): void; rename(id: string, name: string | null): Promise<void> } };
 
+/** No script animation running: a pane just split off has sprung in and rests where it is laid out. */
+const rested = (win: Page) => expect.poll(() => win.evaluate(() => document.getAnimations()
+  .filter((a) => a.playState === 'running' && !(a as CSSAnimation).animationName).length)).toBe(0);
 /** Animations off (and the blinking cursor hidden) for screenshots that are looked at. */
 const still = (win: Page) => win.addStyleTag({ content: '*, *::before, *::after { animation: none !important; transition: none !important; } .xterm-cursor-layer { display: none !important; }' });
 
@@ -130,6 +133,7 @@ test('split view: a strip per pane, the picker, typing in the focused pane, focu
     await expect(picker.locator('.pp-item')).toHaveText([/Alpha/]);
     await expect(picker.locator('.pp-item .pp-moves')).toHaveText('moves here');
     await expect(strip(win, 1)).toHaveClass(/is-focused/);
+    await rested(win);
     expect(await overflowing(win)).toEqual([]);
     await still(win);
     await look(win.locator('.workspace'), `${SHOTS}/split-picker.png`);
@@ -305,6 +309,7 @@ test('split view: a strip per pane, the picker, typing in the focused pane, focu
     expect(await win.locator('.workspace-body > .file-view').evaluate((el) => el.style.gridColumnStart)).toBe('p3l');
     await expect(strip(win, 3).locator('.tab.is-active')).toHaveText([/notes\.md/]);
     await expect(win.locator('.pane-picker')).toHaveCount(2);
+    await rested(win);
     expect(await overflowing(win)).toEqual([]);
     await win.locator('.workspace-body .cm-content').click();
     await win.keyboard.type('# Split');

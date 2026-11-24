@@ -2,6 +2,7 @@ import { BrowserWindow, dialog, session, type BrowserWindowConstructorOptions, t
 import { IPC } from '@shared/api';
 import { POPOUT_MIN } from '@shared/popout';
 import { trafficLights, WINDOW_BAR, windowButtons } from '@shared/settings';
+import { introArg } from '@shared/intro';
 import { themeArg, type ThemeId } from '@shared/themes';
 import { chromeOf } from './theme-chrome';
 import { basename, join } from 'node:path';
@@ -102,7 +103,7 @@ export function frameOptions(zoom: number, platform: NodeJS.Platform = process.p
  * `place`: where it opens (the welcome window it replaces, or where it was last time), maximized when it was so; else
  * centered.
  */
-export function createProjectWindow(projectRoot: string | null, zoomFactor = 1, place?: Rectangle & { maximized?: boolean }, hooks: WindowHooks = {}, theme: ThemeId = 'aurora'): BrowserWindow {
+export function createProjectWindow(projectRoot: string | null, zoomFactor = 1, place?: Rectangle & { maximized?: boolean }, hooks: WindowHooks = {}, theme: ThemeId = 'aurora', intro: number | null = null): BrowserWindow {
   const chrome = chromeOf(theme);
   const { maximized = false, ...bounds }: Partial<Rectangle> & { maximized?: boolean } = place ?? {};
   return createAppWindow({
@@ -111,8 +112,9 @@ export function createProjectWindow(projectRoot: string | null, zoomFactor = 1, 
     ...frameOptions(zoomFactor, process.platform, WINDOW_BAR, chrome.symbol),
     backgroundColor: chrome.background, show: false,
     // The zoom from the settings applies from the very first paint (no jump, no double refit of the terminals).
-    // The page sets its theme before its first paint: the preload reads this argument.
-    webPreferences: { ...secureWebPreferences(join(__dirname, '../preload/index.js')), zoomFactor, ...hiddenWebPreferences(), additionalArguments: [themeArg(theme)] }
+    // The page sets its theme before its first paint: the preload reads this argument; `intro` (the hold in ms) asks it to
+    // play the launch animation, which only the first window of an app start gets.
+    webPreferences: { ...secureWebPreferences(join(__dirname, '../preload/index.js')), zoomFactor, ...hiddenWebPreferences(), additionalArguments: [themeArg(theme), ...(intro === null ? [] : [introArg(intro)])] }
   }, hooks, maximized);
 }
 

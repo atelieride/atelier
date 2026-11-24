@@ -3,6 +3,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { e2eEnv } from './env';
+import { rested } from './layout';
 import { look } from './shots';
 
 // Send selection to a terminal: full-screen Claude (fake-claude-select.pl) captures
@@ -58,6 +59,9 @@ test('right-click in full-screen Claude: its selection runs in a new terminal or
     await win.keyboard.press('Enter');
     await expect(win.locator('.session-row', { hasText: 'build-folder' })).toHaveClass(/state-done/, { timeout: 20000 });
     await expect(row(win, 'mkdir -p build')).toBeVisible({ timeout: 10000 });
+    // The new session's terminal has opened all the way: while its arrival reveals it, a click where it is still clipped
+    // reaches the workspace under it.
+    await rested(win);
 
     // Nothing selected yet: the menu opens (Claude captures the mouse) and says how to get a selection.
     await row(win, 'Where do the build').click({ button: 'right', force: true });

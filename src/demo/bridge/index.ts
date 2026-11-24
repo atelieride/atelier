@@ -81,6 +81,7 @@ export function createDemo(compiled: DemoWorld, opts: DemoBridgeOptions): DemoBr
     // Never Windows here: no Windows pty for the demo's xterms.
     osVersion: '',
     bootTheme: 'aurora',
+    bootIntro: null,
     project: () => resolved({ root, name, realRoot: root }),
     openFolder: mac('Open Folder'),
     newWindow: mac('New Window'),
