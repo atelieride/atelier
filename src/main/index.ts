@@ -85,7 +85,7 @@ import { PortsHub } from './ports-hub';
 import { DockerHub } from './docker/hub';
 import { showBanner } from './attention';
 import { electronTrayHost } from './tray-electron';
-import { afterAllClosed, quitsWhenTurnedOff, reopensAfterCancelledQuit } from './tray';
+import { afterAllClosed, keepsRunning, quitsWhenTurnedOff, reopensAfterCancelledQuit } from './tray';
 import { installDockerIpc } from './docker/ipc';
 import { RedisHub } from './redis/hub';
 import { installRedisIpc } from './redis/ipc';
@@ -618,9 +618,10 @@ if (!app.requestSingleInstanceLock()) {
 
   /**
    * `replacing`: the welcome window giving way to the project, whose place the project window takes. Null when the
-   * folder can't be a project (Windows: a network share, said in a dialog; the welcome window then stays).
+   * folder can't be a project (Windows: a network share, said in a dialog; the welcome window then stays). `quiet` (a
+   * paired phone asked): a new window appears without taking the focus, an open one stays where it is.
    */
-  const openWindow = (given: string | null, replacing?: BrowserWindow | null): BrowserWindow | null => {
+  const openWindow = (given: string | null, replacing?: BrowserWindow | null, quiet = false): BrowserWindow | null => {
     // A folder from the OS (argv, a dialog) is native on Windows: projects are known by the canonical path (C:/…).
     const root = given && toCanonical(given);
     // Windows: a share or WSL folder (\\server\share) has no drive letter, which every path IPC takes has: its window
@@ -634,7 +635,7 @@ if (!app.requestSingleInstanceLock()) {
     }
     // One window per folder: if the project is already open, that window is brought to the front.
     const existing = root ? projectWindow(root) : null;
-    if (existing) { revealWindow(existing); return existing; }
+    if (existing) { if (!quiet) revealWindow(existing); return existing; }
     // A project never colored takes a color the open windows don't wear, kept from then on; with the colors full, one
     // already colored is saved again as the latest, so the limit forgets projects not opened for longest.
     const colorSave = root ? projectColorOnOpen(settings.get().projectColors, openProjectRoots(windowsView), root) : null;
@@ -649,7 +650,7 @@ if (!app.requestSingleInstanceLock()) {
     const s = settings.get();
     const intro = introGate.take({ launchAnimation: s.launchAnimation, motion: s.motion, hidden: hiddenWindows(), testIntro: !!devEnv('ATELIER_TEST_INTRO') })
       ? (testMs('ATELIER_TEST_INTRO_HOLD_MS') ?? 0) : null;
-    const win: BrowserWindow = createProjectWindow(root, zoomFactor(settings.get().interfaceSize), place, {
+    const win: BrowserWindow = createProjectWindow(root, zoomFactor(settings.get().interfaceSize), quiet ? { ...place, inactive: true } : place, {
       onUnloadKept: quitStopped,
       // The project's own unsaved guard said Cancel after its pop-outs closed: they come back, and the sessions' answer
       // is forgotten.
@@ -1447,25 +1448,29 @@ if (!app.requestSingleInstanceLock()) {
     };
     const pairCodeMs = testMs('ATELIER_TEST_REMOTE_CODE_MS');
     // A phone's changes to a project's places go to its main window, opened first when it is closed (as a recent
-    // project opens, without taking the welcome window's place).
+    // project opens, without taking the welcome window's place nor the focus; never while Atelier quits).
     const places = new PlaceRequests({
       windowOf: (root) => projectWindow(root)?.webContents.id ?? null,
       open: (root) => {
-        if (!isDir(root)) return null;
-        const w = openWindow(root);
+        if (quitting || !isDir(root)) return null;
+        const w = openWindow(root, null, true);
         return w && !w.isDestroyed() ? w.webContents.id : null;
       },
       send: (wcId, req) => { const b = windowById(wcId); if (b) sendTo(b, IPC.evRemotePlaces, req); }
     });
     remotePlaces = places;
-    // A phone opening a project's window, as a recent project opens, or closing it as its own close does: decided first
-    // with the phone's answer (no question here), refused while it or one of its pop-outs has unsaved files.
+    // A phone opening a project's window, as a recent project opens (without taking the focus), or closing it as its
+    // own close does: decided first with the phone's answer (no question here), refused while it or one of its pop-outs
+    // has unsaved files, or when it is the last window of an Atelier that would quit with it.
     const phoneWindows = new PhoneWindows<BrowserWindow>({
       windowOf: (root) => projectWindow(root),
-      open: (root) => { const w = openWindow(root); return w && !w.isDestroyed() ? w : null; },
+      open: (root) => { const w = openWindow(root, null, true); return w && !w.isDestroyed() ? w : null; },
       isDir,
       unsaved: (root) => projectWindowIds(windowsView, root).some((id) => sessionEnd.has(id)),
       decide: (root, sessions) => closeGuard.decideFor(root, sessions),
+      undecide: (root) => closeGuard.forget(root),
+      quitsOnClose: (root) => !keepsRunning(currentPlatform(), settings.get().trayIcons) && mainWindows(windowsView).every(([, r]) => r === root),
+      quitting: () => quitting,
       close: (w) => { if (!w.isDestroyed()) w.close(); },
       whenClosed: (w, cb) => { w.once('closed', cb); return () => { w.removeListener('closed', cb); }; }
     });

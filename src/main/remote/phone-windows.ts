@@ -18,6 +18,12 @@ export interface PhoneWindowsDeps<W> {
   unsaved(root: string): boolean;
   /** The close decided away from the window (the busy sessions' answer, or none); false when it no longer holds. */
   decide(root: string, sessions?: 'keep' | 'stop'): Promise<boolean>;
+  /** That decision taken back (the close didn't happen): a later close on this computer asks as usual. */
+  undecide(root: string): void;
+  /** Closing the project's window would quit Atelier (Windows, its last window, no notification-area icon). */
+  quitsOnClose(root: string): boolean;
+  /** Atelier is quitting: no window may open. */
+  quitting(): boolean;
   close(win: W): void;
   /** Calls `cb` once the window is gone; returns what stops listening. */
   whenClosed(win: W, cb: () => void): () => void;
@@ -25,6 +31,7 @@ export interface PhoneWindowsDeps<W> {
 }
 
 const failed = (message: string): RemoteWindowResult => ({ ok: false, code: 'failed', message });
+const UNSAVED: RemoteWindowResult = { ok: false, code: 'invalid', message: 'It has unsaved files: save or close them on this computer first.' };
 
 export class PhoneWindows<W> {
   private readonly timeoutMs: number;
@@ -34,18 +41,23 @@ export class PhoneWindows<W> {
   }
 
   async open(root: string): Promise<RemoteWindowResult> {
+    if (this.d.quitting()) return failed('Atelier is quitting.');
     if (!this.d.isDir(root)) return failed('The project\'s folder isn\'t there any more.');
     return this.d.open(root) === null ? failed('The project\'s window could not be opened.') : { ok: true };
   }
 
   async close(root: string, sessions?: 'keep' | 'stop'): Promise<RemoteWindowResult> {
     if (this.d.windowOf(root) === null) return { ok: true };
-    if (this.d.unsaved(root)) return { ok: false, code: 'invalid', message: 'It has unsaved files: save or close them on this computer first.' };
+    // With its notification-area icon off, Windows quits Atelier with its last window: nothing could reach it again.
+    if (this.d.quitsOnClose(root)) return { ok: false, code: 'invalid', message: 'It is Atelier\'s last window here: closing it would quit Atelier, and the phone could not reach it again.' };
+    if (this.d.unsaved(root)) return UNSAVED;
     const held = await this.d.decide(root, sessions);
     // Closed on this computer meanwhile: what the phone asked for is done.
     const win = this.d.windowOf(root);
     if (win === null) return { ok: true };
     if (!held) return failed('The window didn\'t close.');
+    // A file edited while it was decided: its Save / Don't Save question would wait for someone here.
+    if (this.d.unsaved(root)) { this.d.undecide(root); return UNSAVED; }
     return new Promise((resolve) => {
       let settled = false;
       const finish = (r: RemoteWindowResult) => {
@@ -53,6 +65,8 @@ export class PhoneWindows<W> {
         settled = true;
         clearTimeout(timer);
         off();
+        // Not closed: the phone's answer must not decide a later close made on this computer.
+        if (!r.ok) this.d.undecide(root);
         resolve(r);
       };
       // Held past the wait (a pop-out's own question, a page that never let go): the phone hears it didn't close.
