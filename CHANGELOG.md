@@ -3,6 +3,15 @@
 Release notes for Atelier. Each version has a `## <version>` section: the release workflow requires it and the app
 shows it in Settings › About and in "What's new".
 
+## 0.2.0-beta.35
+
+- **Atelier in motion**: at launch the mark opens into your workspace (a click or a key skips it; Settings ›
+  Appearance › Launch animation turns it off, and Reduce motion leaves it out). The selection glides to the session
+  you pick and the tab's crown follows it, a new session arrives with a spark from the + button, a split's new pane
+  springs in, the command palette opens over a receding app, and a finished session's row is crossed by a wave. Only
+  what you do moves: what the app changes by itself changes in place.
+- Dictation's clean-up no longer crashes the app when claude exits right away (a broken install, an early error).
+
 ## 0.2.0-beta.34
 
 - **Session rows read at a glance**: a session's name has its line to itself, with what it is doing and its live chips
