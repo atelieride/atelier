@@ -42,7 +42,9 @@ import { SENSITIVE, SHOTS_ONLY, findBanned } from '../support/banned-strings';
 // a ten-byte change to the launch moved the first paint by 630 bytes.
 // +1 KB for a pane split off: its content springing in from its side, the line it was split off on drawing, the pane's
 // own background under it on its way, and the new pane told apart from a layout read back.
-const BUDGET = 926 * 1024;
+// +1 KB of room for the chunk names again: one more class in the waiting edge's selector moved the first paint by 218
+// bytes, past a budget met within 79.
+const BUDGET = 927 * 1024;
 const SHARED = resolve('src/shared');
 const INSTALL = resolve('src/demo/install.ts');
 
