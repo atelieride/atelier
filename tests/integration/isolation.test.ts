@@ -70,7 +70,11 @@ test('a terminal runs in a launchd job of its own: own coalition, normal priorit
   expect(coalition(pid)).not.toBe(coalition(otherPid));
   // An interactive app's priority (31), whatever the caller's: launchd starts the job, so a test runner that runs
   // throttled (CI's agent at 20, `taskpolicy -b` at 4) must not pass its priority on, and must not lower the bar either.
-  expect(execFileSync('/bin/ps', ['-o', 'pri=', '-p', String(pid)], { encoding: 'utf8' }).trim()).toBe('31');
+  // ps reads the current priority: a shell busy on a loaded machine reads a few points lower for a while (30, or less),
+  // an idle one reads its base. A throttled job never reaches 31.
+  const priority = () => execFileSync('/bin/ps', ['-o', 'pri=', '-p', String(pid)], { encoding: 'utf8' }).trim();
+  await until(() => priority() === '31', 15_000).catch(() => {});
+  expect(priority()).toBe('31');
   expect(await launchd().ownLabels(jobLabel('session', home))).toContain(jobLabel('session', home, info.id));
 
   dm.terminals.input(info.id, 'echo "ctty=$(tty) pwd=$PWD"; sleep 30\r');
