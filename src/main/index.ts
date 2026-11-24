@@ -23,7 +23,7 @@ import { themeOf } from '@shared/themes';
 import { chromeOf } from './theme-chrome';
 import { createAppIcon } from './app-icon';
 import { appIconDeps } from './app-icon-exec';
-import { profileOptions } from '@shared/profiles';
+import { chipFor, profileOptions } from '@shared/profiles';
 import { SettingsStore } from './settings-store';
 import { ensureDaemon, stopStaleDaemon } from './daemon-launcher';
 import { daemonFingerprint } from './daemon-fingerprint';
@@ -1489,6 +1489,9 @@ if (!app.requestSingleInstanceLock()) {
       ports: (root) => (settings.get().showPorts ? portsHub.portsOf(root) : {}),
       prs: (root) => prHub.stateOf(root).terminals,
       realOf: remoteRealOf,
+      // The row's profile chip (none with an atelierd older than profiles) and the worktrees that name its folder.
+      profileOf: (t) => (hub.daemonState().profilesAvailable ? chipFor({ profile: t.profile, session: !!t.session }, settings.get().terminalProfile, shells()) : null),
+      repos: (root) => [...(gitHub.info(root)?.status.values() ?? [])],
       // What a phone did to a project's rows: its main window follows (a new row's place, a resume's pin and place).
       rows: (root, e) => { const b = projectWindow(root); if (b) sendTo(b, IPC.evRemoteRows, e); },
       // What a phone does to a project's workspaces and activities: applied in its main window.

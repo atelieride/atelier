@@ -110,10 +110,20 @@ export interface RemoteSession {
   contextPct?: number;
   mode?: 'plan' | 'bypass';
   agents?: number;
+  /** Background work as the row's chip counts it; `idle` when only items past their cap remain. */
+  work?: { agents?: number; shells?: number; monitors?: number; tasks?: number; idle?: true };
+  /** How many wake-ups are set (cron jobs, loops). */
+  scheduled?: number;
+  /** The soonest wake-up that has a time (ms); absent when none has one. */
+  wakeAt?: number;
+  /** The terminal profile's label when not the default one (≤ 40 characters). */
+  profile?: string;
   /** An account's id (as `usage` lists it), only when not the default one. */
   account?: string;
   /** The folder or worktree it runs in when not the project's root: a name, never a path. */
   folder?: string;
+  /** `folder` names a linked git worktree. */
+  worktree?: true;
   /** A plain terminal's foreground program, by name only. */
   command?: string;
   ports?: { port: number; name?: string }[];
