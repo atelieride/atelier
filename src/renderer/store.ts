@@ -2191,10 +2191,8 @@ export const useApp = create<AppState>((set, get) => ({
     const target = wss[i === 0 ? 1 : i - 1]!.id;
     // Its files close unless another place shows them (its activities moving keep theirs); unsaved ones are asked about
     // first, as for any close, and Cancel (or a failed save) leaves everything as it was.
-    const live0 = wsLive(s)!;
-    const after0 = wsRemove(live0, id, how === 'move' ? target : null);
-    if (!after0) return;
-    const closing = closingKeys(live0, after0, [id, ...activitiesOf(live0, id).map((w) => w.id)]);
+    const closing = placeClosing(s, id, how);
+    if (!closing) return;
     const settled = settleUnsaved(closing);
     if (settled !== true && !(await settled)) return;
     const w0 = get().ws;
@@ -2253,8 +2251,7 @@ export const useApp = create<AppState>((set, get) => ({
     const wsId = a.parent;
     // Stop: its file tabs close unless another place shows them, unsaved ones asked about first. Move: they join its
     // workspace, nothing closes.
-    const live0 = wsLive(s)!;
-    const closing = how === 'stop' ? closingKeys(live0, wsRemoveAct(live0, id, how), [id]) : [];
+    const closing = placeClosing(s, id, how) ?? [];
     const settled = settleUnsaved(closing);
     if (settled !== true && !(await settled)) return;
     if (get().ws?.active === id) get().switchWorkspace(wsId);
@@ -3007,12 +3004,44 @@ function closingKeys(before: WorkspacesState, after: WorkspacesState, ids: strin
 }
 
 /**
+ * The tabs closing workspace or activity `id` would close: a workspace's files that no other place shows (moving its
+ * rows keeps its activities' files, stopping closes them); an activity's only when it stops (moving, they join its
+ * workspace). Null when it can't close: workspaces off, not a place, the last workspace.
+ */
+function placeClosing(s: AppState, id: string, how: 'move' | 'stop'): TabKey[] | null {
+  if (!wsOn(s)) return null;
+  const entry = s.ws.list.find((w) => w.id === id);
+  if (!entry) return null;
+  const live = wsLive(s)!;
+  if (entry.parent !== undefined) return how === 'stop' ? closingKeys(live, wsRemoveAct(live, id, how), [id]) : [];
+  const wss = workspacesOf(s.ws);
+  const i = wss.findIndex((w) => w.id === id);
+  if (wss.length <= 1 || i === -1) return null;
+  const after = wsRemove(live, id, how === 'move' ? wss[i === 0 ? 1 : i - 1]!.id : null);
+  return after ? closingKeys(live, after, [id, ...activitiesOf(live, id).map((w) => w.id)]) : null;
+}
+
+/** The files with unsaved changes among tabs about to close (the editors' own word first). */
+function unsavedAmong(closing: TabKey[]): string[] {
+  const st = useApp.getState();
+  return closing.filter((k) => k.startsWith('f:') && isDirtyNow(k.slice(2), !!st.dirty[k.slice(2)])).map((k) => k.slice(2));
+}
+
+/**
+ * The unsaved files that closing workspace or activity `id` this way would ask about: what a close made without a
+ * question (a paired phone's) refuses on.
+ */
+export function unsavedOnPlaceClose(id: string, how: 'move' | 'stop'): string[] {
+  return unsavedAmong(placeClosing(useApp.getState(), id, how) ?? []);
+}
+
+/**
  * Unsaved files among `closing` are asked about first, as for any close: false when the answer is Cancel or a save
  * failed (nothing may close then). Nothing unsaved: true at once, so the close goes on in the same tick.
  */
 function settleUnsaved(closing: TabKey[]): true | Promise<boolean> {
   const st = useApp.getState();
-  const unsaved = closing.filter((k) => k.startsWith('f:') && isDirtyNow(k.slice(2), !!st.dirty[k.slice(2)])).map((k) => k.slice(2));
+  const unsaved = unsavedAmong(closing);
   if (!unsaved.length) return true;
   return (async () => {
     const answer = await st.askUnsaved(unsaved, 'close', null);

@@ -193,3 +193,44 @@ test('a second quit while the first one asks waits for that same answer', async 
   expect([await a, await b]).toEqual([true, true]);
   expect(asked).toHaveLength(1);
 });
+
+// A paired phone closing a project's window: its user answered on the phone (or Atelier decides by itself), so the
+// window closes without a question on this computer.
+test('a close decided elsewhere: the next close goes at once, asks nothing, and stops only for stop', async () => {
+  for (const [how, stops] of [['keep', []], ['stop', ['/p']]] as const) {
+    const { guard, asked, stopped } = setup({ busy: { '/p': 2 } });
+    expect(await guard.decideFor('/p', how)).toBe(true);
+    expect(guard.onClose('/p', 'win', () => { throw new Error('never held'); })).toBe(true);
+    guard.onClosed('/p');
+    expect(asked).toEqual([]);
+    expect(stopped).toEqual(stops);
+  }
+});
+
+test('a close decided elsewhere without an answer: the setting, and where it asks, busy keeps running', async () => {
+  const cases: [CloseMode, number, string[]][] = [['ask', 2, []], ['ask', 0, ['/p']], ['stop', 2, ['/p']], ['keep', 0, []]];
+  for (const [mode, busy, stops] of cases) {
+    const { guard, asked, stopped } = setup({ mode, busy: { '/p': busy } });
+    expect(await guard.decideFor('/p')).toBe(true);
+    expect(guard.onClose('/p', 'win', () => {})).toBe(true);
+    guard.onClosed('/p');
+    expect(asked).toEqual([]);
+    expect(stopped).toEqual(stops);
+  }
+  // Nothing known: kept running.
+  const failing = new CloseGuard<string>({ mode: () => 'ask', busy: async () => { throw new Error('ps'); }, ask: async () => 'stop', stop: async () => { throw new Error('never'); } });
+  expect(await failing.decideFor('/p')).toBe(true);
+  expect(failing.onClose('/p', 'w', () => {})).toBe(true);
+  expect(() => failing.onClosed('/p')).not.toThrow();
+  expect(failing.hasPending()).toBe(false);
+});
+
+test('a close decided elsewhere whose window went meanwhile leaves nothing for the next window', async () => {
+  let release: (v: ProjectBusy[]) => void = () => {};
+  const guard = new CloseGuard<string>({ mode: () => 'ask', busy: () => new Promise((r) => { release = r; }), ask: async () => 'stop', stop: async () => {} });
+  const decided = guard.decideFor('/p');
+  guard.onClosed('/p');
+  release([busyP('/p', 0)]);
+  expect(await decided).toBe(false);
+  expect(guard.onClose('/p', 'w2', () => {})).toBe(false);
+});

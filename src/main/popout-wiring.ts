@@ -24,6 +24,11 @@ export function projectWindowId(v: WindowsView, root: string): number | null {
   return null;
 }
 
+/** Every window of the project: its own and its pop-outs. */
+export function projectWindowIds(v: WindowsView, root: string): number[] {
+  return [...v.projects].filter(([, r]) => r === root).map(([id]) => id);
+}
+
 /** The projects to reopen on the next launch: those with a project window, once each. */
 export function openProjectRoots(v: WindowsView): string[] {
   return [...new Set(mainWindows(v).map(([, r]) => r).filter((r): r is string => !!r))];

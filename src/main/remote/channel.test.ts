@@ -389,6 +389,49 @@ describe('messages', () => {
     expect(o.received.at(-1)).toMatchObject({ rid: 6 });
   });
 
+  test('windows and closing places: openWindow, closeWindow and closePlace; strict shapes, only the answers Atelier asks', async () => {
+    const o = await open();
+    const ok = [
+      { t: 'openWindow', rid: 1, project: 'p' },
+      { t: 'closeWindow', rid: 2, project: 'p' },
+      { t: 'closeWindow', rid: 3, project: 'p', sessions: 'keep' },
+      { t: 'closeWindow', rid: 4, project: 'p', sessions: 'stop' },
+      { t: 'closePlace', rid: 5, project: 'p', place: 'w1abc' },
+      { t: 'closePlace', rid: 6, project: 'p', place: 'a-1_x', sessions: 'move' },
+      { t: 'closePlace', rid: 7, project: 'p', place: 'a-1_x', sessions: 'stop' }
+    ];
+    for (const m of ok) o.send(m);
+    expect(o.received).toEqual(ok);
+    const bad = [
+      { t: 'openWindow', rid: 11 },
+      { t: 'openWindow', rid: 12, project: 'p', root: '/work/app' },
+      { t: 'closeWindow', rid: 13, project: 'p', sessions: 'move' },
+      { t: 'closeWindow', rid: 14, project: 'p', sessions: 'ask' },
+      { t: 'closeWindow', rid: 15, project: 'p', force: true },
+      { t: 'closePlace', rid: 16, project: 'p' },
+      { t: 'closePlace', rid: 17, project: 'p', place: '../w1' },
+      { t: 'closePlace', rid: 18, project: 'p', place: 'w1', sessions: 'keep' },
+      { t: 'closePlace', rid: 19, place: 'w1' }
+    ];
+    for (const m of bad) o.send(m);
+    expect(o.received).toHaveLength(ok.length);
+    expect(o.got.filter((m) => m.t === 'error').map((m) => [m.rid, m.code])).toEqual(bad.map((m) => [m.rid, 'invalid']));
+  });
+
+  test('limits: openWindow, closeWindow and closePlace share the row actions\' 30 a minute', async () => {
+    let now = 0;
+    const o = await open({ now: () => now, limits: { actionsPerMin: 3 } });
+    o.send({ t: 'openWindow', rid: 1, project: 'p' });
+    o.send({ t: 'closeWindow', rid: 2, project: 'p' });
+    o.send({ t: 'closePlace', rid: 3, project: 'p', place: 'w1' });
+    o.send({ t: 'openWindow', rid: 4, project: 'p' });
+    expect(o.received.map((m) => ('rid' in m ? m.rid : 0))).toEqual([1, 2, 3]);
+    expect(o.got.filter((m) => m.t === 'error').map((m) => [m.rid, m.code])).toEqual([[4, 'busy']]);
+    now += 60_000;
+    o.send({ t: 'closeWindow', rid: 5, project: 'p' });
+    expect(o.received.at(-1)).toMatchObject({ rid: 5 });
+  });
+
   test('push: a registration with a token, its environment and a 32-byte key, or unregistering; strict shapes; 5 a minute', async () => {
     let now = 0;
     const o = await open({ now: () => now, limits: { pushesPerMin: 2 } });

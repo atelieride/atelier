@@ -32,7 +32,7 @@ import { TerminalHub } from './terminal-hub';
 import { ScreenResync, isLayoutChange } from './screen-resync';
 import { createPopoutWindow, createProjectWindow, isAppUrl, isGhostUrl, SessionEndGuard, setDictationGate } from './windows';
 import { PopoutManager, popoutFileRules, type PopoutWin, type ProjectWin } from './popouts';
-import { commandFrom, commandPlan, forwardCommand, isPopoutWindow, mainWindows, openProjectRoots, pageReloading, projectWindowId, windowToFront, type WindowKind } from './popout-wiring';
+import { commandFrom, commandPlan, forwardCommand, isPopoutWindow, mainWindows, openProjectRoots, pageReloading, projectWindowId, projectWindowIds, windowToFront, type WindowKind } from './popout-wiring';
 import { CloseGuard, type CloseAnswer } from './close-guard';
 import { QuitWaits } from './quit-waits';
 import { busyShells } from './foreground';
@@ -132,6 +132,7 @@ import { randomUUID } from 'node:crypto';
 import { installMedia, registerMediaScheme } from './media-ipc';
 import { RemoteHub } from './remote/remote-hub';
 import { PlaceRequests } from './remote/places';
+import { PhoneWindows } from './remote/phone-windows';
 import { installRemoteIpc } from './remote/ipc';
 import { relayToDial } from '@shared/remote';
 
@@ -1457,6 +1458,17 @@ if (!app.requestSingleInstanceLock()) {
       send: (wcId, req) => { const b = windowById(wcId); if (b) sendTo(b, IPC.evRemotePlaces, req); }
     });
     remotePlaces = places;
+    // A phone opening a project's window, as a recent project opens, or closing it as its own close does: decided first
+    // with the phone's answer (no question here), refused while it or one of its pop-outs has unsaved files.
+    const phoneWindows = new PhoneWindows<BrowserWindow>({
+      windowOf: (root) => projectWindow(root),
+      open: (root) => { const w = openWindow(root); return w && !w.isDestroyed() ? w : null; },
+      isDir,
+      unsaved: (root) => projectWindowIds(windowsView, root).some((id) => sessionEnd.has(id)),
+      decide: (root, sessions) => closeGuard.decideFor(root, sessions),
+      close: (w) => { if (!w.isDestroyed()) w.close(); },
+      whenClosed: (w, cb) => { w.once('closed', cb); return () => { w.removeListener('closed', cb); }; }
+    });
     remote = new RemoteHub({
       home: paths.home,
       secrets: secretStoreFor(paths.home, safeStorage),
@@ -1476,6 +1488,7 @@ if (!app.requestSingleInstanceLock()) {
       rows: (root, e) => { const b = projectWindow(root); if (b) sendTo(b, IPC.evRemoteRows, e); },
       // What a phone does to a project's workspaces and activities: applied in its main window.
       places: (root, op) => places.apply(root, op),
+      windows: { open: (root) => phoneWindows.open(root), close: (root, sessions) => phoneWindows.close(root, sessions) },
       // Away from this computer: idle for 2 minutes, or its screen locked (tests: ATELIER_TEST_REMOTE_AWAY 1 or 0).
       away: () => {
         const test = devEnv('ATELIER_TEST_REMOTE_AWAY');

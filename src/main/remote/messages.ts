@@ -60,10 +60,16 @@ export const deviceMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('workspace'), rid, project: projectId, name: placeName.optional() }).strict(),
   z.object({ t: z.literal('activity'), rid, project: projectId, workspace: placeId, name: placeName.optional() }).strict(),
   z.object({ t: z.literal('renamePlace'), rid, project: projectId, place: placeId, name: placeName }).strict(),
-  z.object({ t: z.literal('move'), rid, id: terminalId, place: placeId }).strict()
+  z.object({ t: z.literal('move'), rid, id: terminalId, place: placeId }).strict(),
+  // Closing a workspace or an activity as its Close… does: what is in it moves (the default) or stops.
+  z.object({ t: z.literal('closePlace'), rid, project: projectId, place: placeId, sessions: z.enum(['move', 'stop']).optional() }).strict(),
+  // A project's window, opened as a recent project opens, or closed as its own close does: `sessions` is the phone's
+  // user's answer to the question Atelier asks about what is still busy in it.
+  z.object({ t: z.literal('openWindow'), rid, project: projectId }).strict(),
+  z.object({ t: z.literal('closeWindow'), rid, project: projectId, sessions: z.enum(['keep', 'stop']).optional() }).strict()
 ]);
-/** The requests that change rows or places (answered `busy` past their shared limit). */
-export const ROW_ACTIONS: ReadonlySet<DeviceMessage['t']> = new Set(['answer', 'rename', 'close', 'resume', 'dismiss', 'workspace', 'activity', 'renamePlace', 'move']);
+/** The requests that change rows, places or windows (answered `busy` past their shared limit). */
+export const ROW_ACTIONS: ReadonlySet<DeviceMessage['t']> = new Set(['answer', 'rename', 'close', 'resume', 'dismiss', 'workspace', 'activity', 'renamePlace', 'move', 'closePlace', 'openWindow', 'closeWindow']);
 export type DeviceMessage = z.infer<typeof deviceMessageSchema>;
 
 /**

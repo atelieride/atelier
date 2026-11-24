@@ -283,6 +283,16 @@ describe('the session end guard (Windows)', () => {
     expect([guard.query(1, quit), guard.query(2, quit)]).toEqual([false, false]);
   });
 
+  test('which windows have unsaved files now (a phone\'s close is refused on them)', () => {
+    const guard = new SessionEndGuard();
+    guard.set(1, true);
+    guard.set(2, true);
+    guard.set(2, false);
+    guard.set(3, true);
+    guard.drop(3);
+    expect([guard.has(1), guard.has(2), guard.has(3), guard.has(4)]).toEqual([true, false, false, false]);
+  });
+
   test('a later session end (the first one cancelled, then another) quits again', async () => {
     const guard = new SessionEndGuard();
     let quits = 0;

@@ -1,11 +1,13 @@
 // A paired phone's changes to this project's workspaces and activities, applied by its main window as its own menus
 // and drags would: New Workspace (turning workspaces on first, as the switch does), New Activity (turning activities
 // on first, as View › Activities Inside Workspaces does: one setting for every project), a rename, a row dragged onto
-// a place. Quietly, like a session the phone starts in a place: nothing comes to the front, no name opens for editing,
-// no toast. Main sends a change once the window is ready (as for its first session list); each answer carries the
-// sidebar's arrangement right after it, so the phone's next layout shows the change.
+// a place, Close Workspace… or Close Activity… answered (the phone's user was asked there; unsaved files that close
+// would take are refused, never asked about here). Quietly, like a session the phone starts in a place: nothing comes
+// to the front, no name opens for editing, no toast. Main sends a change once the window is ready (as for its first
+// session list); each answer carries the sidebar's arrangement right after it, so the phone's next layout shows the
+// change.
 import type { RemoteLayout, RemotePlaceOp, RemotePlaceRequest, RemotePlaceResult } from '@shared/remote';
-import { useApp } from '../store';
+import { unsavedOnPlaceClose, useApp } from '../store';
 import { resumablesFor } from '../selectors';
 import { t } from '../i18n/en';
 import {
@@ -113,6 +115,15 @@ export async function applyPlaceOp(op: RemotePlaceOp): Promise<RemotePlaceResult
         return { ok: true };
       }
       return notFound('This session is not in the project any more.');
+    }
+    case 'close': {
+      const place = s.ws?.on ? s.ws.list.find((w) => w.id === op.place) : undefined;
+      if (!place || !s.ws?.on) return notFound(GONE);
+      if (place.parent === undefined && workspacesOf(s.ws).length <= 1) return invalid('A project\'s last workspace stays.');
+      // Closing asks about unsaved files in this window: no one may be here to answer, so the phone is told instead.
+      if (unsavedOnPlaceClose(op.place, op.how).length) return invalid('It has unsaved files: save or close them on this computer first.');
+      await (place.parent === undefined ? s.closeWorkspace(op.place, op.how) : s.closeWsActivity(op.place, op.how));
+      return useApp.getState().ws?.list.some((w) => w.id === op.place) ? failed('It could not be closed.') : { ok: true };
     }
   }
 }
