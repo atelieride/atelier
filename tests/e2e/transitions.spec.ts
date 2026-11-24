@@ -932,12 +932,23 @@ test('a session that finishes: a flat wave crosses its row and goes, no check on
   }
 });
 
-test('only what the user does here moves: Resume all brings its sessions back in place; a session picked in the palette slides in', async () => {
+test('only what the user does here moves: a click on the row in front lends no mark to a jump, Resume all brings its sessions back in place, a session picked in the palette slides in', async () => {
   test.setTimeout(120000);
   // One session id for all three, so atelierd can resume each of them.
   const { app, home, win } = await launch(undefined, { ATELIER_FAKE_SESSION_ID: '99999999-9999-4999-8999-999999999999' });
   try {
     await threeSessions(win);
+    // A click on the row already in front leaves no mark behind: a jump right after it (⌘J, to a session waiting for
+    // you) is the app's own change of front, and moves nothing.
+    await expect(row(win, 'Three')).toHaveClass(/is-selected/);
+    await row(win, 'Three').click();
+    const before = await win.evaluate(() => document.querySelector('.tabs .tab.is-active')?.getAttribute('data-key'));
+    await menu(app, 'Next Session Needing Attention');
+    await expect.poll(() => win.evaluate(() => document.querySelector('.tabs .tab.is-active')?.getAttribute('data-key'))).not.toBe(before);
+    const jumped = await played(win);
+    expect(on(jumped, 'motion-pill')).toEqual([]);
+    expect(on(jumped, 'tab-crown-fly')).toEqual([]);
+    expect(on(jumped, 'workspace-body')).toEqual([]);
     // atelierd restarts: the three wait under Resume.
     const first = daemonPid(home);
     process.kill(first, 'SIGTERM');
