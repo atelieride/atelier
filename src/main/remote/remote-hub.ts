@@ -717,7 +717,6 @@ export class RemoteHub {
     if (pending >= MAX_HANDSHAKES) { link.closeChannel(ch, CLOSE.overloaded, { drop: true }); return; }
     const c = new SecureChannel(ch, kind, {
       link, host: id.host, roomId: id.roomId,
-      hello: { name: this.d.host.name, app: this.d.host.app, platform: this.d.host.platform },
       pairCodes: () => this.pairing?.codes() ?? [],
       pairFailed: () => this.pairing?.failed(),
       admit: (x) => this.admit(x),
@@ -764,7 +763,8 @@ export class RemoteHub {
     if (!deviceId || !this.identity) { c.close(CLOSE.normal); return; }
     const s = new PhoneSession(c, deviceId, this.host, this.d.terminals);
     this.sessions.set(c.ch, s);
-    s.send({ t: 'welcome', host: { name: this.d.host.name, platform: this.d.host.platform }, ...(c.kind === 'pair' ? { room: this.identity.roomId } : {}) });
+    // Who this computer is, only now that the phone is let in (message 2 names nothing).
+    s.send({ t: 'welcome', host: { name: this.d.host.name, platform: this.d.host.platform, app: this.d.host.app }, ...(c.kind === 'pair' ? { room: this.identity.roomId } : {}) });
     const st = this.computeState();
     s.sendState(stateKey(st), st);
     s.sendLayouts(st);

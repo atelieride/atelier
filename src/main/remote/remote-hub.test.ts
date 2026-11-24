@@ -208,7 +208,7 @@ describe('pairing', () => {
   test('by code: the phone presents it, the windows ask, Allow; welcome with the room, then the state', async () => {
     const t = setup();
     const { phone, welcome } = await paired(t);
-    expect(welcome).toEqual({ t: 'welcome', host: { name: 'Studio Mac', platform: 'darwin' }, room: phone.room });
+    expect(welcome).toEqual({ t: 'welcome', host: { name: 'Studio Mac', platform: 'darwin', app: '0.3.0' }, room: phone.room });
     expect(phone.room).toHaveLength(43);
     const state = await phone.state();
     expect(state.projects).toEqual([
@@ -445,7 +445,7 @@ describe('a paired phone', () => {
     const t = setup();
     const { phone } = await paired(t);
     await phone.close();
-    expect(await phone.connect()).toEqual({ t: 'welcome', host: { name: 'Studio Mac', platform: 'darwin' } });
+    expect(await phone.connect()).toEqual({ t: 'welcome', host: { name: 'Studio Mac', platform: 'darwin', app: '0.3.0' } });
     await phone.state();
   });
 
@@ -634,15 +634,32 @@ describe('what a relay can make this computer do', () => {
   });
 });
 
-test('the computer\'s name and app version reach the phone in the handshake', async () => {
-  const t = setup();
-  t.hub.start();
-  await until(() => t.hub.status().relay.state === 'online');
-  const start = await t.hub.startPairing();
-  if (!start.ok) throw new Error('no code');
-  const phone = t.phone();
-  void phone.pairByCode(start.pairing.code).catch(() => {});
-  await vi.waitFor(() => expect((phone as unknown as { channel: { hostHello: unknown } | null }).channel?.hostHello).toEqual({ v: 1, name: 'Studio Mac', app: '0.3.0', platform: 'darwin' }));
+// Message 2 goes before the phone is known: a removed phone (it keeps the room id) or the relay (it routes the
+// pairing lookup) can start a handshake and read it. Who the computer is comes only in welcome.
+describe('who this computer is', () => {
+  test('a pairing phone reads nothing of it in the handshake; welcome, after Allow, names it, its platform and version', async () => {
+    const t = setup();
+    t.hub.start();
+    await until(() => t.hub.status().relay.state === 'online');
+    const start = await t.hub.startPairing();
+    if (!start.ok) throw new Error('no code');
+    const phone = t.phone();
+    const welcome = phone.pairByCode(start.pairing.code);
+    await until(() => t.pairing.some((e) => e.kind === 'request'));
+    expect(phone.hostHello).toEqual({ v: 1, name: '' });
+    const req = t.pairing.find((e) => e.kind === 'request') as Extract<RemotePairingEvent, { kind: 'request' }>;
+    expect(t.hub.decide(req.request.id, true)).toBe(true);
+    expect(await welcome).toEqual({ t: 'welcome', host: { name: 'Studio Mac', platform: 'darwin', app: '0.3.0' }, room: phone.room });
+  });
+
+  test('a removed phone reads nothing of it', async () => {
+    const t = setup();
+    const { phone } = await paired(t);
+    expect(t.hub.removeDevice(t.hub.devices.list()[0]!.id)).toBe(true);
+    await phone.closed();
+    expect(await phone.connect()).toEqual({ t: 'denied', reason: 'unknown-device' });
+    expect(phone.hostHello).toEqual({ v: 1, name: '' });
+  });
 });
 
 describe('what the sidebar shows', () => {

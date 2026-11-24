@@ -127,7 +127,7 @@ export type DeniedReason = 'declined' | 'expired' | 'unknown-device' | 'disabled
 export type ByeReason = 'revoked' | 'disabled' | 'quitting';
 
 export type HostMessage =
-  | { t: 'welcome'; host: { name: string; platform: string }; room?: string }
+  | { t: 'welcome'; host: { name: string; platform: string; app: string }; room?: string }
   | { t: 'denied'; reason: DeniedReason }
   | { t: 'state'; projects: RemoteProject[]; sessions: RemoteSession[]; resumables: RemoteResumable[] }
   | { t: 'usage'; accounts: RemoteAccount[] }
