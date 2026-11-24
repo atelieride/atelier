@@ -44,12 +44,18 @@ const LIMITS: ChannelLimits = {
 /** Frames kept while the hub decides whether the phone may in (a phone may send right after its last handshake message). */
 const HELD_MAX = 64;
 
+/**
+ * Message 2's payload. It goes before the phone is known: anyone holding the room id (a removed phone) or a pairing
+ * lookup (the relay routes it) can start a handshake and read it, so it says nothing of this computer; who it is comes
+ * in `welcome`, once the phone is let in. `name` stays, empty, for the first iPhone builds, which refuse a message 2
+ * without it.
+ */
+export const HOST_HELLO = { v: 1, name: '' } as const;
+
 export interface ChannelDeps {
   link: ChannelLink;
   host: KeyPair;
   roomId: string;
-  /** Message 2's payload: this computer as the phone shows it. */
-  hello: { name: string; app: string; platform: string };
   /** The codes live now (pairing channels). */
   pairCodes(): PairCode[];
   /** A pairing handshake failed: a wrong code, or garbage. */
@@ -121,7 +127,7 @@ export class SecureChannel {
     }
   }
 
-  /** Message 1 (the phone's ephemeral key) in; message 2 (this computer's keys and hello) out. */
+  /** Message 1 (the phone's ephemeral key) in; message 2 (this computer's keys, and a hello that names nothing) out. */
   private first(frame: Buffer): void {
     const base = { protocol: protocolOf(this.kind), initiator: false, s: this.d.host } as const;
     if (this.kind === 'device') {
@@ -140,7 +146,7 @@ export class SecureChannel {
       if (!this.hs) { this.d.pairFailed(); this.close(CLOSE.malformed); return; }
     }
     let m2: Buffer;
-    try { m2 = this.hs.writeMessage(Buffer.from(JSON.stringify({ v: 1, ...this.d.hello }))); } catch { this.close(CLOSE.malformed); return; }
+    try { m2 = this.hs.writeMessage(Buffer.from(JSON.stringify(HOST_HELLO))); } catch { this.close(CLOSE.malformed); return; }
     this.state = 'auth';
     this.d.link.send(this.ch, m2);
   }

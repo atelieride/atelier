@@ -176,6 +176,9 @@ export class FakePhone {
 
   private wake(): void { for (const w of [...this.waiters]) w(); }
 
+  /** What the host said of itself in handshake message 2, on the last channel. */
+  get hostHello(): Msg | null { return this.channel?.hostHello ?? null; }
+
   get connected(): boolean { return !!this.ws && this.ws.readyState === WebSocket.OPEN && !!this.channel?.open; }
 
   send(msg: object): void {

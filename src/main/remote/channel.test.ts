@@ -17,11 +17,11 @@ function setup(o: { kind?: 'pair' | 'device'; codes?: PairCode[]; admit?: (c: Se
   const events: string[] = [];
   const deps: ChannelDeps = {
     link: { send: (_ch, p) => { sent.push(Buffer.from(p)); }, closeChannel: (_ch, c) => { closes.push(c); }, queued: () => 0 },
-    host, roomId: ROOM, hello: { name: 'Studio Mac', app: '0.3.0', platform: 'darwin' },
+    host, roomId: ROOM,
     pairCodes: () => o.codes ?? [],
     pairFailed: () => events.push('pair-failed'),
     admit: o.admit ?? (async () => ({ ok: true })),
-    opened: (c) => { events.push('opened'); c.send({ t: 'welcome', host: { name: 'Studio Mac', platform: 'darwin' } }); },
+    opened: (c) => { events.push('opened'); c.send({ t: 'welcome', host: { name: 'Studio Mac', platform: 'darwin', app: '0.3.0' } }); },
     message: (_c, m) => received.push(m),
     closed: () => events.push('closed'),
     ...(o.limits ? { limits: o.limits } : {}),
@@ -50,16 +50,17 @@ async function handshake(s: ReturnType<typeof setup>, phone: PhoneChannel) {
 }
 
 describe('the handshake', () => {
-  test('device: the phone is admitted, learns the host by its hello and key; the host learns the phone\'s key and hello', async () => {
+  test('device: the phone is admitted and learns the host by its key alone; the host learns the phone\'s key and hello', async () => {
     const s = setup();
     const phoneKey = generateKeyPair();
     const phone = new PhoneChannel({ kind: 'device', id: ROOM, key: phoneKey, hostKey: host.publicKey });
     const { got } = await handshake(s, phone);
-    expect(phone.hostHello).toEqual({ v: 1, name: 'Studio Mac', app: '0.3.0', platform: 'darwin' });
+    // Message 2 goes before the phone is known: it names nothing (`name` stays, empty, for the first iPhone builds).
+    expect(phone.hostHello).toEqual({ v: 1, name: '' });
     expect(s.ch.deviceKey).toBe(b64url(phoneKey.publicKey));
     expect(s.ch.hello).toEqual({ v: 1, name: 'Test iPhone', model: 'iPhone17,1', app: '1.0.0' });
     expect(s.events).toEqual(['opened']);
-    expect(got).toEqual([{ t: 'welcome', host: { name: 'Studio Mac', platform: 'darwin' } }]);
+    expect(got).toEqual([{ t: 'welcome', host: { name: 'Studio Mac', platform: 'darwin', app: '0.3.0' } }]);
   });
 
   test('device: a phone that dialed another room fails (prologue), and the channel closes as malformed', async () => {

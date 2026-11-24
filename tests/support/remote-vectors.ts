@@ -2,6 +2,7 @@
 // with fixed keys, codes and messages: the iPhone app checks its implementation against the same file. Hex for raw
 // bytes, base64url where the wire carries base64url. src/main/remote/interop-vectors.test.ts keeps the file equal to
 // what this builds (ATELIER_WRITE_REMOTE_VECTORS=1 writes it again).
+import { HOST_HELLO } from '../../src/main/remote/channel';
 import { deriveCode, formatCode, normalizeCode } from '../../src/main/remote/code';
 import { roomIdOf } from '../../src/main/remote/identity';
 import { NoiseHandshake, keyPairFromPrivate } from '../../src/main/remote/noise';
@@ -18,7 +19,8 @@ const DEVICE_STATIC = counting(0x80);
 const CODES = ['7K4Q9MXD2HTR', '000000000000', 'ZZZZZZZZZZZZ', 'ABCDEFGHJKMN'];
 const NORMALIZE = ['7k4q-9mxd-2htr', ' 7K4Q 9MXD 2HTR ', 'OIL0-OIL0-OIL0', '7K4Q-9MXD-2HTU', '7K4Q-9MXD-2HT', '7K4Q_9MXD_2HTR'];
 
-const HOST_HELLO = { v: 1, name: 'Studio Mac', app: '0.3.0', platform: 'darwin' };
+/** Who the host is: in `welcome`, never in message 2 (`HOST_HELLO`, the code's own). */
+const HOST = { name: 'Studio Mac', platform: 'darwin', app: '0.3.0' };
 const DEVICE_HELLO = { v: 1, name: 'Test iPhone', model: 'iPhone17,1', app: '1.0.0' };
 
 interface Message { from: 'initiator' | 'responder'; payload: string; ciphertext: string; text?: string }
@@ -51,7 +53,7 @@ async function handshake(kind: ChannelKind) {
     to.decrypt(ciphertext);
     messages.push({ from, payload: hex(plain), ciphertext: hex(ciphertext), text: plain.subarray(1).toString('utf8') });
   };
-  const welcome = { t: 'welcome', host: { name: HOST_HELLO.name, platform: HOST_HELLO.platform }, ...(kind === 'pair' ? { room: roomId } : {}) };
+  const welcome = { t: 'welcome', host: HOST, ...(kind === 'pair' ? { room: roomId } : {}) };
   transport('responder', fragments(Buffer.from(JSON.stringify(welcome)))[0]!);
   transport('initiator', fragments(Buffer.from(JSON.stringify({ t: 'attach', rid: 1, id: 't1', cols: 80, rows: 24 })))[0]!);
   if (kind === 'pair') {
