@@ -202,11 +202,36 @@ test('marks a folder that is a linked worktree, named as its worktree', () => {
       term('wt', '/a', { cwd: '/a/.claude/worktrees/fix-a/src', session: session({}) }),
       term('sub', '/a', { cwd: '/a/apps/web', session: session({}) })
     ],
-    repos: (root) => (root === '/a' ? [{ root: '/a' }, { root: '/a/.claude/worktrees/fix-a', worktreeOf: '/a' }] as never : [])
+    trees: (root) => (root === '/a' ? [{ root: '/a', worktreeOf: null }, { root: '/a/.claude/worktrees/fix-a', worktreeOf: '/a' }] : [])
   }));
   expect(s.sessions[0]).toMatchObject({ folder: 'fix-a', worktree: true });
   expect(s.sessions[1]).toMatchObject({ folder: 'web' });
   expect('worktree' in s.sessions[1]!).toBe(false);
+});
+
+test('a profile named by its folder (two shells of one name) reaches the phone by its name alone', () => {
+  const s = remoteState(full({ terminals: [term('a', '/a'), term('b', '/a')], profileOf: (t) => (t.id === 'a' ? 'bash (/opt/homebrew/bin)' : 'fish') }));
+  expect(s.sessions.map((x) => x.profile)).toEqual(['bash', 'fish']);
+  expect(JSON.stringify(s)).not.toContain('/opt');
+});
+
+test('a worktree reached through a link is named as its worktree', () => {
+  const s = remoteState(full({
+    terminals: [term('wt', '/link', { cwd: '/link/.claude/worktrees/fix-a/src', session: session({}) })],
+    realOf: (p) => p.replace(/^\/link/, '/a'),
+    trees: (root) => (root === '/link' ? [{ root: '/a', worktreeOf: null }, { root: '/a/.claude/worktrees/fix-a', worktreeOf: '/a' }] : [])
+  }));
+  expect(s.sessions[0]).toMatchObject({ folder: 'fix-a', worktree: true });
+});
+
+test('a self-paced loop whose wake-up fired is happening now: no time, as the row shows none', () => {
+  const loop = { id: 'l', label: '/loop check the build', schedule: '', recurring: false, next: null };
+  const row = remoteState(full({ terminals: [withWork({ items: [], crons: [loop, cron(NOW + 3_600_000)] })] })).sessions[0]!;
+  expect(row.scheduled).toBe(2);
+  expect('wakeAt' in row).toBe(false);
+  // An ordinary cron with no time yet doesn't hide the soonest one that has a time.
+  const plain = remoteState(full({ terminals: [withWork({ items: [], crons: [cron(null), cron(NOW + 3_600_000)] })] })).sessions[0]!;
+  expect(plain.wakeAt).toBe(NOW + 3_600_000);
 });
 
 test('resumables of the listed projects, newest first, with their account; never another project\'s', () => {

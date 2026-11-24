@@ -5,13 +5,13 @@
 import { createHash } from 'node:crypto';
 import { effectiveState, workCounts, type BackgroundWork } from '@shared/background';
 import { accountOf, accountsFor, type ClaudeAccounts } from '@shared/claude-accounts';
-import type { RepoStatus } from '@shared/git';
 import type { PortInfo } from '@shared/ports';
 import type { PrEntry } from '@shared/pr';
 import { projectColorOf, type ProjectColors } from '@shared/project-color';
 import type { Resumable, TerminalInfo } from '@shared/protocol';
 import type { UsageEntry, UsageWindow } from '@shared/session';
 import { isLimitPaused, modeBadge, waitKind } from '@shared/session-view';
+import { selfPacedLoop } from '@shared/loop';
 import { isShell } from '@shared/shells';
 import { isBelow, samePath } from '@shared/paths';
 import type { RemoteAccount, RemoteProject, RemoteResumable, RemoteSession } from './messages';
@@ -68,9 +68,12 @@ export interface StateInput {
   waits?: WaitBook;
   /** The terminal profile's label as its row's chip shows it: null for the default one. */
   profileOf?(t: TerminalInfo): string | null;
-  /** The working trees Source Control knows in a project (none for a window it hasn't read). */
-  repos?(root: string): readonly RepoStatus[];
+  /** The working trees a project's windows show, each with the repository it is a linked worktree of (none without a window). */
+  trees?(root: string): readonly WorkingTreeLink[];
 }
+
+/** A working tree (real path) and the repository it is a linked worktree of, null for a main checkout. */
+export interface WorkingTreeLink { root: string; worktreeOf: string | null }
 
 export interface RemoteState {
   projects: RemoteProject[];
@@ -88,9 +91,9 @@ function folderOf(t: TerminalInfo, realOf: (p: string) => string): string | null
   return clip(lastSegment(cwd), 64);
 }
 
-/** The linked worktree a folder lies in (the deepest working tree holding it): its folder's name. */
-function worktreeOf(cwd: string, repos: readonly RepoStatus[]): string | null {
-  const tree = repos
+/** The linked worktree a folder (real path) lies in, the deepest working tree holding it: its folder's name. */
+function worktreeOf(cwd: string, trees: readonly WorkingTreeLink[]): string | null {
+  const tree = trees
     .filter((r) => samePath(r.root, cwd) || isBelow(r.root, cwd))
     .sort((a, b) => b.root.length - a.root.length)[0];
   return tree?.worktreeOf ? clip(lastSegment(tree.root), 64) : null;
@@ -98,19 +101,28 @@ function worktreeOf(cwd: string, repos: readonly RepoStatus[]): string | null {
 
 const KIND_KEY = { agent: 'agents', shell: 'shells', monitor: 'monitors', other: 'tasks' } as const;
 
-/** The work chip's counts per kind, as the desktop row shows them; idle when only items past their cap remain. */
+/** The work chip's counts per kind, as the desktop row shows them; idle when none counts (past its cap, a watcher). */
 function workOf(w: BackgroundWork | undefined): RemoteSession['work'] | null {
   if (!w || w.items.length === 0) return null;
   const counts = Object.fromEntries(workCounts(w).map(([kind, n]) => [KIND_KEY[kind], n]));
   return { ...counts, ...(w.items.some((i) => i.counted) ? {} : { idle: true as const }) };
 }
 
-/** How many wake-ups are set, and the soonest that has a time (a fired loop has none until it sets the next). */
+/**
+ * How many wake-ups are set, and the time the row's chip shows: the soonest that has one, none while a self-paced
+ * loop's wake-up has fired (it is happening now, sooner than any time; it has no time until it sets the next).
+ */
 function wakeOf(w: BackgroundWork | undefined): { scheduled?: number; wakeAt?: number } {
   const crons = w?.crons ?? [];
   if (crons.length === 0) return {};
+  const fired = crons.some((c) => c.next === null && selfPacedLoop(c.label, c.recurring));
   const timed = crons.flatMap((c) => (c.next === null ? [] : [c.next]));
-  return { scheduled: crons.length, ...(timed.length > 0 ? { wakeAt: Math.min(...timed) } : {}) };
+  return { scheduled: crons.length, ...(!fired && timed.length > 0 ? { wakeAt: Math.min(...timed) } : {}) };
+}
+
+/** A profile's label without the folder that tells two shells of one name apart ("bash (/opt/homebrew/bin)"): no paths. */
+function profileName(label: string): string {
+  return label.replace(/\s*\([^)]*[/\\][^)]*\)\s*$/, '');
 }
 
 const PR_STATE = { OPEN: 'open', MERGED: 'merged', CLOSED: 'closed' } as const;
@@ -156,12 +168,14 @@ export function remoteState(i: StateInput): RemoteState {
     const mode = modeBadge(s?.permissionMode);
     const account = s || starting ? accountIdOf(t.configDir, i.accounts, i.defaultDir) : null;
     const plainFolder = folderOf(t, realOf);
-    // A folder inside a linked worktree is named as the worktree, as the desktop row does.
-    const worktree = plainFolder ? worktreeOf((s?.cwd ?? t.cwd).replace(/\/+$/, ''), i.repos?.(t.projectRoot) ?? []) : null;
+    // A folder inside a linked worktree is named as the worktree, as the desktop row does. Working trees are real
+    // paths; the folder may be spelled through a link.
+    const worktree = plainFolder ? worktreeOf(realOf((s?.cwd ?? t.cwd).replace(/\/+$/, '')), i.trees?.(t.projectRoot) ?? []) : null;
     const folder = worktree ?? plainFolder;
     const work = s ? workOf(t.work) : null;
     const wake = s ? wakeOf(t.work) : {};
-    const profile = i.profileOf?.(t);
+    const label = i.profileOf?.(t);
+    const profile = label ? profileName(label) : null;
     const command = !s && !starting ? commandOf(t) : null;
     const ports = i.ports?.(t.id)?.map((p) => ({ port: p.port, ...(p.name ? { name: clip(p.name, 64) } : {}) }));
     const pr = s ? prOf(i.pr?.(t.id)) : null;

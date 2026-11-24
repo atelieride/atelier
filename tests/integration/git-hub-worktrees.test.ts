@@ -150,3 +150,15 @@ posixTest('a worktree removed while its events were lost: the next refs change l
   await until(() => !h.info(root)?.repos.includes(wt));
   w.close();
 });
+
+// POSIX: git prints C:/ worktree paths on Windows.
+posixTest('the working trees a project shows: a linked worktree with the repository it belongs to, none without a window', async () => {
+  const { root, wt } = project();
+  const { h } = hub();
+  expect(h.workingTrees(root)).toEqual([]);
+  const w = window();
+  h.open(root, w.wc);
+  await until(() => h.workingTrees(root).length === 2);
+  expect(h.workingTrees(root)).toEqual(expect.arrayContaining([{ root, worktreeOf: null }, { root: wt, worktreeOf: root }]));
+  w.close();
+});

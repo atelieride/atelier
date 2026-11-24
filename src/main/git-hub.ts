@@ -235,6 +235,16 @@ export class GitHub {
     } : null;
   }
 
+  /**
+   * The working trees a project's windows show (those with a status), each with the repository it is a linked worktree
+   * of: the statuses alone don't carry that link. None for a project no window has open.
+   */
+  workingTrees(root: string): { root: string; worktreeOf: string | null }[] {
+    const p = this.projects.get(root);
+    if (!p) return [];
+    return p.repos.filter((r) => p.status.has(r)).map((r) => ({ root: r, worktreeOf: p.trees.get(r)?.worktreeOf ?? null }));
+  }
+
   /** The project's hidden repositories, read again from the store (with their common dirs, from the files git keeps). */
   private readHidden(p: Project): void {
     p.hidden = [...this.hiddenOf(p.key)];

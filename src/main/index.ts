@@ -411,7 +411,8 @@ if (!app.requestSingleInstanceLock()) {
     if (s === 'connected' && !client.hasCapability('toolcalls')) bash.setToolCalls(null);
     else bash.awaitToolCalls(s === 'connected');
   });
-  gitHub.onStatus = (st, o) => { void bash.status(st, o); prHub.repoStatus(st); gitOps.statusChanged(st); };
+  // A new status may come with a newly listed worktree: a phone's row in it is named as it.
+  gitHub.onStatus = (st, o) => { void bash.status(st, o); prHub.repoStatus(st); gitOps.statusChanged(st); remote?.stateChanged(); };
   bash.onChange = () => hub.refreshAttributions();
   bash.onBaselineNeeded = () => gitHub.refreshAll();
   hub.bashAttributions = () => bash.list();
@@ -535,9 +536,11 @@ if (!app.requestSingleInstanceLock()) {
     if (s.countBackgroundWork !== prevSettings.countBackgroundWork) hub.workSettingsChanged();
     if (s.claudeMcpNotice !== prevSettings.claudeMcpNotice) hub.mcpSettingsChanged();
     if (s.prStatus !== prevSettings.prStatus) prHub.settingsChanged();
-    // iPhone access: on/off and the relay; project colors, accounts, ports and background work change what phones show.
+    // iPhone access: on/off and the relay; project colors, accounts, ports, background work and the default profile change
+    // what phones show.
     if (s.remoteAccess !== prevSettings.remoteAccess || s.remoteRelay !== prevSettings.remoteRelay || s.projectTint !== prevSettings.projectTint || s.projectColors !== prevSettings.projectColors
-      || s.claudeAccounts !== prevSettings.claudeAccounts || s.showPorts !== prevSettings.showPorts || s.showEphemeralPorts !== prevSettings.showEphemeralPorts) remote?.settingsChanged();
+      || s.claudeAccounts !== prevSettings.claudeAccounts || s.showPorts !== prevSettings.showPorts || s.showEphemeralPorts !== prevSettings.showEphemeralPorts
+      || s.terminalProfile !== prevSettings.terminalProfile) remote?.settingsChanged();
     if (s.autoFetch !== prevSettings.autoFetch) scmHub.fetchSettingsChanged();
     if (s.repoSearchDepth !== prevSettings.repoSearchDepth) gitHub.settingsChanged();
     if (s.showServices !== prevSettings.showServices) servicesHub.settingsChanged();
@@ -1491,7 +1494,7 @@ if (!app.requestSingleInstanceLock()) {
       realOf: remoteRealOf,
       // The row's profile chip (none with an atelierd older than profiles) and the worktrees that name its folder.
       profileOf: (t) => (hub.daemonState().profilesAvailable ? chipFor({ profile: t.profile, session: !!t.session }, settings.get().terminalProfile, shells()) : null),
-      repos: (root) => [...(gitHub.info(root)?.status.values() ?? [])],
+      trees: (root) => gitHub.workingTrees(root),
       // What a phone did to a project's rows: its main window follows (a new row's place, a resume's pin and place).
       rows: (root, e) => { const b = projectWindow(root); if (b) sendTo(b, IPC.evRemoteRows, e); },
       // What a phone does to a project's workspaces and activities: applied in its main window.

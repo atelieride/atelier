@@ -14,7 +14,6 @@ import { relayBase } from '@shared/remote';
 import type { Settings } from '@shared/settings';
 import type { PortsMap } from '@shared/ports';
 import type { PrEntry } from '@shared/pr';
-import type { RepoStatus } from '@shared/git';
 import type { Resumable, TerminalInfo } from '@shared/protocol';
 import type { UsageEntry } from '@shared/session';
 import { waitTarget } from '@shared/session-view';
@@ -34,7 +33,7 @@ import { RelayLink, type RelayLinkOptions } from './relay-link';
 import { AnswerBook } from './answers';
 import { allowKey, denyKey } from './prompt';
 import { WaitBook } from './rows';
-import { remoteState, remoteUsage, type RemoteState } from './state';
+import { remoteState, remoteUsage, type RemoteState, type WorkingTreeLink } from './state';
 import { MAX_APP_MESSAGE, type ChannelKind } from './wire';
 
 /** What the hub needs of TerminalHub. */
@@ -89,8 +88,8 @@ export interface RemoteHubDeps {
   realOf?(p: string): string;
   /** A terminal's profile label as its row's chip shows it: null for the default one. */
   profileOf?(t: TerminalInfo): string | null;
-  /** The working trees Source Control knows in a project: a row in a linked worktree is named as it. */
-  repos?(root: string): readonly RepoStatus[];
+  /** The working trees a project's windows show, with their worktree links: a row in a linked worktree is named as it. */
+  trees?(root: string): readonly WorkingTreeLink[];
   /** What a phone did to a project's rows, for its main window to follow (nothing when it isn't open). */
   rows?(root: string, e: RemoteRowsEvent): void;
   /**
@@ -871,7 +870,7 @@ export class RemoteHub {
       pr: (id) => of(prs, this.d.prs, id)?.[id],
       ...(this.d.realOf ? { realOf: this.d.realOf } : {}),
       ...(this.d.profileOf ? { profileOf: this.d.profileOf } : {}),
-      ...(this.d.repos ? { repos: this.d.repos } : {})
+      ...(this.d.trees ? { trees: this.d.trees } : {})
     });
   }
 
