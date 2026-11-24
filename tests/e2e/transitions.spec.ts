@@ -981,6 +981,19 @@ test('Reduce motion: picking a row or a tab, a new session, a split play nothing
     await expect(win.locator('.workspace-body > .pane-picker')).toHaveCount(1);
     expect(await played(win)).toEqual([]);
     await expect(win.locator('.motion-pill, .motion-lane, .tab-crown-fly, [data-gliding], [data-crown-landing], .motion-fx, .motion-spark, .motion-ring, [data-drawing], .pane-under')).toHaveCount(0);
+    // The command palette: the app behind it stays where it is (no recede, not even an instant one), under the
+    // system's Reduce motion and under Atelier's own.
+    const appAt = () => win.evaluate(() => ['.header', '.body', '.footer'].map((s) => getComputedStyle(document.querySelector(s)!).transform));
+    await menu(app, 'Search…');
+    await expect(win.locator('.palette-backdrop.is-cmd .palette')).toBeVisible();
+    expect(await appAt()).toEqual(['none', 'none', 'none']);
+    await win.keyboard.press('Escape');
+    await expect(win.locator('.palette')).toHaveCount(0);
+    await win.emulateMedia({ reducedMotion: 'no-preference' });
+    await win.evaluate(() => { document.documentElement.dataset.motion = 'reduced'; });
+    await menu(app, 'Search…');
+    await expect(win.locator('.palette-backdrop.is-cmd .palette')).toBeVisible();
+    expect(await appAt()).toEqual(['none', 'none', 'none']);
   } finally {
     await stop(app, home);
   }
