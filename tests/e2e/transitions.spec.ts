@@ -9,9 +9,9 @@ import { look } from './shots';
 // crown follows it, and the workspace rises in. A tab picked: its crown stretches over to it, then catches up, and the
 // content slides in from the side it is on. A new session: a spark arcs from the + to its row and its terminal opens
 // from there. A split: the layout is there at once, the new pane's content springs in past its place and settles, its
-// line draws. A session that finishes: a flat green wave crosses its row and a check takes its avatar a moment; one
-// that waits for you keeps an amber edge on its row. They never hold a click (one mid-move goes where it lands), paint
-// nothing outside their box, leave nothing once they end, and Reduce motion plays none.
+// line draws. A session that finishes: a flat green wave crosses its row and a check takes its avatar a moment. They
+// never hold a click (one mid-move goes where it lands), paint nothing outside their box, leave nothing once they end,
+// and Reduce motion plays none. Only the user's own navigation moves anything.
 
 type Played = { on: string; kf: string };
 
@@ -167,15 +167,6 @@ const catchWave = (win: Page) => win.evaluate(() => new Promise<{ title: string;
   mo.observe(document.body, { childList: true, subtree: true });
   setTimeout(() => { mo.disconnect(); done(null); }, 15000);
 }));
-/** What a box-shadow written as `value` computes to here (tokens resolved). */
-const shadowOf = (win: Page, value: string) => win.evaluate((v) => {
-  const probe = document.createElement('div');
-  probe.style.boxShadow = v;
-  document.body.append(probe);
-  const out = getComputedStyle(probe).boxShadow;
-  probe.remove();
-  return out;
-}, value);
 const shadow = (loc: Locator) => loc.evaluate((el) => getComputedStyle(el).boxShadow);
 
 type Layout = { columns: string[]; rows: string[]; first: string[] | null; fits: Record<string, string[]> };
@@ -846,7 +837,7 @@ test('a finished row\'s wave whose end never comes still goes: cancelled, never 
   }
 });
 
-test('a session that finishes: a flat wave crosses its row, a check takes its avatar a moment, both go; never at a reload. A waiting row keeps an amber edge', async () => {
+test('a session that finishes: a flat wave crosses its row, a check takes its avatar a moment, both go; never at a reload. A waiting row wears no amber box', async () => {
   test.setTimeout(120000);
   const { app, home, win } = await launch();
   try {
@@ -856,18 +847,20 @@ test('a session that finishes: a flat wave crosses its row, a check takes its av
     await newSession(win, 'One');
     await newSession(win, 'Two');
 
-    // Waiting, not the row selected: a calm amber edge on the row. The selected one keeps its own.
-    const waitingEdge = await shadowOf(win, 'inset 0 0 0 1px var(--edge-waiting)');
-    await expect.poll(() => shadow(row(win, 'One'))).toBe(waitingEdge);
+    // Waiting, not the row selected: no amber box on the row (its avatar's ring and its amber line say it). The
+    // selected one keeps its own edge.
+    await expect(row(win, 'One')).toHaveClass(/state-waiting/);
+    // Read once its own transitions (a state's fill and edge ease in) have ended.
+    await row(win, 'One').evaluate((el) => Promise.all(el.getAnimations().filter((a) => a instanceof CSSTransition).map((a) => a.finished.catch(() => undefined))));
+    expect(await shadow(row(win, 'One'))).toBe('none');
+    expect(await row(win, 'One').evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
     await expect(row(win, 'Two')).toHaveClass(/is-selected/);
-    expect(await shadow(row(win, 'Two'))).not.toBe(waitingEdge);
     expect(await shadow(row(win, 'Two'))).not.toBe('none');
-    await look(win.locator('.sidebar'), 'test-results/transitions-waiting-edge.png');
+    await look(win.locator('.sidebar'), 'test-results/transitions-waiting-row.png');
 
-    // Answered, working: the edge goes. Nothing of the finish has played yet (waiting and working are no finish).
+    // Answered, working: nothing of the finish has played yet (waiting and working are no finish).
     await typeInto(win, 'One', 'hold\r');
     await expect(row(win, 'One')).toHaveClass(/state-running/, { timeout: 10000 });
-    await expect.poll(() => shadow(row(win, 'One'))).toBe('none');
     expect((await cues(win)).added).toEqual([]);
 
     // Finished: the wave mounts on its row (moved to its new section meanwhile), the check on its avatar.

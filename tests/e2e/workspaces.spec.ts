@@ -355,19 +355,11 @@ test('workspaces: ⌘J follows a session waiting in another workspace; Close wit
     await expect(dot).toHaveAttribute('data-tip', /1 waiting/);
     await win.mouse.move(900, 500);
     await look(win.locator('.sidebar'), `${SHOTS}/workspaces-waiting-card.png`);
-    // Peeking at it: the waiting row has no amber fill, only a calm amber edge, its avatar's ring and its amber line.
+    // Peeking at it: the waiting row has no amber box, only its avatar's ring and its amber line.
     await group(win, 'Review').locator('.ws-chev').click();
     const waiting = group(win, 'Review').locator('.session-row.state-waiting');
     await expect(waiting).toBeVisible();
-    const edge = await win.evaluate(() => {
-      const probe = document.createElement('div');
-      probe.style.boxShadow = 'inset 0 0 0 1px var(--edge-waiting)';
-      document.body.append(probe);
-      const v = getComputedStyle(probe).boxShadow;
-      probe.remove();
-      return v;
-    });
-    expect(await waiting.evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).boxShadow])).toEqual(['rgba(0, 0, 0, 0)', edge]);
+    expect(await waiting.evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).boxShadow])).toEqual(['rgba(0, 0, 0, 0)', 'none']);
     await group(win, 'Review').locator('.ws-chev').click();
 
     // Go › Next Session Needing Attention (⌘J): Review comes to the front with its session.
