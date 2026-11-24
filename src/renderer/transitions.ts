@@ -24,8 +24,12 @@ const PANE_SHIFT = 48;
 /** Past this, what changes is no longer that click's doing. */
 const NAV_MS = 500;
 
-/** Where a navigation comes from: a session row in the sidebar, a tab, or a session just launched (New Session). */
-export type NavOrigin = 'sidebar' | 'tab' | 'launch';
+/**
+ * Where a navigation comes from: a session row in the sidebar, a tab clicked, a tab switched to from the keyboard or
+ * the palette, or a session just launched (New Session). Only these move anything: a front changed by the app itself
+ * (Resume all bringing sessions back, a dictation's session, a notification) changes in place, as it always did.
+ */
+export type NavOrigin = 'sidebar' | 'tab' | 'switch' | 'launch';
 let nav: { origin: NavOrigin; at: number } | null = null;
 
 /** Notes where the navigation about to happen comes from. */
@@ -34,7 +38,7 @@ export function markNav(origin: NavOrigin): void {
 }
 
 /**
- * Where the navigation now committing came from; null for any other (the keyboard, the palette, a notification…). The
+ * Where the navigation now committing came from; null for any other (Resume all, a dictation, a notification…). The
  * sidebar and the tab strips it changes read it in the same commit, so it stays until that commit is done (a
  * microtask), then is cleared; unread, it lapses after NAV_MS.
  */

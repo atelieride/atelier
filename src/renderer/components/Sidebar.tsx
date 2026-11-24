@@ -271,8 +271,9 @@ function Sections({ terminals, toResume, entered, scope, inGroup = false, empty 
   const poppedOut = useApp((s) => s.poppedOut);
   const isPopped = (id: string) => poppedOut.includes(`t:${id}`);
   const isFront = (id: string) => front === `t:${id}` && !isPopped(id);
-  // Picked here: the selection glides to its row, the workspace rises in (transitions.ts).
-  const onSelect = useCallback((id: string) => { markNav('sidebar'); useApp.getState().select(id); }, []);
+  // Picked here: the selection glides to its row, the workspace rises in (transitions.ts). The row already in front
+  // marks nothing: no navigation follows to read the mark, which would otherwise lend it to the next one.
+  const onSelect = useCallback((id: string) => { if (frontRow(useApp.getState()) !== id) markNav('sidebar'); useApp.getState().select(id); }, []);
   // When each row entered its section: rows keep their place while they stay in it (a tool call doesn't reorder them).
   // Kept by the always-mounted Sidebar, one map per workspace (or the whole project's): another view, a workspace
   // switch or a folded block never resets it.

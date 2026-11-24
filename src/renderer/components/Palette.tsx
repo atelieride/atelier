@@ -12,6 +12,7 @@ import { viewCommand } from '../scm/all-view';
 import { lastUndo } from '../git/actions';
 import { commandRepo, gitPaletteCommands, runPaletteGit, sessionWork } from '../git/commands';
 import { useApp, type PaletteSend } from '../store';
+import { markNav } from '../transitions';
 import { iphoneOffered, openPairing } from '../iphone/store';
 import type { ClaudeConversation } from '@shared/history';
 import type { TerminalInfo } from '@shared/protocol';
@@ -813,6 +814,8 @@ export function Palette({ onNewSession, onNewTerminal }: { onNewSession: () => v
   // anything else runs as usual.
   const pick = (item: Item | undefined, side = false, send = false) => {
     if (!item) return;
+    // The user's own move: a tab it brings to the front comes in as one switched to from the keyboard.
+    markNav('switch');
     // A task's own Enter leads to its actions; ⌘ and ⌥ on it act at once (and close) — unless they lead to the account
     // step too (`stays`). A step with neither (Paste into Session…) just goes on, whatever the modifiers.
     if (!item.keep || (!item.stays && ((side && item.side) || (send && item.send)))) close();

@@ -102,7 +102,7 @@ const Tab = memo(function Tab({ k, active, front, drop, lifted, leaving, term, s
       data-tip={wt ?? outsideTip ?? file?.rel ?? db?.tip ?? (term ? nameTip(name, [term.session?.cwd ?? term.cwd, syncTip(term)].filter(Boolean).join('\n')) : k === 'services' ? undefined : nameTip(name))}
       // ⌥-click: Move to Right Pane (from the last pane, a new pane on the right). Picked here, the crown flies to it
       // and the content slides in from its side (transitions.ts).
-      onClick={(e) => { if (e.altKey) st().moveTabSide(k, 'right'); else { markNav('tab'); st().activate(k); } }}
+      onClick={(e) => { if (e.altKey) st().moveTabSide(k, 'right'); else { if (!active && !front) markNav('tab'); st().activate(k); } }}
       // Double click on the preview tab keeps it open as a normal tab.
       onDoubleClick={() => keepTabOpen(k)}
       onContextMenu={(e) => st().openMenu(e, tabMenu(k))}
@@ -300,9 +300,10 @@ export const PaneStrip = memo(function PaneStrip({ pane, split, last, onNew }: {
     if (el) for (const child of el.children) if (!child.classList.contains('tab-crown-fly')) sizes.current?.observe(child);
     fade();
   }, [front, order, fade, showClicked]);
-  // Another tab in front, from one tab of this strip to another (however it was picked): the crown flies over to it.
-  // What it shows comes in by where it was picked: rising from the sidebar, otherwise (a tab, the keyboard, the
-  // palette) from the side of the tab. A session just launched comes in by its terminal's own reveal (sparkTo).
+  // Another tab in front, from one tab of this strip to another, picked by the user (a tab, a row, the keyboard, the
+  // palette, New Session): the crown flies over to it. What it shows comes in by where it was picked: rising from the
+  // sidebar, otherwise from the side of the tab. A session just launched comes in by its terminal's own reveal
+  // (sparkTo). A front the app changed by itself (no origin) changes in place.
   const shown = useRef(front);
   useLayoutEffect(() => {
     const was = shown.current;
@@ -312,6 +313,7 @@ export const PaneStrip = memo(function PaneStrip({ pane, split, last, onNew }: {
     const body = el.closest('.workspace')?.querySelector<HTMLElement>('.workspace-body');
     const content = body ? paneContent(body, split ? pane : null) : [];
     const origin = takeNav();
+    if (!origin) return;
     const tabOf = (k: TabKey) => el.querySelector<HTMLElement>(`.tab[data-key="${CSS.escape(k)}"]`);
     const from = was ? tabOf(was) : null;
     const to = tabOf(front);

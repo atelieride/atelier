@@ -15,9 +15,9 @@ import { look } from './shots';
 
 type Played = { on: string; kf: string };
 
-async function launch(prefs?: Record<string, unknown>): Promise<{ app: ElectronApplication; home: string; win: Page }> {
+async function launch(prefs?: Record<string, unknown>, extra: Record<string, string> = {}): Promise<{ app: ElectronApplication; home: string; win: Page }> {
   const project = mkdtempSync(join(tmpdir(), 'atl-prj-'));
-  const { env, home } = e2eEnv({ ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl') });
+  const { env, home } = e2eEnv({ ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl'), ...extra });
   if (prefs) writePrefs(home, prefs);
   const app = await electron.launch({ args: ['out/main/index.js', `--project=${project}`], env });
   const win = await app.firstWindow();
@@ -38,6 +38,7 @@ async function launch(prefs?: Record<string, unknown>): Promise<{ app: ElectronA
   });
   return { app, home, win };
 }
+const daemonPid = (home: string) => (JSON.parse(readFileSync(join(home, 'atelierd.json'), 'utf8')) as { pid: number }).pid;
 async function stop(app: ElectronApplication, home: string) {
   await app.close();
   try { process.kill((JSON.parse(readFileSync(join(home, 'atelierd.json'), 'utf8')) as { pid: number }).pid, 'SIGTERM'); } catch { /* already stopped */ }
@@ -926,6 +927,46 @@ test('a session that finishes: a flat wave crosses its row, a check takes its av
     log = await cues(win);
     expect(log.added).toEqual([]);
     await expect(win.locator('.row-wave, .av-done-check')).toHaveCount(0);
+  } finally {
+    await stop(app, home);
+  }
+});
+
+test('only what the user does here moves: Resume all brings its sessions back in place; a session picked in the palette slides in', async () => {
+  test.setTimeout(120000);
+  // One session id for all three, so atelierd can resume each of them.
+  const { app, home, win } = await launch(undefined, { ATELIER_FAKE_SESSION_ID: '99999999-9999-4999-8999-999999999999' });
+  try {
+    await threeSessions(win);
+    // atelierd restarts: the three wait under Resume.
+    const first = daemonPid(home);
+    process.kill(first, 'SIGTERM');
+    await expect(win.locator('.resume-row')).toHaveCount(3, { timeout: 30000 });
+    await expect.poll(() => { try { return daemonPid(home); } catch { return first; } }, { timeout: 30000 }).not.toBe(first);
+    await played(win);
+    // Resume all: each session coming back takes the front by itself, one after another. Nothing glides, flies or
+    // slides for a change the user did not make there.
+    await win.locator('.resume-head').getByRole('button', { name: 'Resume all sessions' }).click();
+    await expect(win.locator('.resume-row')).toHaveCount(0, { timeout: 30000 });
+    await expect(win.locator('.session-row')).toHaveCount(3, { timeout: 30000 });
+    await settled(win);
+    const back = await played(win);
+    expect(on(back, 'tab-crown-fly')).toEqual([]);
+    expect(on(back, 'workspace-body')).toEqual([]);
+    expect(on(back, 'motion-pill')).toEqual([]);
+    // Picked in the palette: the user's own move, so the crown flies and the content slides in from the tab's side.
+    const strip = win.locator('.tabs .tab-strip');
+    await tab(strip, 'Three').click();
+    await expect(tab(strip, 'Three')).toHaveClass(/is-active/);
+    await settled(win);
+    await played(win);
+    await menu(app, 'Search…');
+    await win.locator('.palette-item').filter({ has: win.locator('.avatar') }).filter({ hasText: 'One' }).first().click();
+    await expect(tab(strip, 'One')).toHaveClass(/is-active/);
+    const picked = await played(win);
+    expect(on(picked, 'tab-crown-fly')).toHaveLength(1);
+    expect(on(picked, 'workspace-body')[0]?.kf).toContain('translateX(-14px)');
+    await settled(win);
   } finally {
     await stop(app, home);
   }
