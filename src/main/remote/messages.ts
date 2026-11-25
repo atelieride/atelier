@@ -145,6 +145,27 @@ export interface RemoteAccount {
  */
 export interface RemoteFeatures { workspacesEverywhere: boolean; activities: boolean }
 
+/** A theme as a phone dresses in it: its colors finished (`#RRGGBB` or `#RRGGBBAA`), by token without its `--`. */
+export interface RemoteTheme {
+  id: string;
+  name: string;
+  appearance: 'dark' | 'light';
+  /** The dark theme whose terminals "Always dark" borrows (a dark theme: itself). */
+  dark: string;
+  colors: Record<string, string>;
+}
+
+/** How Atelier looks on this computer: the theme in use, the terminal's settings, and every theme. */
+export interface RemoteLook {
+  /** One of `themes`. */
+  theme: string;
+  terminalColors: 'theme' | 'dark';
+  /** The font by family name; size in points (10…24), line height as a multiple of the font's own (1…1.6). */
+  terminal: { font: string; size: number; lineHeight: number; cursor: 'bar' | 'block' | 'underline'; blink: boolean };
+  /** In Settings' order. */
+  themes: RemoteTheme[];
+}
+
 export type ErrorCode = 'not-found' | 'invalid' | 'busy' | 'failed';
 export type DeniedReason = 'declined' | 'expired' | 'unknown-device' | 'disabled';
 export type ByeReason = 'revoked' | 'disabled' | 'quitting';
@@ -154,6 +175,7 @@ export type HostMessage =
   | { t: 'denied'; reason: DeniedReason }
   | { t: 'state'; projects: RemoteProject[]; sessions: RemoteSession[]; resumables: RemoteResumable[]; features: RemoteFeatures }
   | { t: 'usage'; accounts: RemoteAccount[] }
+  | ({ t: 'look' } & RemoteLook)
   | { t: 'layout'; project: string; layout: RemoteLayout | null }
   | { t: 'snapshot'; id: string; cols: number; rows: number; data: string }
   | { t: 'out'; id: string; data: string }
