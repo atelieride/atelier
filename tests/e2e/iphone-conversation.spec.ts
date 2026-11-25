@@ -6,12 +6,12 @@
 // (tests/e2e/iphone-live.manual.ts) with the fake phone: follow, a prompt, a permission asked on cue and chosen, the
 // terminal opened fitted, the stand-in for Claude Code recording its terminal's size all along.
 import { expect, test, type ElectronApplication, type Locator } from '@playwright/test';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { look } from './shots';
 import type { Msg } from '../support/fake-phone';
-import { close, launchWithPhone, newWaitingSession, pairPhone, sizeKept, type Launched } from './iphone-fixture';
+import { close, footerSize, launchWithPhone, newWaitingSession, pairPhone, sizeKept, sizeLines, type Launched } from './iphone-fixture';
 
 const SHOTS = 'test-results/iphone-conversation';
 
@@ -51,17 +51,18 @@ async function drawn(slot: Locator): Promise<{ rows: number; width: number; heig
 
 /**
  * Every size main got from the window for a Claude session's terminal, once the window's layout is settled: the
- * session's bar shown (it takes rows when it comes), the last size given drawn by the window, the same on two reads in
- * a row (a late sizing, 78×33 then 78×31, settles first).
+ * session's bar shown (it takes rows when it comes), the last size given the one the footer shows and drawn by the
+ * window, the same on two reads in a row (a late sizing, 78×33 then 78×31, settles first).
  */
 async function settledSizes(app: ElectronApplication, slot: Locator, id: string): Promise<string[]> {
   await expect(slot.page().locator('.session-bar')).toBeVisible({ timeout: 15000 });
   let last = '';
   await expect.poll(async () => {
     const given = (await sizesOf(app, id)).at(-1);
+    const shown = await footerSize(slot.page());
     const rows = (await drawn(slot)).rows;
-    const now = `${given} drawn with ${rows} rows`;
-    const settled = given?.split('x')[1] === String(rows) && now === last;
+    const now = `${given} shown at ${shown}, drawn with ${rows} rows`;
+    const settled = given === shown && given?.split('x')[1] === String(rows) && now === last;
     last = now;
     return settled;
   }, { timeout: 10000 }).toBe(true);
@@ -185,7 +186,7 @@ test('the live check\'s sequence: follow, a prompt and its reply, a permission a
     ATELIER_FAKE_ASK_FILE: askFile, ATELIER_FAKE_SIZE_FILE: sizeFile
   });
   const { app, win, phone } = l;
-  const sizes = () => readFileSync(sizeFile, 'utf8').trim().split('\n');
+  const sizes = () => sizeLines(sizeFile);
   try {
     await watchSizes(app);
     await pairPhone(app, win, phone);

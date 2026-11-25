@@ -39,7 +39,7 @@ import { basename, join, resolve } from 'node:path';
 import { homeHash } from '../../src/daemon/launchd';
 import { e2eEnv } from './env';
 import { look } from './shots';
-import { command, menu, newWaitingSession, settingsSet, sizeKept, stopDaemon } from './iphone-fixture';
+import { command, menu, newWaitingSession, settingsSet, sizeBaseline, sizeKept, stopDaemon } from './iphone-fixture';
 
 const LIVE = process.env.ATELIER_LIVE_DIR ?? '';
 const RELAY = process.env.ATELIER_LIVE_RELAY || 'http://127.0.0.1:8787';
@@ -208,6 +208,11 @@ test('live: the iOS app pairs through the relay, mirrors the sidebar, acts on it
     await expect(rows).toContainText('FAKE-CLAUDE allowed', { timeout: 30_000 });
     await expect(rows).not.toContainText('FAKE-CLAUDE denied');
     await expect(claudeRow).not.toContainText('Needs permission');
+    // The stand-in at its prompt, its size recorded since: the size it has now, shown in front here, is what the steps
+    // below keep. Its first line was written while the session was hidden (the phone allowed before the click above),
+    // so a size the window gave it on showing it again isn't held against a phone.
+    await expect(rows).toContainText('Try "fix the tests"', { timeout: 30_000 });
+    const sizeFrom = await sizeBaseline(win, SIZES);
     await look(win, join(LIVE, 'mac-5-allowed.png'), { settle: 300 });
     macSaw('allowed');
 
@@ -218,17 +223,17 @@ test('live: the iOS app pairs through the relay, mirrors the sidebar, acts on it
     macSaw('renamed');
 
     // The phone follows that session's conversation: the badge on its row; the session, in front here since "allowed",
-    // keeps the window's size.
+    // keeps the size it had then.
     await phoneDid('conversation');
     await expect(claudeRow.locator('.phone-badge')).toBeVisible({ timeout: 30_000 });
-    await sizeKept(win, claude, SIZES, 'conversation');
+    await sizeKept(win, claude, SIZES, 'conversation', sizeFrom);
     await look(win, join(LIVE, 'mac-6b-conversation.png'), { settle: 400 });
     macSaw('conversation');
 
     // A prompt from the phone reaches Claude. Then the stand-in asks for a permission, which the phone answers next.
     await phoneDid('said');
     await expect(rows).toContainText(`FAKE-CLAUDE got=${PROMPT}`, { timeout: 30_000 });
-    await sizeKept(win, claude, SIZES, 'said');
+    await sizeKept(win, claude, SIZES, 'said', sizeFrom);
     await look(win, join(LIVE, 'mac-6c-said.png'), { settle: 300 });
     writeFileSync(join(LIVE, 'ask-permission'), '');
     await expect(claudeRow).toContainText('Needs permission', { timeout: 30_000 });
@@ -238,14 +243,14 @@ test('live: the iOS app pairs through the relay, mirrors the sidebar, acts on it
     await phoneDid('chose');
     await expect(rows).toContainText('FAKE-CLAUDE allowed npm run build', { timeout: 30_000 });
     await expect(claudeRow).not.toContainText('Needs permission', { timeout: 30_000 });
-    await sizeKept(win, claude, SIZES, 'chose');
+    await sizeKept(win, claude, SIZES, 'chose', sizeFrom);
     await look(win, join(LIVE, 'mac-6d-chose.png'), { settle: 300 });
     macSaw('chose');
 
     // The terminal open on the phone, fitted: the badge; the attach took no size from the window.
     await phoneDid('terminal');
     await expect(claudeRow.locator('.phone-badge')).toBeVisible({ timeout: 30_000 });
-    await sizeKept(win, claude, SIZES, 'terminal');
+    await sizeKept(win, claude, SIZES, 'terminal', sizeFrom);
     await look(win, join(LIVE, 'mac-6e-terminal.png'), { settle: 400 });
     macSaw('terminal');
 

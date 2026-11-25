@@ -101,14 +101,45 @@ export async function newWaitingSession(app: ElectronApplication, win: Page): Pr
   return id;
 }
 
+/**
+ * The sizes the stand-in for Claude Code recorded in `sizeFile` (its ATELIER_FAKE_SIZE_FILE: a `<cols>x<rows>` line at
+ * its prompt, then one after each SIGWINCH), in order.
+ */
+export const sizeLines = (sizeFile: string): string[] => readFileSync(sizeFile, 'utf8').trim().split('\n');
+
+/** The size the window shows its visible terminal at, as the footer says it ("claude · 79×31": "79x31"); '' if none. */
+export async function footerSize(win: Page): Promise<string> {
+  const label = win.locator('.foot-dim', { hasText: '×' });
+  if (await label.count() === 0) return '';
+  const m = /(\d+)×(\d+)$/.exec((await label.first().innerText()).trim());
+  return m ? `${m[1]}x${m[2]}` : '';
+}
+
+/**
+ * The line of `sizeFile` that later sizes are compared with: its last one, once it is the size the window shows the
+ * Claude session at (in front), on two reads in a row. Lines before it may hold a size the session had while hidden.
+ */
+export async function sizeBaseline(win: Page, sizeFile: string): Promise<number> {
+  let last = '';
+  await expect.poll(async () => {
+    const lines = sizeLines(sizeFile);
+    const now = `${lines.length} lines, the last ${lines.at(-1)}, shown at ${await footerSize(win)}`;
+    const settled = lines.at(-1) === await footerSize(win) && now === last;
+    last = now;
+    return settled;
+  }, { timeout: 30_000, message: 'the stand-in never recorded the size the window shows it at' }).toBe(true);
+  return sizeLines(sizeFile).length - 1;
+}
+
 type RemoteApi = { atelier: { remote: { status(): Promise<RemoteStatus> } } };
 /**
- * A Claude session's terminal still has the window's size: every size the stand-in for Claude Code recorded in
- * `sizeFile` (its ATELIER_FAKE_SIZE_FILE: a `<cols>x<rows>` line at its prompt, then one after each SIGWINCH) is its
- * first, the remote status the window gets lists no phone sizing it, and the window shows no size note.
+ * A Claude session's terminal still has the window's size: every size the stand-in recorded in `sizeFile` from line
+ * `from` on (its first by default; see sizeBaseline) is that line's, the remote status the window gets lists no phone
+ * sizing it, and the window shows no size note.
  */
-export async function sizeKept(win: Page, id: string, sizeFile: string, what: string): Promise<void> {
-  const sizes = readFileSync(sizeFile, 'utf8').trim().split('\n');
+export async function sizeKept(win: Page, id: string, sizeFile: string, what: string, from = 0): Promise<void> {
+  const sizes = sizeLines(sizeFile).slice(from);
+  expect(sizes.length, `${what}: no size recorded from line ${from + 1} on`).toBeGreaterThan(0);
   expect(sizes.filter((s) => s !== sizes[0]), `${what}: the stand-in's terminal changed size (from ${sizes[0]})`).toEqual([]);
   const status = await win.evaluate(() => (window as unknown as RemoteApi).atelier.remote.status());
   expect(status.sized.filter((s) => s.id === id), `${what}: a phone sized it`).toEqual([]);
