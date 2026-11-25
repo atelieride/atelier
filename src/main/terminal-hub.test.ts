@@ -905,8 +905,8 @@ describe('remote viewers (a paired phone): watched like a window, with one size 
     client.send.mockClear(); client.request.mockClear();
     const sent = () => client.send.mock.calls.map((c) => c[0] as Record<string, unknown>);
     const requests = () => client.request.mock.calls.map((c) => (c as unknown[])[0] as Record<string, unknown>);
-    const phoneAttach = async (id = 'a', cols = 60, rows = 30) => {
-      const p = hub.remoteAttach(key, id, cols, rows);
+    const phoneAttach = async (id = 'a', cols = 60, rows = 30, take = true) => {
+      const p = hub.remoteAttach(key, id, cols, rows, take);
       await Promise.resolve();
       client.emit('snapshot', id, `screen of ${id}`);
       await p;
@@ -1022,6 +1022,23 @@ describe('remote viewers (a paired phone): watched like a window, with one size 
     expect(t.requests()).toEqual([{ t: 'attach', id: 'a' }]);
     t.client.emit('data', 'a', 'after');
     expect(t.got.filter((g) => g[0] === 'data')).toEqual([]);
+  });
+
+  test('a phone\'s attach replaced by one that leaves the size (detach, then attach not taking it): the window has its size back and keeps it', async () => {
+    const t = await withWindow();
+    await t.phoneAttach();
+    t.hub.remoteDetach(t.key, 'a');
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 60, rows: 30 }, { t: 'resize', id: 'a', cols: 120, rows: 40 }]);
+    t.client.send.mockClear();
+    await t.phoneAttach('a', 60, 30, false);
+    // No resize: the screen comes at the window's size, and no phone owns it.
+    expect(t.sent()).toEqual([]);
+    expect(t.got.at(-1)).toEqual(['snapshot', 'a', 'screen of a', { cols: 120, rows: 40 }]);
+    expect(t.hub.remoteSized()).toEqual([]);
+    // The phone types: it takes the size, at its own.
+    expect(t.hub.remoteInput(t.key, 'a', 'x')).toBe(true);
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 60, rows: 30 }, { t: 'input', id: 'a', data: 'x' }]);
+    expect(t.hub.remoteSized()).toEqual([{ id: 'a', cols: 60, rows: 30 }]);
   });
 
   test('the last viewer: a phone alone detaches atelierd when it leaves; a window leaving while the phone watches does not', async () => {

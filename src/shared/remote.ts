@@ -63,7 +63,7 @@ export interface RemoteDeviceInfo {
   lastSeenAt: number;
   /** Connected to this computer right now. */
   connected: boolean;
-  /** The terminals it has open now (ids, as in TerminalInfo). */
+  /** The terminals it has open now, attached or followed (ids, as in TerminalInfo). */
   attached: string[];
 }
 

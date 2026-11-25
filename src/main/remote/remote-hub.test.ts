@@ -1,8 +1,10 @@
-import { mkdtempSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import WebSocket from 'ws';
+import { PAGE_BYTES, WRAPPER_BYTES } from '@shared/conversation/pages';
+import { encodeProjectPath } from '@shared/history';
 import type { Resumable, TerminalInfo } from '@shared/protocol';
 import type { UsageEntry } from '@shared/session';
 import type { PortsMap } from '@shared/ports';
@@ -16,6 +18,7 @@ import { testSafeStorage } from '../connectors/test-safe-storage';
 import type { RemoteViewer } from '../terminal-hub';
 import { deriveCode, normalizeCode } from './code';
 import { generateKeyPair } from './noise';
+import type { ScreenView } from './prompt';
 import { RemoteHub, type RemoteHubDeps, type RemoteWindowResult, type RemoteTerminals } from './remote-hub';
 import { projectIdOf } from './state';
 import { collapseKeyOf } from './push';
@@ -41,6 +44,15 @@ class FakeTerminals implements RemoteTerminals {
   /** The keys answers pressed, and each terminal's screen as text (the usual permission dialog unless set). */
   answers: [string, string][] = [];
   screens = new Map<string, string[]>();
+  /** Each terminal's screen rows with their dim text as spaces (its `screens` rows unless set). */
+  dims = new Map<string, string[]>();
+  /** The terminals an Atelier window has open, and when a window last typed in each (ms). */
+  windows = new Set<string>();
+  windowInput = new Map<string, number>();
+  /** A terminal's Claude account dir (none: the default account). */
+  accountDirs = new Map<string, string>();
+  /** Each attach's `take`: whether it took the terminal's size. */
+  takes: boolean[] = [];
   renames: [string, string][] = [];
   closes: string[] = [];
   dismissals: string[] = [];
@@ -56,8 +68,9 @@ class FakeTerminals implements RemoteTerminals {
   set(list: TerminalInfo[]) { this.list = list; for (const cb of this.shown) cb(); }
   addRemoteViewer(v: RemoteViewer) { const k = this.next--; this.viewers.set(k, v); this.watching.set(k, new Set()); return k; }
   removeRemoteViewer(k: number) { this.viewers.delete(k); this.watching.delete(k); }
-  async remoteAttach(k: number, id: string, cols: number, rows: number) {
+  async remoteAttach(k: number, id: string, cols: number, rows: number, take = true) {
     if (!this.list.some((t) => t.id === id)) throw new Error('no such terminal');
+    this.takes.push(take);
     this.watching.get(k)!.add(id);
     this.viewers.get(k)!.snapshot(id, `screen of ${id}\r\n$ `, { cols, rows });
   }
@@ -79,8 +92,21 @@ class FakeTerminals implements RemoteTerminals {
   async permissionScreen(id: string) {
     if (!this.list.some((t) => t.id === id)) throw new Error('gone');
     if (this.screenGate) await this.screenGate;
+    return this.screenOf(id);
+  }
+  async screenView(id: string): Promise<ScreenView> {
+    if (!this.list.some((t) => t.id === id)) throw new Error('gone');
+    if (this.screenGate) await this.screenGate;
+    const lines = this.screenOf(id);
+    return { lines, undimmed: this.dims.get(id) ?? lines, cols: 120 };
+  }
+  /** The screen a read of terminal `id` finds now (every screen read goes through here). */
+  private screenOf(id: string): string[] {
     return this.screens.get(id) ?? npmDialog(['❯ 1. Yes', '  2. Yes, and don\'t ask again for npm test commands', '  3. No, and tell Claude what to do differently (esc)']);
   }
+  windowShows(id: string) { return this.windows.has(id); }
+  lastWindowInput(id: string) { return this.windowInput.get(id) ?? 0; }
+  accountDirOf(_project: string | null, terminalId: string | undefined) { return terminalId === undefined ? undefined : this.accountDirs.get(terminalId); }
   answerKey(id: string, key: string) { this.answers.push([id, key]); }
   async renameRemote(id: string, name: string) { if (!this.list.some((t) => t.id === id)) throw new Error('gone'); this.renames.push([id, name]); }
   async closeRemote(id: string) { if (!this.list.some((t) => t.id === id)) throw new Error('gone'); this.closes.push(id); this.set(this.list.filter((t) => t.id !== id)); }
@@ -118,6 +144,7 @@ afterEach(async () => {
   for (const p of phones.splice(0)) p.drop();
   for (const h of hubs.splice(0)) await h.dispose();
   await relay.close();
+  vi.unstubAllEnvs();
 });
 
 async function until(check: () => boolean, ms = 4000): Promise<void> {
@@ -485,6 +512,24 @@ describe('a paired phone', () => {
     expect(outs.map((m) => m.data).join('')).toBe(Array.from({ length: 200 }, (_, i) => `${i},`).join(''));
   });
 
+  test('attach fit: a Claude session a window shows keeps its size; no window, or a plain terminal, takes it as before', async () => {
+    const t = setup();
+    const claude = { sessionId: 's3', state: 'idle', title: null, activity: null, contextPct: null, unread: false, updatedAt: 0 } as never;
+    t.terms.list = [...t.terms.list, term('t3', '/work/app', { createdAt: 3, session: claude }), term('n1', '/work/app', { createdAt: 4 })];
+    t.terms.starting = new Set(['n1']);
+    t.terms.windows = new Set(['t1', 't2', 'n1']);
+    const { phone } = await paired(t);
+    // Shown by a window: the snapshot comes at the terminal's size, the phone's size kept for when it types.
+    expect(await phone.attach('t2', 60, 30, { fit: true })).toMatchObject({ t: 'snapshot', id: 't2' });
+    expect(await phone.attach('n1', 60, 30, { fit: true })).toMatchObject({ t: 'snapshot', id: 'n1' });
+    expect(t.terms.takes).toEqual([false, false]);
+    // A plain terminal a window shows, a Claude session no window shows, an attach without fit (an older phone).
+    await phone.attach('t1', 60, 30, { fit: true });
+    await phone.attach('t3', 60, 30, { fit: true });
+    await phone.attach('t2', 60, 30);
+    expect(t.terms.takes).toEqual([false, false, true, true, true]);
+  });
+
   test('typing into, or resizing, a terminal it has not opened is refused', async () => {
     const t = setup();
     const { phone } = await paired(t);
@@ -704,6 +749,26 @@ describe('what the sidebar shows', () => {
     const { phone } = await paired(t);
     const state = await phone.state((s) => (s.sessions as Msg[]).some((x) => x.id === 'n1'));
     expect((state.sessions as Msg[]).find((x) => x.id === 'n1')).toMatchObject({ claude: true, starting: true, detail: 'Starting…' });
+  });
+
+  test('every waiting row carries `ask`, a key of that very wait whatever it waits for; the wait over and asked again, a new key', async () => {
+    const t = setup();
+    const waiting = (o: object = {}) => ({ sessionId: 's', state: 'waiting', waitingFor: 'question', title: null, activity: 'waiting: question', contextPct: null, unread: false, updatedAt: 1, ...o }) as never;
+    const plan = term('p', '/work/app', { createdAt: 4, session: waiting({ waitingFor: 'permission', activity: 'waiting: plan approval' }) });
+    t.terms.list = [term('t1', '/work/app'), term('q', '/work/app', { createdAt: 3, session: waiting() }), plan];
+    const { phone } = await paired(t);
+    const row = (s: Msg, id: string) => (s.sessions as Msg[]).find((x) => x.id === id)!;
+    const first = await phone.state((s) => !!row(s, 'q').ask && !!row(s, 'p').ask);
+    const ask = row(first, 'q').ask as string;
+    expect(ask).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(row(first, 'p').ask).not.toBe(ask);
+    // Neither a question nor a plan is one a row answers: no `wait`. A plain terminal waits for nothing.
+    expect([row(first, 'q').wait, row(first, 'p').wait, row(first, 't1').ask]).toEqual([undefined, undefined, undefined]);
+    // The question answered, then another one at once (no state in between): another key.
+    t.terms.set([term('t1', '/work/app'), term('q', '/work/app', { createdAt: 3, session: waiting({ state: 'running', waitingFor: null, activity: 'Thinking', updatedAt: 2 }) }), plan]);
+    t.terms.set([term('t1', '/work/app'), term('q', '/work/app', { createdAt: 3, session: waiting({ updatedAt: 3 }) }), plan]);
+    const next = await phone.state((s) => !!row(s, 'q').ask && row(s, 'q').ask !== ask);
+    expect(row(next, 'p').ask).toBe(row(first, 'p').ask);
   });
 
   test('ports and pull requests come from their hubs, by project', async () => {
@@ -1358,5 +1423,312 @@ describe('push notifications', () => {
     away = true;
     t.hub.attention(news(waitingTerm('w1', 'One')));
     await until(() => relay.pushes(roomOf(t)).length === 1);
+  });
+});
+
+describe('following a Claude session\'s conversation', () => {
+  const T = '2026-11-25T10:00:00.000Z';
+  const prompt = (text: string) => ({ type: 'user', timestamp: T, message: { role: 'user', content: text } });
+  const reply = (text: string) => ({ type: 'assistant', timestamp: T, message: { role: 'assistant', content: [{ type: 'text', text }] } });
+  const call = (id: string, command: string) => ({ type: 'assistant', timestamp: T, message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'Bash', input: { command } }] } });
+  const done = (id: string, out: string) => ({
+    type: 'user', timestamp: T, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: out }] }, toolUseResult: { stdout: out, stderr: '' }
+  });
+  const jsonl = (...lines: unknown[]) => lines.map((l) => `${JSON.stringify(l)}\n`).join('');
+  const claude = (sessionId: string) => ({ sessionId, state: 'running', title: null, activity: null, contextPct: null, unread: false, updatedAt: 1 }) as never;
+  const ns = (m: Msg) => (m.entries as Msg[]).map((e) => e.n);
+  const UNREADABLE = 'The conversation can\'t be read. Open the terminal.';
+  const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  /** A hub whose Claude sessions' transcripts are `<dir>/<terminal id>.jsonl`, read every 20 ms. */
+  function conversing(o: { lingerMs?: number } = {}) {
+    const dir = mkdtempSync(join(tmpdir(), 'atl-conversation-'));
+    const file = (id: string) => join(dir, `${id}.jsonl`);
+    const t = setup({
+      deps: { conversation: { transcriptOf: (x) => (x.session ? file(x.id) : null), home: null, timing: { pollMs: 20, chatMs: 20, ...(o.lingerMs ? { lingerMs: o.lingerMs } : {}) } } }
+    });
+    return {
+      ...t, dir, file,
+      write: (id: string, ...lines: unknown[]) => writeFileSync(file(id), jsonl(...lines)),
+      append: (id: string, ...lines: unknown[]) => appendFileSync(file(id), jsonl(...lines))
+    };
+  }
+  /** The `chat`s for a session from message `since` on. */
+  const chats = (phone: FakePhone, id: string, since = 0) => phone.messages.slice(since).filter((m) => m.t === 'chat' && m.id === id);
+  const badge = (t: ReturnType<typeof setup>) => t.statuses.at(-1)?.devices[0]?.attached ?? [];
+
+  test('follow: a Claude session\'s newest page with its key, then new entries as Claude writes them; unfollow stops them', async () => {
+    const t = conversing();
+    t.write('t2', prompt('List the files.'), reply('Sure.'), call('b1', 'ls'));
+    const { phone } = await paired(t);
+    const page = await phone.follow('t2');
+    expect(page).toMatchObject({ t: 'chat', id: 't2', rid: expect.any(Number), conversation: expect.stringMatching(/^[A-Za-z0-9_-]{16}$/), start: true });
+    expect(page.pending).toBeUndefined();
+    expect((page.entries as Msg[]).map((e) => [e.n, e.k])).toEqual([[1, 'prompt'], [2, 'reply'], [3, 'tool']]);
+    expect((page.entries as Msg[])[2]).toMatchObject({ tool: 'Bash', target: 'ls', status: 'running' });
+    // The Bash call's result and a reply: only what changed, under the same key, without a rid.
+    const since = phone.messages.length;
+    t.append('t2', done('b1', 'hello.txt'), reply('One file.'));
+    await until(() => phone.conversation('t2').length === 4 && phone.conversation('t2')[2]!.status === 'ok');
+    const live = chats(phone, 't2', since);
+    expect(live.every((m) => m.rid === undefined && m.conversation === page.conversation && m.start === undefined)).toBe(true);
+    expect(live.flatMap(ns)).toEqual([3, 4]);
+    expect(phone.conversation('t2').map((e) => [e.n, e.k, e.status ?? null])).toEqual([[1, 'prompt', null], [2, 'reply', null], [3, 'tool', 'ok'], [4, 'reply', null]]);
+    // Unfollowed (a request after it shows it was handled): nothing more.
+    phone.unfollow('t2');
+    expect(await phone.follow('gone')).toMatchObject({ t: 'error' });
+    const after = phone.messages.length;
+    t.append('t2', reply('More.'));
+    await pause(200);
+    expect(chats(phone, 't2', after)).toEqual([]);
+  });
+
+  test('follow before n: the page just older, nothing followed by it', async () => {
+    const t = conversing();
+    t.write('t2', prompt('One.'), reply('1.'), prompt('Two.'), reply('2.'), prompt('Three.'));
+    const { phone } = await paired(t);
+    const older = await phone.follow('t2', 3);
+    expect(older).toMatchObject({ t: 'chat', id: 't2', rid: expect.any(Number), start: true });
+    expect(ns(older)).toEqual([1, 2]);
+    // Not followed: not on the badge, and what Claude writes next isn't sent.
+    const since = phone.messages.length;
+    t.append('t2', reply('3.'));
+    await pause(200);
+    expect(chats(phone, 't2', since)).toEqual([]);
+    expect(badge(t)).toEqual([]);
+    // The newest page, under the same key.
+    const newest = await phone.follow('t2');
+    expect(newest.conversation).toBe(older.conversation);
+    expect(ns(newest)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  test('follow refuses a terminal not listed, a plain terminal, and a 17th session', async () => {
+    const t = conversing();
+    const many = Array.from({ length: 17 }, (_, i) => term(`c${i}`, '/work/app', { createdAt: 10 + i, session: claude(`s${i}`) }));
+    t.terms.list = [...t.terms.list, ...many];
+    const { phone } = await paired(t);
+    expect(await phone.follow('gone')).toEqual({ t: 'error', rid: expect.any(Number), code: 'not-found', message: 'This session is not on this computer any more.' });
+    expect(await phone.follow('t1')).toMatchObject({ t: 'error', code: 'invalid', message: 'This is not a Claude session.' });
+    expect(await phone.follow('t1', 5)).toMatchObject({ t: 'error', code: 'invalid', message: 'This is not a Claude session.' });
+    for (const c of many.slice(0, 16)) expect(await phone.follow(c.id)).toMatchObject({ t: 'chat', id: c.id, pending: true });
+    expect(await phone.follow('c16')).toMatchObject({ t: 'error', code: 'busy', message: 'Too many conversations open.' });
+    // One of the 16 followed again: its page again. One unfollowed: the 17th is followed.
+    expect(await phone.follow('c3')).toMatchObject({ t: 'chat', id: 'c3' });
+    phone.unfollow('c0');
+    expect(await phone.follow('c16')).toMatchObject({ t: 'chat', id: 'c16' });
+    await until(() => badge(t).length === 16 && !badge(t).includes('c0'));
+  });
+
+  test('pending: a session with no transcript yet, then its entries under the same key', async () => {
+    const t = conversing();
+    const starting = term('n1', '/work/app', { createdAt: 9 });
+    t.terms.list = [...t.terms.list, starting];
+    t.terms.starting = new Set(['n1']);
+    const { phone } = await paired(t);
+    // Still starting: no session yet.
+    const page = await phone.follow('n1');
+    expect(page).toEqual({ t: 'chat', id: 'n1', rid: expect.any(Number), conversation: expect.stringMatching(/^[A-Za-z0-9_-]{16}$/), entries: [], start: true, pending: true });
+    // Another terminal's news while it starts: a terminal list, with it still sessionless.
+    t.terms.set(t.terms.list.map((x) => (x.id === 't1' ? { ...x, title: 'Renamed' } : x)));
+    await pause(60);
+    // Claude started: its session id comes before its transcript (Claude Code writes it at the first prompt).
+    t.terms.starting = new Set();
+    t.terms.set([...t.terms.list.filter((x) => x.id !== 'n1'), { ...starting, session: claude('s-new') }]);
+    await pause(100);
+    t.write('n1', prompt('Hi.'), reply('Hello.'));
+    await until(() => phone.conversation('n1').length === 2);
+    expect(chats(phone, 'n1').every((m) => m.conversation === page.conversation)).toBe(true);
+    expect(phone.conversation('n1').map((e) => [e.n, e.k])).toEqual([[1, 'prompt'], [2, 'reply']]);
+  });
+
+  test('a transcript gone from its place is pending under the key the phone holds; back, only what changed comes', async () => {
+    const t = conversing();
+    t.write('t2', prompt('Hi.'), reply('Hello.'));
+    const { phone } = await paired(t);
+    const page = await phone.follow('t2');
+    const since = phone.messages.length;
+    rmSync(t.file('t2'));
+    const pending = await phone.waitFor((m) => m.t === 'chat' && m.id === 't2', { since });
+    expect(pending).toEqual({ t: 'chat', id: 't2', conversation: page.conversation, entries: [], start: true, pending: true });
+    expect(phone.conversation('t2').map((e) => e.n)).toEqual([1, 2]);
+    const back = phone.messages.length;
+    t.write('t2', prompt('Hi.'), reply('Hello.'), prompt('Again.'));
+    await until(() => phone.conversation('t2').length === 3);
+    expect(chats(phone, 't2', back).every((m) => m.conversation === page.conversation && m.pending === undefined)).toBe(true);
+    expect(chats(phone, 't2', back).flatMap(ns)).toEqual([3]);
+  });
+
+  test('a phone following a session shows on its badge: status lists it until unfollow or the channel\'s end', async () => {
+    const t = conversing();
+    t.write('t2', prompt('Hi.'));
+    const { phone } = await paired(t);
+    await phone.follow('t2');
+    await until(() => badge(t).includes('t2'));
+    phone.unfollow('t2');
+    await until(() => badge(t).length === 0);
+    await phone.follow('t2');
+    await until(() => badge(t).includes('t2'));
+    phone.drop();
+    await until(() => t.statuses.at(-1)?.devices[0]?.connected === false);
+    expect(badge(t)).toEqual([]);
+  });
+
+  test('a session that leaves the list is followed no more', async () => {
+    const t = conversing();
+    t.write('t2', prompt('Hi.'));
+    const { phone } = await paired(t);
+    await phone.follow('t2');
+    await until(() => badge(t).includes('t2'));
+    t.terms.set(t.terms.list.filter((x) => x.id !== 't2'));
+    await until(() => badge(t).length === 0);
+    const since = phone.messages.length;
+    t.append('t2', reply('Late.'));
+    await pause(150);
+    expect(chats(phone, 't2', since)).toEqual([]);
+  });
+
+  test('reconnecting: the same key and the newest page, nothing lost while away', async () => {
+    const t = conversing();
+    t.write('t2', prompt('Hi.'), reply('Hello.'));
+    const { phone } = await paired(t);
+    const first = await phone.follow('t2');
+    phone.drop();
+    await until(() => t.statuses.at(-1)?.devices[0]?.connected === false);
+    t.append('t2', prompt('While away.'), reply('Done.'));
+    await pause(100);
+    expect((await phone.connect()).t).toBe('welcome');
+    const again = await phone.follow('t2');
+    expect(again.conversation).toBe(first.conversation);
+    expect(ns(again)).toEqual([1, 2, 3, 4]);
+    t.append('t2', prompt('Back.'));
+    await until(() => phone.conversation('t2').length === 5);
+  });
+
+  test('followed again once the computer stopped reading it: the newest page, then every change', async () => {
+    const t = conversing({ lingerMs: 40 });
+    t.write('t2', prompt('Hi.'), reply('Hello.'));
+    const { phone } = await paired(t);
+    const first = await phone.follow('t2');
+    // Changes while followed move the conversation's count of changes on.
+    for (const text of ['A.', 'B.', 'C.']) {
+      t.append('t2', prompt(text));
+      await until(() => phone.conversation('t2').at(-1)?.text === text);
+    }
+    phone.unfollow('t2');
+    // Nobody follows it: after a while it is no longer read, its count of changes starting again.
+    await pause(250);
+    const again = await phone.follow('t2');
+    expect(again.conversation).toBe(first.conversation);
+    expect(ns(again)).toEqual([1, 2, 3, 4, 5]);
+    t.append('t2', reply('Next.'));
+    await until(() => phone.conversation('t2').length === 6);
+  });
+
+  test('a transcript that can\'t be read: follow fails; a followed one says so once, and its entries come again once it reads', async () => {
+    const t = conversing();
+    // A folder where the transcript would be.
+    mkdirSync(t.file('t2'));
+    const { phone } = await paired(t);
+    expect(await phone.follow('t2')).toEqual({ t: 'error', rid: expect.any(Number), code: 'failed', message: UNREADABLE });
+    await pause(100);
+    expect(badge(t)).toEqual([]);
+    expect(await phone.follow('t2', 3)).toMatchObject({ t: 'error', code: 'failed', message: UNREADABLE });
+    // A transcript, followed; entry 1 a command still running, 200 entries after it.
+    rmSync(t.file('t2'), { recursive: true });
+    const lines = [call('b1', 'npm test'), ...Array.from({ length: 200 }, (_, i) => prompt(`Prompt ${i}.`))];
+    t.write('t2', ...lines);
+    const page = await phone.follow('t2');
+    expect(ns(page)).toEqual(Array.from({ length: 200 }, (_, i) => i + 2));
+    // Replaced by a link: never read through it. Said once, while every read fails.
+    const since = phone.messages.length;
+    const real = join(t.dir, 'elsewhere.jsonl');
+    writeFileSync(real, jsonl(...lines));
+    // Each change in one step (a rename over it): never a moment with no file, which would read as pending.
+    const swap = (make: (at: string) => void) => { const at = join(t.dir, 'swap'); make(at); renameSync(at, t.file('t2')); };
+    swap((at) => symlinkSync(real, at));
+    expect(await phone.waitFor((m) => m.t === 'error', { since })).toEqual({ t: 'error', rid: page.rid, code: 'failed', message: UNREADABLE });
+    await pause(150);
+    expect(phone.messages.slice(since).filter((m) => m.t === 'error')).toHaveLength(1);
+    expect(badge(t)).toEqual(['t2']);
+    // A file again, with the command done meanwhile: the newest page again, and the change to entry 1 with it.
+    const back = phone.messages.length;
+    swap((at) => writeFileSync(at, jsonl(...lines, done('b1', 'passed'), prompt('Back.'))));
+    await until(() => phone.conversation('t2').at(-1)?.text === 'Back.' && phone.conversation('t2')[0]?.n === 1);
+    expect(chats(phone, 't2', back).every((m) => m.rid === undefined && m.conversation === page.conversation)).toBe(true);
+    expect(chats(phone, 't2', back).flatMap(ns)).toEqual([1, ...Array.from({ length: 200 }, (_, i) => i + 3)]);
+    expect(phone.conversation('t2')[0]).toMatchObject({ n: 1, status: 'ok' });
+  });
+
+  test('a full page with the longest id and rid stays within 512 KiB of JSON, wrapper included; live changes too', async () => {
+    const t = conversing();
+    const id = 'x'.repeat(64);
+    t.terms.list = [...t.terms.list, term(id, '/work/app', { createdAt: 3, session: claude('s-long') })];
+    // Replies that weigh exactly 4 KiB each as entries: a page fills to the byte, so a wrapper left out of its budget
+    // would take the message over.
+    const W = 4096;
+    const at = Date.parse(T);
+    const sized = (n: number) => {
+      const room = W - (JSON.stringify({ k: 'reply', at, text: '', n }).length + 1);
+      return reply(`${'word '.repeat(room)}`.slice(0, room - 1) + '.');
+    };
+    t.write(id, ...Array.from({ length: 140 }, (_, i) => sized(i + 1)));
+    const { phone } = await paired(t);
+    const bytes = (m: Msg) => Buffer.byteLength(JSON.stringify(m), 'utf8');
+    const weighs = (m: Msg) => (m.entries as Msg[]).every((e) => Buffer.byteLength(JSON.stringify(e), 'utf8') + 1 === W);
+    const rid = 2 ** 31 - 1;
+    phone.send({ t: 'follow', rid, id });
+    const page = await phone.waitFor((m) => m.t === 'chat' && m.rid === rid);
+    expect((page.conversation as string).length).toBe(16);
+    expect(weighs(page)).toBe(true);
+    expect((page.entries as Msg[]).length).toBe(Math.floor((PAGE_BYTES - WRAPPER_BYTES) / W));
+    expect(page.start).toBeUndefined();
+    expect(bytes(page)).toBeLessThanOrEqual(PAGE_BYTES);
+    // 140 more at once: split into messages that each fit.
+    // Written at once (a new file in its place, the same lines first): read in one go, sent in one change.
+    const since = phone.messages.length;
+    const all = jsonl(...Array.from({ length: 280 }, (_, i) => sized(i + 1)));
+    writeFileSync(join(t.dir, 'next.jsonl'), all);
+    renameSync(join(t.dir, 'next.jsonl'), t.file(id));
+    await until(() => phone.conversation(id).at(-1)?.n === 280);
+    const live = chats(phone, id, since);
+    expect(live.flatMap(ns)).toEqual(Array.from({ length: 140 }, (_, i) => i + 141));
+    expect(live.every(weighs)).toBe(true);
+    expect((live[0]!.entries as Msg[]).length).toBe(Math.floor((PAGE_BYTES - WRAPPER_BYTES) / W));
+    for (const m of live) expect(bytes(m)).toBeLessThanOrEqual(PAGE_BYTES);
+  });
+
+  test('a session\'s transcript is read from its own Claude account\'s folder; the default account\'s from the default one', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'atl-accounts-'));
+    const defaultProjects = join(base, 'default', 'projects');
+    const work = join(base, 'work');
+    vi.stubEnv('ATELIER_TEST_CLAUDE_PROJECTS', defaultProjects);
+    const A = 'aaaaaaaa-0000-4000-8000-00000000000a';
+    const B = 'bbbbbbbb-0000-4000-8000-00000000000b';
+    const place = (projects: string, session: string, text: string) => {
+      const folder = join(projects, encodeProjectPath('/work/app'));
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(join(folder, `${session}.jsonl`), jsonl(prompt(text)));
+    };
+    place(join(work, 'projects'), A, 'As work.');
+    // The same session id in the default account's folder: not the one read for a work session.
+    place(defaultProjects, A, 'Not this one.');
+    place(defaultProjects, B, 'As default.');
+    const t = setup({ deps: { conversation: { home: null, timing: { pollMs: 20 } } } });
+    t.terms.list = [...t.terms.list, term('w', '/work/app', { createdAt: 3, session: claude(A) }), term('d', '/work/app', { createdAt: 4, session: claude(B) })];
+    t.terms.accountDirs.set('w', work);
+    const { phone } = await paired(t);
+    expect(((await phone.follow('w')).entries as Msg[]).map((e) => e.text)).toEqual(['As work.']);
+    expect(((await phone.follow('d')).entries as Msg[]).map((e) => e.text)).toEqual(['As default.']);
+  });
+
+  test('a phone that never follows gets no conversation, whatever Claude writes', async () => {
+    const t = conversing();
+    t.write('t2', prompt('Hi.'));
+    const { phone } = await paired(t);
+    await phone.state();
+    t.append('t2', reply('Hello.'));
+    t.terms.set([...t.terms.list]);
+    await pause(150);
+    expect(phone.messages.filter((m) => m.t === 'chat')).toEqual([]);
   });
 });
