@@ -9,8 +9,18 @@ const SCREENS = join(__dirname, '../../../tests/fixtures/claude-2.1.332/screens'
 const view = (lines: string[]): ScreenView => ({ lines, undimmed: lines, cols: 120 });
 /** A recorded screen from its text rows. */
 const txt = (name: string): ScreenView => view(readFileSync(join(SCREENS, `${name}.txt`), 'utf8').split('\n'));
-/** The prompt's state on a recorded screen read from its snapshot, dim text included. */
-const state = async (name: string) => promptState(await screenView(readFileSync(join(SCREENS, `${name}.ans`), 'utf8'), { cols: 120, rows: 40 }));
+/** A recorded screen from its snapshot, dim text included. */
+const ans = (name: string) => screenView(readFileSync(join(SCREENS, `${name}.ans`), 'utf8'), { cols: 120, rows: 40 });
+/** The prompt's state on a recorded screen read from its snapshot. */
+const state = async (name: string) => promptState(await ans(name));
+/** A recorded screen with some of its rows replaced (by their index in the `.txt`), and rows put in before one. */
+const edited = (name: string, rows: Record<number, string>, insert: { before: number; rows: string[] } | null = null): ScreenView => {
+  const lines = txt(name).lines.map((l, i) => rows[i] ?? l);
+  if (insert) lines.splice(insert.before, 0, ...insert.rows);
+  return view(lines);
+};
+/** Text of wide characters (two columns each), as typed in Japanese. */
+const WIDE = '確認'.repeat(30);
 
 /** The recording's fictional project folder, as the Bash dialog names it (hard-wrapped at column 119). */
 const PROJECT = `/work/hello/${'nested/'.repeat(16)}nested-/project`;
@@ -33,9 +43,11 @@ test('Bash after Tab on No: the cursor in its field; typed, the field holds the 
   expect(fieldHolds(typed, 3, 'do not create it, just say ok')).toBe(false);
   expect(fieldHolds(readDialog(txt('bash-on-no'), 'permission')!, 4, 'No')).toBe(false);
   // A long text shows only its start, which is what must be there: its first 40 characters that aren't spaces.
-  const long: ScreenDialog = { ...typed, options: [{ n: 1, label: 'Yes' }, { n: 2, label: `No, ${'ab '.repeat(22)}` }], focused: 2 };
-  expect(fieldHolds(long, 2, 'ab '.repeat(30))).toBe(true);
-  expect(fieldHolds(long, 2, `${'ab '.repeat(19)}ax`)).toBe(false);
+  const long: ScreenDialog = { ...typed, fieldText: 'ab '.repeat(22) };
+  expect(fieldHolds(long, 4, 'ab '.repeat(30))).toBe(true);
+  expect(fieldHolds(long, 4, `${'ab '.repeat(19)}ax`)).toBe(false);
+  // Spaces alone are nothing to find.
+  expect(fieldHolds(typed, 4, '   ')).toBe(false);
 });
 
 test('the Edit permission and the plan: their rows and options; the plan\'s third option is a field', () => {
@@ -95,6 +107,70 @@ test('several choices: several, and the cursor on Submit reads as in a field', (
   expect(readDialog(txt('several-review'), 'question')).toMatchObject({ several: false, focused: 1, inField: false });
 });
 
+test('a field\'s text read whole wherever it wraps: wide characters take two columns; the plan\'s feedback runs to its hint', () => {
+  // 57 wide characters reach column 119 on the field's row: the rest wrapped to the next, inside the word.
+  const question = readDialog(edited('question-field-typed', { 35: `❯ 3. ${WIDE.slice(0, 57)}` }, { before: 36, rows: [`     ${WIDE.slice(57)}`] }), 'question')!;
+  expect(question.options[2]).toEqual({ n: 3, label: WIDE, field: true });
+  // The plan's feedback in wide characters, or with a path pushed to the next row and a blank row: still its field.
+  const cjk = readDialog(edited('plan-field-typed', { 36: `   ❯ 3. ${WIDE.slice(0, 55)}` }, { before: 37, rows: [`        ${WIDE.slice(55)}`] }), 'plan')!;
+  const path = `${'docs/'.repeat(20)}verify.md`;
+  const wrapped = readDialog(edited('plan-field-typed', { 36: '   ❯ 3. Skip the verify step and read' }, { before: 37, rows: [`        ${path}`, '', '        then stop.'] }), 'plan')!;
+  for (const [d, text] of [[cjk, WIDE], [wrapped, `Skip the verify step and read ${path} then stop.`]] as const) {
+    expect(d.options[2]).toEqual({ n: 3, label: text, field: true });
+    expect(d).toMatchObject({ focused: 3, inField: true });
+    expect(chooseKeys(d, { n: 1, label: 'Yes, and use auto mode' })).toMatchObject({ ok: false, message: 'Answer in the terminal' });
+    expect(fieldHolds(d, 3, text)).toBe(true);
+  }
+});
+
+test('a field holds the text only from its start, its dim placeholder no text; a field holding text already is answered in the terminal', async () => {
+  // Empty fields: their placeholders are dim, nothing typed.
+  const question = readDialog(await ans('question-field'), 'question')!;
+  expect(question).toMatchObject({ focused: 3, inField: true, fieldText: '' });
+  expect(fieldHolds(question, 3, 'Type something.')).toBe(false);
+  expect(fieldHolds(question, 3, 'something')).toBe(false);
+  expect(fieldHolds(readDialog(await ans('plan-field'), 'plan')!, 3, 'Tell Claude what to change')).toBe(false);
+  expect(fieldHolds(readDialog(await ans('bash-amend'), 'permission')!, 4, 'and tell Claude what to do differently')).toBe(false);
+  // Typed: there from the start (a permission's "No, " before it).
+  expect(fieldHolds(readDialog(await ans('bash-amend-typed'), 'permission')!, 4, 'do not create it, just say ok')).toBe(true);
+  expect(fieldHolds(readDialog(await ans('question-field-typed'), 'question')!, 3, 'Mango')).toBe(true);
+  expect(fieldHolds(readDialog(await ans('plan-field-typed'), 'plan')!, 3, 'Skip the verify step.')).toBe(true);
+  // Text left in the field, the phone's typed after it: not what the phone sent.
+  const merged = readDialog(edited('question-field-typed', { 35: '❯ 3. MangoKiwi' }), 'question')!;
+  expect(fieldHolds(merged, 3, 'Kiwi')).toBe(false);
+  expect(fieldHolds(merged, 3, 'MangoKiwi')).toBe(true);
+  // The cursor moved off a field that holds text: its digit would put the phone's text after it.
+  const unfocused = 'Enter to select · ↑/↓ to navigate · Esc to cancel';
+  const left = readDialog(edited('question-field-typed', { 31: '❯ 1. Apple', 35: '  3. Mango', 39: unfocused }), 'question')!;
+  expect(left).toMatchObject({ focused: 1, inField: false });
+  expect(left.options[2]).toEqual({ n: 3, label: 'Mango', field: true });
+  expect(chooseKeys(left, { n: 3, label: 'Mango', text: 'Kiwi' })).toMatchObject({ ok: false, code: 'invalid', message: 'Answer in the terminal' });
+  const plan = readDialog(edited('plan-field-typed', { 34: '   ❯ 1. Yes, and use auto mode', 36: '     3. Skip the verify step.' }), 'plan')!;
+  expect(chooseKeys(plan, { n: 3, label: 'Skip the verify step.', text: 'x' })).toMatchObject({ ok: false, message: 'Answer in the terminal' });
+  // Untouched, with the cursor elsewhere: answered from the phone.
+  expect(chooseKeys(readDialog(txt('plan'), 'plan')!, { n: 3, label: 'Tell Claude what to change', text: 'x' })).toEqual({ ok: true, keys: '3', text: 'x' });
+});
+
+test('a permission\'s hint row tells an option from its field: "Tab to amend" on an option, "Esc to cancel" alone in the field', () => {
+  for (const s of ['bash', 'bash-second', 'bash-on-no', 'edit']) expect(readDialog(txt(s), 'permission'), s).toMatchObject({ inField: false });
+  for (const s of ['bash-amend', 'bash-amend-typed']) expect(readDialog(txt(s), 'permission'), s).toMatchObject({ inField: true });
+  // Feedback that ends like a key hint is still feedback in the field.
+  const esc = readDialog(edited('bash-amend-typed', { 37: ' ❯ 4. No, cancel it (esc)' }), 'permission')!;
+  expect(esc).toMatchObject({ focused: 4, inField: true });
+  expect(chooseKeys(esc, { n: 1, label: 'Yes' })).toMatchObject({ ok: false, message: 'Answer in the terminal' });
+  // The same label under a hint offering Tab to amend is an option of its own.
+  expect(readDialog(edited('bash-amend-typed', { 37: ' ❯ 4. No, cancel it (esc)', 39: ' Esc to cancel · Tab to amend' }), 'permission')).toMatchObject({ focused: 4, inField: false });
+  // A dialog that never offers to amend: its "Yes" is no field.
+  expect(readDialog(edited('bash', { 39: ' Esc to cancel' }), 'permission')).toMatchObject({ focused: 1, inField: false });
+});
+
+test('a question\'s cursor is in a field whenever its hint offers the editor, even with no rule to find the field by', () => {
+  const d = readDialog(edited('question-field', { 36: '', 37: '' }), 'question')!;
+  expect(d.options.map((o) => o.label)).toEqual(['Apple', 'Pear', 'Type something.']);
+  expect(d).toMatchObject({ focused: 3, inField: true });
+  expect(chooseKeys(d, { n: 1, label: 'Apple' })).toMatchObject({ ok: false, message: 'Answer in the terminal' });
+});
+
 test('/model is a menu with no options; the folder trust dialog is a menu marked trust', () => {
   expect(readDialog(txt('model'), null)).toMatchObject({ kind: 'menu', options: [], trust: false });
   expect(readDialog(txt('model'), null)!.rows[0]).toBe('Select model');
@@ -139,9 +215,11 @@ test('the page ignores the cursor: Bash with the cursor on No reads as the same 
 
 test('rows and labels stay within their caps', () => {
   const long = 'x'.repeat(400);
-  const d = readDialog(view([RULE, ...Array.from({ length: 50 }, (_, i) => `row ${i}`), long, 'Do you want to proceed?', '❯ 1. Yes', `  2. ${long}`, '  3. No', '', 'Esc to cancel']), 'permission')!;
+  const d = readDialog(view([RULE, 'Bash command', ...Array.from({ length: 50 }, (_, i) => `row ${i}`), long, 'Do you want to proceed?', '❯ 1. Yes', `  2. ${long}`, '  3. No', '', 'Esc to cancel']), 'permission')!;
   expect(d.rows).toHaveLength(40);
-  // The rows nearest the options are the ones kept.
+  // Its first rows (what it asks about) and those nearest the options (what it asks), a mark where rows were left out.
+  expect(d.rows.slice(0, 2)).toEqual(['Bash command', 'row 0']);
+  expect(d.rows[20]).toBe('…');
   expect(d.rows.at(-1)).toBe('Do you want to proceed?');
   expect(d.rows.at(-2)).toHaveLength(MAX_ROW);
   expect(d.options[1]!.label).toHaveLength(MAX_ROW);

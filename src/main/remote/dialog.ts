@@ -23,19 +23,43 @@ export interface ScreenDialog {
   focused: number | null;
   /** The cursor is in a text field: a digit would be typed into it. */
   inField: boolean;
+  /**
+   * What the field the cursor is in holds as typed, its dim placeholder left out ('' when empty; spaces mean
+   * nothing, a wrap adds one); null when the cursor is in none. For checks on this computer, not for the phone.
+   */
+  fieldText: string | null;
   /** The options are checkboxes. */
   several: boolean;
   /** The folder trust dialog (Esc there exits Claude Code). */
   trust: boolean;
-  /** b64url(SHA-256(kind, rows, labels))[0..8]: the same dialog page reads the same wherever the cursor is among its options. */
+  /**
+   * b64url(SHA-256(kind, rows, labels))[0..8]: the same dialog page reads the same wherever the cursor is among its
+   * options (a menu's rows show its cursor).
+   */
   page: string;
 }
 export const MAX_ROWS = 40, MAX_ROW = 300;
 
 /** A row's text: no frame sides, no indent. */
 const textOf = (line: string | undefined) => (line ?? '').replace(FRAME, '').trim();
-/** How far across the screen a row's text reaches, in characters. */
-const reach = (line: string | undefined) => [...(line ?? '').trimEnd()].length;
+/** Characters two columns wide, as Claude Code lays them out: East Asian wide and full-width ones, and emoji. */
+const WIDE: readonly (readonly [number, number])[] = [
+  [0x1100, 0x115f], [0x2e80, 0x303e], [0x3041, 0x33ff], [0x3400, 0x4dbf], [0x4e00, 0x9fff], [0xa000, 0xa4cf],
+  [0xac00, 0xd7a3], [0xf900, 0xfaff], [0xfe30, 0xfe4f], [0xff00, 0xff60], [0xffe0, 0xffe6],
+  [0x1f300, 0x1f64f], [0x1f680, 0x1f6ff], [0x1f900, 0x1faff], [0x20000, 0x3fffd]
+];
+/** The columns the first character of `s` takes: two when wide, none for a combining mark, a joiner or a variation selector. */
+function width(s: string): number {
+  const cp = s.codePointAt(0);
+  if (cp === undefined || (cp >= 0x300 && cp <= 0x36f) || cp === 0x200d || (cp >= 0xfe00 && cp <= 0xfe0f)) return 0;
+  return WIDE.some(([a, b]) => cp >= a && cp <= b) ? 2 : 1;
+}
+/** How far across the screen a row's text reaches, in columns. */
+function reach(line: string | undefined): number {
+  let n = 0;
+  for (const ch of (line ?? '').trimEnd()) n += width(ch);
+  return n;
+}
 /** At most `MAX_ROW` UTF-16 units, never half a character. */
 function cut(s: string): string {
   if (s.length <= MAX_ROW) return s;
@@ -53,11 +77,17 @@ const isBoxTop = (row: string) => RULE.test(row) || /^[─━]+ \S.* [─━]+$/
 /** The plan dialog's hint under its feedback option, whatever that option's label (it becomes the typed text). */
 const FEEDBACK = 'shift+tab to approve with this feedback';
 const PLAN_FIELD = 'Tell Claude what to change';
+/** A field's label while nothing is typed in it. Another label is text left there. */
+const PLACEHOLDER: Partial<Record<DialogKind, string>> = { question: 'Type something.', plan: PLAN_FIELD };
 /** A question's chip or tab-bar row (`☐ Color`, `←  ☒ Season  ✔ Submit  →`), or its review page's title. */
 const QUESTION_ROW = /[☐☒]|✔ Submit|^Review your answers$/;
 const REVIEW = 'Review your answers';
-/** The hint a dialog shows while its cursor is in a text field (or on Submit, past one). */
+/** The hint a question shows while its cursor is in a text field (or on Submit, past one). */
 const EDITOR = 'ctrl+g to edit in Vim';
+/** A permission's hint while its cursor is in an amended option's field: no more "· Tab to amend". */
+const FIELD_HINT = 'Esc to cancel';
+/** An amended option's label: its own word, a comma, then the feedback (or its placeholder). */
+const AMENDED = /^(?:Yes|No),/;
 const CHECKBOX = /^\[(?: |✔)\]/;
 const TRUST_HINT = 'Enter to confirm · Esc to cancel';
 
@@ -70,7 +100,11 @@ function promptBox(lines: readonly string[]): { from: number; to: number } | nul
   return null;
 }
 
-/** The index of the row a dialog starts below, from row `at` up: its top edge, or a transcript row (marked at column 0). */
+/**
+ * The index of the row a dialog starts below, from row `at` up: its top edge, or a transcript row (marked at column 0).
+ * Not `dialogAtBottom`'s `above`: that one stops at a mark anywhere on a row, which would cut a question's review page
+ * at its own `●` rows.
+ */
 function topAbove(lines: readonly string[], at: number): number {
   let i = at;
   while (i >= 0 && !isTop(textOf(lines[i])) && !TRANSCRIPT.test(lines[i] ?? '')) i--;
@@ -87,6 +121,16 @@ function rowsBetween(lines: readonly string[], from: number, to: number): string
   return rows;
 }
 
+/**
+ * At most `MAX_ROWS` of a dialog's rows: its first ones (what it asks about: the tool, the command, the file) and those
+ * nearest its options (what it asks), with `…` where rows were left out.
+ */
+function capped(rows: string[]): string[] {
+  if (rows.length <= MAX_ROWS) return rows;
+  const head = MAX_ROWS / 2;
+  return [...rows.slice(0, head), '…', ...rows.slice(rows.length - (MAX_ROWS - head - 1))];
+}
+
 /** The index of the last row with text (-1: none). */
 const lastRow = (lines: readonly string[]) => {
   let i = lines.length - 1;
@@ -95,22 +139,31 @@ const lastRow = (lines: readonly string[]) => {
 };
 
 /**
- * An option's label: its row's text, then each row right below it while the row before reached `cols − 20` or more
- * (Claude Code wrapped it), with no space where that row reached `cols − 1` (a hard wrap, inside a word). A numbered
- * row is the next option however long this one is; a rule, an empty row or the plan's feedback hint ends it too.
- * `end`: the label's last row.
+ * An option's label: its row's text, then each row right below it while the row before reached `cols − 20` columns
+ * or more (Claude Code wrapped it), with no space where the next row's first character wouldn't have fit (a hard wrap,
+ * inside a word). A numbered row is the next option however long this one is; a rule, an empty row or the plan's
+ * feedback hint ends it too. With `until`, every row with text down to that one (the plan's feedback, which has no
+ * description below it: it wraps anywhere and may hold blank rows). `end`: the label's last row.
  */
-function labelOf(lines: readonly string[], o: Row, cols: number): { label: string; end: number } {
+function labelOf(lines: readonly string[], o: Row, cols: number, until: number | null): { label: string; end: number } {
   let label = o.label;
   let end = o.line;
-  for (let i = o.line + 1; i < lines.length; i++) {
+  for (let i = o.line + 1; i < (until ?? lines.length); i++) {
     const row = textOf(lines[i]);
     const before = reach(lines[end]);
-    if (!row || before < cols - 20 || OPTION.test(row) || RULE.test(row) || row === FEEDBACK) break;
-    label += (before >= cols - 1 ? '' : ' ') + row;
+    if (until === null && (!row || before < cols - 20 || OPTION.test(row) || RULE.test(row) || row === FEEDBACK)) break;
+    if (!row) continue;
+    label += (before + width(row) > cols - 1 ? '' : ' ') + row;
     end = i;
   }
   return { label: cut(label), end };
+}
+
+/** What option `o`'s rows (down to row `end`) hold as typed: their text in `undimmed`, where dim text is spaces. */
+function typedIn(undimmed: readonly string[], o: Row, end: number): string {
+  const parts = [OPTION.exec(textOf(undimmed[o.line]))?.[3] ?? ''];
+  for (let i = o.line + 1; i <= end; i++) parts.push(textOf(undimmed[i]));
+  return parts.join(' ').trim();
 }
 
 const pageOf = (kind: DialogKind, rows: string[], options: DialogOption[]) =>
@@ -119,7 +172,26 @@ const pageOf = (kind: DialogKind, rows: string[], options: DialogOption[]) =>
 /** A menu: all its rows from its top edge (above row `at`) to its last row, its first `MAX_ROWS`. */
 function menu(lines: readonly string[], at: number, trust: boolean): ScreenDialog {
   const rows = rowsBetween(lines, topAbove(lines, at), lastRow(lines) + 1).slice(0, MAX_ROWS);
-  return { kind: 'menu', rows, options: [], focused: null, inField: false, several: false, trust, page: pageOf('menu', rows, []) };
+  return { kind: 'menu', rows, options: [], focused: null, inField: false, fieldText: null, several: false, trust, page: pageOf('menu', rows, []) };
+}
+
+/** The option that is the dialog's text field, and for the plan the row of its feedback hint (null: none). */
+function fieldOf(lines: readonly string[], options: readonly Row[], wait: DialogWait, rows: readonly string[]): { n: number | null; hint: number | null } {
+  const first = options[0]!.line;
+  if (wait === 'plan') {
+    // The option above the feedback hint, whatever its label; else the one labelled as the empty field.
+    for (let i = first + 1; i < lines.length; i++) {
+      if (textOf(lines[i]) === FEEDBACK) return { n: options.filter((o) => o.line < i).at(-1)!.n, hint: i };
+    }
+    return { n: options.find((o) => o.label === PLAN_FIELD)?.n ?? null, hint: null };
+  }
+  if (wait === 'question' && !rows.includes(REVIEW)) {
+    // The last option above the rule drawn inside the list, before "Chat about this".
+    for (let i = first + 1; i < options.at(-1)!.line; i++) {
+      if (RULE.test(textOf(lines[i]))) return { n: options.filter((o) => o.line < i).at(-1)!.n, hint: null };
+    }
+  }
+  return { n: null, hint: null };
 }
 
 /**
@@ -142,37 +214,33 @@ export function readDialog(view: ScreenView, wait: DialogWait | null): ScreenDia
   if (box && box.to > d.options[0]!.line) return null;
   if (!wait) return menu(lines, d.options[0]!.line, false);
 
-  const rows = rowsBetween(lines, topAbove(lines, d.options[0]!.line - 1), d.options[0]!.line).slice(-MAX_ROWS);
+  const rows = capped(rowsBetween(lines, topAbove(lines, d.options[0]!.line - 1), d.options[0]!.line));
   if (wait === 'question' && !rows.some((r) => QUESTION_ROW.test(r))) return null;
-  const read = d.options.map((o) => ({ ...labelOf(lines, o, cols), row: o }));
+  const field = fieldOf(lines, d.options, wait, rows);
+  const read = d.options.map((o) => ({ ...labelOf(lines, o, cols, o.n === field.n ? field.hint : null), row: o }));
   // The hint row: the last row below the options (none on a question's review page).
   let hint = '';
   for (let i = lines.length - 1; i > read.at(-1)!.end && !hint; i--) hint = textOf(lines[i]);
 
-  let field: number | null = null;
-  if (wait === 'plan') field = read.find((r) => textOf(lines[r.end + 1]) === FEEDBACK || r.label === PLAN_FIELD)?.row.n ?? null;
-  if (wait === 'question' && !rows.includes(REVIEW)) {
-    // The last option above the rule drawn inside the list, before "Chat about this".
-    const first = d.options[0]!.line;
-    let rule = -1;
-    for (let i = first + 1; i < d.options.at(-1)!.line && rule === -1; i++) if (RULE.test(textOf(lines[i]))) rule = i;
-    if (rule !== -1) field = read.filter((r) => r.row.line < rule).at(-1)?.row.n ?? null;
-  }
   const amend = wait === 'permission' && hint.includes('Tab to amend');
   const options: DialogOption[] = read.map(({ row, label }) => ({
     n: row.n, label,
-    ...(row.n === field ? { field: true as const } : {}),
+    ...(row.n === field.n ? { field: true as const } : {}),
     ...(amend && label === 'No' ? { amend: true as const } : {})
   }));
 
   const at = read.find((r) => r.row.focused);
   const focused = at?.row.n ?? null;
-  const inField = wait === 'permission' ? !!at && !PLAIN.test(at.label)
-    : focused !== null ? focused === field
-    // A question with no option under the cursor: on Submit, past the field, where the hint still offers the editor.
-    : wait === 'question' && hint.includes(EDITOR);
+  const inField = wait === 'permission'
+    // A label that isn't plain may be a field; one that is (feedback ending like "(esc)") is still one under the
+    // field's hint.
+    ? !!at && (!PLAIN.test(at.label) || (hint === FIELD_HINT && AMENDED.test(at.label)))
+    // A question's hint offers the editor whenever the cursor is in a field, or on Submit, past one.
+    : (focused !== null && focused === field.n) || (wait === 'question' && hint.includes(EDITOR));
+  const typed = inField && at ? typedIn(view.undimmed, at.row, at.end) : null;
   return {
     kind: wait, rows, options, focused, inField,
+    fieldText: typed !== null && wait === 'permission' ? typed.replace(/^No,\s*/, '') : typed,
     several: options.some((o) => CHECKBOX.test(o.label)),
     trust: false,
     page: pageOf(wait, rows, options)
@@ -206,14 +274,18 @@ const DOWN = '\x1b[B', UP = '\x1b[A';
  * The keys that choose option `n` (labelled `label`, as the phone showed it) in dialog `d`: its digit; for a field,
  * its digit and then the text, typed once the cursor is in the field; for a permission's "No" with feedback, the arrows
  * from the cursor to it and Tab, then the text. Refused when the dialog is answered in the terminal (a menu,
- * checkboxes, the cursor already in a field: a digit would be typed there), or the option isn't the one shown.
+ * checkboxes, the cursor already in a field: a digit would be typed there; a field holding text already: the phone's
+ * would go after it), or the option isn't the one shown.
  */
 export function chooseKeys(d: ScreenDialog, o: { n: number; label: string; text?: string }): ChooseKeys {
   if (d.kind === 'menu' || d.several || d.inField) return IN_TERMINAL;
   const option = d.options.find((x) => x.n === o.n);
   if (!option) return IN_TERMINAL;
   if (option.label !== o.label) return { ok: false, code: 'busy', message: 'The request changed' };
-  if (option.field) return o.text ? { ok: true, keys: String(o.n), text: o.text } : { ok: false, code: 'invalid', message: 'This option needs text.' };
+  if (option.field) {
+    if (option.label !== PLACEHOLDER[d.kind]) return IN_TERMINAL;
+    return o.text ? { ok: true, keys: String(o.n), text: o.text } : { ok: false, code: 'invalid', message: 'This option needs text.' };
+  }
   if (!o.text) return { ok: true, keys: String(o.n) };
   if (!option.amend) return { ok: false, code: 'invalid', message: 'This option takes no text.' };
   if (d.focused === null) return IN_TERMINAL;
@@ -221,12 +293,15 @@ export function chooseKeys(d: ScreenDialog, o: { n: number; label: string; text?
   return { ok: true, keys: (steps > 0 ? DOWN : UP).repeat(Math.abs(steps)) + '\t', text: o.text };
 }
 
+const flat = (s: string) => s.replace(/\s+/g, '');
+
 /**
- * Whether option `n`'s field shows `text`: the cursor in it, and its label holding the text's first 40 characters
- * that aren't spaces (spaces left out on both sides: a long text wraps anywhere, and only its start may show).
+ * Whether option `n`'s field shows `text` as typed: the cursor in it, and what it holds starting with the text's first
+ * 40 characters that aren't spaces (spaces left out on both sides: a long text wraps anywhere, and only its start may
+ * show). Text left there before, or a dim placeholder, isn't the text.
  */
 export function fieldHolds(d: ScreenDialog, n: number, text: string): boolean {
-  if (d.focused !== n || !d.inField) return false;
-  const label = d.options.find((o) => o.n === n)?.label.replace(/\s+/g, '') ?? '';
-  return label.includes([...text.replace(/\s+/g, '')].slice(0, 40).join(''));
+  if (d.focused !== n || !d.inField || d.fieldText === null) return false;
+  const want = [...flat(text)].slice(0, 40).join('');
+  return want !== '' && flat(d.fieldText).startsWith(want);
 }
