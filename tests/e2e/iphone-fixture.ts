@@ -1,6 +1,7 @@
 // What the iPhone access specs share: a project window with a terminal at its prompt, a test relay
 // (tests/support/test-relay.ts) and a fake phone (tests/support/fake-phone.ts) for it, Settings › iPhone, a phone paired
-// by code with Allow, the code on the pairing sheet, and the window's commands and menu items.
+// by code with Allow, the code on the pairing sheet, the window's commands and menu items, a Claude session started
+// from the window, and the check that a Claude session's terminal kept the window's size.
 import { _electron as electron, expect, type ElectronApplication, type Page } from '@playwright/test';
 import { mkdtempSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -8,6 +9,7 @@ import { join } from 'node:path';
 import { e2eEnv } from './env';
 import { startTestRelay, type TestRelay } from '../support/test-relay';
 import { FakePhone } from '../support/fake-phone';
+import type { RemoteStatus } from '../../src/shared/remote';
 
 /** A command as the menu sends it, to the first window (or `win`, a window's index). */
 export const command = (app: ElectronApplication, c: string, win = 0) =>
@@ -80,6 +82,37 @@ export async function codeOnScreen(win: Page, not?: string): Promise<string> {
   if (not) await expect(code).not.toHaveText(not, { timeout: 15000 });
   await expect(code).toHaveText(/^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/, { timeout: 15000 });
   return (await code.innerText()).trim();
+}
+
+/** The session rows the window lists, their terminal ids in order. */
+export const rowIds = (win: Page) => win.locator('[data-term-row]').evaluateAll((rows) => rows.map((r) => r.getAttribute('data-term-row')!));
+
+/** A new Claude session in the place in front, from the menu's New Claude Session: its id, once it asks for a permission. */
+export async function newWaitingSession(app: ElectronApplication, win: Page): Promise<string> {
+  const before = new Set(await rowIds(win));
+  await command(app, 'new-session');
+  // Its name sheet: no name, the automatic one.
+  const name = win.getByPlaceholder('Session name (optional)');
+  await expect(name).toBeFocused();
+  await name.press('Enter');
+  let id = '';
+  await expect.poll(async () => { id = (await rowIds(win)).find((x) => !before.has(x)) ?? ''; return id; }, { timeout: 30_000 }).not.toBe('');
+  await expect(win.locator(`[data-term-row="${id}"]`)).toContainText('Needs permission', { timeout: 30_000 });
+  return id;
+}
+
+type RemoteApi = { atelier: { remote: { status(): Promise<RemoteStatus> } } };
+/**
+ * A Claude session's terminal still has the window's size: every size the stand-in for Claude Code recorded in
+ * `sizeFile` (its ATELIER_FAKE_SIZE_FILE: a `<cols>x<rows>` line at its prompt, then one after each SIGWINCH) is its
+ * first, the remote status the window gets lists no phone sizing it, and the window shows no size note.
+ */
+export async function sizeKept(win: Page, id: string, sizeFile: string, what: string): Promise<void> {
+  const sizes = readFileSync(sizeFile, 'utf8').trim().split('\n');
+  expect(sizes.filter((s) => s !== sizes[0]), `${what}: the stand-in's terminal changed size (from ${sizes[0]})`).toEqual([]);
+  const status = await win.evaluate(() => (window as unknown as RemoteApi).atelier.remote.status());
+  expect(status.sized.filter((s) => s.id === id), `${what}: a phone sized it`).toEqual([]);
+  await expect(win.locator('.terminal-slot:visible .size-note'), `${what}: the size note`).toHaveCount(0);
 }
 
 /** Settings › iPhone: access on, `phone` paired by code with Allow, Settings closed. */

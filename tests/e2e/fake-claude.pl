@@ -51,8 +51,9 @@ if (my $gate = $ENV{ATELIER_FAKE_START_GATE}) { my $until = time() + 60; select(
 send_hook(qq({"hook_event_name":"SessionStart","session_id":"$sid","transcript_path":"$tp","source":"@{[$resume ? 'resume' : 'startup']}"@{[title_field()]}}));
 # ATELIER_FAKE_CONVERSATION (opt-in, with ATELIER_FAKE_UUID_SESSIONS: a transcript is found by a UUID session id): a
 # conversation written to the session's transcript as Claude Code writes one. Its first turn runs the tests (the prompt,
-# a reply, the Bash call and its result) and asks no permission; then Claude's prompt box, where each prompt typed or
-# pasted is answered "You said: <prompt>" (see the prompt box below).
+# a reply, the Bash call and its result) and asks no permission, unless ATELIER_FAKE_PERMISSION_KEYS: then its dialog
+# comes between the call and its result, the result only once allowed. Then Claude's prompt box, where each prompt typed
+# or pasted is answered "You said: <prompt>" (see the prompt box below).
 my $conversation = $ENV{ATELIER_FAKE_CONVERSATION};
 # The conversation's transcript lines, each one's parent the line before it, as Claude Code chains them.
 my ($parent, $written) = ('null', 0);
@@ -78,15 +79,14 @@ if ($conversation) {
   send_hook(qq({"hook_event_name":"PreToolUse","session_id":"$sid","tool_name":"Edit","tool_input":{"file_path":"/p/SpeakerPanel.tsx"}}));
 }
 send_status(qq("model":{"id":"claude-opus-5-5","display_name":"Opus 5.5"},"cost":{"total_cost_usd":4.126,"total_lines_added":120,"total_lines_removed":30},"context_window":{"used_percentage":58},"rate_limits":{"five_hour":{"used_percentage":$p5,"resets_at":$r5},"seven_day":{"used_percentage":18,"resets_at":$r7}}));
-send_hook(qq({"hook_event_name":"PermissionRequest","session_id":"$sid","tool_name":"Bash","tool_input":{"command":"npm test"}})) unless $conversation;
+send_hook(qq({"hook_event_name":"PermissionRequest","session_id":"$sid","tool_name":"Bash","tool_input":{"command":"npm test"}})) if !$conversation || $ENV{ATELIER_FAKE_PERMISSION_KEYS};
 use Cwd ();
 # The arguments of a resume (or of every start with ATELIER_FAKE_PRINT_ARGS), without Atelier's --settings (a temporary path).
 my @shown; for (my $i = 0; $i <= $#ARGV; $i++) { if ($ARGV[$i] eq '--settings') { $i++; next; } push @shown, $ARGV[$i]; }
 print "FAKE-CLAUDE args=@shown\n" if $resume || $ENV{ATELIER_FAKE_PRINT_ARGS};
 print "FAKE-CLAUDE cwd=" . Cwd::getcwd() . "\n";
 my ($line, $denied) = ('', 0);
-# A conversation's first turn asks for nothing.
-if (my $mode = $conversation ? '' : $ENV{ATELIER_FAKE_PERMISSION_KEYS}) {
+if (my $mode = $ENV{ATELIER_FAKE_PERMISSION_KEYS}) {
   # ATELIER_FAKE_PERMISSION_KEYS (opt-in): the permission waits as Claude Code's dialog does, the request and its
   # options drawn as it draws them (below a rule) and chosen one key at a time (raw mode, nothing echoed): a digit
   # chooses that option, Esc declines. "no-first" lists No before Yes; "always-only" offers no plain Yes;
@@ -394,15 +394,76 @@ sub send_typed {
   }
   draw_box();
 }
+# ATELIER_FAKE_SIZE_FILE (a path, opt-in): the terminal's size, a line "<cols>x<rows>" appended on entering the prompt
+# box and again after every SIGWINCH (before the box SIGWINCH stays ignored: the start's dialog reads its key as without
+# it). ATELIER_FAKE_ASK_FILE (a path, opt-in): once that file exists, Claude asks for a permission (see ask_build).
+my ($size_file, $ask_file, $winched) = ($ENV{ATELIER_FAKE_SIZE_FILE}, $ENV{ATELIER_FAKE_ASK_FILE}, 0);
+sub size_line { my ($rows, $cols) = split ' ', (qx(stty size 2>/dev/null) // ''); append_file($size_file, ($cols // 0) . 'x' . ($rows // 0) . "\n"); }
+# The keys typed within 250 ms (undef: none yet; '': the terminal is gone). It waits in select, so a signal never cuts
+# a read; a size changed meanwhile is recorded first.
+my $keys;
+sub keys_in {
+  if ($winched) { $winched = 0; size_line(); }
+  return undef unless $keys->can_read(0.25);
+  my $n = sysread(STDIN, my $chunk, 4096);
+  return $chunk if $n;
+  return defined $n || !$!{EINTR} ? '' : undef;
+}
+# A permission asked on cue: a Bash call in the transcript, its PreToolUse and PermissionRequest, and the dialog in
+# place of the prompt box, drawn as Claude Code 2.1.332 draws it, answered with one key: 1 (or 2) runs it ("Build
+# finished" in the transcript, PostToolUse, Stop), 3 or Esc declines (the idle notice). Then the prompt box again.
+my $builds = 0;
+sub ask_build {
+  my $use = "toolu_build_${$}_" . ++$builds;
+  transcript('assistant', qq({"role":"assistant","content":[{"type":"tool_use","id":"$use","name":"Bash","input":{"command":"npm run build","description":"Build the app"}}]}));
+  send_hook(qq({"hook_event_name":"PreToolUse","session_id":"$sid","tool_name":"Bash","tool_input":{"command":"npm run build"}}));
+  send_hook(qq({"hook_event_name":"PermissionRequest","session_id":"$sid","tool_name":"Bash","tool_input":{"command":"npm run build"}}));
+  erase_box();
+  my @options = ('Yes', "Yes, and don't ask again for npm run build commands", 'No');
+  my @rows = ($rule, 'Bash command', '  npm run build', '  Build the app', 'Do you want to proceed?',
+    (map { sprintf '%s %d. %s', ($_ == 0 ? "\xE2\x9D\xAF" : ' '), $_ + 1, $options[$_] } 0..$#options), '', "Esc to cancel \xC2\xB7 Tab to amend");
+  print join("\n", @rows);
+  # One key: an arrow or a terminal's report is no key; any other is printed back, and the dialog waits on.
+  my ($key, $shown) = ('', scalar @rows);
+  KEY: for (;;) {
+    my $chunk = keys_in();
+    next unless defined $chunk;
+    last unless length $chunk;
+    alarm $linger;
+    while (length $chunk) {
+      next if $chunk =~ s/^\e(?:\[[0-9;?]*[\x40-\x7e]|O.)//s;
+      my $c = substr($chunk, 0, 1, '');
+      if ($c =~ /^[123]$/ || $c eq "\e") { $key = $c; last KEY; }
+      printf "\nFAKE-CLAUDE key=%02x", ord $c;
+      $shown++;
+    }
+  }
+  # The dialog gone: from its last row up to its rule, everything erased.
+  print "\r\e[" . ($shown - 1) . "A\e[J";
+  if ($key eq '1' || $key eq '2') {
+    print 'FAKE-CLAUDE allowed' . ($key eq '2' ? ' always' : '') . " npm run build\n";
+    transcript('user', qq({"role":"user","content":[{"tool_use_id":"$use","type":"tool_result","content":"Build finished","is_error":false}]}), ',"toolUseResult":{"stdout":"Build finished","stderr":"","interrupted":false,"isImage":false,"noOutputExpected":false}');
+    send_hook(qq({"hook_event_name":"PostToolUse","session_id":"$sid","tool_name":"Bash","tool_input":{"command":"npm run build"}}));
+    send_hook(qq({"hook_event_name":"Stop","session_id":"$sid"}));
+  } elsif (length $key) {
+    print "FAKE-CLAUDE denied npm run build\n";
+    send_hook(qq({"hook_event_name":"Notification","session_id":"$sid","notification_type":"idle_prompt","message":"Claude is waiting for your input"}));
+  }
+  draw_box();
+}
 if ($conversation) {
+  require IO::Select;
+  $keys = IO::Select->new(\*STDIN);
   $tty = POSIX::Termios->new; $tty->getattr(0); $tty_lflag = $tty->getlflag;
   $tty->setlflag($tty_lflag & ~(POSIX::ECHO() | POSIX::ICANON())); $tty->setcc(POSIX::VMIN(), 1); $tty->setcc(POSIX::VTIME(), 0); $tty->setattr(0, POSIX::TCSANOW());
+  if ($size_file) { $SIG{WINCH} = sub { $winched = 1 }; size_line(); }
   draw_box();
   my ($buf, $paste) = ('', 0);
   for (;;) {
-    my $n = sysread(STDIN, my $chunk, 4096);
-    if (!defined $n) { next if $!{EINTR}; last; }
-    last if $n == 0;
+    if ($ask_file && -e $ask_file) { unlink $ask_file; ask_build(); }
+    my $chunk = keys_in();
+    next unless defined $chunk;
+    last unless length $chunk;
     alarm $linger;
     $buf .= $chunk;
     my $changed = 0;

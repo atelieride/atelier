@@ -6,17 +6,25 @@
 //                       sides take turns through empty files there: the phone writes phone-<step> once it has done a
 //                       step (phone-created holds the id of the terminal it started), this side writes mac-<step> once
 //                       it has seen the step's effect, or mac-failed; phone-done (passed or failed) says the phone side
-//                       ended. push.json says what the push check saw.
+//                       ended. push.json says what the push check saw. The stand-in for Claude Code records its
+//                       terminal's size in claude-size.txt, and asks for a permission once this side writes
+//                       ask-permission.
 //   ATELIER_LIVE_RELAY  the relay's base URL (http://127.0.0.1:8787 by default), typed in Settings › iPhone
 //   ATELIER_LIVE_TEXT   what the phone echoes (from-iphone-live by default)
 // The Atelier is the e2e one (tests/e2e/env.ts): hidden, its own temporary home and atelierd, the stand-in for Claude
-// Code with a real-looking permission dialog, and "away from this Mac" forced so a session that starts waiting rings
-// the phone. A fresh project with workspaces and activities on: in Workspace 1 a plain terminal and a Claude session
-// waiting for a permission; an activity, Release, empty and not in front.
+// Code with a real-looking permission dialog and a conversation in its transcript, and "away from this Mac" forced so a
+// session that starts waiting rings the phone. A fresh project with workspaces and activities on: in Workspace 1 a
+// plain terminal and a Claude session waiting for a permission; an activity, Release, empty and not in front.
 //   1. pairing: Settings › iPhone, the relay, access on, Pair iPhone…, Allow once the phone asks;
 //   2. the phone sees the workspace, the activity and the waiting row (phone-sidebar → mac-sidebar);
 //   3. it allows the permission from the row: the session's own dialog says it was allowed (phone-allowed → mac-allowed);
 //   4. it renames that session: the row says so (phone-renamed → mac-renamed);
+//   4b. it follows that session's conversation: the phone badge on its row, its terminal still at the window's size
+//       (phone-conversation → mac-conversation);
+//   4c. it sends a prompt: Claude gets it; then the stand-in asks for a second permission, Bash npm run build
+//       (phone-said → mac-said);
+//   4d. it chooses Yes on that permission's card: allowed (phone-chose → mac-chose);
+//   4e. it opens the session's terminal fitted: the badge, the window keeps its size (phone-terminal → mac-terminal);
 //   5. it starts a terminal in Release: the row lands in that activity (phone-created → mac-created);
 //   6. it types in the plain terminal: the output and the phone's marks here (mac-typed);
 //   7. it closes Release from its head's swipe, moving its rows: the activity is gone, the terminal it started is in
@@ -24,14 +32,14 @@
 //   8. once the phone side has passed (the app quit, as a phone in a pocket): a session that starts waiting sends a
 //      push for the phone's registration, the local relay (no APNs credentials) answers 503 NotConfigured, and the
 //      registration is kept: a second session's push goes out too.
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { _electron as electron, expect, test, type Page } from '@playwright/test';
 import { existsSync, mkdtempSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { homeHash } from '../../src/daemon/launchd';
 import { e2eEnv } from './env';
 import { look } from './shots';
-import { command, menu, settingsSet, stopDaemon } from './iphone-fixture';
+import { command, menu, newWaitingSession, settingsSet, sizeKept, stopDaemon } from './iphone-fixture';
 
 const LIVE = process.env.ATELIER_LIVE_DIR ?? '';
 const RELAY = process.env.ATELIER_LIVE_RELAY || 'http://127.0.0.1:8787';
@@ -40,6 +48,12 @@ const DONE = join(LIVE, 'phone-done');
 const WORKSPACE = 'Workspace 1';
 const ACTIVITY = 'Release';
 const RENAMED = 'Ship 2.0';
+/** A reply already in the stand-in's transcript; the prompt the phone sends, and the reply it then sees. */
+const SAID = 'Running the test suite.';
+const PROMPT = 'Now build it';
+const REPLY = 'You said: Now build it';
+/** The stand-in's terminal sizes, one line each (ATELIER_FAKE_SIZE_FILE). */
+const SIZES = join(LIVE, 'claude-size.txt');
 
 /** Written whole or not at all: the phone side may read it at any moment. */
 function handOff(name: string, value: unknown): void {
@@ -77,21 +91,6 @@ async function phoneDid(step: string, timeout = 10 * 60_000): Promise<string> {
 const macSaw = (step: string) => writeFileSync(join(LIVE, `mac-${step}`), '');
 
 const codeOf = (win: Page) => win.locator('.pair-sheet .pair-code:not(.is-spent)');
-const rowIds = (win: Page) => win.locator('[data-term-row]').evaluateAll((rows) => rows.map((r) => r.getAttribute('data-term-row')!));
-
-/** A new Claude session in the place in front, from the menu's New Claude Session: its id, once it asks for a permission. */
-async function newWaitingSession(app: ElectronApplication, win: Page): Promise<string> {
-  const before = new Set(await rowIds(win));
-  await command(app, 'new-session');
-  // Its name sheet: no name, the automatic one.
-  const name = win.getByPlaceholder('Session name (optional)');
-  await expect(name).toBeFocused();
-  await name.press('Enter');
-  let id = '';
-  await expect.poll(async () => { id = (await rowIds(win)).find((x) => !before.has(x)) ?? ''; return id; }, { timeout: 30_000 }).not.toBe('');
-  await expect(win.locator(`[data-term-row="${id}"]`)).toContainText('Needs permission', { timeout: 30_000 });
-  return id;
-}
 
 test.skip(!LIVE, 'ATELIER_LIVE_DIR names the folder shared with the phone side');
 
@@ -101,6 +100,13 @@ test('live: the iOS app pairs through the relay, mirrors the sidebar, acts on it
   const { env, home } = e2eEnv({
     ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl'),
     ATELIER_FAKE_PERMISSION_KEYS: '1',
+    // A conversation in its transcript, found by its UUID session id; it outlives the steps from "allowed" to
+    // "terminal", at the phone's pace; it asks for a permission on cue and records its terminal's size.
+    ATELIER_FAKE_CONVERSATION: '1',
+    ATELIER_FAKE_UUID_SESSIONS: '1',
+    ATELIER_FAKE_LINGER: '3600',
+    ATELIER_FAKE_ASK_FILE: join(LIVE, 'ask-permission'),
+    ATELIER_FAKE_SIZE_FILE: SIZES,
     ATELIER_TEST_REMOTE_AWAY: '1'
   });
   // So whoever runs this can stop this Atelier's atelierd and its launchd jobs if this process is killed.
@@ -156,6 +162,7 @@ test('live: the iOS app pairs through the relay, mirrors the sidebar, acts on it
     await expect(codeOf(win)).toHaveText(/^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/, { timeout: 30_000 });
     const handoff = {
       project: basename(root), terminal, claude, workspace: WORKSPACE, activity: ACTIVITY, rename: RENAMED,
+      said: SAID, prompt: PROMPT, reply: REPLY,
       host: hostname().replace(/\.local$/i, ''), relay: RELAY, text: TEXT
     };
     let shared = '';
@@ -209,6 +216,38 @@ test('live: the iOS app pairs through the relay, mirrors the sidebar, acts on it
     await expect(claudeRow.locator('.session-title')).toHaveText(RENAMED, { timeout: 30_000 });
     await look(win, join(LIVE, 'mac-6-renamed.png'), { settle: 300 });
     macSaw('renamed');
+
+    // The phone follows that session's conversation: the badge on its row; the session, in front here since "allowed",
+    // keeps the window's size.
+    await phoneDid('conversation');
+    await expect(claudeRow.locator('.phone-badge')).toBeVisible({ timeout: 30_000 });
+    await sizeKept(win, claude, SIZES, 'conversation');
+    await look(win, join(LIVE, 'mac-6b-conversation.png'), { settle: 400 });
+    macSaw('conversation');
+
+    // A prompt from the phone reaches Claude. Then the stand-in asks for a permission, which the phone answers next.
+    await phoneDid('said');
+    await expect(rows).toContainText(`FAKE-CLAUDE got=${PROMPT}`, { timeout: 30_000 });
+    await sizeKept(win, claude, SIZES, 'said');
+    await look(win, join(LIVE, 'mac-6c-said.png'), { settle: 300 });
+    writeFileSync(join(LIVE, 'ask-permission'), '');
+    await expect(claudeRow).toContainText('Needs permission', { timeout: 30_000 });
+    macSaw('said');
+
+    // Yes chosen on the phone's card: the dialog's own "1", the session went on.
+    await phoneDid('chose');
+    await expect(rows).toContainText('FAKE-CLAUDE allowed npm run build', { timeout: 30_000 });
+    await expect(claudeRow).not.toContainText('Needs permission', { timeout: 30_000 });
+    await sizeKept(win, claude, SIZES, 'chose');
+    await look(win, join(LIVE, 'mac-6d-chose.png'), { settle: 300 });
+    macSaw('chose');
+
+    // The terminal open on the phone, fitted: the badge; the attach took no size from the window.
+    await phoneDid('terminal');
+    await expect(claudeRow.locator('.phone-badge')).toBeVisible({ timeout: 30_000 });
+    await sizeKept(win, claude, SIZES, 'terminal');
+    await look(win, join(LIVE, 'mac-6e-terminal.png'), { settle: 400 });
+    macSaw('terminal');
 
     // A terminal started from the phone in Release: its row is in that activity.
     const created = await phoneDid('created');
