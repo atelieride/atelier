@@ -106,6 +106,15 @@ describe('workspace', () => {
     expect(settingsAsked).toEqual([]);
   });
 
+  test('on only through Workspaces in every project, turned off since (the window not yet applied it): refused, nothing made', async () => {
+    // As a window opened for the phone restores them, before it applies the setting and they go.
+    useApp.setState({ ws: { ...twoWorkspaces(), forced: true }, settings: { ...st().settings, workspacesEverywhere: false, wsActivities: true } });
+    st().setTerminals([term('auth', 1), term('bill', 2)]);
+    expect(await applyPlaceOp({ kind: 'workspace', name: 'Release' })).toEqual({ ok: false, code: 'invalid', message: WORKSPACES_OFF });
+    expect(await applyPlaceOp({ kind: 'activity', workspace: 'w1' })).toEqual({ ok: false, code: 'invalid', message: WORKSPACES_OFF });
+    expect(st().ws!.list.map((x) => x.name)).toEqual(['Main', 'Billing', 'SSO']);
+  });
+
   test('on in every project, before the window applied it: on as that setting does (everything in Workspace 1), then a new empty "Workspace 2", left behind the one in front', async () => {
     useApp.setState({ settings: { ...st().settings, workspacesEverywhere: true } });
     st().setTerminals([term('auth', 1), term('bill', 2)]);

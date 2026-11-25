@@ -7,7 +7,7 @@
 // session list); each answer carries the sidebar's arrangement right after it, so the phone's next layout shows the
 // change.
 import { ACTIVITIES_OFF, WORKSPACES_OFF, type RemoteLayout, type RemotePlaceOp, type RemotePlaceRequest, type RemotePlaceResult } from '@shared/remote';
-import { unsavedOnPlaceClose, useApp } from '../store';
+import { unsavedOnPlaceClose, useApp, type AppState } from '../store';
 import { resumablesFor } from '../selectors';
 import { t } from '../i18n/en';
 import {
@@ -40,10 +40,17 @@ function fitName(name: string): string {
   return out;
 }
 
+/**
+ * Workspaces on only through Workspaces in every project, which is off now: they go as soon as this window applies
+ * that (it just opened for the phone, or shows another space), so nothing new goes into them.
+ */
+const wsGoing = (s: AppState): boolean => !!s.ws?.on && !!s.ws.forced && !s.settings.workspacesEverywhere;
+
 /** Applies one change in this window: how it went. */
 export async function applyPlaceOp(op: RemotePlaceOp): Promise<RemotePlaceResult> {
   const s = useApp.getState();
   if (s.popout || !s.project) return failed('This window is not the project\'s.');
+  if ((op.kind === 'workspace' || op.kind === 'activity') && wsGoing(s)) return invalid(WORKSPACES_OFF);
   switch (op.kind) {
     case 'workspace': {
       // On in every project, though this window hasn't applied it yet: it just opened, or it shows another space, where

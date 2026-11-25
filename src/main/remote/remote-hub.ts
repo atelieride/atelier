@@ -149,11 +149,20 @@ function fitScreen(data: string): string {
 }
 
 /**
- * A project's layout as phones get it: its activities shown as Settings has them now, over a layout its window sent
- * before that changed (a closed window sends none).
+ * A project's layout as phones get it and its places are checked against: its activities as Settings has them now,
+ * over a layout its window sent before that changed (a closed window sends none). Turned off, they are kept aside as
+ * the window does: only workspaces stay places, each activity's rows are its workspace's, and the one in front is its
+ * workspace.
  */
-const liveLayout = (layout: RemoteLayout | null, activities: boolean): RemoteLayout | null =>
-  layout?.workspaces && layout.workspaces.activities !== activities ? { ...layout, workspaces: { ...layout.workspaces, activities } } : layout;
+function liveLayout(layout: RemoteLayout | null, activities: boolean): RemoteLayout | null {
+  const ws = layout?.workspaces;
+  if (!layout || !ws || ws.activities === activities) return layout;
+  if (activities) return { ...layout, workspaces: { ...ws, activities } };
+  const parentOf = new Map(ws.places.flatMap((p) => (p.parent !== undefined ? [[p.id, p.parent] as const] : [])));
+  const members = Object.fromEntries(Object.entries(ws.members).map(([row, place]) => [row, parentOf.get(place) ?? place]));
+  const places = ws.places.filter((p) => p.parent === undefined);
+  return { ...layout, workspaces: { active: parentOf.get(ws.active) ?? ws.active, activities, places, members } };
+}
 
 /** Splits text into pieces of at most `n` characters, never between the halves of a surrogate pair. */
 function chunks(text: string, n: number): string[] {
@@ -239,7 +248,7 @@ class PhoneSession implements RemoteViewer {
     if (!this.lastState) return;
     for (const p of st.projects) {
       const root = st.roots.get(p.id);
-      const layout = liveLayout(root === undefined ? null : this.host.layoutOf(root), this.host.features().activities);
+      const layout = root === undefined ? null : this.host.layoutOf(root);
       const key = JSON.stringify(layout);
       if (this.lastLayouts.get(p.id) === key) continue;
       this.lastLayouts.set(p.id, key);
@@ -607,7 +616,7 @@ export class RemoteHub {
     this.host = {
       listed: (id) => this.d.terminals.allTerminals().some((t) => t.id === id),
       rootOf: (pid) => this.computeState().roots.get(pid) ?? null,
-      layoutOf: (root) => this.layouts.get(root),
+      layoutOf: (root) => this.liveLayoutOf(root),
       features: () => this.features(),
       terminal: (id) => this.d.terminals.allTerminals().find((t) => t.id === id),
       waitKey: (t) => this.waits.keyOf(t),
@@ -623,7 +632,7 @@ export class RemoteHub {
         return row ? st.roots.get(row.project) ?? null : null;
       },
       placeIn: (root, id) => {
-        const here = this.layouts.get(root)?.workspaces?.places.find((p) => p.id === id);
+        const here = this.liveLayoutOf(root)?.workspaces?.places.find((p) => p.id === id);
         if (here) return here;
         return this.layouts.holders(id).some((r) => r !== root) ? 'elsewhere' : null;
       },
@@ -668,7 +677,7 @@ export class RemoteHub {
     if (this.layouts.set(root, layout)) this.scheduleState();
   }
 
-  /** A project's layout as phones get it (null: never shown with iPhone access on). */
+  /** A project's layout as its window last sent it (null: never shown with iPhone access on). */
   layoutOf(root: string): RemoteLayout | null { return this.layouts.get(root); }
 
   // ── Push notifications ──
@@ -867,6 +876,11 @@ export class RemoteHub {
   private features(): RemoteFeatures {
     const s = this.d.settings();
     return { workspacesEverywhere: s.workspacesEverywhere, activities: s.wsActivities };
+  }
+
+  /** A project's layout with its activities as Settings has them now (null: never shown with iPhone access on). */
+  private liveLayoutOf(root: string): RemoteLayout | null {
+    return liveLayout(this.layouts.get(root), this.features().activities);
   }
 
   private computeState(): RemoteState {

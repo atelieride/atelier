@@ -899,7 +899,8 @@ describe('actions on rows', () => {
   });
 
   test('create in a place of the project\'s layout, as an account; an unknown place or account is refused', async () => {
-    const t = setup({ settings: { claudeAccounts: { list: [{ id: 'default', name: 'Claude', dir: '', color: 1 }, { id: 'work', name: 'Work', dir: '/acc/work', color: 2 }], newSession: 'default', dismissed: [] } } });
+    // Activities on: SSO is a place.
+    const t = setup({ settings: { wsActivities: true, claudeAccounts: { list: [{ id: 'default', name: 'Claude', dir: '', color: 1 }, { id: 'work', name: 'Work', dir: '/acc/work', color: 2 }], newSession: 'default', dismissed: [] } } });
     t.hub.layoutChanged('/work/app', { groupByState: true, pins: [], order: { sessions: [], terminals: [] }, workspaces: { active: 'w1', activities: true, places: [{ id: 'w1', name: 'Main', color: 1, open: true }, { id: 'a1', name: 'SSO', color: 2, parent: 'w1', open: false }], members: {} } });
     const { phone } = await paired(t);
     await phone.state();
@@ -974,6 +975,25 @@ describe('workspaces and activities from the phone', () => {
     expect(last.workspaces!.places).toEqual(layoutApp.workspaces!.places);
   });
 
+  test('layouts: activities off over a layout sent with them on, as the window would show it (kept aside, their rows in their workspace), none of them a place', async () => {
+    const { t, phone, calls } = await withPlaces();
+    // The window, closed since, sent it with SSO (an activity of Main) in front and a row in it.
+    t.hub.layoutChanged('/work/app', { ...layoutApp, workspaces: { ...layoutApp.workspaces!, active: 'a1', members: { t1: 'a1', t2: 'w1' } } });
+    const sent = () => ([...phone.messages].reverse().find((m) => m.t === 'layout' && m.project === app)?.layout as RemoteLayout | undefined)?.workspaces;
+    await until(() => sent()?.members.t2 === 'w1');
+    expect(sent()).toEqual({ active: 'w1', activities: false, places: [layoutApp.workspaces!.places[0]], members: { t1: 'w1', t2: 'w1' } });
+    // Not a place while they are off: nothing goes into it, nothing starts in it, it isn't renamed or closed.
+    expect(await phone.request({ t: 'move', id: 't1', place: 'a1' })).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(await phone.request({ t: 'create', project: app, kind: 'terminal', place: 'a1' })).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(await phone.request({ t: 'renamePlace', project: app, place: 'a1', name: 'X' })).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(await phone.request({ t: 'closePlace', project: app, place: 'a1' })).toMatchObject({ t: 'error', code: 'not-found' });
+    expect(calls).toEqual([]);
+    // On again: as the window sent it.
+    t.set({ wsActivities: true });
+    await until(() => sent()?.activities === true);
+    expect(sent()).toEqual({ active: 'a1', activities: true, places: layoutApp.workspaces!.places, members: { t1: 'a1', t2: 'w1' } });
+  });
+
   test('workspace: refused in words where workspaces are off (or never shown), the window never asked; on in every project, it goes', async () => {
     const { t, phone, calls } = await withPlaces();
     t.hub.layoutChanged('/work/old', { groupByState: true, pins: [], order: { sessions: [], terminals: [] } });
@@ -1027,7 +1047,8 @@ describe('workspaces and activities from the phone', () => {
   });
 
   test('renamePlace: a workspace or an activity of that project, 1…60 characters', async () => {
-    const { phone, calls } = await withPlaces();
+    const { t, phone, calls } = await withPlaces();
+    t.set({ wsActivities: true });
     expect(await phone.request({ t: 'renamePlace', project: app, place: 'w1', name: 'Auth' })).toMatchObject({ t: 'ok' });
     expect(await phone.request({ t: 'renamePlace', project: app, place: 'a1', name: 'Okta' })).toMatchObject({ t: 'ok' });
     expect(calls).toEqual([['/work/app', { kind: 'rename', place: 'w1', name: 'Auth' }], ['/work/app', { kind: 'rename', place: 'a1', name: 'Okta' }]]);
@@ -1038,7 +1059,8 @@ describe('workspaces and activities from the phone', () => {
   });
 
   test('move: a terminal or a resumable into a place of its own project; another project\'s place is refused', async () => {
-    const { phone, calls } = await withPlaces();
+    const { t, phone, calls } = await withPlaces();
+    t.set({ wsActivities: true });
     expect(await phone.request({ t: 'move', id: 't1', place: 'a1' })).toMatchObject({ t: 'ok' });
     expect(await phone.request({ t: 'move', id: 'r1', place: 'w1' })).toMatchObject({ t: 'ok' });
     expect(calls).toEqual([['/work/app', { kind: 'move', id: 't1', place: 'a1' }], ['/work/app', { kind: 'move', id: 'r1', place: 'w1' }]]);
@@ -1058,7 +1080,8 @@ describe('workspaces and activities from the phone', () => {
   });
 
   test('closePlace: a workspace or an activity of that project; what is in it moves unless the phone says stop', async () => {
-    const { phone, calls } = await withPlaces();
+    const { t, phone, calls } = await withPlaces();
+    t.set({ wsActivities: true });
     expect(await phone.request({ t: 'closePlace', project: app, place: 'w1' })).toMatchObject({ t: 'ok' });
     expect(await phone.request({ t: 'closePlace', project: app, place: 'a1', sessions: 'stop' })).toMatchObject({ t: 'ok' });
     expect(await phone.request({ t: 'closePlace', project: app, place: 'a1', sessions: 'move' })).toMatchObject({ t: 'ok' });
