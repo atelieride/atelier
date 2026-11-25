@@ -1,6 +1,10 @@
 // The phones' conversation view: a Claude Code transcript read line by line into numbered entries (the protocol's
 // `Entry`): the prompts typed, Claude's replies and its tool calls, a call completed in place by its result. Claude
 // Code calls the line format internal: whatever isn't recognised is skipped. Pure; the caller keeps the cursor.
+//
+// A rewind (the person going back to an earlier prompt) appends a prompt whose parent is a line from before prompts
+// already read: the parser stops there (`forked`), and the caller reads the file again without the turns it left
+// (`skip`). Lines are never walked by their parents, which a transcript may lack.
 import { clean, commandParts, itemText, short, taskCreated, taskUpdate, tasksOf, todoItems, withoutAgentMeta, type ChatState } from '../companion/chat';
 import { oneLine } from '../companion/text';
 import { toolCall, toolDone, waitTargetOf, contentText } from './tools';
@@ -19,6 +23,17 @@ type ToolEntry = Extract<Entry, { k: 'tool' }>;
 
 /** A call waiting for its result, and the kind of entry it became. */
 interface Pending { n: number; k: 'tool' | 'agent' | 'question'; tool: string; input: Obj }
+
+/** Line ordinals: 0-based, every line pushed counts. */
+export interface ParserOptions {
+  projectRoot: string;
+  home: string | null;
+  /** Inclusive ranges of lines to read as if absent: the turns rewinds left behind. */
+  skip?: readonly (readonly [number, number])[];
+}
+
+/** A rewind: `at`, the line of the prompt that went back; `after`, its parent's line, which earlier prompts came after. */
+export interface Fork { after: number; at: number }
 
 /** The text between `<tag>` and `</tag>` (the first pair), or null. */
 function between(raw: string, tag: string, last = false): string | null {
@@ -74,11 +89,22 @@ export class ConversationParser {
   private readonly creating = new Set<string>();
   /** The task list TaskCreate and TaskUpdate keep, in the shape the Ask companion's helpers update. */
   private readonly chat: ChatState = { prompts: 0, tools: {} };
+  /** The next line's ordinal; the line being read, and its parent's uuid. */
+  private count = 0;
+  private line = -1;
+  private parent: string | null = null;
+  /** The line of each uuid read, and of the last prompt. */
+  private readonly lines = new Map<string, number>();
+  private lastPrompt = -1;
+  private fork: Fork | null = null;
 
-  constructor(private readonly o: { projectRoot: string; home: string | null }) {}
+  constructor(private readonly o: ParserOptions) {}
 
   /** Every entry so far; `entries[i].n === i + 1`. */
   get entries(): readonly Entry[] { return this.list; }
+
+  /** Set at a rewind's prompt, which adds nothing, nor does any line after it: the file is to be read again. */
+  get forked(): Fork | null { return this.fork; }
 
   /** The `n` of the entries added or changed since the last call, ascending. */
   takeChanged(): number[] {
@@ -93,7 +119,17 @@ export class ConversationParser {
   }
 
   push(line: unknown): void {
+    const i = this.count++;
+    if (this.fork || this.o.skip?.some(([a, b]) => i >= a && i <= b)) return;
     if (!isObj(line) || line.isSidechain === true) return;
+    this.line = i;
+    this.parent = str(line.parentUuid);
+    this.read(line);
+    const uuid = str(line.uuid);
+    if (uuid) this.lines.set(uuid, i);
+  }
+
+  private read(line: Obj): void {
     const at = timeOf(line.timestamp);
     switch (line.type) {
       case 'assistant': return this.assistant(line, at);
@@ -216,7 +252,12 @@ export class ConversationParser {
 
   private prompt(raw: string, at: number | null): void {
     const text = clean(raw, CAPS.prompt);
-    if (text) this.add({ k: 'prompt', at, text });
+    if (!text) return;
+    // Its parent read before the last prompt: the person went back. A prompt's parent is otherwise the line before it.
+    const after = this.parent === null ? undefined : this.lines.get(this.parent);
+    if (after !== undefined && after < this.lastPrompt) { this.fork = { after, at: this.line }; return; }
+    this.lastPrompt = this.line;
+    this.add({ k: 'prompt', at, text });
   }
 
   /**

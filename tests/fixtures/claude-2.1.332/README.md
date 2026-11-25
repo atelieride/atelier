@@ -14,6 +14,12 @@ The project folder becomes `/work/hello/nested/…/project`, a home folder `/hom
 The session's transcript, 119 lines, already filtered to `user`, `assistant`, `system`, `queue-operation`,
 `permission-mode`, `agent-name` and the `queued_command` / `plan_mode` attachments.
 
+## `rewind.jsonl`
+
+Derived by the same script from `transcript.jsonl`: its first 23 lines (four prompts, the fourth interrupted), then
+what Claude Code writes when the person rewinds to the second prompt and types another: a prompt `Only list the
+files.` whose `parentUuid` is line 8 (the first turn's end), and Claude's reply `hello.txt` to it.
+
 ## `screens/`
 
 Each screen comes as `<name>.txt` (the 40 rows as text) and `<name>.ans` (the terminal snapshot with its colours and

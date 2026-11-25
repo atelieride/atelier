@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
 // @ts-expect-error: .mjs script without types
-import { check, fictional, sanitize } from '../../scripts/claude-capture-fixtures.mjs';
+import { check, fictional, rewindOf, sanitize } from '../../scripts/claude-capture-fixtures.mjs';
 
 const root = resolve(__dirname, '../..');
 const dir = join(root, 'tests/fixtures/claude-2.1.332');
@@ -70,5 +70,20 @@ describe('the committed fixtures', () => {
       expect(statSync(join(dir, 'screens', `${n}.ans`)).isFile(), n).toBe(true);
     }
     expect(readFileSync(join(dir, 'transcript.jsonl'), 'utf8').trim().split('\n')).toHaveLength(119);
+  });
+
+  test('rewind.jsonl is derived from the transcript: its first 23 lines, then a prompt that goes back after the first reply, and its reply', () => {
+    const transcript = readFileSync(join(dir, 'transcript.jsonl'), 'utf8');
+    const rewind = readFileSync(join(dir, 'rewind.jsonl'), 'utf8');
+    expect(rewind).toBe(rewindOf(transcript));
+    const lines = rewind.trim().split('\n');
+    expect(lines).toHaveLength(25);
+    expect(lines.slice(0, 23)).toEqual(transcript.split('\n').slice(0, 23));
+    const [back, prompt, reply] = [8, 23, 24].map((i) => JSON.parse(lines[i]!) as { uuid: string; parentUuid: string; message: { content: unknown } });
+    expect(prompt).toMatchObject({ type: 'user', parentUuid: back!.uuid, message: { content: 'Only list the files.' } });
+    expect(reply).toMatchObject({ type: 'assistant', parentUuid: prompt!.uuid, message: { content: [{ type: 'text', text: 'hello.txt' }] } });
+    // Ids of their own: no line's uuid repeated.
+    const ids = lines.map((l) => (JSON.parse(l) as { uuid?: string }).uuid).filter(Boolean);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

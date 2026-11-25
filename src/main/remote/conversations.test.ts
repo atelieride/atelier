@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ConversationParser } from '@shared/conversation/parse';
+import type { Entry } from '@shared/conversation/types';
 import type { TerminalInfo } from '@shared/protocol';
 import { ConversationBook, ConversationUnreadable, conversationKey } from './conversations';
 
@@ -19,6 +20,19 @@ const done = (id: string, out: string) => ({
   type: 'user', timestamp: T, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: out }] }, toolUseResult: { stdout: out, stderr: '' }
 });
 const jsonl = (...lines: unknown[]) => lines.map((l) => `${JSON.stringify(l)}\n`).join('');
+/** A line with its place in the conversation's tree: its uuid and its parent's. */
+const linked = (uuid: string, parentUuid: string | null, line: object) => ({ ...line, uuid, parentUuid });
+/** Each entry's number, kind, and its text or target. */
+const said = (entries: readonly Entry[]) => entries.map((e) => [e.n, e.k, 'text' in e ? e.text : e.k === 'tool' ? e.target : null]);
+
+/** The 2.1.332 session's first 23 lines, then a rewind to its second prompt: another prompt after the first reply. */
+const REWIND = readFileSync('tests/fixtures/claude-2.1.332/rewind.jsonl', 'utf8').split('\n').filter(Boolean);
+const rewindLines = (a: number, b?: number) => REWIND.slice(a, b).map((l) => `${l}\n`).join('');
+const uuidOf = (i: number) => (JSON.parse(REWIND[i]!) as { uuid: string }).uuid;
+const REWOUND = [
+  [1, 'prompt', 'Run ls with the Bash tool. Reply in one short sentence.'], [2, 'tool', 'ls'],
+  [3, 'reply', 'The directory contains one file, `hello.txt`.'], [4, 'prompt', 'Only list the files.'], [5, 'reply', 'hello.txt']
+];
 
 /** A Claude session (or a terminal still starting one, `session` null) in a terminal whose project is `root`. */
 const term = (id: string, root: string, session: string | null, updatedAt = 1): TerminalInfo => ({
@@ -571,5 +585,132 @@ describe('ConversationBook', () => {
     await vi.advanceTimersByTimeAsync(2000);
     await next;
     expect((await s.book.read(t)).entries).toHaveLength(2);
+  });
+});
+
+describe('ConversationBook: rewinds', () => {
+  test('after a rewind: a new key, the abandoned turns gone, the new prompt after the first reply', async () => {
+    const s = setup();
+    const t = s.t('t1', A);
+    const file = s.fileOf(A);
+    writeFileSync(file, rewindLines(0, 23));
+    const l = heard();
+    s.book.subscribe(t, l.on);
+    const before = await s.book.read(t);
+    expect(before.key).toBe(conversationKey('t1', A, 0));
+    expect(before.entries.filter((e) => e.k === 'prompt')).toHaveLength(4);
+    const heardBefore = l.count;
+
+    // The person went back to the second prompt and typed another one: the watch reads it, subscribers hear it once.
+    appendFileSync(file, rewindLines(23));
+    const next = l.next();
+    s.fire(file);
+    await next;
+    const after = await s.book.read(t);
+    expect(l.count).toBe(heardBefore + 1);
+    expect(after.key).toBe(conversationKey('t1', A, 1));
+    expect(said(after.entries)).toEqual(REWOUND);
+    expect(after.entries.some((e) => e.k === 'prompt' && e.text.startsWith('Run touch'))).toBe(false);
+    expect(after.entries.every((e) => after.versionOf(e.n) === after.seq)).toBe(true);
+    expect(after.running).toEqual([]);
+
+    // It goes on under that key: only what is appended is new.
+    appendFileSync(file, jsonl(linked('more', uuidOf(24), prompt('More.'))));
+    const more = await s.book.read(t);
+    expect(more.key).toBe(after.key);
+    expect(said(more.entries)).toEqual([...REWOUND, [6, 'prompt', 'More.']]);
+    expect(more.versionOf(5)).toBe(after.seq);
+  });
+
+  test('two rewinds in a row each start over without what they left behind', async () => {
+    const s = setup();
+    const t = s.t('t1', A);
+    const file = s.fileOf(A);
+    writeFileSync(file, jsonl(
+      linked('p1', null, prompt('One.')), linked('r1', 'p1', reply('Reply one.')), linked('p2', 'r1', prompt('Two.')), linked('r2', 'p2', reply('Reply two.'))
+    ));
+    expect((await s.book.read(t)).key).toBe(conversationKey('t1', A, 0));
+
+    // Back to the second prompt.
+    appendFileSync(file, jsonl(linked('p2b', 'r1', prompt('Two, again.')), linked('r2b', 'p2b', reply('Reply two, again.'))));
+    const second = await s.book.read(t);
+    expect(second.key).toBe(conversationKey('t1', A, 1));
+    const branch = [[1, 'prompt', 'One.'], [2, 'reply', 'Reply one.'], [3, 'prompt', 'Two, again.'], [4, 'reply', 'Reply two, again.']];
+    expect(said(second.entries)).toEqual(branch);
+
+    // It goes on; then back to its third prompt, the one typed after the first rewind.
+    appendFileSync(file, jsonl(linked('p3', 'r2b', prompt('Three.')), linked('r3', 'p3', reply('Reply three.'))));
+    expect((await s.book.read(t)).key).toBe(second.key);
+    appendFileSync(file, jsonl(linked('p3b', 'r2b', prompt('Three, again.')), linked('r3b', 'p3b', reply('Reply three, again.'))));
+    const third = await s.book.read(t);
+    expect(third.key).toBe(conversationKey('t1', A, 2));
+    expect(said(third.entries)).toEqual([...branch, [5, 'prompt', 'Three, again.'], [6, 'reply', 'Reply three, again.']]);
+    expect(third.entries.every((e) => third.versionOf(e.n) === third.seq)).toBe(true);
+
+    // Read whole by another terminal on the same session: both rewinds at once, the same branch.
+    expect(said((await s.book.read(s.t('t2', A))).entries)).toEqual(said(third.entries));
+  });
+
+  test('a rewind outlives its follower: read afresh, the key it gave stays; one made while nobody followed gives a new key', async () => {
+    const s = setup();
+    const t = s.t('t1', A);
+    const file = s.fileOf(A);
+    writeFileSync(file, rewindLines(0, 23));
+    await s.book.read(t);
+    appendFileSync(file, rewindLines(23));
+    const rewound = await s.book.read(t);
+    expect(rewound.key).toBe(conversationKey('t1', A, 1));
+
+    // Nobody reads it for a minute: the follower goes; the next one reads the same branch under the key phones hold.
+    await vi.advanceTimersByTimeAsync(60_000);
+    const again = await s.book.read(t);
+    expect(again).toMatchObject({ seq: 1, key: rewound.key });
+    expect(said(again.entries)).toEqual(REWOUND);
+
+    // Rewound once more while nobody followed: the next follower gives a new key, without either branch left behind.
+    await vi.advanceTimersByTimeAsync(60_000);
+    appendFileSync(file, jsonl(linked('name', uuidOf(8), prompt('Name the file.')), linked('named', 'name', reply('It is hello.txt.'))));
+    const later = await s.book.read(t);
+    expect(later).toMatchObject({ seq: 1, key: conversationKey('t1', A, 2) });
+    expect(said(later.entries)).toEqual([...REWOUND.slice(0, 3), [4, 'prompt', 'Name the file.'], [5, 'reply', 'It is hello.txt.']]);
+  });
+
+  test('the turns a rewind cut belong to its transcript: another session, a shorter file or another one are read whole', async () => {
+    const s = setup();
+    const D = 'dddddddd-0000-4000-8000-00000000000d';
+    const rewind = async (t: TerminalInfo) => {
+      const file = s.fileOf(t.session!.sessionId);
+      writeFileSync(file, rewindLines(0, 23));
+      await s.book.read(t);
+      appendFileSync(file, rewindLines(23));
+      const r = await s.book.read(t);
+      expect(said(r.entries)).toEqual(REWOUND);
+      return r;
+    };
+    const prompts = (entries: readonly Entry[]) => entries.filter((e) => e.k === 'prompt').length;
+
+    // Rewritten shorter: another file, its lines read whole under a new key.
+    const one = await rewind(s.t('t1', A));
+    writeFileSync(s.fileOf(A), rewindLines(0, 23));
+    const shorter = await s.book.read(s.t('t1', A));
+    expect(shorter.key).not.toBe(one.key);
+    expect(prompts(shorter.entries)).toBe(4);
+
+    // Another session in the terminal: its own transcript, read whole.
+    await rewind(s.t('t2', B));
+    writeFileSync(s.fileOf(C), rewindLines(0, 23));
+    const other = await s.book.read(s.t('t2', C));
+    expect(other.key).toBe(conversationKey('t2', C, 0));
+    expect(prompts(other.entries)).toBe(4);
+
+    // Moved to another file that doesn't continue it: read whole, under a new key.
+    const moved = await rewind(s.t('t3', D));
+    const elsewhere = join(s.dir, 'elsewhere', `${D}.jsonl`);
+    mkdirSync(dirname(elsewhere));
+    writeFileSync(elsewhere, readFileSync('tests/fixtures/claude-2.1.332/transcript.jsonl', 'utf8'));
+    s.paths.set(D, elsewhere);
+    const whole = await s.book.read(s.t('t3', D));
+    expect(whole.key).not.toBe(moved.key);
+    expect(whole.entries).toHaveLength(60);
   });
 });

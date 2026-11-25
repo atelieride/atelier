@@ -126,6 +126,30 @@ export function check(text, root) {
   }
 }
 
+/**
+ * `rewind.jsonl`, from the sanitised transcript: the session up to its fourth prompt's interrupt (lines 0…22), then
+ * what Claude Code writes when the person rewinds to the second prompt and types another one: a prompt whose parent is
+ * the line the second prompt followed (line 8, the first turn's end), then Claude's reply to it. Both are shaped as
+ * the recorded lines they stand for (line 9, the prompt they replace; line 7, a reply), with ids of their own.
+ */
+export function rewindOf(transcript) {
+  const lines = transcript.split('\n').filter(Boolean);
+  const kept = lines.slice(0, 23);
+  const [back, replaced, answer, next] = [8, 9, 7, 23].map((i) => JSON.parse(lines[i]));
+  const id = (n) => `5e7e0000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const at = Date.parse(next.timestamp);
+  const prompt = {
+    ...replaced, parentUuid: back.uuid, promptId: id(1), turnPromptId: id(1), uuid: id(2),
+    message: { role: 'user', content: 'Only list the files.' }, timestamp: new Date(at).toISOString(),
+  };
+  const reply = {
+    ...answer, parentUuid: prompt.uuid, requestId: 'req_rewind', requestRef: id(3), uuid: id(4),
+    message: { ...answer.message, id: 'msg_rewind', content: [{ type: 'text', text: 'hello.txt' }] },
+    timestamp: new Date(at + 2000).toISOString(),
+  };
+  return [...kept, JSON.stringify(prompt), JSON.stringify(reply)].map((l) => `${l}\n`).join('');
+}
+
 /** The folder the session ran in: the first `cwd` of the transcript. */
 function projectOf(transcript) {
   for (const line of transcript.split('\n')) {
@@ -145,7 +169,9 @@ function generate(recording, target, root) {
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, text);
   };
-  write('transcript.jsonl', sanitize(transcript, { project }));
+  const sanitised = sanitize(transcript, { project });
+  write('transcript.jsonl', sanitised);
+  write('rewind.jsonl', rewindOf(sanitised));
   /** The folder a scenario's captures were made in: its own when it names one, else the session's. */
   const projectFor = (source) => {
     const own = join(recording, source.split('/')[0], 'project.txt');

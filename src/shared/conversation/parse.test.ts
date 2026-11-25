@@ -5,7 +5,10 @@ import { CAPS, type Entry } from './types';
 
 type ToolEntry = Extract<Entry, { k: 'tool' }>;
 
-const LINES = readFileSync('tests/fixtures/claude-2.1.332/transcript.jsonl', 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>);
+const linesOf = (file: string) => readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>);
+const LINES = linesOf('tests/fixtures/claude-2.1.332/transcript.jsonl');
+/** The 2.1.332 session's first 23 lines, then a rewind to its second prompt: another prompt after the first reply. */
+const REWIND = linesOf('tests/fixtures/claude-2.1.332/rewind.jsonl');
 const ROOT = LINES.find((l) => typeof l.cwd === 'string')!.cwd as string;
 const HOME = '/home/uuuuuuuu';
 const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
@@ -53,6 +56,35 @@ describe('ConversationParser on the 2.1.332 session', () => {
     expect(p.entries[13]).toMatchObject({ n: 14, status: 'ok', summary: '+1 −1' });
     expect(p.takeChanged()).toEqual([14]);
     expect(p.running()).toEqual([]);
+  });
+
+  test('a prompt that goes back before earlier prompts marks the parser forked, at its line and its parent\'s; the 2.1.332 prompts never do', () => {
+    const p = newParser();
+    for (const l of REWIND) p.push(l);
+    expect(p.forked).toEqual({ after: 8, at: 23 });
+    // The new prompt and what follows it wait for a rebuild: the entries stay those of the lines before it.
+    expect(p.entries).toEqual(parsedUpTo(23).entries);
+    expect(parsedUpTo(23).forked).toBeNull();
+    expect(parsedUpTo().forked).toBeNull();
+    // A prompt whose parent isn't a line read (a transcript may lack it), or is a line after the last prompt: no fork.
+    const kept = run({ ...prompt('One.'), uuid: 'u1' }, { ...assistant([{ type: 'text', text: 'Yes.' }]), uuid: 'u2', parentUuid: 'u1' },
+      { ...prompt('Two.'), uuid: 'u3', parentUuid: 'elsewhere' }, { ...prompt('Three.'), uuid: 'u4', parentUuid: 'u3' });
+    expect(kept.forked).toBeNull();
+    expect(kept.entries).toHaveLength(4);
+  });
+
+  test('skipped lines are read as if absent: the rewound branch alone, its prompt no fork', () => {
+    const p = new ConversationParser({ projectRoot: ROOT, home: HOME, skip: [[9, 22]] });
+    for (const l of REWIND) p.push(l);
+    expect(p.forked).toBeNull();
+    expect(p.entries.map((e) => [e.n, e.k, 'text' in e ? e.text : e.k === 'tool' ? e.target : null])).toEqual([
+      [1, 'prompt', 'Run ls with the Bash tool. Reply in one short sentence.'], [2, 'tool', 'ls'],
+      [3, 'reply', 'The directory contains one file, `hello.txt`.'], [4, 'prompt', 'Only list the files.'], [5, 'reply', 'hello.txt']
+    ]);
+    // Several ranges, an empty one among them, each ignored on its own.
+    const q = new ConversationParser({ projectRoot: ROOT, home: HOME, skip: [[9, 13], [30, 20], [14, 22]] });
+    for (const l of REWIND) q.push(l);
+    expect(q.entries).toEqual(p.entries);
   });
 
   test('the whole session: a background Bash, a plan approved, a mid-turn prompt, a cut-short reply', () => {
@@ -249,6 +281,7 @@ describe('ConversationParser: agents, questions, plans, todos, compaction, queue
     const run1 = (k: number) => { const p = newParser(); for (const l of COMPANION.slice(0, k)) p.push(l); return p; };
     const agents = (p: ConversationParser) => p.entries.filter((x): x is Extract<Entry, { k: 'agent' }> => x.k === 'agent');
     const full = run1(COMPANION.length);
+    expect(full.forked).toBeNull();
     const [fg, bg] = agents(full);
     expect(fg).toMatchObject({ description: 'Review the session fix', status: 'ok' });
     expect(fg!.report).toMatch(/^REPORT-HEAD/);

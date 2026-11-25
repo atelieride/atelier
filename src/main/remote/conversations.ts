@@ -1,8 +1,9 @@
 // A Claude session's conversation as phones follow it: the session's transcript, read as it grows, into numbered
 // entries (ConversationParser). One follower per terminal, shared by every phone that follows it. Its key names the
-// conversation: it changes when the terminal's Claude session changes and when the transcript stops continuing the one
-// read before, never when Claude only adds to it or completes an entry. Main only reads transcripts: never through a
-// symlink, regular files only (readJsonLines), never written.
+// conversation: it changes when the terminal's Claude session changes, when the transcript stops continuing the one
+// read before and when the person rewinds it (the newest branch alone is shown), never when Claude only adds to it or
+// completes an entry. Main only reads transcripts: never through a symlink, regular files only (readJsonLines), never
+// written.
 import { createHash } from 'node:crypto';
 import { pageOf } from '@shared/conversation/pages';
 import { ConversationParser } from '@shared/conversation/parse';
@@ -53,7 +54,14 @@ interface Identity {
   base: string;
   epoch: number;
   key: string;
+  /**
+   * The lines of its transcript the rewinds left behind (inclusive ranges of line ordinals): the next follower reads
+   * the same branch and finds no rewind it already keyed. Cleared with another transcript.
+   */
+  skips: readonly Skip[];
 }
+
+type Skip = readonly [number, number];
 
 interface Follower {
   readonly id: string;
@@ -95,6 +103,8 @@ interface Follower {
 }
 
 const sameEntry = (a: Entry, b: Entry) => a === b || JSON.stringify(a) === JSON.stringify(b);
+/** Entries read again from the start still the same conversation: each one read before has its kind at its `n`. */
+const continues = (old: readonly Entry[], now: readonly Entry[]) => old.length <= now.length && old.every((e, i) => now[i]!.k === e.k);
 /**
  * The epoch of a conversation that started with no session id (its key's session id is ''): the time now, always later
  * than the last one, so not a key the terminal had before (between followers, the clock has moved on).
@@ -180,7 +190,7 @@ export class ConversationBook {
     const known = this.followers.get(t.id);
     if (known) { known.t = t; return known; }
     let who = this.identities.get(t.id);
-    if (!who) { who = { sid: null, base: '', epoch: 0, key: '' }; this.identities.set(t.id, who); }
+    if (!who) { who = { sid: null, base: '', epoch: 0, key: '', skips: [] }; this.identities.set(t.id, who); }
     const f: Follower = {
       id: t.id, who, t, file: null, parser: null, cursor: null, entries: [], versions: [], pending: true, failed: false, missing: false, seq: 0,
       told: { key: '', pending: true, failed: false }, subs: new Set(), watched: null, unwatch: null, rewatch: false,
@@ -230,17 +240,10 @@ export class ConversationBook {
         f.pending = true;
         f.missing = false;
       } else {
-        let fresh = f.parser === null;
-        let parser = f.parser ?? this.parser(f);
-        const end = await readJsonLines(file, f.cursor, (line) => parser.push(line), undefined, (fromStart) => {
-          // Shorter than what was read: another file, read from the start with a fresh parser and compared.
-          if (fromStart && !fresh) { parser = this.parser(f); fresh = true; f.rewatch = true; }
-        });
-        f.parser = parser;
-        f.cursor = { offset: end.offset, size: end.size, partial: end.partial };
+        const { parser, fresh, rewound } = await this.readFile(f, file);
         f.pending = false;
         f.missing = false;
-        changed = fresh ? this.compare(f, parser) : parser.takeChanged();
+        changed = fresh ? this.compare(f, parser, rewound) : parser.takeChanged();
         // A copy: a later read that fails partway leaves these as they were, for the next one to compare with.
         if (fresh || changed.length > 0) f.entries = parser.entries.slice();
       }
@@ -266,6 +269,38 @@ export class ConversationBook {
   }
 
   /**
+   * The transcript read into the follower's parser: what was appended, else (`fresh`) all of it from the start. A
+   * rewind found has it read again from the start without the lines it left behind (`rewound`), until none is left.
+   * The cuts are the terminal's once the whole read ends well.
+   */
+  private async readFile(f: Follower, file: string): Promise<{ parser: ConversationParser; fresh: boolean; rewound: boolean }> {
+    let skips = f.who.skips;
+    let fresh = f.parser === null;
+    let parser = f.parser ?? this.parser(f, skips);
+    let end = await readJsonLines(file, f.cursor, (line) => parser.push(line), undefined, (fromStart) => {
+      // Shorter than what was read: another file, read from the start with a fresh parser and compared.
+      if (fromStart && !fresh) { parser = this.parser(f, skips); fresh = true; f.rewatch = true; }
+    });
+    const again = async () => {
+      parser = this.parser(f, skips);
+      end = await readJsonLines(file, null, (line) => parser.push(line));
+    };
+    // Read from the start, no longer what was read before (another file): the lines a rewind cut from the one before
+    // mean nothing in it, read again whole.
+    if (fresh && skips.length > 0 && !continues(f.entries, parser.entries)) { skips = []; await again(); }
+    let rewound = false;
+    for (let fork = parser.forked; fork; fork = parser.forked) {
+      skips = [...skips, [fork.after + 1, fork.at - 1]];
+      rewound = true;
+      await again();
+    }
+    f.who.skips = skips;
+    f.parser = parser;
+    f.cursor = { offset: end.offset, size: end.size, partial: end.partial };
+    return { parser, fresh: fresh || rewound, rewound };
+  }
+
+  /**
    * The terminal's session as the conversation follows it. Another session id is another conversation: its own key
    * (epoch 0 of that id), read from nothing. A terminal with no session id (Claude starting) is pending under a key
    * of its own, which the first id it gets keeps: that session's entries follow under it.
@@ -280,6 +315,7 @@ export class ConversationBook {
     who.base = sid;
     who.epoch = sid === '' ? nextStamp(who.epoch) : 0;
     who.key = conversationKey(f.id, who.base, who.epoch);
+    who.skips = [];
     f.file = null;
     f.parser = null;
     f.cursor = null;
@@ -294,14 +330,14 @@ export class ConversationBook {
    * before has the same kind at its `n` (then the entries that differ, and the new ones, are what changed); else a
    * new key, every entry new. A conversation told pending under its key whose transcript, once there, holds more than
    * a page (a resumed session's history) gets a new key too: a phone then starts from its newest page and pages back,
-   * never sent the whole history as changes.
+   * never sent the whole history as changes. So does a rewind: its branch replaces what a phone holds.
    */
-  private compare(f: Follower, parser: ConversationParser): number[] {
+  private compare(f: Follower, parser: ConversationParser, rewound: boolean): number[] {
     parser.takeChanged();
     const old = f.entries;
     const now = parser.entries;
     const history = f.told.pending && f.told.key === f.who.key && pageOf(now).entries.length < now.length;
-    if (history || old.length > now.length || old.some((e, i) => now[i]!.k !== e.k)) {
+    if (rewound || history || !continues(old, now)) {
       const who = f.who;
       who.epoch = who.base === '' ? nextStamp(who.epoch) : who.epoch + 1;
       who.key = conversationKey(f.id, who.base, who.epoch);
@@ -334,8 +370,8 @@ export class ConversationBook {
     };
   }
 
-  private parser(f: Follower): ConversationParser {
-    return new ConversationParser({ projectRoot: f.t.projectRoot, home: this.d.home });
+  private parser(f: Follower, skip: readonly Skip[]): ConversationParser {
+    return new ConversationParser({ projectRoot: f.t.projectRoot, home: this.d.home, skip });
   }
 
   /** The watch follows the file read last, while someone is subscribed and the file is there. */
