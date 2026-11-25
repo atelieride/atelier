@@ -322,17 +322,45 @@ test('promptHolds: the prompt box holds the text and nothing else, wrapped anywh
   expect(promptHolds(view([RULE, '❯ fix the tests', RULE, 'Do you want to proceed?', '❯ 1. Yes', '  2. No', '', 'Esc to cancel']), 'fix the tests')).toBe(false);
 });
 
-test('promptHolds: a text of several lines also as the stand-in Claude Code folds a long paste into; one line never', () => {
+/** A recorded paste's text: `n` characters of one sentence again and again, a last space made a full stop. */
+const sentences = (n: number) => {
+  const s = 'The quick brown fox jumps over the lazy dog. '.repeat(Math.ceil(n / 45)).slice(0, n);
+  return s.endsWith(' ') ? `${s.slice(0, -1)}.` : s;
+};
+/** Each recorded paste's screen, by fixture, and the text pasted there. */
+const PASTED: Record<string, string> = {
+  'paste-three-lines': ['Line one of the pasted text.', 'Line two of the pasted text.', 'Line three of the pasted text.'].join('\n'),
+  'paste-four-lines': ['Line 1.', 'Line 2.', 'Line 3.', 'Line 4.'].join('\n'),
+  'paste-forty-lines': Array.from({ length: 40 }, (_, i) => `Line ${i + 1} of the long pasted text.`).join('\n'),
+  'paste-two-long-lines': [sentences(450), sentences(450)].join('\n'),
+  'paste-three-long-lines': [sentences(300), sentences(300), sentences(300)].map((l) => `${l.trimEnd()}.`).join('\n'),
+  'paste-line-500': sentences(500),
+  'paste-line-800': sentences(800),
+  'paste-line-801': sentences(801),
+  'paste-line-1000': sentences(1000),
+  'paste-line-2000': sentences(2000)
+};
+
+test('promptHolds on recorded pastes: each text as Claude Code draws it, inline or folded; one key typed after it, refused', async () => {
+  for (const [name, text] of Object.entries(PASTED)) expect(promptHolds(await ans(name), text), name).toBe(true);
+  // A key typed on the computer right after the paste, drawn inline or after the stand-in.
+  expect(promptHolds(await ans('paste-three-lines-typed'), PASTED['paste-three-lines']!)).toBe(false);
+  expect(promptHolds(await ans('paste-forty-lines-typed'), PASTED['paste-forty-lines']!)).toBe(false);
+});
+
+test('promptHolds: the stand-in only for a text Claude Code folds, with the count of its line breaks', async () => {
+  // A text that is drawn inline (800 characters at most, 2 line breaks at most) is never a stand-in's.
+  expect(promptHolds(await ans('paste-line-801'), PASTED['paste-line-800']!)).toBe(false);
+  expect(promptHolds(await ans('paste-three-long-lines'), PASTED['paste-three-lines']!)).toBe(false);
+  // Another count of line breaks, a count for a single line, none for a text of several.
+  expect(promptHolds(await ans('paste-forty-lines'), PASTED['paste-four-lines']!)).toBe(false);
+  expect(promptHolds(await ans('paste-four-lines'), PASTED['paste-line-2000']!)).toBe(false);
+  expect(promptHolds(await ans('paste-line-2000'), PASTED['paste-forty-lines']!)).toBe(false);
+  // The two folds a text may get, one by its length, one by its line breaks; the stand-in's number is any.
   const folded = (row: string) => edited('idle', { 37: `❯ ${row}` });
-  // Its count: the lines after the first, or all of them.
-  expect(promptHolds(folded('[Pasted text #1 +1 lines]'), 'one\ntwo')).toBe(true);
-  expect(promptHolds(folded('[Pasted text #3 +2 lines]'), 'one\ntwo')).toBe(true);
-  expect(promptHolds(folded('[Pasted text #1 +4 lines]'), 'one\ntwo')).toBe(false);
-  expect(promptHolds(folded('[Pasted text #1]'), 'one\ntwo')).toBe(false);
-  expect(promptHolds(folded('lint [Pasted text #1 +1 lines]'), 'one\ntwo')).toBe(false);
-  // One line, however long, isn't taken for a stand-in.
-  expect(promptHolds(folded('[Pasted text #1]'), 'x'.repeat(900))).toBe(false);
-  expect(promptHolds(folded('[Pasted text #1 +0 lines]'), 'x'.repeat(900))).toBe(false);
+  expect(promptHolds(folded('[Pasted text #3 +1 lines]'), PASTED['paste-two-long-lines']!)).toBe(true);
+  expect(promptHolds(folded('[Pasted text #1 +1 line]'), PASTED['paste-two-long-lines']!)).toBe(false);
+  expect(promptHolds(folded('lint [Pasted text #1 +3 lines]'), PASTED['paste-four-lines']!)).toBe(false);
 });
 
 test('menuToClose: a menu; a permission, a plan or a question drawn before its hook is none; the trust dialog exits', () => {

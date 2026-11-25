@@ -5,9 +5,10 @@
 //   node scripts/claude-capture-fixtures.mjs <recording out dir> <fixture dir>
 //
 // The recording folder holds one folder per scenario (`02-bash/01-dialog.lines.txt`, `….snapshot.ans`) and
-// `session/transcript.jsonl`. Nothing here names a person, account or folder of the machine that made the recording:
-// the rewrites are generic patterns, and `check` refuses what is left.
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+// `session/transcript.jsonl`. A scenario recorded in a folder of its own, where nothing was sent (so no transcript
+// names it), names that folder in its `project.txt`. Nothing here names a person, account or folder of the machine
+// that made the recording: the rewrites are generic patterns, and `check` refuses what is left.
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { localWords } from './local-words.mjs';
@@ -42,6 +43,18 @@ export const SCREENS = {
   queued: '09-queued/03-queued',
   idle: '09-queued/04-done',
   working: '10-interrupt/01-working',
+  'paste-three-lines': '11-paste/01-three-lines',
+  'paste-three-lines-typed': '11-paste/02-three-lines-typed',
+  'paste-forty-lines': '11-paste/03-forty-lines',
+  'paste-forty-lines-typed': '11-paste/04-forty-lines-typed',
+  'paste-line-500': '11-paste/05-line-500',
+  'paste-line-800': '11-paste/06-line-800',
+  'paste-line-801': '11-paste/07-line-801',
+  'paste-line-1000': '11-paste/08-line-1000',
+  'paste-line-2000': '11-paste/09-line-2000',
+  'paste-four-lines': '11-paste/10-four-lines',
+  'paste-three-long-lines': '11-paste/11-three-long-lines',
+  'paste-two-long-lines': '11-paste/12-two-long-lines',
 };
 
 const MIN_FRAGMENT = 12;
@@ -133,9 +146,15 @@ function generate(recording, target, root) {
     writeFileSync(file, text);
   };
   write('transcript.jsonl', sanitize(transcript, { project }));
+  /** The folder a scenario's captures were made in: its own when it names one, else the session's. */
+  const projectFor = (source) => {
+    const own = join(recording, source.split('/')[0], 'project.txt');
+    return existsSync(own) ? readFileSync(own, 'utf8').trim() : project;
+  };
   for (const [name, source] of Object.entries(SCREENS)) {
-    write(`screens/${name}.txt`, sanitize(readFileSync(join(recording, `${source}.lines.txt`), 'utf8'), { project }));
-    write(`screens/${name}.ans`, sanitize(readFileSync(join(recording, `${source}.snapshot.ans`), 'utf8'), { project }));
+    const at = { project: projectFor(source) };
+    write(`screens/${name}.txt`, sanitize(readFileSync(join(recording, `${source}.lines.txt`), 'utf8'), at));
+    write(`screens/${name}.ans`, sanitize(readFileSync(join(recording, `${source}.snapshot.ans`), 'utf8'), at));
   }
 }
 

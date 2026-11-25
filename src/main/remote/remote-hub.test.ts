@@ -2386,23 +2386,47 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
   test('say: a multi-line text is one paste with \\r between its lines', async () => {
     const t = conversing();
     t.terms.list = withSession(t.terms.list, 't2', finished);
-    const text = 'fix the tests\nthen run them';
-    await shows(t, 't2', 'idle', await prompted('idle', 'fix the tests', 'then run them'));
+    // The texts of recorded pastes, on Claude Code's screens after them.
+    const three = ['Line one of the pasted text.', 'Line two of the pasted text.', 'Line three of the pasted text.'].join('\n');
+    const forty = Array.from({ length: 40 }, (_, i) => `Line ${i + 1} of the long pasted text.`).join('\n');
+    await shows(t, 't2', 'idle', 'paste-three-lines');
     const { phone } = await paired(t);
-    expect(await phone.say('t2', text)).toEqual(OK);
-    expect(keys(t)).toEqual(['\x1b[200~fix the tests\rthen run them\x1b[201~', '\r']);
-    // Folded into the stand-in Claude Code shows for a long paste, counting the text's lines.
-    for (const folded of ['[Pasted text #1 +1 lines]', '[Pasted text #4 +2 lines]']) {
-      await shows(t, 't2', 'idle', await prompted('idle', folded));
-      t.terms.answers = [];
-      expect(await phone.say('t2', text)).toEqual(OK);
-      expect(keys(t)).toEqual([PASTE(text), '\r']);
-    }
-    // Another count: another paste's.
-    await shows(t, 't2', 'idle', await prompted('idle', '[Pasted text #1 +7 lines]'));
+    expect(await phone.say('t2', three)).toEqual(OK);
+    expect(keys(t)).toEqual(['\x1b[200~Line one of the pasted text.\rLine two of the pasted text.\rLine three of the pasted text.\x1b[201~', '\r']);
+    // Folded into Claude Code's stand-in, past 2 line breaks.
+    await shows(t, 't2', 'idle', 'paste-forty-lines');
     t.terms.answers = [];
-    expect(await phone.say('t2', text)).toEqual(NOT_REACHED);
-    expect(keys(t)).toEqual([PASTE(text)]);
+    expect(await phone.say('t2', forty)).toEqual(OK);
+    expect(keys(t)).toEqual([PASTE(forty), '\r']);
+    // A key typed on the computer after either: no Enter.
+    for (const [text, typed] of [[three, 'paste-three-lines-typed'], [forty, 'paste-forty-lines-typed']] as const) {
+      await shows(t, 't2', 'idle', typed);
+      t.terms.answers = [];
+      expect(await phone.say('t2', text)).toEqual(NOT_REACHED);
+      expect(keys(t)).toEqual([PASTE(text)]);
+    }
+  });
+
+  test('say: one line past 800 characters goes once Claude Code shows it folded; one of 800 only as typed', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', claude('s'));
+    /** A recorded paste's text: `n` characters of one sentence again and again, a last space made a full stop. */
+    const sentences = (n: number) => {
+      const s = 'The quick brown fox jumps over the lazy dog. '.repeat(Math.ceil(n / 45)).slice(0, n);
+      return s.endsWith(' ') ? `${s.slice(0, -1)}.` : s;
+    };
+    const { phone } = await paired(t);
+    for (const [n, shown] of [[2000, 'paste-line-2000'], [801, 'paste-line-801'], [800, 'paste-line-800']] as const) {
+      await shows(t, 't2', 'working', shown);
+      t.terms.answers = [];
+      expect(await phone.say('t2', sentences(n))).toEqual(OK);
+      expect(keys(t)).toEqual([PASTE(sentences(n)), '\r']);
+    }
+    // 800 characters are never folded: a stand-in there is another paste's.
+    await shows(t, 't2', 'working', 'paste-line-801');
+    t.terms.answers = [];
+    expect(await phone.say('t2', sentences(800))).toEqual(NOT_REACHED);
+    expect(keys(t)).toEqual([PASTE(sentences(800))]);
   });
 
   test('say refuses text in Claude\'s prompt, on screen or typed in a window just now', async () => {
@@ -2531,10 +2555,11 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     await shows(t, 't2', 'working', await prompted('working', 'fix the tests'));
     const { phone } = await paired(t);
     t.terms.onKey = (_id, key) => { if (key.startsWith('\x1b[200~')) t.hub.removeDevice(t.hub.devices.list()[0]!.id); };
+    t.terms.events = [];
     phone.say('t2', 'fix the tests').catch(() => {});
-    await until(() => t.terms.answers.length > 0);
-    await pause(100);
-    expect(keys(t)).toEqual([PASTE('fix the tests')]);
+    // The read after the paste shows the text: the loop goes no further.
+    await until(() => t.terms.events.filter((e) => e === 'read').length >= 2);
+    expect(t.terms.events).toEqual(['read', PASTE('fix the tests'), 'read']);
   });
 
   test('stop: Esc while Claude works with no dialog; refused when idle or while a dialog shows', async () => {
@@ -2574,6 +2599,14 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     // A screen that can't be read may hide a request: no Esc, the terminal tells.
     await shows(t, 't2', new Error('no screen'));
     expect(await phone.stop('t2')).toEqual(ANSWER_FIRST);
+    // A window typed in the terminal just now (its own Esc, a draft): no Esc on top of it. A request or Claude not
+    // working is told first.
+    await shows(t, 't2', 'working');
+    await shows(t, 'i', 'idle');
+    for (const id of ['t2', 'i', 'p']) t.terms.windowInput.set(id, Date.now() - 500);
+    expect(await phone.stop('t2')).toEqual(TYPED);
+    expect(await phone.stop('i')).toEqual(NOT_WORKING);
+    expect(await phone.stop('p')).toEqual(ANSWER_FIRST);
     expect(await phone.stop('gone')).toEqual(GONE);
     expect(await phone.stop('t1')).toEqual(NOT_CLAUDE);
     expect(t.terms.answers).toEqual([['t2', ESC]]);
@@ -2615,6 +2648,10 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
       await shows(t, 't2', s);
       expect(await phone.escape('t2')).toEqual(NO_MENU);
     }
+    // A window typed in the terminal just now: its own Esc may be on its way, and two would do more than close it.
+    await shows(t, 't2', 'model');
+    t.terms.windowInput.set('t2', Date.now() - 500);
+    expect(await phone.escape('t2')).toEqual(TYPED);
     expect(await phone.escape('gone')).toEqual(GONE);
     expect(await phone.escape('t1')).toEqual(NOT_CLAUDE);
     expect(t.terms.answers).toEqual([['t2', ESC]]);

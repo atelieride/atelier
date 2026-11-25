@@ -237,9 +237,15 @@ export class PhoneConversations {
     }
   }
 
+  /** A window typed in terminal `id` within TYPED_RECENTLY_MS: its own Esc or text may still be on its way. */
+  private typedLately(id: string): boolean {
+    return Date.now() - this.o.terms.lastWindowInput(id) < TYPED_RECENTLY_MS;
+  }
+
   /**
    * Esc while Claude works and nothing on screen asks: it interrupts Claude, as in the terminal. A wait or a dialog
-   * comes first (Esc would decline the request, or close the menu), then whether Claude is working at all.
+   * comes first (Esc would decline the request, or close the menu), then whether Claude is working at all, then a
+   * window typing just now (a second Esc after its own would clear its draft or open the rewind menu).
    */
   private async typeStop(id: string, type: (key: string) => void): Promise<Refusal | null> {
     const view = await this.o.terms.screenView(id);
@@ -249,13 +255,15 @@ export class PhoneConversations {
     if (this.disposed) return NOT_WORKING;
     if (waitKind(t.session) || readDialog(view, null)) return ANSWER_FIRST;
     if (t.session?.state !== 'running') return NOT_WORKING;
+    if (this.typedLately(id)) return TYPED;
     type(ESC);
     return null;
   }
 
   /**
    * Esc on a menu at the bottom of the screen (a slash command's) while the session waits for nothing: it closes it.
-   * Never on a request's dialog drawn before its hook came, nor on one Esc exits Claude Code from (the trust dialog).
+   * Never on a request's dialog drawn before its hook came, nor on one Esc exits Claude Code from (the trust dialog),
+   * nor right after a window typed there (its own Esc may have closed the menu already).
    */
   private async typeEscape(id: string, type: (key: string) => void): Promise<Refusal | null> {
     const view = await this.o.terms.screenView(id);
@@ -266,6 +274,7 @@ export class PhoneConversations {
     const menu = menuToClose(view);
     if (menu === 'exits') return { code: 'invalid', message: IN_TERMINAL };
     if (menu !== 'menu') return NO_MENU;
+    if (this.typedLately(id)) return TYPED;
     type(ESC);
     return null;
   }

@@ -53,8 +53,19 @@ describe('the committed fixtures', () => {
     for (const f of files) expect(() => check(readFileSync(f, 'utf8'), root), f).not.toThrow();
   });
 
+  test('name no folder but the fictional one: whole, cut where a row wraps, after `~` or shortened with `/…`', () => {
+    const screens = filesUnder(join(dir, 'screens')).filter((f) => f.endsWith('.txt'));
+    for (const f of screens) {
+      for (const [path] of readFileSync(f, 'utf8').matchAll(/\S*\/project\b/g)) {
+        expect(path, f).toMatch(/^~?[a-z]*(?:\/(?:work|hello|nested|…))*-*\/project$/);
+      }
+    }
+  });
+
   test('include the transcript and the named screens', () => {
-    for (const n of ['trust', 'bash', 'bash-second', 'edit', 'plan', 'question', 'several', 'model', 'queued', 'idle', 'working']) {
+    const pastes = ['paste-three-lines', 'paste-three-lines-typed', 'paste-four-lines', 'paste-forty-lines', 'paste-forty-lines-typed',
+      'paste-two-long-lines', 'paste-three-long-lines', 'paste-line-500', 'paste-line-800', 'paste-line-801', 'paste-line-1000', 'paste-line-2000'];
+    for (const n of ['trust', 'bash', 'bash-second', 'edit', 'plan', 'question', 'several', 'model', 'queued', 'idle', 'working', ...pastes]) {
       expect(statSync(join(dir, 'screens', `${n}.txt`)).isFile(), n).toBe(true);
       expect(statSync(join(dir, 'screens', `${n}.ans`)).isFile(), n).toBe(true);
     }

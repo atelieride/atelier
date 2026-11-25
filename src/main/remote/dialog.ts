@@ -283,14 +283,20 @@ export function promptState(view: ScreenView): PromptState {
 
 /** A bracketed paste's start and end as a terminal echoing its input draws them (`^[` for Esc), spaces left out. */
 const ECHOED_PASTE = /\^\[\[20[01]~/g;
-/** The stand-in Claude Code folds a long paste into in its prompt (`[Pasted text #2 +4 lines]`), spaces left out. */
-const FOLDED_PASTE = /^\[Pastedtext#\d+\+(\d+)lines\]$/;
+/**
+ * The stand-in Claude Code (2.1.332) draws in its prompt for a paste it folds, spaces left out: `[Pasted text #1]` for
+ * one line, `[Pasted text #1 +K lines]` with K its line breaks ("lines" for one too). Its number counts the session's
+ * folded pastes.
+ */
+const FOLDED_PASTE = /^\[Pastedtext#\d+(?:\+(\d+)lines)?\]$/;
+/** Claude Code folds a paste of more than this many characters, or of more than this many line breaks. */
+const FOLD_CHARS = 800, FOLD_BREAKS = 2;
 
 /**
  * Whether Claude's prompt box holds `text` and nothing else, as typed: spaces mean nothing (a wrap adds one or none, a
- * tab is drawn as spaces), nor do the paste's markers echoed. A text of several lines may also show as the stand-in
- * Claude Code folds a long paste into, its count the text's line breaks or its lines; a single line never does. False
- * while a dialog shows or no box is found: Enter sends all the box holds.
+ * tab is drawn as spaces), nor do the paste's markers echoed. A text Claude Code folds may show as its stand-in
+ * instead, with the count of the text's line breaks; a text it draws whole never does. False while a dialog shows or
+ * no box is found: Enter sends all the box holds.
  */
 export function promptHolds(view: ScreenView, text: string): boolean {
   const held = promptText(view);
@@ -300,8 +306,9 @@ export function promptHolds(view: ScreenView, text: string): boolean {
   const shown = bare(held);
   if (want !== '' && shown === want) return true;
   const breaks = text.split('\n').length - 1;
-  const count = FOLDED_PASTE.exec(shown)?.[1];
-  return breaks > 0 && count !== undefined && (Number(count) === breaks || Number(count) === breaks + 1);
+  const folded = FOLDED_PASTE.exec(shown);
+  if (!folded || (text.length <= FOLD_CHARS && breaks <= FOLD_BREAKS)) return false;
+  return breaks === 0 ? folded[1] === undefined : folded[1] === String(breaks);
 }
 
 /** Rows only a permission request or a plan approval draws, whatever it asks about. */

@@ -33,3 +33,12 @@ dim text).
 | `model-typed`, `model` | `/model` typed, then its menu |
 | `working-typed`, `queued`, `idle` | text typed while Claude works, a queued prompt, Claude done |
 | `working` | Claude working, before an interrupt |
+| `paste-three-lines`, `paste-three-lines-typed` | a bracketed paste of 3 lines drawn as typed in the prompt, then a key typed after it |
+| `paste-line-500`, `paste-line-800` | a paste of one line of 500 and of 800 characters, drawn as typed (wrapped at spaces) |
+| `paste-line-801`, `paste-line-1000`, `paste-line-2000` | one line of more than 800 characters, folded into `[Pasted text #1]` |
+| `paste-four-lines`, `paste-forty-lines`, `paste-forty-lines-typed` | more than 2 line breaks, folded into `[Pasted text #1 +3 lines]`, `+39 lines`, then a key typed after it |
+| `paste-two-long-lines`, `paste-three-long-lines` | more than 800 characters over 2 and 3 lines: `+1 lines`, `+2 lines` |
+
+The `paste-*` screens come from Claude Code started anew in a folder of its own for each paste, never sent (so no
+transcript): they show its start banner. The paste is one write, `ESC[200~`, the text with its newlines as CR,
+`ESC[201~`, as Atelier types a prompt.
