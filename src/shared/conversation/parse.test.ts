@@ -3,6 +3,8 @@ import { describe, expect, test } from 'vitest';
 import { ConversationParser } from './parse';
 import { CAPS, type Entry } from './types';
 
+type ToolEntry = Extract<Entry, { k: 'tool' }>;
+
 const LINES = readFileSync('tests/fixtures/claude-2.1.332/transcript.jsonl', 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>);
 const ROOT = LINES.find((l) => typeof l.cwd === 'string')!.cwd as string;
 const HOME = '/home/uuuuuuuu';
@@ -150,13 +152,63 @@ describe('ConversationParser rules', () => {
       prompt('<command-name>/review</command-name>\n<command-message>review</command-message>\n<command-args>PR 42</command-args>'),
       { type: 'system', subtype: 'local_command', timestamp: T, content: '<command-name>/model</command-name><command-args></command-args>' },
       prompt('<bash-input>ls -la</bash-input>'),
-      { type: 'attachment', timestamp: T, attachment: { type: 'queued_command', prompt: 'queued one' } }
+      { type: 'attachment', timestamp: T, attachment: { type: 'queued_command', prompt: 'queued one' } },
+      prompt('<command-message>review-tools:checklist</command-message>\n<command-name>/review-tools:checklist</command-name>\n<command-args>docs/plan.md</command-args>'),
+      prompt('Caveat: this is something I typed myself')
     );
-    expect(p.entries.map((e) => (e as { text: string }).text)).toEqual(['hello', 'one\ntwo', '/review PR 42', '/model', '! ls -la', 'queued one']);
+    expect(p.entries.map((e) => (e as { text: string }).text)).toEqual(['hello', 'one\ntwo', '/review PR 42', '/model', '! ls -la', 'queued one', '/review-tools:checklist docs/plan.md', 'Caveat: this is something I typed myself']);
+    expect(p.entries.filter((e) => e.k === 'prompt' && e.text === 'queued one')).toHaveLength(1);
   });
 
-  test('a result without its call, and a tool of the next task, add nothing', () => {
+  test('a result without its call, and a tool that becomes another kind of entry, add nothing', () => {
     const p = run(result('ghost', 'x', {}), use('q', 'AskUserQuestion', { questions: [] }), result('q', 'answered'));
     expect(p.entries).toEqual([]);
+  });
+  test('a key sitting on each cut is redacted before the cut: an output\'s 2 KiB tail, a path, a prompt\'s middle', () => {
+    const key = 'sk-ant-api03-' + 'Ab1'.repeat(10);
+    const fragment = 'Ab1Ab1Ab1Ab1';
+    // The output's kept tail starts 20 characters into the key.
+    const out = 'w '.repeat(500) + key + ' z'.repeat(1012);
+    const path = `/elsewhere/${'d'.repeat(128)}/${key}/${'e'.repeat(116)}`;
+    expect(path.length).toBe(300);
+    const prompts = Array.from({ length: 460 }, () => key).join(' ');
+    const p = run(
+      use('a', 'Bash', { command: 'cat' }), result('a', out, { stdout: out, stderr: '' }),
+      use('b', 'Read', { file_path: path }),
+      prompt(prompts)
+    );
+    const [o, r, pr] = [p.entries[0] as ToolEntry, p.entries[1] as ToolEntry, p.entries[2] as { text: string }];
+    for (const text of [o.detail!, r.target!, pr.text]) {
+      expect(text).not.toContain('sk-ant');
+      expect(text).not.toContain(fragment);
+    }
+    expect(o.detail!.length).toBeLessThanOrEqual(CAPS.output);
+    expect(o.detail!.endsWith('z')).toBe(true);
+    expect(r.target!.length).toBeLessThanOrEqual(CAPS.target);
+  });
+
+  test('a failing command keeps the end of its message: its last line, at most 20 lines', () => {
+    const body = Array.from({ length: 1000 }, (_, i) => (i === 999 ? 'LAST' : 'x')).join('\n');
+    const p = run(use('a', 'Bash', { command: 'boom' }));
+    p.push({ ...result('a', ''), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'a', content: `<tool_use_error>${body}</tool_use_error>`, is_error: true }] } });
+    const e = p.entries[0] as ToolEntry;
+    expect(e.status).toBe('error');
+    expect(e.detail!.endsWith('LAST')).toBe(true);
+    expect(e.detail!.split('\n').length).toBeLessThanOrEqual(80);
+  });
+
+  test('a rejection\'s feedback and a long target stay within their caps', () => {
+    const p = run(use('a', 'Bash', { command: 'x'.repeat(500) }));
+    p.push({ ...result('a', 'no'), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'a', content: 'no', is_error: true }] }, userFeedback: 'f '.repeat(3000) });
+    const e = p.entries[0] as ToolEntry;
+    expect(e.target!.length).toBeLessThanOrEqual(CAPS.target);
+    expect(e.summary).toBe('Rejected');
+    expect(e.feedback!.length).toBeLessThanOrEqual(CAPS.feedback);
+    expect(e.feedback!.length).toBeGreaterThan(1000);
+  });
+
+  test('a tool name is kept to word characters, dots, colons and dashes, at most 80', () => {
+    const p = run(use('a', 'Bad Name!<x>', {}), use('b', 'm'.repeat(200), {}), use('c', '!!!', {}));
+    expect((p.entries as ToolEntry[]).map((e) => e.tool)).toEqual(['BadNamex', 'm'.repeat(80), 'Tool']);
   });
 });

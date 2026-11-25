@@ -250,13 +250,19 @@ function notification(raw: string, at: number | null): ChatEntry[] {
   return text ? [{ k: 'agent', at, text }] : [];
 }
 
-/** A slash command typed with arguments is a prompt ("/review PR 42"); one without (/clear, /model) is not. */
-function command(raw: string, at: number | null, st: ChatState): ChatEntry[] {
+/** A slash command's name ("/review") and arguments from Claude Code's command tags; null when the name isn't one. */
+export function commandParts(raw: string): { name: string; args: string } | null {
   const name = /<command-name>([^<]*)<\/command-name>/.exec(raw)?.[1]?.trim() ?? '';
   const args = /<command-args>([\s\S]*?)<\/command-args>/.exec(raw)?.[1]?.trim() ?? '';
   const slash = name.startsWith('/') ? name : `/${name}`;
-  if (!args || !COMMAND_NAME.test(slash)) return [];
-  const text = clean(`${slash} ${args}`, PROMPT_MAX);
+  return COMMAND_NAME.test(slash) ? { name: slash, args } : null;
+}
+
+/** A slash command typed with arguments is a prompt ("/review PR 42"); one without (/clear, /model) is not. */
+function command(raw: string, at: number | null, st: ChatState): ChatEntry[] {
+  const c = commandParts(raw);
+  if (!c || !c.args) return [];
+  const text = clean(`${c.name} ${c.args}`, PROMPT_MAX);
   return text ? [{ k: 'prompt', n: ++st.prompts, at, text }] : [];
 }
 

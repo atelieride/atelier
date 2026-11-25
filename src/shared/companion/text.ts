@@ -10,7 +10,7 @@ export const hhmm = (t: number) => { const d = new Date(t); return `${pad2(d.get
 export const ymd = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
 
 // Control characters (newline and tab aside) and format characters (zero-width, bidi overrides, BOM).
-const INVISIBLE = /(?![\n\t])[\p{Cc}\p{Cf}]/gu;
+export const INVISIBLE = /(?![\n\t])[\p{Cc}\p{Cf}]/gu;
 
 /**
  * Text kept on several lines: line breaks as "\n", invisible characters gone (one never hides a key from redaction:

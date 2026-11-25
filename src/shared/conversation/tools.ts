@@ -3,7 +3,7 @@
 import { isInside, splitPath } from '../paths';
 import { redactSecrets } from '../session';
 import { clean, relPath, short } from '../companion/chat';
-import { cutFront, oneLine } from '../companion/text';
+import { INVISIBLE, cutEnd, cutFront, oneLine } from '../companion/text';
 import { CAPS, type ToolStatus } from './types';
 
 type Obj = Record<string, unknown>;
@@ -53,21 +53,17 @@ function targetOf(input: Obj, at: At): string | undefined {
   return undefined;
 }
 
-// Control characters (newline and tab aside) and format characters: they never hide a key from redaction.
-const INVISIBLE = /(?![\n\t])[\p{Cc}\p{Cf}]/gu;
 /** Text whose lines keep their leading spaces (a diff's context lines): invisible characters gone, secrets redacted. */
 const verbatim = (s: string) => redactSecrets(s.replace(/\r\n?/g, '\n').replace(INVISIBLE, ''));
 
 /** At most the first `lines` lines and `max` characters of `text`, the end replaced by "…". */
 function head(text: string, lines: number, max: number): string {
-  let out = text.split('\n').slice(0, lines).join('\n');
-  if (out.length > max) out = `${out.slice(0, /[\ud800-\udbff]/.test(out[max - 2] ?? '') ? max - 2 : max - 1)}…`;
-  return out;
+  return cutEnd(text.split('\n').slice(0, lines).join('\n'), max);
 }
 
 /** A command's or tool's output: redacted first, then its end kept (the last lines, at most `max` characters). */
 function tail(text: string): string {
-  const flat = verbatim(text.length > 65536 ? text.slice(-65536) : text).replace(/\s+$/, '');
+  const flat = verbatim(text.length > 65536 ? text.slice(-65536) : text).trimEnd();
   const lines = flat.split('\n');
   const kept = lines.slice(-CAPS.outputLines).join('\n');
   return cutFront(kept, CAPS.output);
@@ -113,16 +109,18 @@ export function contentText(content: unknown): string {
   return content.filter((c) => isObj(c) && c.type === 'text' && typeof c.text === 'string').map((c) => (c as Obj).text as string).join('\n');
 }
 
-const lineCount = (s: string) => (s.trim() ? s.replace(/\n+$/, '').split('\n').length : 0);
+const lineCount = (s: string) => (s.trim() ? s.trimEnd().split('\n').length : 0);
 
 function failure(content: unknown, result: unknown, line: Obj): { status: ToolStatus; summary: string; detail?: string; feedback?: string } {
   const text = contentText(content).trim();
   const feedback = str(line.userFeedback);
   if (feedback) return { status: 'error', summary: 'Rejected', feedback: clean(feedback, CAPS.feedback) };
   if (result === 'User rejected tool use' || text.startsWith("The user doesn't want to proceed")) return { status: 'error', summary: 'Interrupted' };
-  const body = text.replace(/^<tool_use_error>\s*/, '').replace(/\s*<\/tool_use_error>$/, '');
+  // The wrapper is cut by hand: a regex over a long run of spaces would take quadratic time.
+  let body = text.startsWith('<tool_use_error>') ? text.slice('<tool_use_error>'.length).trimStart() : text;
+  if (body.endsWith('</tool_use_error>')) body = body.slice(0, -'</tool_use_error>'.length).trimEnd();
   const summary = short(body.split('\n').find((l) => l.trim()) ?? 'Failed', CAPS.summary);
-  return { status: 'error', summary, ...(body ? { detail: clean(body, CAPS.output) } : {}) };
+  return { status: 'error', summary, ...(body ? { detail: tail(body) } : {}) };
 }
 
 /** What a result makes of a call: its status, summary, detail and, for a rejection, the user's words. */
@@ -137,7 +135,7 @@ export function toolDone(
       if (typeof r.backgroundTaskId === 'string') return { status: 'ok', summary: 'In background' };
       const out = [r.stdout, r.stderr].filter((v): v is string => typeof v === 'string' && v.trim() !== '').join('\n');
       const body = typeof r.stdout === 'string' || typeof r.stderr === 'string' ? out : text;
-      if (!body.trim() || r.noOutputExpected === true) return { status: 'ok', summary: 'No output' };
+      if (!body.trim()) return { status: 'ok', summary: 'No output' };
       return { status: 'ok', summary: plural(lineCount(body), 'line'), detail: tail(body) };
     }
     case 'Read': {
@@ -157,10 +155,13 @@ export function toolDone(
       return body === null ? { status: 'ok' } : { status: 'ok', summary: plural(lineCount(body), 'line') };
     }
     case 'Grep': case 'Glob': {
-      const files = num(r.numFiles);
-      if (files !== null) return { status: 'ok', summary: plural(files, 'file') };
+      // numFiles is in every Grep mode (0 beside numLines in content mode, next to numMatches in count mode).
+      const lines = num(r.numLines);
       const matches = num(r.numMatches);
-      if (matches !== null) return { status: 'ok', summary: plural(matches, 'match', 'matches') };
+      const files = num(r.numFiles);
+      if (r.mode === 'content') return { status: 'ok', summary: plural(lines ?? lineCount(text), 'line') };
+      if (r.mode === 'count' && matches !== null) return { status: 'ok', summary: plural(matches, 'match', 'matches') };
+      if (files !== null) return { status: 'ok', summary: plural(files, 'file') };
       return { status: 'ok', summary: plural(lineCount(text), 'line') };
     }
     case 'ExitPlanMode': return { status: 'ok', summary: 'Approved' };

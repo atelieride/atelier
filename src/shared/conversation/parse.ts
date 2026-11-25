@@ -1,7 +1,7 @@
 // The phones' conversation view: a Claude Code transcript read line by line into numbered entries (the protocol's
 // `Entry`): the prompts typed, Claude's replies and its tool calls, a call completed in place by its result. Claude
 // Code calls the line format internal: whatever isn't recognised is skipped. Pure; the caller keeps the cursor.
-import { clean } from '../companion/chat';
+import { clean, commandParts } from '../companion/chat';
 import { toolCall, toolDone, waitTargetOf, contentText } from './tools';
 import { CAPS, type Entry } from './types';
 
@@ -10,9 +10,8 @@ const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !
 const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null);
 const timeOf = (v: unknown): number | null => { const t = typeof v === 'string' ? Date.parse(v) : NaN; return Number.isFinite(t) ? t : null; };
 
-/** Tools whose calls become another kind of entry (agents, questions, task lists): the next step reads them. */
+/** Tools whose calls are not tool entries (agents, questions, task lists): they add nothing here. */
 const OTHER_KINDS = new Set(['Agent', 'Task', 'AskUserQuestion', 'TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet']);
-const COMMAND_NAME = /^\/[\w:.-]{1,100}$/;
 const INTERRUPTED = '[Request interrupted by user';
 
 type ToolEntry = Extract<Entry, { k: 'tool' }>;
@@ -78,7 +77,8 @@ export class ConversationParser {
   }
 
   private toolUse(c: Obj, at: number | null): void {
-    const tool = str(c.name) ?? 'Tool';
+    // Only plain name characters reach the phone (an MCP tool is `mcp__server__tool`).
+    const tool = (str(c.name) ?? '').replace(/[^\w.:-]/g, '').slice(0, 80) || 'Tool';
     if (OTHER_KINDS.has(tool)) return;
     const input = isObj(c.input) ? c.input : {};
     const id = str(c.id);
@@ -101,8 +101,8 @@ export class ConversationParser {
   /** What a user line's text is: a prompt, a slash command, bash mode; or nothing (Claude Code's own messages). */
   private typed(text: string, at: number | null): void {
     const raw = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim();
-    if (!raw || raw.startsWith(INTERRUPTED) || raw.startsWith('Caveat:')) return;
-    if (raw.startsWith('<command-name>')) return this.command(raw, at);
+    if (!raw || raw.startsWith(INTERRUPTED)) return;
+    if (raw.startsWith('<command-')) return this.command(raw, at);
     const bash = /^<bash-input>([\s\S]*?)<\/bash-input>$/.exec(raw);
     if (bash) return this.prompt(`! ${bash[1]!.trim()}`, at);
     if (raw.startsWith('<')) return;
@@ -111,10 +111,8 @@ export class ConversationParser {
 
   /** A slash command: "/model", or with its arguments "/review PR 42". */
   private command(raw: string, at: number | null): void {
-    const name = /<command-name>([^<]*)<\/command-name>/.exec(raw)?.[1]?.trim() ?? '';
-    const args = /<command-args>([\s\S]*?)<\/command-args>/.exec(raw)?.[1]?.trim() ?? '';
-    const slash = name.startsWith('/') ? name : `/${name}`;
-    if (COMMAND_NAME.test(slash)) this.prompt(args ? `${slash} ${args}` : slash, at);
+    const c = commandParts(raw);
+    if (c) this.prompt(c.args ? `${c.name} ${c.args}` : c.name, at);
   }
 
   private prompt(raw: string, at: number | null): void {

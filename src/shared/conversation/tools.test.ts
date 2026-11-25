@@ -72,7 +72,7 @@ describe('toolDone', () => {
     expect(done('Read', {}, 'x', { file: { numLines: 3 } })).toEqual({ status: 'ok', summary: '3 lines' });
     expect(done('Write', { content: 'a\nb\nc' }, 'created', { content: 'a\nb\nc' })).toMatchObject({ status: 'ok', summary: '3 lines' });
     expect(done('Grep', {}, 'x', { numFiles: 4 }).summary).toBe('4 files');
-    expect(done('Grep', {}, 'x', { numMatches: 1 }).summary).toBe('1 match');
+    expect(done('Grep', {}, 'x', { mode: 'count', numMatches: 1 }).summary).toBe('1 match');
     expect(done('Glob', {}, 'a\nb', {}).summary).toBe('2 lines');
     expect(done('WebFetch', {}, [{ type: 'text', text: 'one\ntwo\nthree' }], null)).toEqual({ status: 'ok', summary: '3 lines', detail: 'one\ntwo\nthree' });
     expect(done('mcp__x__y', {}, '', null)).toEqual({ status: 'ok', summary: 'Done' });
@@ -83,5 +83,47 @@ describe('toolDone', () => {
     expect(done('Bash', {}, 'The user doesn\'t want to proceed', 'User rejected tool use', true)).toEqual({ status: 'error', summary: 'Interrupted' });
     expect(done('Bash', {}, 'The user doesn\'t want to proceed. the user said:\nno', 'Error: x', true, { userFeedback: 'no' })).toEqual({ status: 'error', summary: 'Rejected', feedback: 'no' });
     expect(done('Bash', {}, '<tool_use_error>Blocked: sleep\nmore</tool_use_error>', 'Error: x', true)).toEqual({ status: 'error', summary: 'Blocked: sleep', detail: 'Blocked: sleep\nmore' });
+  });
+});
+
+describe('toolDone edge cases', () => {
+  const done = (name: string, content: unknown, result: unknown, isError = false) => toolDone(name, {}, content, result, isError, {});
+  const fast = (f: () => unknown) => { const t = performance.now(); f(); expect(performance.now() - t).toBeLessThan(250); };
+
+  test('long runs of whitespace in a result or an error are handled in linear time', () => {
+    const spaces = `a${' '.repeat(65000)}b`;
+    const newlines = `a${'\n'.repeat(65000)}b`;
+    fast(() => done('Bash', spaces, { stdout: spaces, stderr: '' }));
+    fast(() => done('Bash', newlines, { stdout: newlines, stderr: '' }));
+    fast(() => done('Read', 'x', {}, true));
+    fast(() => done('Bash', `<tool_use_error>${' '.repeat(30000)}x${' '.repeat(30000)}`, 'Error: x', true));
+    fast(() => done('Bash', `<tool_use_error>${' '.repeat(30000)}x</tool_use_error>`, 'Error: x', true));
+    expect(done('Bash', '<tool_use_error>bad  </tool_use_error>', 'Error: x', true)).toEqual({ status: 'error', summary: 'bad', detail: 'bad' });
+  });
+
+  test('an error keeps the end of its text: the last 20 lines, within 2 KiB', () => {
+    const body = Array.from({ length: 1000 }, (_, i) => (i === 999 ? 'LAST' : 'x')).join('\n');
+    const e = done('Bash', body, 'Error: x', true);
+    expect(e.detail!.endsWith('LAST')).toBe(true);
+    expect(e.detail!.split('\n')).toHaveLength(20);
+    expect(e.summary).toBe('x');
+  });
+
+  test('Grep and Glob summaries follow the result\'s mode (hand-made shapes: no real Grep recording exists yet)', () => {
+    expect(done('Grep', 'x', { mode: 'content', numFiles: 0, numLines: 12, content: 'a\nb' }).summary).toBe('12 lines');
+    expect(done('Grep', 'a\nb\nc', { mode: 'content', numFiles: 0 }).summary).toBe('3 lines');
+    expect(done('Grep', 'x', { mode: 'count', numFiles: 3, numMatches: 17 }).summary).toBe('17 matches');
+    expect(done('Grep', 'x', { mode: 'files_with_matches', numFiles: 4 }).summary).toBe('4 files');
+    expect(done('Glob', 'x', { numFiles: 1 }).summary).toBe('1 file');
+    expect(done('Grep', 'x', { numFiles: 2 }).summary).toBe('2 files');
+  });
+
+  test('a Bash result that says no output was expected still shows the output it has', () => {
+    expect(done('Bash', 'x', { stdout: 'x', stderr: '', noOutputExpected: true })).toMatchObject({ summary: '1 line', detail: 'x' });
+  });
+
+  test('a long target is cut to 160 characters', () => {
+    expect(toolCall('Bash', { command: 'x'.repeat(500) }, AT).target!.length).toBeLessThanOrEqual(160);
+    expect(toolCall('Read', { file_path: `/work/app/${'d/'.repeat(200)}f.ts` }, AT).target!.length).toBeLessThanOrEqual(160);
   });
 });

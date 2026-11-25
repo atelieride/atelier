@@ -1,5 +1,5 @@
-// The phones' conversation view: the entries a Claude Code transcript is read into (the protocol's `Entry`, see the
-// iPhone protocol's conversation section) and the limits that keep each one small. Pure types and constants.
+// The phones' conversation view: the entries a Claude Code transcript is read into, numbered in the order Claude Code
+// wrote them, and the limits that keep each one small. Pure types and constants.
 
 export type ToolStatus = 'running' | 'ok' | 'error';
 
