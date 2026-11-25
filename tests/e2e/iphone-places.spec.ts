@@ -1,13 +1,15 @@
 // Workspaces and activities from the phone, end to end, with a fake phone on Atelier's own Noise code
-// (tests/support/fake-phone.ts) through the test relay (tests/support/test-relay.ts): a workspace made where workspaces
-// are off, an activity made in it while activities are off, both renamed, a terminal moved into the activity, then a
-// change and a new terminal in the activity with the project's window closed (it opens, the change is applied there,
-// the terminal lands there). The sidebar and the phone's next layout show each change.
+// (tests/support/fake-phone.ts) through the test relay (tests/support/test-relay.ts): the phone can't make a workspace
+// or an activity while they are off (only this computer turns them on), then, once they are on here, it makes both,
+// renames them, moves a terminal into the activity, then a change and a new terminal in the activity with the project's
+// window closed (it opens, the change is applied there, the terminal lands there). The sidebar and the phone's next
+// layout and state show each change.
 import { expect, test } from '@playwright/test';
 import { basename } from 'node:path';
 import { look } from './shots';
 import { FakePhone, type Msg } from '../support/fake-phone';
-import { close, launchWithPhone, pairPhone, settingsOf, type Launched } from './iphone-fixture';
+import { ACTIVITIES_OFF, WORKSPACES_OFF } from '../../src/shared/remote';
+import { close, command, launchWithPhone, pairPhone, settingsOf, settingsSet, type Launched } from './iphone-fixture';
 
 const SHOTS = 'test-results/iphone-places';
 
@@ -21,7 +23,7 @@ const projectOf = (s: Msg, root: string) => (s.projects as { id: string; name: s
 /** The workspaces of the latest layout the phone got for a project (undefined: off there). */
 const workspacesOf = (phone: FakePhone, project: string) => ([...phone.messages].reverse().find((m) => m.t === 'layout' && m.project === project)?.layout as Msg | null | undefined)?.workspaces as Workspaces | undefined;
 
-test('from the phone: a workspace and an activity where both were off, renamed, a terminal moved in; a closed window opens for a change and a new terminal', async () => {
+test('from the phone: no workspace or activity while they are off; once on here, both made, renamed, a terminal moved in; a closed window opens for a change and a new terminal', async () => {
   test.setTimeout(240_000);
   const l = await launch();
   const { app, win, phone, root } = l;
@@ -33,9 +35,17 @@ test('from the phone: a workspace and an activity where both were off, renamed, 
     await expect.poll(() => [...phone.messages].some((m) => m.t === 'layout' && m.project === project && m.layout !== null), { timeout: 10000 }).toBe(true);
     expect(workspacesOf(phone, project)).toBeUndefined();
     expect(await settingsOf(win)).toMatchObject({ wsActivities: false });
+    expect(state.features).toEqual({ workspacesEverywhere: false, activities: false });
 
-    // A workspace while workspaces are off: they turn on (everything in Workspace 1, still in front), and an empty
-    // "Workspace 2" is made after it.
+    // A workspace while workspaces are off: refused in words, nothing turns on.
+    expect(await phone.newWorkspace(project)).toMatchObject({ t: 'error', code: 'invalid', message: WORKSPACES_OFF });
+    await expect(win.locator('.ws-group')).toHaveCount(0);
+    expect(workspacesOf(phone, project)).toBeUndefined();
+
+    // Turned on here (everything in Workspace 1, still in front): the phone's workspace is an empty "Workspace 2".
+    await command(app, 'toggle-workspaces');
+    await expect(win.locator('.ws-group .ws-name')).toHaveText(['Workspace 1']);
+    await expect.poll(() => workspacesOf(phone, project)?.places.length).toBe(1);
     const made = await phone.newWorkspace(project);
     expect(made, JSON.stringify(made)).toMatchObject({ t: 'created' });
     const w2 = made.id as string;
@@ -47,8 +57,14 @@ test('from the phone: a workspace and an activity where both were off, renamed, 
     expect(workspacesOf(phone, project)!.members[terminal] ?? w1).toBe(w1);
     await look(win, `${SHOTS}/workspace-made.png`, { settle: 300 });
 
-    // An activity in it while activities are off: the setting turns on (for every project, as its menu item does),
-    // and "New activity" is made in Workspace 2, folded, nothing brought forward.
+    // An activity while activities are off: refused in words, the setting stays off.
+    expect(await phone.newActivity(project, w2)).toMatchObject({ t: 'error', code: 'invalid', message: ACTIVITIES_OFF });
+    expect(await settingsOf(win)).toMatchObject({ wsActivities: false });
+
+    // Turned on here: the phone's next state says so, and "New activity" is made in Workspace 2, folded, nothing
+    // brought forward.
+    await settingsSet(win, { wsActivities: true });
+    await phone.state((s) => (s.features as Msg | undefined)?.activities === true, 10000);
     const act = await phone.newActivity(project, w2);
     expect(act, JSON.stringify(act)).toMatchObject({ t: 'created' });
     const a = act.id as string;

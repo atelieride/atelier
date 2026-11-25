@@ -537,10 +537,11 @@ if (!app.requestSingleInstanceLock()) {
     if (s.claudeMcpNotice !== prevSettings.claudeMcpNotice) hub.mcpSettingsChanged();
     if (s.prStatus !== prevSettings.prStatus) prHub.settingsChanged();
     // iPhone access: on/off and the relay; project colors, accounts, ports, background work and the default profile change
-    // what phones show.
+    // what phones show, the workspaces and activities switches what they may use.
     if (s.remoteAccess !== prevSettings.remoteAccess || s.remoteRelay !== prevSettings.remoteRelay || s.projectTint !== prevSettings.projectTint || s.projectColors !== prevSettings.projectColors
       || s.claudeAccounts !== prevSettings.claudeAccounts || s.showPorts !== prevSettings.showPorts || s.showEphemeralPorts !== prevSettings.showEphemeralPorts
-      || s.terminalProfile !== prevSettings.terminalProfile) remote?.settingsChanged();
+      || s.terminalProfile !== prevSettings.terminalProfile || s.workspacesEverywhere !== prevSettings.workspacesEverywhere
+      || s.wsActivities !== prevSettings.wsActivities) remote?.settingsChanged();
     if (s.autoFetch !== prevSettings.autoFetch) scmHub.fetchSettingsChanged();
     if (s.repoSearchDepth !== prevSettings.repoSearchDepth) gitHub.settingsChanged();
     if (s.showServices !== prevSettings.showServices) servicesHub.settingsChanged();

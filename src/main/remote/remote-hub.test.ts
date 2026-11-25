@@ -726,7 +726,8 @@ describe('each project\'s sidebar arrangement', () => {
   });
 
   test('after the first state, one layout per listed project (null when never shown), then each change once', async () => {
-    const t = setup();
+    // Activities on, as the window that sends L() has them.
+    const t = setup({ settings: { wsActivities: true } });
     const { phone } = await paired(t);
     const state = await phone.state();
     const ids = (state.projects as Msg[]).map((p) => p.id);
@@ -750,7 +751,7 @@ describe('each project\'s sidebar arrangement', () => {
   });
 
   test('kept for a phone that connects later, and across restarts; never taken with access off', async () => {
-    const t = setup();
+    const t = setup({ settings: { wsActivities: true } });
     t.hub.layoutChanged('/work/app', L());
     const { phone } = await paired(t);
     const got = await phone.waitFor((m) => m.t === 'layout' && m.project === projectIdOf('/work/app'));
@@ -952,7 +953,53 @@ describe('workspaces and activities from the phone', () => {
     return { t, phone, calls };
   }
 
-  test('workspace: in any listed project (its window turns workspaces on when off), named or with Atelier\'s default', async () => {
+  test('state: carries the switches as Settings has them, and goes again when one changes', async () => {
+    const { t, phone } = await withPlaces();
+    expect((await phone.state()).features).toEqual({ workspacesEverywhere: false, activities: false });
+    t.set({ wsActivities: true });
+    expect((await phone.state((s) => (s.features as Msg | undefined)?.activities === true)).features).toEqual({ workspacesEverywhere: false, activities: true });
+    t.set({ workspacesEverywhere: true });
+    expect((await phone.state((s) => (s.features as Msg | undefined)?.workspacesEverywhere === true)).features).toEqual({ workspacesEverywhere: true, activities: true });
+  });
+
+  test('layouts: activities as the switch is now, over a layout a window sent before it changed; sent again when it changes', async () => {
+    const { t, phone } = await withPlaces();
+    const activitiesOf = (project: string) => () => ([...phone.messages].reverse().find((m) => m.t === 'layout' && m.project === project)?.layout as RemoteLayout | undefined)?.workspaces?.activities;
+    // The window sent it with activities on; Settings has them off now.
+    await until(() => activitiesOf(app)() === false);
+    t.set({ wsActivities: true });
+    await until(() => activitiesOf(app)() === true && activitiesOf(old)() === true);
+    // The places stay as the window sent them.
+    const last = [...phone.messages].reverse().find((m) => m.t === 'layout' && m.project === app)!.layout as RemoteLayout;
+    expect(last.workspaces!.places).toEqual(layoutApp.workspaces!.places);
+  });
+
+  test('workspace: refused in words where workspaces are off (or never shown), the window never asked; on in every project, it goes', async () => {
+    const { t, phone, calls } = await withPlaces();
+    t.hub.layoutChanged('/work/old', { groupByState: true, pins: [], order: { sessions: [], terminals: [] } });
+    t.setProjects({ open: ['/work/app'], recent: ['/work/old', '/work/new'] });
+    const fresh = projectIdOf('/work/new');
+    await phone.state((s) => (s.projects as Msg[]).some((p) => p.id === fresh));
+    for (const project of [old, fresh]) {
+      expect(await phone.request({ t: 'workspace', project, name: 'Billing' })).toMatchObject({ t: 'error', code: 'invalid', message: 'Workspaces are off in this project. Turn them on in Atelier on this computer.' });
+    }
+    expect(calls).toEqual([]);
+    t.set({ workspacesEverywhere: true });
+    expect(await phone.request({ t: 'workspace', project: old })).toMatchObject({ t: 'created' });
+    expect(await phone.request({ t: 'workspace', project: fresh })).toMatchObject({ t: 'created' });
+    expect(calls.map(([root]) => root)).toEqual(['/work/old', '/work/new']);
+  });
+
+  test('activity: refused in words while activities are off, the window never asked; on, it goes', async () => {
+    const { t, phone, calls } = await withPlaces();
+    expect(await phone.request({ t: 'activity', project: app, workspace: 'w1' })).toMatchObject({ t: 'error', code: 'invalid', message: 'Activities are off. Turn them on in Atelier on this computer.' });
+    expect(calls).toEqual([]);
+    t.set({ wsActivities: true });
+    expect(await phone.request({ t: 'activity', project: app, workspace: 'w1' })).toMatchObject({ t: 'created' });
+    expect(calls).toEqual([['/work/app', { kind: 'activity', workspace: 'w1' }]]);
+  });
+
+  test('workspace: in a listed project whose workspaces are on, named or with Atelier\'s default', async () => {
     const { phone, calls } = await withPlaces();
     expect(await phone.request({ t: 'workspace', project: app })).toMatchObject({ t: 'created', id: 'new1' });
     expect(await phone.request({ t: 'workspace', project: old, name: 'Billing' })).toMatchObject({ t: 'created', id: 'new1' });
@@ -966,7 +1013,8 @@ describe('workspaces and activities from the phone', () => {
   });
 
   test('activity: in a workspace of that project\'s layout; an activity, another project\'s workspace or an unknown one is refused', async () => {
-    const { phone, calls } = await withPlaces();
+    const { t, phone, calls } = await withPlaces();
+    t.set({ wsActivities: true });
     expect(await phone.request({ t: 'activity', project: app, workspace: 'w1' })).toMatchObject({ t: 'created', id: 'new1' });
     expect(await phone.request({ t: 'activity', project: app, workspace: 'w1', name: 'Release' })).toMatchObject({ t: 'created' });
     expect(calls).toEqual([['/work/app', { kind: 'activity', workspace: 'w1' }], ['/work/app', { kind: 'activity', workspace: 'w1', name: 'Release' }]]);
@@ -1027,17 +1075,20 @@ describe('workspaces and activities from the phone', () => {
   });
 
   test('the window\'s refusals pass on as they are; no answer, or no window to ask, is `failed`', async () => {
-    const { phone } = await withPlaces(async (_r, op) => {
+    const { t: on, phone } = await withPlaces(async (_r, op) => {
       if (op.kind === 'rename') return { ok: false, code: 'not-found', message: 'This workspace is not in the project any more.' };
       if (op.kind === 'activity') return { ok: false, code: 'invalid', message: 'This workspace has 20 activities already.' };
       if (op.kind === 'move') throw new Error('window gone');
       return { ok: false, code: 'failed', message: 'The project\'s window did not answer.' };
     });
+    on.set({ wsActivities: true });
     expect(await phone.request({ t: 'renamePlace', project: app, place: 'w1', name: 'A' })).toEqual({ t: 'error', rid: expect.any(Number), code: 'not-found', message: 'This workspace is not in the project any more.' });
     expect(await phone.request({ t: 'activity', project: app, workspace: 'w1' })).toMatchObject({ t: 'error', code: 'invalid', message: 'This workspace has 20 activities already.' });
     expect(await phone.request({ t: 'workspace', project: app })).toMatchObject({ t: 'error', code: 'failed', message: 'The project\'s window did not answer.' });
     expect(await phone.request({ t: 'move', id: 't1', place: 'w1' })).toMatchObject({ t: 'error', code: 'failed' });
+    // No window to ask, in a project whose workspaces are on.
     const t = setup();
+    t.hub.layoutChanged('/work/app', layoutApp);
     const p = await paired(t);
     await p.phone.state();
     expect(await p.phone.request({ t: 'workspace', project: app })).toMatchObject({ t: 'error', code: 'failed' });

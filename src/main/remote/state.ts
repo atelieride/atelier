@@ -14,7 +14,7 @@ import { isLimitPaused, modeBadge, waitKind } from '@shared/session-view';
 import { selfPacedLoop } from '@shared/loop';
 import { isShell } from '@shared/shells';
 import { isBelow, samePath } from '@shared/paths';
-import type { RemoteAccount, RemoteProject, RemoteResumable, RemoteSession } from './messages';
+import type { RemoteAccount, RemoteFeatures, RemoteProject, RemoteResumable, RemoteSession } from './messages';
 import { WaitBook, detailOf, permissionOf, sectionOf } from './rows';
 
 /** b64url(SHA-256(root)), its first 16 characters: stable for a project, and nothing of its path. */
@@ -70,6 +70,8 @@ export interface StateInput {
   profileOf?(t: TerminalInfo): string | null;
   /** The working trees a project's windows show, each with the repository it is a linked worktree of (none without a window). */
   trees?(root: string): readonly WorkingTreeLink[];
+  /** Settings' Workspaces in every project and Activities inside workspaces (both off when not given). */
+  features?: RemoteFeatures;
 }
 
 /** A working tree (real path) and the repository it is a linked worktree of, null for a main checkout. */
@@ -79,6 +81,7 @@ export interface RemoteState {
   projects: RemoteProject[];
   sessions: RemoteSession[];
   resumables: RemoteResumable[];
+  features: RemoteFeatures;
   /** Project id → root: what a phone's `create` resolves against (only listed projects). */
   roots: Map<string, string>;
 }
@@ -221,7 +224,8 @@ export function remoteState(i: StateInput): RemoteState {
         ...(account ? { account } : {})
       };
     });
-  return { projects, sessions, resumables, roots };
+  const features = { workspacesEverywhere: i.features?.workspacesEverywhere ?? false, activities: i.features?.activities ?? false };
+  return { projects, sessions, resumables, features, roots };
 }
 
 export interface UsageInput {

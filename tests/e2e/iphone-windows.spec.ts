@@ -9,7 +9,7 @@ import { writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { look } from './shots';
 import { type FakePhone, type Msg } from '../support/fake-phone';
-import { close, launchWithPhone, pairPhone, type Launched } from './iphone-fixture';
+import { close, command, launchWithPhone, pairPhone, settingsSet, type Launched } from './iphone-fixture';
 
 const SHOTS = 'test-results/iphone-windows';
 
@@ -33,6 +33,11 @@ test('from the phone: an activity and a workspace closed, their rows moved to th
     const project = projectOf(state, root)!.id;
     const terminal = (state.sessions as Row[])[0]!.id;
     await expect.poll(() => [...phone.messages].some((m) => m.t === 'layout' && m.project === project && m.layout !== null), { timeout: 10000 }).toBe(true);
+    // Workspaces and activities turned on here first: only this computer turns them on.
+    await command(l.app, 'toggle-workspaces');
+    await settingsSet(win, { wsActivities: true });
+    await expect.poll(() => workspacesOf(phone, project)?.places.length).toBe(1);
+    await phone.state((s) => (s.features as Msg | undefined)?.activities === true, 10000);
     const w2 = (await phone.newWorkspace(project, 'Release')).id as string;
     const a = (await phone.newActivity(project, w2, 'QA pass')).id as string;
     const w1 = workspacesOf(phone, project)!.places[0]!.id;

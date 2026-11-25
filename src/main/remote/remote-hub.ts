@@ -10,7 +10,7 @@
 import { randomBytes } from 'node:crypto';
 import type { RemoteDeviceInfo, RemoteLayout, RemotePairingEvent, RemotePairingStart, RemotePlace, RemotePlaceOp, RemotePlaceResult, RemoteRelayState, RemoteRowsEvent, RemoteSized, RemoteStatus } from '@shared/remote';
 import { accountsFor } from '@shared/claude-accounts';
-import { relayBase } from '@shared/remote';
+import { ACTIVITIES_OFF, WORKSPACES_OFF, relayBase } from '@shared/remote';
 import type { Settings } from '@shared/settings';
 import type { PortsMap } from '@shared/ports';
 import type { PrEntry } from '@shared/pr';
@@ -27,7 +27,7 @@ import { LayoutStore } from './layouts';
 import { PushDecider, collapseKeyOf, noticeJson, type AttentionNews } from './push';
 import { pushKeyId, sealPush } from './push-seal';
 import { PushStore } from './push-store';
-import { CLOSE, placeNameProblem, type ByeReason, type DeviceMessage, type HostMessage, type RemoteAccount } from './messages';
+import { CLOSE, placeNameProblem, type ByeReason, type DeviceMessage, type HostMessage, type RemoteAccount, type RemoteFeatures } from './messages';
 import { Pairing } from './pairing';
 import { RelayLink, type RelayLinkOptions } from './relay-link';
 import { AnswerBook } from './answers';
@@ -136,7 +136,7 @@ const STARTING_RECHECK_MS = 5000;
 const MAX_HANDSHAKES = 16;
 
 /** What a phone's state is compared by: equal, it isn't sent again. */
-const stateKey = (st: RemoteState): string => JSON.stringify([st.projects, st.sessions, st.resumables]);
+const stateKey = (st: RemoteState): string => JSON.stringify([st.projects, st.sessions, st.resumables, st.features]);
 
 /** The newest lines of a screen whose message would be too large; whole lines only. */
 function fitScreen(data: string): string {
@@ -147,6 +147,13 @@ function fitScreen(data: string): string {
   }
   return d;
 }
+
+/**
+ * A project's layout as phones get it: its activities shown as Settings has them now, over a layout its window sent
+ * before that changed (a closed window sends none).
+ */
+const liveLayout = (layout: RemoteLayout | null, activities: boolean): RemoteLayout | null =>
+  layout?.workspaces && layout.workspaces.activities !== activities ? { ...layout, workspaces: { ...layout.workspaces, activities } } : layout;
 
 /** Splits text into pieces of at most `n` characters, never between the halves of a surrogate pair. */
 function chunks(text: string, n: number): string[] {
@@ -165,6 +172,8 @@ interface SessionHost {
   rootOf(projectId: string): string | null;
   /** A listed project's layout, as its window last showed it (null: never shown with iPhone access on). */
   layoutOf(root: string): RemoteLayout | null;
+  /** Settings' switches for what a phone may use, now. */
+  features(): RemoteFeatures;
   terminal(id: string): TerminalInfo | undefined;
   /** The key of the wait a session is in, when the row may answer it. */
   waitKey(t: TerminalInfo): string | null;
@@ -222,7 +231,7 @@ class PhoneSession implements RemoteViewer {
   sendState(json: string, st: RemoteState): void {
     if (json === this.lastState) return;
     this.lastState = json;
-    this.send({ t: 'state', projects: st.projects, sessions: st.sessions, resumables: st.resumables });
+    this.send({ t: 'state', projects: st.projects, sessions: st.sessions, resumables: st.resumables, features: st.features });
   }
 
   /** Each listed project's layout, after the first state: the ones this phone hasn't got as they are now. */
@@ -230,7 +239,7 @@ class PhoneSession implements RemoteViewer {
     if (!this.lastState) return;
     for (const p of st.projects) {
       const root = st.roots.get(p.id);
-      const layout = root === undefined ? null : this.host.layoutOf(root);
+      const layout = liveLayout(root === undefined ? null : this.host.layoutOf(root), this.host.features().activities);
       const key = JSON.stringify(layout);
       if (this.lastLayouts.get(p.id) === key) continue;
       this.lastLayouts.set(p.id, key);
@@ -364,7 +373,12 @@ class PhoneSession implements RemoteViewer {
         const bad = m.name !== undefined ? placeNameProblem(m.name) : null;
         if (bad) { this.error(m.rid, 'invalid', bad); return; }
         const name = m.name !== undefined ? { name: m.name } : {};
-        if (m.t === 'workspace') { this.place(m.rid, root, { kind: 'workspace', ...name }); return; }
+        if (m.t === 'workspace') {
+          // Only where they are on: a phone never turns workspaces on (a project never shown has them off).
+          if (!this.host.features().workspacesEverywhere && !this.host.layoutOf(root)?.workspaces) { this.error(m.rid, 'invalid', WORKSPACES_OFF); return; }
+          this.place(m.rid, root, { kind: 'workspace', ...name });
+          return;
+        }
         if (m.t === 'renamePlace') {
           if (this.placeOf(m.rid, root, m.place, 'workspace or activity')) this.place(m.rid, root, { kind: 'rename', place: m.place, name: m.name });
           return;
@@ -373,6 +387,8 @@ class PhoneSession implements RemoteViewer {
         if (!ws) return;
         // Activities never hold activities.
         if (ws.parent !== undefined) { this.error(m.rid, 'invalid', 'An activity goes inside a workspace.'); return; }
+        // Only while they are on: a phone never turns activities on.
+        if (!this.host.features().activities) { this.error(m.rid, 'invalid', ACTIVITIES_OFF); return; }
         this.place(m.rid, root, { kind: 'activity', workspace: m.workspace, ...name });
         return;
       }
@@ -592,6 +608,7 @@ export class RemoteHub {
       listed: (id) => this.d.terminals.allTerminals().some((t) => t.id === id),
       rootOf: (pid) => this.computeState().roots.get(pid) ?? null,
       layoutOf: (root) => this.layouts.get(root),
+      features: () => this.features(),
       terminal: (id) => this.d.terminals.allTerminals().find((t) => t.id === id),
       waitKey: (t) => this.waits.keyOf(t),
       answers: new AnswerBook(),
@@ -846,6 +863,12 @@ export class RemoteHub {
 
   // ── State ──
 
+  /** Settings' switches for what a phone may use: turned on and off only here. */
+  private features(): RemoteFeatures {
+    const s = this.d.settings();
+    return { workspacesEverywhere: s.workspacesEverywhere, activities: s.wsActivities };
+  }
+
   private computeState(): RemoteState {
     const s = this.d.settings();
     const p = this.d.projects();
@@ -865,6 +888,7 @@ export class RemoteHub {
     return remoteState({
       terminals, open: p.open, recent: p.recent, colors: s, now: Date.now(), starting,
       resumables: this.d.terminals.allResumables(), accounts: s.claudeAccounts, defaultDir: this.d.defaultDir(),
+      features: this.features(),
       waits: this.waits,
       ports: (id) => of(ports, this.d.ports, id)?.[id],
       pr: (id) => of(prs, this.d.prs, id)?.[id],

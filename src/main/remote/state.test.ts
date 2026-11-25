@@ -27,6 +27,12 @@ test('projects: open windows, then projects with live terminals, then recent one
   expect(JSON.stringify(s.projects)).not.toContain('/');
 });
 
+test('features: the switches a phone may use, as Settings has them; both off when not given', () => {
+  expect(remoteState({ terminals: [], open: [], recent: [], colors }).features).toEqual({ workspacesEverywhere: false, activities: false });
+  const on = remoteState({ terminals: [], open: [], recent: [], colors, features: { workspacesEverywhere: true, activities: true } });
+  expect(on.features).toEqual({ workspacesEverywhere: true, activities: true });
+});
+
 test('project colors: the window\'s, none with project colors off', () => {
   const on = remoteState({ terminals: [], open: ['/a'], recent: [], colors });
   expect(on.projects[0]!.color).toBe(3);
