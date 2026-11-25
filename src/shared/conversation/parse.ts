@@ -252,7 +252,8 @@ export class ConversationParser {
       const report = clean(between(raw, 'result', true) ?? '', CAPS.report);
       this.list[n - 1] = { ...e, status: status === 'completed' ? 'ok' : 'error', ...(report ? { report } : {}) };
     } else if (e.k === 'tool') {
-      const code = /\(exit code (\d+)\)/.exec(between(raw, 'summary') ?? '')?.[1];
+      // The last one: the command's own description may contain such a phrase.
+      const code = [...(between(raw, 'summary') ?? '').matchAll(/\(exit code (\d+)\)/g)].at(-1)?.[1];
       const done = code === undefined ? status === 'completed' : Number(code) === 0;
       const summary = done ? 'Done' : code !== undefined ? `Exit ${Number(code)}` : status === 'killed' ? 'Stopped' : 'Failed';
       this.list[n - 1] = { ...e, status: done ? 'ok' : 'error', summary };

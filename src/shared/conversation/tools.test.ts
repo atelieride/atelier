@@ -60,7 +60,7 @@ describe('toolDone', () => {
   test('Bash: line count, no output, background; detail the output tail', () => {
     expect(done('Bash', {}, 'a\nb', { stdout: 'a\nb', stderr: '' })).toEqual({ status: 'ok', summary: '2 lines', detail: 'a\nb' });
     expect(done('Bash', {}, '(Bash completed with no output)', { stdout: '', stderr: '', noOutputExpected: true })).toEqual({ status: 'ok', summary: 'No output' });
-    expect(done('Bash', {}, 'Command running in background', { stdout: '', stderr: '', backgroundTaskId: 'b1' })).toEqual({ status: 'ok', summary: 'In background' });
+    expect(done('Bash', {}, 'Command running in background', { stdout: '', stderr: '', backgroundTaskId: 'b1' })).toEqual({ status: 'running', summary: 'In background' });
   });
 
   test('Edit: "+A −R" and the structured patch as detail', () => {

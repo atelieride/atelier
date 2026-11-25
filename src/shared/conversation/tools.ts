@@ -138,7 +138,7 @@ export function toolDone(
   }
   switch (name) {
     case 'Bash': {
-      if (typeof r.backgroundTaskId === 'string') return { status: 'ok', summary: 'In background' };
+      if (typeof r.backgroundTaskId === 'string') return { status: 'running', summary: 'In background' };
       const out = [r.stdout, r.stderr].filter((v): v is string => typeof v === 'string' && v.trim() !== '').join('\n');
       const body = typeof r.stdout === 'string' || typeof r.stderr === 'string' ? out : text;
       if (!body.trim()) return { status: 'ok', summary: 'No output' };

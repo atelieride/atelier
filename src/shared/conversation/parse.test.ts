@@ -224,7 +224,7 @@ describe('ConversationParser: agents, questions, plans, todos, compaction, queue
     expect(e.map((x) => x.n)).toEqual(range(1, 60));
     expect(e.filter((x) => x.k === 'reply').length).toBe(16);
     expect(e[38]).toMatchObject({ n: 39, k: 'tool', status: 'error', summary: expect.stringMatching(/^Blocked: sleep 25 followed by/) });
-    expect(parsedUpTo(79).entries[39]).toMatchObject({ n: 40, k: 'tool', status: 'ok', summary: 'In background' });
+    expect(parsedUpTo(79).entries[39]).toMatchObject({ n: 40, k: 'tool', status: 'running', summary: 'In background' });
     expect(e[51]).toMatchObject({ n: 52, k: 'tool', tool: 'Write', target: expect.stringMatching(/^~\/\.claude-xxx\/plans\//) });
   });
 
@@ -441,7 +441,7 @@ describe('ConversationParser: agents, questions, plans, todos, compaction, queue
 
   test('a background call whose launch came is not settled by an interrupt', () => {
     const p = run(use('a', 'Bash', { command: 'x', run_in_background: true }), result('a', 'bg', { backgroundTaskId: 'q' }), prompt('[Request interrupted by user]'));
-    expect(p.entries[0]).toMatchObject({ status: 'ok', summary: 'In background' });
+    expect(p.entries[0]).toMatchObject({ status: 'running', summary: 'In background' });
     p.push(notice('a', 'completed', 'done (exit code 0)'));
     expect(p.entries[0]).toMatchObject({ summary: 'Done' });
   });
@@ -463,5 +463,22 @@ describe('ConversationParser: agents, questions, plans, todos, compaction, queue
     expect(JSON.stringify(p.entries)).not.toContain('sk-ant');
     expect(JSON.stringify(p.entries)).not.toContain('waitTarget');
   });
-});
 
+  test('a background Bash reads running / "In background" until its notification, is never in running(), and stays so without one', () => {
+    const p = run(use('a', 'Bash', { command: 'npm run dev', run_in_background: true }), result('a', 'bg', { backgroundTaskId: 'q', stdout: '', stderr: '' }), use('b', 'Bash', { command: 'sleep 1', run_in_background: true }), result('b', 'bg', { backgroundTaskId: 'r', stdout: '', stderr: '' }));
+    expect(p.entries[0]).toMatchObject({ status: 'running', summary: 'In background' });
+    expect(p.running()).toEqual([]);
+    p.push(notice('a', 'completed', 'Background command "npm run dev" completed (exit code 0)'));
+    expect(p.entries[0]).toMatchObject({ status: 'ok', summary: 'Done' });
+    expect(p.entries[1]).toMatchObject({ status: 'running', summary: 'In background' });
+    p.push(notice('b', 'failed', 'Background command "x" failed (exit code 2)'));
+    expect(p.entries[1]).toMatchObject({ status: 'error', summary: 'Exit 2' });
+    expect(p.running()).toEqual([]);
+  });
+
+  test('the last "(exit code N)" of a notification summary counts, not one inside the command\'s description', () => {
+    const p = run(use('a', 'Bash', { command: 'x', run_in_background: true }), result('a', 'bg', { backgroundTaskId: 'q' }));
+    p.push(notice('a', 'completed', 'Background command "echo (exit code 1)" completed (exit code 0)'));
+    expect(p.entries[0]).toMatchObject({ status: 'ok', summary: 'Done' });
+  });
+});
