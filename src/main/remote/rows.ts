@@ -6,6 +6,7 @@ import { effectiveState } from '@shared/background';
 import { reasonLabel } from '@shared/notifications';
 import type { TerminalInfo } from '@shared/protocol';
 import type { SessionInfo } from '@shared/session';
+import type { DialogWait } from './dialog';
 import { isLimitPaused, needsYou, waitKind, waitTarget } from '@shared/session-view';
 
 export type RowSection = 'needs' | 'review' | 'working' | 'idle';
@@ -117,13 +118,31 @@ function answerable(s: SessionInfo | null): string | null {
   return target === null ? null : `permission\u0000${target}`;
 }
 
+/** Every wait but a usage-limit pause: a permission, a plan approval, a question, any other (kind and target). */
+export function anyWait(s: SessionInfo | null): string | null {
+  const kind = waitKind(s);
+  if (!s || kind === null || isLimitPaused(s)) return null;
+  return `${kind}\u0000${waitTarget(s.activity) ?? ''}`;
+}
+
+/** The dialog a wait expects on screen: a question, a plan approval or a permission; null for any other wait. */
+export function waitOf(s: SessionInfo | null): DialogWait | null {
+  if (!s || isLimitPaused(s)) return null;
+  const kind = waitKind(s);
+  if (kind === 'question') return 'question';
+  if (kind !== 'permission') return null;
+  return isPlanApproval(s) ? 'plan' : 'permission';
+}
+
 /**
- * Keys of the waits sessions are in, one per wait: a permission the row can answer (not a plan, not a question), by
- * its terminal, kind, target and when it began. Later events of the same wait (a subagent's tool call) leave its key
+ * Keys of the waits sessions are in, one per wait: by default a permission the row can answer (not a plan, not a
+ * question; `what` picks the waits to key), by its terminal, kind, target and when it began. Later events of the same wait (a subagent's tool call) leave its key
  * alone; a wait that ends and comes again is a new one. `update` follows every terminal list, so an end is seen.
  */
 export class WaitBook {
   private waits = new Map<string, { what: string; since: number }>();
+
+  constructor(private readonly what: (s: SessionInfo | null) => string | null = answerable) {}
 
   update(list: readonly Pick<TerminalInfo, 'id' | 'session'>[]): void {
     const next = new Map<string, { what: string; since: number }>();
@@ -143,7 +162,7 @@ export class WaitBook {
 
   /** The wait a terminal is in, as first seen (a new one when what it waits for changed). */
   private see(t: Pick<TerminalInfo, 'id' | 'session'>): { what: string; since: number } | null {
-    const what = answerable(t.session);
+    const what = this.what(t.session);
     if (what === null) return null;
     const known = this.waits.get(t.id);
     return known?.what === what ? known : { what, since: t.session!.updatedAt };

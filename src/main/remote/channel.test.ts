@@ -343,6 +343,78 @@ describe('messages', () => {
     expect(o.received.at(-1)).toMatchObject({ rid: 6 });
   });
 
+  test('conversation messages: strict shapes', async () => {
+    const o = await open();
+    const ask = 'k'.repeat(22) + '.' + 'AbCd_-12';
+    const ok = [
+      { t: 'attach', rid: 1, id: 't1', cols: 80, rows: 24, fit: true },
+      { t: 'follow', rid: 2, id: 't1' },
+      { t: 'follow', rid: 3, id: 't1', before: 2 ** 31 - 1 },
+      { t: 'unfollow', id: 't1' },
+      { t: 'say', rid: 4, id: 't1', text: 'line one\n\tline two' },
+      { t: 'say', rid: 5, id: 't1', text: 'é'.repeat(8192) },
+      { t: 'stop', rid: 6, id: 't1' },
+      { t: 'escape', rid: 7, id: 't1' },
+      { t: 'dialog', rid: 8, id: 't1' },
+      { t: 'choose', rid: 9, id: 't1', ask, n: 9, label: 'Yes' },
+      { t: 'choose', rid: 10, id: 't1', ask, n: 1, label: 'x'.repeat(300), text: 'é'.repeat(2048) }
+    ];
+    for (const m of ok) o.send(m);
+    expect(o.received).toEqual(ok);
+    const bad = [
+      { t: 'attach', rid: 11, id: 't1', cols: 80, rows: 24, fit: false },
+      { t: 'follow', rid: 12, id: 't1', extra: 1 },
+      { t: 'follow', rid: 13, id: 't1', before: 0 },
+      { t: 'follow', rid: 14, id: 't1', before: 2 ** 31 },
+      { t: 'say', rid: 15, id: 't1', text: 'a\x1bb' },
+      { t: 'say', rid: 16, id: 't1', text: 'é'.repeat(8192) + 'x' },
+      { t: 'say', rid: 17, id: 't1', text: '  \n ' },
+      { t: 'say', rid: 18, id: 't1', text: 'a\rb' },
+      { t: 'stop', rid: 19, id: 't1', force: true },
+      { t: 'dialog', rid: 20, id: 't1', ask },
+      { t: 'choose', rid: 21, id: 't1', ask, n: 10, label: 'Yes' },
+      { t: 'choose', rid: 22, id: 't1', ask, n: 0, label: 'Yes' },
+      { t: 'choose', rid: 23, id: 't1', ask, n: 1, label: 'Yes', text: 'a\nb' },
+      { t: 'choose', rid: 24, id: 't1', ask, n: 1, label: 'Yes', text: 'é'.repeat(2048) + 'x' },
+      { t: 'choose', rid: 25, id: 't1', ask, n: 1, label: 'Yes', text: ' ' },
+      { t: 'choose', rid: 26, id: 't1', ask, n: 1, label: 'x'.repeat(301) },
+      { t: 'choose', rid: 27, id: 't1', ask, n: 1, label: '' },
+      { t: 'choose', rid: 28, id: 't1', ask: 'k'.repeat(22), n: 1, label: 'Yes' },
+      { t: 'choose', rid: 29, id: 't1', ask: 'k'.repeat(22) + '.short', n: 1, label: 'Yes' }
+    ];
+    for (const m of bad) o.send(m);
+    expect(o.received).toHaveLength(ok.length);
+    expect(o.got.filter((m) => m.t === 'error').map((m) => [m.rid, m.code])).toEqual(bad.map((m) => [m.rid, 'invalid']));
+  });
+
+  test('limits: follow and dialog share 120 a minute; say, stop, escape and choose 30, apart from the row actions', async () => {
+    let now = 0;
+    const o = await open({ now: () => now, limits: { readsPerMin: 2, typesPerMin: 2, actionsPerMin: 1 } });
+    const ask = 'k'.repeat(22) + '.AbCd_-12';
+    o.send({ t: 'follow', rid: 1, id: 't' });
+    o.send({ t: 'dialog', rid: 2, id: 't' });
+    o.send({ t: 'follow', rid: 3, id: 't' });
+    o.send({ t: 'unfollow', id: 't' });
+    o.send({ t: 'say', rid: 4, id: 't', text: 'a' });
+    o.send({ t: 'stop', rid: 5, id: 't' });
+    o.send({ t: 'escape', rid: 6, id: 't' });
+    o.send({ t: 'choose', rid: 7, id: 't', ask, n: 1, label: 'Yes' });
+    // The row actions keep their own budget: one, whatever was spent above.
+    o.send({ t: 'close', rid: 8, id: 't' });
+    o.send({ t: 'close', rid: 9, id: 't' });
+    expect(o.received.map((m) => ('rid' in m ? m.rid : 0))).toEqual([1, 2, 0, 4, 5, 8]);
+    expect(o.got.filter((m) => m.t === 'error').map((m) => [m.rid, m.code, (m as { message?: string }).message])).toEqual([
+      [3, 'busy', 'Too many requests; try again in a minute.'],
+      [6, 'busy', 'Too many changes at once; try again in a minute.'],
+      [7, 'busy', 'Too many changes at once; try again in a minute.'],
+      [9, 'busy', 'Too many changes at once; try again in a minute.']
+    ]);
+    now += 60_000;
+    o.send({ t: 'dialog', rid: 10, id: 't' });
+    o.send({ t: 'say', rid: 11, id: 't', text: 'b' });
+    expect(o.received.slice(-2).map((m) => ('rid' in m ? m.rid : 0))).toEqual([10, 11]);
+  });
+
   test('workspaces and activities: workspace, activity, renamePlace and move; strict shapes, names bounded', async () => {
     const o = await open();
     const ok = [

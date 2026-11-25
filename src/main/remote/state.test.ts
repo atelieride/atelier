@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { expect, test } from 'vitest';
 import type { TerminalInfo } from '@shared/protocol';
 import type { SessionInfo } from '@shared/session';
+import { WaitBook, anyWait } from './rows';
 import { projectIdOf, remoteState, remoteUsage, type StateInput } from './state';
 
 const term = (id: string, projectRoot: string, o: Partial<TerminalInfo> = {}): TerminalInfo => ({
@@ -268,4 +269,24 @@ test('usage: the default account and every configured one, names and colors only
   const old = remoteUsage({ usage: [{ configDir: null, usage: { fiveHour: { pct: 3, resetsAt: nowSec + 60 }, sevenDay: null, updatedAt: 1 } }], accounts, defaultDir: '/home/.claude', now: NOW });
   expect(old[0]!.fiveHour).toEqual({ pct: 3, resetsAt: (nowSec + 60) * 1000 });
   expect(JSON.stringify(list)).not.toContain('/');
+});
+
+test('a waiting session carries ask for every wait; wait only for answerable permissions; neither once it goes on', () => {
+  const perm = session({ state: 'waiting', waitingFor: 'permission', activity: 'waiting: Bash npm test', updatedAt: 5 });
+  const plan = { ...perm, activity: 'waiting: plan approval' };
+  const question = { ...perm, waitingFor: 'question' as const, activity: 'waiting: question' };
+  const running = session({ state: 'running', activity: 'Bash npm test', updatedAt: 6 });
+  const asks = new WaitBook(anyWait);
+  const rows = (...ss: SessionInfo[]) => remoteState(full({ asks, terminals: ss.map((s, i) => term(`t${i}`, '/a', { createdAt: i, session: s })) })).sessions;
+  const [p, pl, q, r] = rows(perm, plan, question, running);
+  expect(p!.ask).toMatch(/^[A-Za-z0-9_-]{22}$/);
+  expect(p!.wait).toMatch(/^[A-Za-z0-9_-]{22}$/);
+  expect(pl!.ask).toMatch(/^[A-Za-z0-9_-]{22}$/);
+  expect(q!.ask).toMatch(/^[A-Za-z0-9_-]{22}$/);
+  expect('wait' in pl!).toBe(false);
+  expect('wait' in q!).toBe(false);
+  expect(new Set([p!.ask, pl!.ask, q!.ask]).size).toBe(3);
+  expect('ask' in r!).toBe(false);
+  // Without a book of asks (an older caller) no row has one.
+  expect('ask' in remoteState(full({ terminals: [term('w', '/a', { session: perm })] })).sessions[0]!).toBe(false);
 });

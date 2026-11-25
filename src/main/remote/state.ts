@@ -66,6 +66,8 @@ export interface StateInput {
   realOf?(p: string): string;
   /** The keys of the waits rows can answer, kept across states (a wait's key lasts the whole wait). */
   waits?: WaitBook;
+  /** The keys of every wait (plans and questions too), as `waits` keeps them. */
+  asks?: WaitBook;
   /** The terminal profile's label as its row's chip shows it: null for the default one. */
   profileOf?(t: TerminalInfo): string | null;
   /** The working trees a project's windows show, each with the repository it is a linked worktree of (none without a window). */
@@ -168,6 +170,7 @@ export function remoteState(i: StateInput): RemoteState {
     const detail = detailOf(t, { starting, now });
     const permission = permissionOf(s);
     const key = waits.keyOf(t);
+    const ask = i.asks?.keyOf(t);
     const mode = modeBadge(s?.permissionMode);
     const account = s || starting ? accountIdOf(t.configDir, i.accounts, i.defaultDir) : null;
     const plainFolder = folderOf(t, realOf);
@@ -194,6 +197,7 @@ export function remoteState(i: StateInput): RemoteState {
       ...(detail ? { detail } : {}),
       ...(permission ? { permission } : {}),
       ...(key ? { wait: key } : {}),
+      ...(ask ? { ask } : {}),
       ...(typeof s?.lastMessageAt === 'number' ? { lastMessageAt: s.lastMessageAt } : {}),
       ...(s?.model ? { model: clip(s.model, 40) } : {}),
       ...(typeof s?.contextPct === 'number' ? { contextPct: Math.max(0, Math.min(100, Math.round(s.contextPct))) } : {}),
