@@ -35,6 +35,9 @@ type Refusal = { code: ErrorCode; message: string };
 /** Down and up, as `chooseKeys` puts them before a Tab. */
 // eslint-disable-next-line no-control-regex
 const ARROW = /\u001b\[[AB]/g;
+const DOWN = '\u001b[B';
+/** Text compared as typed in a field: a wrap adds a space, or none inside a word. */
+const flat = (s: string) => s.replace(/\s+/g, '');
 
 const codeOf = (e: unknown) => (typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : null);
 /** An error for the log: its code when it has one (fs errors' messages hold paths), else its message. */
@@ -131,11 +134,18 @@ export class PhoneConversations {
     }
   }
 
+  /** Terminal `id` when the state lists it as a Claude session; else why not. */
+  private sessionOf(id: string): TerminalInfo | Refusal {
+    const t = this.o.host.listed(id) ? this.o.host.terminal(id) : undefined;
+    if (!t) return { code: 'not-found', message: GONE };
+    if (!this.o.host.claude(id)) return { code: 'invalid', message: NOT_CLAUDE };
+    return t;
+  }
+
   /** Terminal `id` when the state lists it as a Claude session; otherwise null, and `rid` is told why. */
   private claudeSession(rid: number, id: string): TerminalInfo | null {
-    const t = this.o.host.listed(id) ? this.o.host.terminal(id) : undefined;
-    if (!t) { this.error(rid, 'not-found', GONE); return null; }
-    if (!this.o.host.claude(id)) { this.error(rid, 'invalid', NOT_CLAUDE); return null; }
+    const t = this.sessionOf(id);
+    if ('code' in t) { this.error(rid, t.code, t.message); return null; }
     return t;
   }
 
@@ -176,7 +186,10 @@ export class PhoneConversations {
    */
   private async entryOf(t: TerminalInfo, wait: DialogWait): Promise<number | null> {
     let running: ConversationSnapshot['running'];
-    try { running = (await this.o.book.read(t)).running; } catch { return null; }
+    try { running = (await this.o.book.read(t)).running; } catch (e) {
+      this.o.host.log(`conversations: the dialog of terminal ${t.id} goes without its entry (${reasonOf(e)})`);
+      return null;
+    }
     const target = waitTarget(t.session?.activity);
     const fits = running.filter((r) => (wait === 'question' ? r.k === 'question'
       : wait === 'plan' ? r.k === 'tool' && r.tool === 'ExitPlanMode'
@@ -186,28 +199,29 @@ export class PhoneConversations {
 
   /**
    * Option `n` of the dialog a `dialog` answer showed with `ask`: only while the session's ask is still the part before
-   * its `.`, once per dialog page, one answer at a time per terminal (the row's Allow/Deny included).
+   * its `.`, once per dialog page and never once the row answered that wait, one answer at a time per terminal (the
+   * row's Allow/Deny included).
    */
   private choose(m: Extract<ConversationRequest, { t: 'choose' }>): void {
     const { rid, id } = m;
     const t = this.claudeSession(rid, id);
     if (!t) return;
     const dot = m.ask.indexOf('.');
-    const sessionAsk = m.ask.slice(0, dot);
-    if (this.o.host.asks.keyOf(t) !== sessionAsk) { this.error(rid, 'busy', CHANGED); return; }
-    const busy = this.o.host.answers.begin(id, m.ask);
+    const to = { ask: m.ask.slice(0, dot), page: m.ask.slice(dot + 1) };
+    if (this.o.host.asks.keyOf(t) !== to.ask) { this.error(rid, 'busy', CHANGED); return; }
+    const busy = this.o.host.answers.begin(id, to);
     if (busy) { this.error(rid, 'busy', busy); return; }
     let typed = false;
     const type = (key: string) => { typed = true; this.o.terms.answerKey(id, key); };
     void (async () => {
       let refusal: Refusal | null;
       try {
-        refusal = await this.typeChoice(m, sessionAsk, m.ask.slice(dot + 1), type);
+        refusal = await this.typeChoice(m, to.ask, to.page, type);
       } catch (e) {
         this.o.host.log(`conversations: a choice in terminal ${id} stopped (${reasonOf(e)})`);
         refusal = typed ? { code: 'failed', message: NOT_THROUGH } : { code: 'invalid', message: IN_TERMINAL };
       } finally {
-        this.o.host.answers.end(id, m.ask, typed);
+        this.o.host.answers.end(id, to, typed);
       }
       if (refusal) this.error(rid, refusal.code, refusal.message);
       else this.send({ t: 'ok', rid });
@@ -216,18 +230,23 @@ export class PhoneConversations {
 
   /**
    * Types the keys that choose option `n`, each right after a fresh read showing the dialog ready for it: the digit;
-   * for a field, the digit, the text once the cursor is in the field, Enter once the field shows the text; for an
-   * amended "No", each arrow to it, Tab once the cursor is on it, then the text and Enter as for a field. Null once the
-   * last key went; else why not (before any key: the request changed, or it is answered in the terminal; after one:
-   * it didn't go through, and no key follows).
+   * for a field, the digit, the text once the cursor is in the empty field, Enter once the field holds that text and
+   * nothing else; for an amended "No", each arrow once the cursor shows where the last one left it, Tab once it is on
+   * the option, then the text and Enter as for a field. A window typing in the terminal meanwhile, or the phone gone,
+   * stops it too. Null once the last key went; else why not (before any key: the request changed, or it is answered
+   * in the terminal; after one: it didn't go through, and no key follows).
    */
   private async typeChoice(m: Extract<ConversationRequest, { t: 'choose' }>, sessionAsk: string, page: string, type: (key: string) => void): Promise<Refusal | null> {
     const { id, n, label, text } = m;
-    /** The dialog on screen now, read for the session's wait: null when the session left or waits for another request. */
+    const started = Date.now();
+    /**
+     * The dialog on screen now, read for the session's wait: null when the session left, waits for another request,
+     * the phone is gone, or a window typed in the terminal since the choice began (its keys may be in the dialog).
+     */
     const read = async (): Promise<ScreenDialog | null> => {
       const view = await this.o.terms.screenView(id);
-      const t = this.o.host.listed(id) ? this.o.host.terminal(id) : undefined;
-      if (!t || !this.o.host.claude(id) || this.o.host.asks.keyOf(t) !== sessionAsk) return null;
+      const t = this.sessionOf(id);
+      if (this.disposed || 'code' in t || this.o.host.asks.keyOf(t) !== sessionAsk || this.o.terms.lastWindowInput(id) >= started) return null;
       return readDialog(view, waitOf(t.session));
     };
     const pause = () => new Promise<void>((r) => setTimeout(r, this.o.timing.keyMs));
@@ -239,26 +258,35 @@ export class PhoneConversations {
     if (!k.ok) return { code: k.code, message: k.message };
     if (k.text === undefined) { type(k.keys); return null; }
 
-    /** The same dialog as the phone's (its kind and its rows), its cursor on option `n`. */
-    const onIt = (d: ScreenDialog | null): d is ScreenDialog =>
-      !!d && d.kind === shown.kind && d.rows.length === shown.rows.length && d.rows.every((r, i) => r === shown.rows[i]) && d.focused === n;
+    /** The same dialog as the phone's (its kind and its rows), its cursor on option `at`. */
+    const on = (d: ScreenDialog | null, at: number): d is ScreenDialog =>
+      !!d && d.kind === shown.kind && d.rows.length === shown.rows.length && d.rows.every((r, i) => r === shown.rows[i]) && d.focused === at;
     if (k.keys.endsWith('\t')) {
-      // An amended option: one key at a time, the cursor seen on it (the field not open yet) before Tab.
-      const arrows = k.keys.match(ARROW) ?? [];
-      for (const arrow of arrows) { type(arrow); await pause(); }
-      if (arrows.length > 0) {
+      const moves = k.keys.slice(0, -1);
+      const arrows = moves.match(ARROW) ?? [];
+      // Arrows only before the Tab, as chooseKeys makes them: anything else is not typed.
+      if (arrows.join('') !== moves) return { code: 'invalid', message: IN_TERMINAL };
+      // One arrow at a time, each once a read shows the cursor where the last one left it on the same page: every
+      // label as the phone saw it, so no field opened (an option's label changes when it becomes one).
+      let at = shown.focused ?? n;
+      for (const arrow of arrows) {
+        type(arrow);
+        at += arrow === DOWN ? 1 : -1;
+        await pause();
         const d = await read();
-        if (!onIt(d) || d.page !== page || d.inField) return notThrough;
+        if (!on(d, at) || d.page !== page) return notThrough;
       }
       type('\t');
     } else type(k.keys);
     await pause();
     const open = await read();
-    if (!onIt(open) || !open.inField) return notThrough;
+    // The cursor in the field, and nothing in it yet: the text would go after what is there.
+    if (!on(open, n) || !open.inField || open.fieldText !== '') return notThrough;
     type(k.text);
     await pause();
     const filled = await read();
-    if (!onIt(filled) || !fieldHolds(filled, n, k.text)) return notThrough;
+    // The text in the field and nothing else: Enter sends all it holds.
+    if (!on(filled, n) || !fieldHolds(filled, n, k.text) || flat(filled.fieldText ?? '') !== flat(k.text)) return notThrough;
     type('\r');
     return null;
   }

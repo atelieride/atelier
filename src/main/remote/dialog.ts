@@ -77,6 +77,8 @@ const isBoxTop = (row: string) => RULE.test(row) || /^[─━]+ \S.* [─━]+$/
 /** The plan dialog's hint under its feedback option, whatever that option's label (it becomes the typed text). */
 const FEEDBACK = 'shift+tab to approve with this feedback';
 const PLAN_FIELD = 'Tell Claude what to change';
+/** What the plan dialog asks, on its last row above the options (on two when it wraps). */
+const PLAN_ASK = 'Would you like to proceed?';
 /** A field's label while nothing is typed in it. Another label is text left there. */
 const PLACEHOLDER: Partial<Record<DialogKind, string>> = { question: 'Type something.', plan: PLAN_FIELD };
 /** A question's chip or tab-bar row (`☐ Color`, `←  ☒ Season  ✔ Submit  →`), or its review page's title. */
@@ -217,6 +219,9 @@ export function readDialog(view: ScreenView, wait: DialogWait | null): ScreenDia
   const rows = capped(rowsBetween(lines, topAbove(lines, d.options[0]!.line - 1), d.options[0]!.line));
   if (wait === 'question' && !rows.some((r) => QUESTION_ROW.test(r))) return null;
   const field = fieldOf(lines, d.options, wait, rows);
+  // A plan's wait may outlive its dialog (its hook lags the screen): only the plan dialog's own marks make it one, its
+  // question or its feedback hint, never another dialog drawn there meanwhile (Bash's, its cursor maybe in a field).
+  if (wait === 'plan' && field.hint === null && !flat(rows.join(' ')).includes(flat(PLAN_ASK))) return null;
   const read = d.options.map((o) => ({ ...labelOf(lines, o, cols, o.n === field.n ? field.hint : null), row: o }));
   // The hint row: the last row below the options (none on a question's review page).
   let hint = '';

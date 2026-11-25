@@ -229,7 +229,18 @@ test('the page ignores the cursor: Bash with the cursor on No reads as the same 
   // Another request, a field's label changed, or another kind: another page.
   expect(readDialog(txt('bash'), 'permission')!.page).not.toBe(yes.page);
   expect(readDialog(txt('bash-amend'), 'permission')!.page).not.toBe(yes.page);
-  expect(readDialog(txt('bash-second'), 'plan')!.page).not.toBe(yes.page);
+  expect(readDialog(txt('plan'), 'permission')!.page).not.toBe(readDialog(txt('plan'), 'plan')!.page);
+});
+
+test('a plan\'s wait reads only the plan dialog: by its question or its feedback hint; Bash\'s or Edit\'s dialog is none', () => {
+  for (const s of ['bash-second', 'bash-amend', 'bash-amend-typed', 'edit']) expect(readDialog(txt(s), 'plan')).toBeNull();
+  // Its question wrapped on two rows, or put otherwise above the feedback hint: still the plan.
+  const wrapped = edited('plan', { 32: '   Claude has written up a plan and is ready to execute. Would you like to' }, { before: 33, rows: ['   proceed?'] });
+  expect(readDialog(wrapped, 'plan')).toMatchObject({ kind: 'plan', focused: 1 });
+  const worded = readDialog(edited('plan', { 32: '   Claude has a plan. Go ahead?' }), 'plan')!;
+  expect(worded.options[2]).toEqual({ n: 3, label: 'Tell Claude what to change', field: true });
+  // Neither of the two: no plan.
+  expect(readDialog(edited('plan', { 32: '   Claude has a plan. Go ahead?', 37: '' }), 'plan')).toBeNull();
 });
 
 test('rows and labels stay within their caps', () => {

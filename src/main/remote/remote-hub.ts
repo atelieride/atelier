@@ -355,8 +355,10 @@ class PhoneSession implements RemoteViewer {
         // Only the very request the phone saw, while it is still waiting for an answer (no key: not one to answer here).
         const still = () => { const now = this.host.terminal(m.id); return !!now && this.host.waitKey(now) === m.wait; };
         if (!still()) { this.error(m.rid, 'busy', 'The request changed'); return; }
-        // One answer at a time per terminal, and once per wait (from any phone).
-        const refused = this.host.answers.begin(m.id, m.wait);
+        // One answer at a time per terminal, and once per wait (from any phone, by its row or in its dialog): kept under
+        // the session's ask, which an option chosen in the dialog is kept under too. The row answers the whole wait.
+        const to = { ask: this.host.asks.keyOf(t) ?? m.wait };
+        const refused = this.host.answers.begin(m.id, to);
         if (refused) { this.error(m.rid, 'busy', refused); return; }
         // The request the phone's row named: the key of a wait is made of it, so it is the same while `still` holds.
         const target = waitTarget(t.session?.activity);
@@ -373,7 +375,7 @@ class PhoneSession implements RemoteViewer {
             this.send({ t: 'ok', rid: m.rid });
           },
           () => this.error(m.rid, 'invalid', 'Open the session to answer')
-        ).finally(() => this.host.answers.end(m.id, m.wait, typed));
+        ).finally(() => this.host.answers.end(m.id, to, typed));
         return;
       }
       case 'rename':

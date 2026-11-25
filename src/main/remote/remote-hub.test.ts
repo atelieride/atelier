@@ -90,11 +90,13 @@ class FakeTerminals implements RemoteTerminals {
   remoteSized() { return this.sized; }
   /**
    * Screens a terminal shows one after the other, as keys change them: each read takes the next one, the last one
-   * stays. Set, they come before `screens`.
+   * stays (an error: that read fails). Set, they come before `screens`.
    */
-  views = new Map<string, ScreenView[]>();
+  views = new Map<string, (ScreenView | Error)[]>();
   /** Every screen read ('read') and every key answers pressed, in order. */
   events: string[] = [];
+  /** Called with each key answers press, once it is pressed (what the computer does meanwhile). */
+  onKey: ((id: string, key: string) => void) | null = null;
   /** While set, screen reads wait for it (an answer still on its way). */
   screenGate: Promise<void> | null = null;
   async permissionScreen(id: string) {
@@ -111,14 +113,18 @@ class FakeTerminals implements RemoteTerminals {
   private screenOf(id: string): ScreenView {
     this.events.push('read');
     const next = this.views.get(id);
-    if (next?.length) return next.length > 1 ? next.shift()! : next[0]!;
+    if (next?.length) {
+      const v = next.length > 1 ? next.shift()! : next[0]!;
+      if (v instanceof Error) throw v;
+      return v;
+    }
     const lines = this.screens.get(id) ?? npmDialog(['❯ 1. Yes', '  2. Yes, and don\'t ask again for npm test commands', '  3. No, and tell Claude what to do differently (esc)']);
     return { lines, undimmed: this.dims.get(id) ?? lines, cols: 120 };
   }
   windowShows(id: string) { return this.windows.has(id); }
   lastWindowInput(id: string) { return this.windowInput.get(id) ?? 0; }
   accountDirOf(_project: string | null, terminalId: string | undefined) { return terminalId === undefined ? undefined : this.accountDirs.get(terminalId); }
-  answerKey(id: string, key: string) { this.answers.push([id, key]); this.events.push(key); }
+  answerKey(id: string, key: string) { this.answers.push([id, key]); this.events.push(key); this.onKey?.(id, key); }
   async renameRemote(id: string, name: string) { if (!this.list.some((t) => t.id === id)) throw new Error('gone'); this.renames.push([id, name]); }
   async closeRemote(id: string) { if (!this.list.some((t) => t.id === id)) throw new Error('gone'); this.closes.push(id); this.set(this.list.filter((t) => t.id !== id)); }
   async resumeRemote(id: string, cols: number, rows: number) {
@@ -1888,8 +1894,17 @@ describe('a Claude session\'s dialog, read and answered from a phone', () => {
   const SCREENS = join(__dirname, '../../../tests/fixtures/claude-2.1.332/screens');
   /** A recorded screen as TerminalHub reads it, its dim text told apart. */
   const screen = (name: string) => screenView(readFileSync(join(SCREENS, `${name}.ans`), 'utf8'), { cols: 120, rows: 40 });
-  /** The recorded screens terminal `id` shows from now on, one per read, the last one staying. */
-  const shows = async (t: ReturnType<typeof setup>, id: string, ...names: string[]) => { t.terms.views.set(id, await Promise.all(names.map(screen))); };
+  /** The screens terminal `id` shows from now on (recorded ones by name), one per read, the last one staying. */
+  const shows = async (t: ReturnType<typeof setup>, id: string, ...views: (string | ScreenView | Error)[]) => {
+    t.terms.views.set(id, await Promise.all(views.map((v) => (typeof v === 'string' ? screen(v) : v))));
+  };
+  /** A screen's rows edited alike in its text and in its undimmed text. */
+  const edit = (v: ScreenView, f: (row: string) => string): ScreenView => ({ ...v, lines: v.lines.map(f), undimmed: v.undimmed.map(f) });
+  /** A recorded screen with its dialog's cursor moved to option `n`. */
+  const cursorOn = async (name: string, n: number) =>
+    edit(await screen(name), (row) => row.replace(/^(\s*)❯ (\d\.)/, '$1  $2').replace(new RegExp(`^(\\s*)  (${n}\\.)`), '$1❯ $2'));
+  /** A recorded screen with `from` written as `to` on its rows. */
+  const replaced = async (name: string, from: string, to: string) => edit(await screen(name), (row) => row.replace(from, to));
   /** The page a recorded screen's dialog reads as, for that wait. */
   const pageOf = async (name: string, wait: DialogWait | null) => readDialog(await screen(name), wait)!.page;
   /** A Claude session waiting: for a permission (its activity names the request, or the plan approval), or an answer. */
@@ -2038,23 +2053,148 @@ describe('a Claude session\'s dialog, read and answered from a phone', () => {
     expect(t.terms.answers).toEqual([['t2', '3'], ['t2', 'Mango']]);
   });
 
-  test('choose No with feedback: each arrow to No, a read showing the cursor there, Tab, the text, Enter', async () => {
+  test('choose the plan\'s field: its digit, the feedback once the cursor is in it, Enter once it shows it', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: plan approval'));
+    await shows(t, 't2', 'plan');
+    const { phone } = await paired(t);
+    const d = await phone.dialog('t2');
+    await shows(t, 't2', 'plan', 'plan-field', 'plan-field-typed');
+    t.terms.events = [];
+    expect(await phone.choose('t2', d.ask as string, 3, 'Tell Claude what to change', 'Skip the verify step.')).toEqual(OK);
+    expect(t.terms.events).toEqual(['read', '3', 'read', 'Skip the verify step.', 'read', '\r']);
+  });
+
+  test('a field\'s keys stop when the computer acts meanwhile: text in the field already or after the phone\'s, another request, a window typing', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: question', { question: true }));
+    const { phone } = await paired(t);
+    let at = 10;
+    /** A new wait for the fruit question, its dialog read: its ask. */
+    const fresh = async () => {
+      await anew(t, phone, 't2', waiting('waiting: question', { question: true, updatedAt: at++ }));
+      await shows(t, 't2', 'question-fruit');
+      return (await phone.dialog('t2')).ask as string;
+    };
+    const tries = async (...views: (string | ScreenView)[]) => {
+      const ask = await fresh();
+      await shows(t, 't2', ...views);
+      t.terms.events = [];
+      return phone.choose('t2', ask, 3, 'Type something.', 'Mango');
+    };
+    // The field the digit opened holds text already (typed on the computer): the phone's would go after it.
+    expect(await tries('question-fruit', 'question-field-typed')).toEqual(NOT_THROUGH);
+    expect(t.terms.events).toEqual(['read', '3', 'read']);
+    // More than the phone's text in the field once typed: no Enter.
+    expect(await tries('question-fruit', 'question-field', await replaced('question-field-typed', '❯ 3. Mango', '❯ 3. Mango and kiwi'))).toEqual(NOT_THROUGH);
+    expect(t.terms.events).toEqual(['read', '3', 'read', 'Mango', 'read']);
+    // Once the digit went, the wait ends and another question begins, the screen still showing the same dialog.
+    t.terms.onKey = (_id, key) => {
+      if (key !== '3') return;
+      t.terms.set(withSession(t.terms.list, 't2', claude('s')));
+      t.terms.set(withSession(t.terms.list, 't2', waiting('waiting: question', { question: true, updatedAt: 90 })));
+    };
+    expect(await tries('question-fruit', 'question-field', 'question-field-typed')).toEqual(NOT_THROUGH);
+    expect(t.terms.events).toEqual(['read', '3', 'read']);
+    // A window types in the terminal after the phone's text: the field may hold both, Enter would send them.
+    t.terms.onKey = (id, key) => { if (key === 'Mango') t.terms.windowInput.set(id, Date.now()); };
+    expect(await tries('question-fruit', 'question-field', 'question-field-typed')).toEqual(NOT_THROUGH);
+    expect(t.terms.events).toEqual(['read', '3', 'read', 'Mango', 'read']);
+  });
+
+  test('choose No with feedback: each arrow after a read showing the cursor where the last one left it, then Tab, the text, Enter', async () => {
     const t = conversing();
     t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: Bash touch second.txt'));
     await shows(t, 't2', 'bash-second');
     const { phone } = await paired(t);
     const d = await phone.dialog('t2');
-    await shows(t, 't2', 'bash-second', 'bash-on-no', 'bash-amend', 'bash-amend-typed');
+    await shows(t, 't2', 'bash-second', await cursorOn('bash-second', 2), await cursorOn('bash-second', 3), 'bash-on-no', 'bash-amend', 'bash-amend-typed');
     t.terms.events = [];
     expect(await phone.choose('t2', d.ask as string, 4, 'No', 'do not create it, just say ok')).toEqual(OK);
-    expect(t.terms.events).toEqual(['read', DOWN, DOWN, DOWN, 'read', '\t', 'read', 'do not create it, just say ok', 'read', '\r']);
-    // The arrows didn't bring the cursor to No: no Tab.
+    expect(t.terms.events).toEqual(['read', DOWN, 'read', DOWN, 'read', DOWN, 'read', '\t', 'read', 'do not create it, just say ok', 'read', '\r']);
+    // The cursor on No already: Tab right away.
     await anew(t, phone, 't2', waiting('waiting: Bash touch second.txt', { updatedAt: 8 }));
-    await shows(t, 't2', 'bash-second');
-    const again = await phone.dialog('t2');
+    await shows(t, 't2', 'bash-on-no');
+    const onNo = await phone.dialog('t2');
+    await shows(t, 't2', 'bash-on-no', 'bash-amend', 'bash-amend-typed');
     t.terms.events = [];
-    expect(await phone.choose('t2', again.ask as string, 4, 'No', 'do not create it, just say ok')).toEqual(NOT_THROUGH);
-    expect(t.terms.events).toEqual(['read', DOWN, DOWN, DOWN, 'read']);
+    expect(await phone.choose('t2', onNo.ask as string, 4, 'No', 'do not create it, just say ok')).toEqual(OK);
+    expect(t.terms.events).toEqual(['read', '\t', 'read', 'do not create it, just say ok', 'read', '\r']);
+  });
+
+  test('the arrows stop as soon as a read doesn\'t show the cursor one step on: the dialog gone, the cursor where it was or further', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: Bash touch second.txt'));
+    const { phone } = await paired(t);
+    let at = 10;
+    const tries = async (...views: (string | ScreenView)[]) => {
+      await anew(t, phone, 't2', waiting('waiting: Bash touch second.txt', { updatedAt: at++ }));
+      await shows(t, 't2', 'bash-second');
+      const ask = (await phone.dialog('t2')).ask as string;
+      await shows(t, 't2', ...views);
+      t.terms.events = [];
+      return phone.choose('t2', ask, 4, 'No', 'do not create it, just say ok');
+    };
+    // Answered on the computer right after the first arrow: no arrow goes after it.
+    for (const after of ['idle', 'bash-second', await cursorOn('bash-second', 3)]) {
+      expect(await tries('bash-second', after)).toEqual(NOT_THROUGH);
+      expect(t.terms.events).toEqual(['read', DOWN, 'read']);
+    }
+  });
+
+  test('a screen read that fails: the dialog is answered in the terminal; a choose too before any key, and after one it didn\'t go through', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: question', { question: true }));
+    const { phone } = await paired(t);
+    await shows(t, 't2', new Error('no screen'));
+    expect(await phone.dialog('t2')).toEqual(IN_TERMINAL);
+    await shows(t, 't2', 'question-fruit');
+    const d = await phone.dialog('t2');
+    await shows(t, 't2', new Error('no screen'));
+    expect(await phone.choose('t2', d.ask as string, 3, 'Type something.', 'Mango')).toEqual(IN_TERMINAL);
+    expect(t.terms.answers).toEqual([]);
+    // Nothing typed: still to answer. The read after the digit fails: nothing more goes.
+    await shows(t, 't2', 'question-fruit', new Error('no screen'));
+    expect(await phone.choose('t2', d.ask as string, 3, 'Type something.', 'Mango')).toEqual(NOT_THROUGH);
+    expect(t.terms.answers).toEqual([['t2', '3']]);
+  });
+
+  test('a phone removed while its choose types: no key goes after', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: question', { question: true }));
+    await shows(t, 't2', 'question-fruit');
+    const { phone } = await paired(t);
+    const d = await phone.dialog('t2');
+    await shows(t, 't2', 'question-fruit', 'question-field', 'question-field-typed');
+    t.terms.onKey = (_id, key) => { if (key === '3') t.hub.removeDevice(t.hub.devices.list()[0]!.id); };
+    phone.choose('t2', d.ask as string, 3, 'Type something.', 'Mango').catch(() => {});
+    await until(() => t.terms.answers.length > 0);
+    await pause(100);
+    expect(t.terms.answers).toEqual([['t2', '3']]);
+  });
+
+  test('the row and a choose answer one wait once: a choose\'s Yes, then the row\'s Deny; the row\'s Allow, then a choose', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: Bash touch made-by-bash.txt'));
+    // Claude Code hasn't drawn anything else yet: the dialog is still on screen.
+    await shows(t, 't2', 'bash');
+    const { phone } = await paired(t);
+    const ALREADY = refused('busy', 'This request was answered already');
+    const waitKey = async (not?: string) => ((await phone.state((s) => (s.sessions as Msg[]).some((x) => x.id === 't2' && x.wait && x.wait !== not))).sessions as Msg[]).find((x) => x.id === 't2')!.wait as string;
+    const wait = await waitKey();
+    const d = await phone.dialog('t2');
+    expect(await phone.choose('t2', d.ask as string, 1, 'Yes')).toEqual(OK);
+    // A Deny now would be an Esc that interrupts the command just allowed.
+    expect(await phone.answer('t2', wait, 'deny')).toEqual(ALREADY);
+    expect(await phone.answer('t2', wait, 'allow')).toEqual(ALREADY);
+    expect(t.terms.answers).toEqual([['t2', '1']]);
+    // The next request: the row's Allow first, then a choose on its dialog.
+    await anew(t, phone, 't2', waiting('waiting: Bash touch made-by-bash.txt', { updatedAt: 9 }));
+    const next = await waitKey(wait);
+    expect(await phone.answer('t2', next, 'allow')).toEqual(OK);
+    const d2 = await phone.dialog('t2');
+    expect(await phone.choose('t2', d2.ask as string, 1, 'Yes')).toEqual(ALREADY);
+    expect(t.terms.answers).toEqual([['t2', '1'], ['t2', '1']]);
   });
 
   test('several questions: after an answer the next page has another ask; Submit answers on the review page', async () => {
@@ -2132,6 +2272,9 @@ describe('a Claude session\'s dialog, read and answered from a phone', () => {
     expect(await phone.choose('t2', plan.ask as string, 1, 'Yes, and use auto mode')).toEqual(CHANGED);
     expect(await phone.choose('t2', plan.ask as string, 3, 'Tell Claude what to change', 'Skip the verify step.')).toEqual(CHANGED);
     expect(t.terms.events).toEqual(['read', 'read', 'read']);
+    // Read anew for the plan's wait, Bash's dialog is no plan: nothing to show, so no page to choose in.
+    expect(await phone.dialog('t2')).toEqual(IN_TERMINAL);
+    expect(t.terms.answers).toEqual([]);
   });
 
   test('an answer from the row and a choose on the same dialog: one goes, the other is refused', async () => {
