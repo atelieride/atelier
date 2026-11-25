@@ -1,7 +1,9 @@
 // Claude Code's dialogs read from a session's screen, so a phone can show one as a card and answer it with the keys
 // Claude Code itself takes. A session's wait says which dialog to expect: a permission request, a plan approval, or a
 // question (one page at a time: each question, then the review page of several). Any other numbered list at the
-// bottom is a menu (a slash command's, the folder trust dialog): shown, answered in the terminal.
+// bottom is a menu (a slash command's, the folder trust dialog): shown, answered in the terminal, and closed with Esc
+// only when nothing on it marks a request or an exit. Claude's prompt box is read too: whether it is free for a prompt,
+// and whether it holds the prompt typed into it.
 // The options are those `dialogAtBottom` finds; the rows and labels are read from the screen at their positions.
 import { createHash } from 'node:crypto';
 import { DASHED, dialogAtBottom, FRAME, OPTION, PLAIN, RULE, TRANSCRIPT, type Row, type ScreenView } from './prompt';
@@ -255,19 +257,75 @@ export function readDialog(view: ScreenView, wait: DialogWait | null): ScreenDia
 export type PromptState = 'empty' | 'typed' | 'none';
 
 /**
+ * What Claude's prompt box holds as typed: its rows after the mark, dim text as spaces (a placeholder or a suggestion
+ * is no text), one per line; null while a dialog shows or no box is found.
+ */
+function promptText(view: ScreenView): string | null {
+  if (readDialog(view, null)) return null;
+  const box = promptBox(view.lines);
+  if (!box) return null;
+  const rows: string[] = [];
+  for (let i = box.from; i < box.to; i++) {
+    const row = (view.undimmed[i] ?? '').replace(FRAME, '');
+    rows.push(i === box.from ? row.replace(/^\s*[❯>]?/, '') : row);
+  }
+  return rows.join('\n');
+}
+
+/**
  * Claude's prompt box on screen: `typed` when text that isn't dim follows its mark (a dim placeholder or suggestion is
  * no text), `empty` otherwise; `none` while a dialog shows or no box is found.
  */
 export function promptState(view: ScreenView): PromptState {
-  if (readDialog(view, null)) return 'none';
-  const box = promptBox(view.lines);
-  if (!box) return 'none';
-  for (let i = box.from; i < box.to; i++) {
-    let row = (view.undimmed[i] ?? '').replace(FRAME, '');
-    if (i === box.from) row = row.replace(/^\s*[❯>]?/, '');
-    if (/\S/.test(row)) return 'typed';
-  }
-  return 'empty';
+  const text = promptText(view);
+  return text === null ? 'none' : /\S/.test(text) ? 'typed' : 'empty';
+}
+
+/** A bracketed paste's start and end as a terminal echoing its input draws them (`^[` for Esc), spaces left out. */
+const ECHOED_PASTE = /\^\[\[20[01]~/g;
+/** The stand-in Claude Code folds a long paste into in its prompt (`[Pasted text #2 +4 lines]`), spaces left out. */
+const FOLDED_PASTE = /^\[Pastedtext#\d+\+(\d+)lines\]$/;
+
+/**
+ * Whether Claude's prompt box holds `text` and nothing else, as typed: spaces mean nothing (a wrap adds one or none, a
+ * tab is drawn as spaces), nor do the paste's markers echoed. A text of several lines may also show as the stand-in
+ * Claude Code folds a long paste into, its count the text's line breaks or its lines; a single line never does. False
+ * while a dialog shows or no box is found: Enter sends all the box holds.
+ */
+export function promptHolds(view: ScreenView, text: string): boolean {
+  const held = promptText(view);
+  if (held === null) return false;
+  const bare = (s: string) => flat(s).replace(ECHOED_PASTE, '');
+  const want = bare(text);
+  const shown = bare(held);
+  if (want !== '' && shown === want) return true;
+  const breaks = text.split('\n').length - 1;
+  const count = FOLDED_PASTE.exec(shown)?.[1];
+  return breaks > 0 && count !== undefined && (Number(count) === breaks || Number(count) === breaks + 1);
+}
+
+/** Rows only a permission request or a plan approval draws, whatever it asks about. */
+const REQUEST_MARKS = ['Do you want to', 'Would you like to proceed?', 'Tab to amend', FEEDBACK];
+/** A dialog Esc exits Claude Code from: the folder trust dialog (numbered in other versions), a "No, exit" option. */
+const EXITS = /\btrust\b|\bexit\b/i;
+
+/**
+ * Whether Esc only closes a menu at the bottom of the screen: `menu` for a menu read with no wait that shows none of a
+ * permission's, a plan's or a question's own rows (drawn before its hook comes, it reads as a menu, and Esc would
+ * decline it); `exits` for the folder trust dialog or another that names trust or an exit (Esc there exits Claude
+ * Code); null for any other screen. All of the dialog's rows count, past the first `MAX_ROWS` a menu keeps: a
+ * request's own rows sit nearest its options.
+ */
+export function menuToClose(view: ScreenView): 'menu' | 'exits' | null {
+  const d = readDialog(view, null);
+  if (!d) return null;
+  if (d.trust) return 'exits';
+  const { lines } = view;
+  const first = dialogAtBottom(lines)!.options[0]!.line;
+  const rows = rowsBetween(lines, topAbove(lines, first), lastRow(lines) + 1);
+  if (rows.some((r) => EXITS.test(r))) return 'exits';
+  const all = flat(rows.join(' '));
+  return REQUEST_MARKS.some((m) => all.includes(flat(m))) || rows.some((r) => QUESTION_ROW.test(r)) ? null : 'menu';
 }
 
 export type ChooseKeys = { ok: true; keys: string; text?: string } | { ok: false; code: 'busy' | 'invalid'; message: string };

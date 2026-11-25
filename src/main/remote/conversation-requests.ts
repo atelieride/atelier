@@ -2,16 +2,19 @@
 // ConversationBook reads from its transcript), the newest page first, then what Claude Code adds or changes as it
 // writes, coalesced; an older page on request. Reading the dialog at the bottom of a session's screen, and choosing
 // one of its options with Claude Code's own keys, each typed right after a fresh read of the screen that still shows
-// that dialog ready for it. Only sessions the state lists, Claude sessions only, at most MAX_FOLLOWED followed at once
+// that dialog ready for it. Typing a prompt into Claude's prompt and sending it, interrupting Claude, closing a menu:
+// each key likewise right after a read showing the screen ready for it, never through an attach (the terminal keeps
+// the computer's size). Only sessions the state lists, Claude sessions only, at most MAX_FOLLOWED followed at once
 // per phone. A followed session counts as open on the phone's badge in the windows.
 import { chunks as entryChunks, pageOf } from '@shared/conversation/pages';
 import type { Entry } from '@shared/conversation/types';
 import type { TerminalInfo } from '@shared/protocol';
-import { waitTarget } from '@shared/session-view';
+import { promptPaste } from '@shared/scheduled-prompts';
+import { waitKind, waitTarget } from '@shared/session-view';
 import { isClaudeProcess } from '@shared/shells';
 import type { AnswerBook } from './answers';
 import type { ConversationBook, ConversationSnapshot } from './conversations';
-import { chooseKeys, fieldHolds, readDialog, type DialogWait, type ScreenDialog } from './dialog';
+import { chooseKeys, fieldHolds, menuToClose, promptHolds, promptState, readDialog, type DialogWait, type ScreenDialog } from './dialog';
 import type { DeviceMessage, ErrorCode, HostMessage } from './messages';
 import type { RemoteTerminals } from './remote-hub';
 import { waitOf, type WaitBook } from './rows';
@@ -23,6 +26,8 @@ export const MAX_FOLLOWED = 16;
  * the next) stays followed this long, for the next session.
  */
 export const SESSION_GAP_MS = 5000;
+/** A window typed in a session this recently (ms): what it typed may not be drawn yet, so no prompt goes in. */
+export const TYPED_RECENTLY_MS = 1500;
 
 const UNREADABLE = 'The conversation can\'t be read. Open the terminal.';
 const GONE = 'This session is not on this computer any more.';
@@ -32,6 +37,18 @@ const CHANGED = 'The request changed';
 const NOT_THROUGH = 'The answer didn\'t go through. Open the terminal.';
 
 type Refusal = { code: ErrorCode; message: string };
+const ANSWER_FIRST: Refusal = { code: 'busy', message: 'Answer Claude\'s request first.' };
+const TYPED: Refusal = { code: 'busy', message: 'Text is typed in Claude\'s prompt on the computer.' };
+const NO_PROMPT: Refusal = { code: 'busy', message: 'Claude\'s prompt isn\'t on screen.' };
+const MEANWHILE: Refusal = { code: 'busy', message: 'Claude asked something meanwhile. Check the terminal.' };
+const NOT_REACHED: Refusal = { code: 'failed', message: 'The text didn\'t reach Claude\'s prompt.' };
+const NOT_WORKING: Refusal = { code: 'invalid', message: 'Claude isn\'t working.' };
+const NO_MENU: Refusal = { code: 'invalid', message: 'No menu to close.' };
+const ESC = '\u001b';
+/** Control characters but newline and tab: a prompt types none of them. */
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /** Down and up, as `chooseKeys` puts them before a Tab. */
 // eslint-disable-next-line no-control-regex
 const ARROW = /\u001b\[[AB]/g;
@@ -127,11 +144,130 @@ export class PhoneConversations {
       case 'dialog': this.dialog(m); return;
       case 'choose': this.choose(m); return;
       case 'say':
+        // A read that fails before the paste: no prompt seen; after it, the text may be there, but no Enter goes.
+        this.typeInto(m.rid, m.id, 'a prompt', (type) => this.typePrompt(m.id, m.text, type), (typed) => (typed ? NOT_REACHED : NO_PROMPT));
+        return;
       case 'stop':
+        // A screen that can't be read may hide a request: the terminal tells.
+        this.typeInto(m.rid, m.id, 'an interrupt', (type) => this.typeStop(m.id, type), () => ANSWER_FIRST);
+        return;
       case 'escape':
-        // Not served yet: answered as an Atelier that doesn't know them answers.
-        this.error(m.rid, 'invalid', 'This message is not one Atelier understands.');
+        this.typeInto(m.rid, m.id, 'a menu\'s Esc', (type) => this.typeEscape(m.id, type), () => NO_MENU);
     }
+  }
+
+  /**
+   * Typing into a Claude session the state lists that answers no wait (a prompt, an interrupt, a menu closed), one
+   * typing or answer at a time per terminal, every phone's: `run` reads the screen before each key and types it with
+   * `type`. Answered with its refusal, or `ok` once its last key went; when it throws, `failed` says what to answer
+   * (whether a key was typed by then).
+   */
+  private typeInto(rid: number, id: string, what: string, run: (type: (key: string) => void) => Promise<Refusal | null>, failed: (typed: boolean) => Refusal): void {
+    if (!this.claudeSession(rid, id)) return;
+    const busy = this.o.host.answers.hold(id);
+    if (busy) { this.error(rid, 'busy', busy); return; }
+    let typed = false;
+    const type = (key: string) => { typed = true; this.o.terms.answerKey(id, key); };
+    void (async () => {
+      let refusal: Refusal | null;
+      try {
+        refusal = await run(type);
+      } catch (e) {
+        this.o.host.log(`conversations: ${what} in terminal ${id} stopped (${reasonOf(e)})`);
+        const t = this.sessionOf(id);
+        refusal = 'code' in t ? t : failed(typed);
+      } finally {
+        // The hold this request was granted: a request refused by the hold never gets here.
+        this.o.host.answers.release(id);
+      }
+      if (refusal) this.error(rid, refusal.code, refusal.message);
+      else this.send({ t: 'ok', rid });
+    })().catch((e: unknown) => this.o.host.log(`conversations: ${what} in terminal ${id}: ${reasonOf(e)}`));
+  }
+
+  /** Terminal `id` as listed now, a Claude session waiting for nothing; else why not. */
+  private free(id: string): TerminalInfo | Refusal {
+    const t = this.sessionOf(id);
+    if ('code' in t) return t;
+    return waitKind(t.session) ? ANSWER_FIRST : t;
+  }
+
+  /**
+   * Types `text` into Claude's empty prompt as one bracketed paste (as Atelier's scheduled prompts do), and Enter once
+   * a read shows the prompt holding that text and nothing else, within enterCapMs: Claude Code queues it while it
+   * works, as when typed there. Refused before the paste while the session waits, a dialog or a menu shows, the prompt
+   * isn't on screen or holds text, or a window typed in the terminal just now. No Enter after it once the session
+   * waits or a dialog shows (the text stays in the prompt), a window types, the session or the phone is gone, or the
+   * prompt never shows the text.
+   */
+  private async typePrompt(id: string, text: string, type: (key: string) => void): Promise<Refusal | null> {
+    const started = Date.now();
+    const body = text.replace(CONTROL, '');
+    /** A window typed in the terminal since the prompt began, or just before. */
+    const typedThere = () => { const at = this.o.terms.lastWindowInput(id); return at >= started || Date.now() - at < TYPED_RECENTLY_MS; };
+    const before = this.free(id);
+    if ('code' in before) return before;
+    if (typedThere()) return TYPED;
+    const view = await this.o.terms.screenView(id);
+    // The session as it is now, with the screen just read.
+    const now = this.free(id);
+    if ('code' in now) return now;
+    // The phone gone (nothing is answered then), or nothing left to type.
+    if (this.disposed || !body.trim()) return NOT_REACHED;
+    if (typedThere()) return TYPED;
+    if (readDialog(view, null)) return ANSWER_FIRST;
+    const state = promptState(view);
+    if (state === 'none') return NO_PROMPT;
+    if (state === 'typed') return TYPED;
+    // One input: within the 16 KiB a prompt may take, the paste needs no chunks.
+    type(promptPaste(body).join(''));
+    const pasted = Date.now();
+    await sleep(this.o.timing.enterMs);
+    for (;;) {
+      const shown = await this.o.terms.screenView(id);
+      const t = this.sessionOf(id);
+      if ('code' in t) return t;
+      if (this.disposed) return NOT_REACHED;
+      if (waitKind(t.session) || readDialog(shown, null)) return MEANWHILE;
+      // What a window typed may be in the prompt with the text: Enter would send it too.
+      if (this.o.terms.lastWindowInput(id) >= started) return TYPED;
+      if (promptHolds(shown, body)) { type('\r'); return null; }
+      if (Date.now() - pasted + this.o.timing.keyMs > this.o.timing.enterCapMs) return NOT_REACHED;
+      await sleep(this.o.timing.keyMs);
+    }
+  }
+
+  /**
+   * Esc while Claude works and nothing on screen asks: it interrupts Claude, as in the terminal. A wait or a dialog
+   * comes first (Esc would decline the request, or close the menu), then whether Claude is working at all.
+   */
+  private async typeStop(id: string, type: (key: string) => void): Promise<Refusal | null> {
+    const view = await this.o.terms.screenView(id);
+    const t = this.sessionOf(id);
+    if ('code' in t) return t;
+    // The phone gone: no key, and nothing is answered.
+    if (this.disposed) return NOT_WORKING;
+    if (waitKind(t.session) || readDialog(view, null)) return ANSWER_FIRST;
+    if (t.session?.state !== 'running') return NOT_WORKING;
+    type(ESC);
+    return null;
+  }
+
+  /**
+   * Esc on a menu at the bottom of the screen (a slash command's) while the session waits for nothing: it closes it.
+   * Never on a request's dialog drawn before its hook came, nor on one Esc exits Claude Code from (the trust dialog).
+   */
+  private async typeEscape(id: string, type: (key: string) => void): Promise<Refusal | null> {
+    const view = await this.o.terms.screenView(id);
+    const t = this.sessionOf(id);
+    if ('code' in t) return t;
+    // The phone gone (no key, nothing answered), or a wait: its dialog is no menu.
+    if (this.disposed || waitKind(t.session)) return NO_MENU;
+    const menu = menuToClose(view);
+    if (menu === 'exits') return { code: 'invalid', message: IN_TERMINAL };
+    if (menu !== 'menu') return NO_MENU;
+    type(ESC);
+    return null;
   }
 
   /** Terminal `id` when the state lists it as a Claude session; else why not. */

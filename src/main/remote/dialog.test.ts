@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
-import { chooseKeys, fieldHolds, MAX_ROW, promptState, readDialog, type ScreenDialog } from './dialog';
+import { chooseKeys, fieldHolds, MAX_ROW, menuToClose, promptHolds, promptState, readDialog, type ScreenDialog } from './dialog';
 import { screenView, type ScreenView } from './prompt';
 
 const SCREENS = join(__dirname, '../../../tests/fixtures/claude-2.1.332/screens');
@@ -294,4 +294,70 @@ test('chooseKeys: a digit, a field\'s digit and text, No amended through arrows 
   const noFirst: ScreenDialog = { ...bash, options: [{ n: 1, label: 'No', amend: true }, { n: 2, label: 'Yes' }], focused: 2 };
   expect(chooseKeys(noFirst, { n: 1, label: 'No', text: 'x' })).toEqual({ ok: true, keys: '\x1b[A\t', text: 'x' });
   expect(chooseKeys({ ...noFirst, focused: null }, { n: 1, label: 'No', text: 'x' })).toMatchObject({ ok: false, code: 'invalid', message: 'Answer in the terminal' });
+});
+
+test('promptHolds: the prompt box holds the text and nothing else, wrapped anywhere, its echoed paste markers no text', async () => {
+  /** The idle screen's prompt box holding `rows` as typed. */
+  const typed = (...rows: string[]) => edited('idle', { 37: `❯ ${rows[0]}` }, { before: 38, rows: rows.slice(1).map((r) => `  ${r}`) });
+  expect(promptHolds(typed('fix the tests'), 'fix the tests')).toBe(true);
+  // Wrapped inside a word or at a space; its lines on rows of their own; a tab drawn as spaces.
+  expect(promptHolds(typed('fix the te', 'sts'), 'fix the tests')).toBe(true);
+  expect(promptHolds(typed('fix the tests', 'then run them'), 'fix the tests\nthen run them')).toBe(true);
+  expect(promptHolds(typed('fix    the tests'), 'fix\tthe tests')).toBe(true);
+  // A bracketed paste's markers as a terminal echoing its input draws them, wrapped too.
+  expect(promptHolds(typed('^[[200~fix the tests^[[201~'), 'fix the tests')).toBe(true);
+  expect(promptHolds(typed('^[[200~fix the tests^[[2', '01~'), 'fix the tests')).toBe(true);
+  // A slash command with Claude Code's list of commands above the box.
+  expect(promptHolds(txt('model-typed'), '/model')).toBe(true);
+  // Another text, the text and more before or after it, part of it, one line of two, nothing.
+  expect(promptHolds(txt('working-typed'), 'fix the tests')).toBe(false);
+  expect(promptHolds(typed('fix the tests and the build'), 'fix the tests')).toBe(false);
+  expect(promptHolds(typed('lint, then fix the tests'), 'fix the tests')).toBe(false);
+  expect(promptHolds(typed('fix the'), 'fix the tests')).toBe(false);
+  expect(promptHolds(typed('fix the tests'), 'fix the tests\nthen run them')).toBe(false);
+  expect(promptHolds(txt('idle'), 'fix the tests')).toBe(false);
+  // Dim text is no text (the queued prompt's placeholder); no prompt box; a dialog at the bottom, the box above it.
+  expect(promptHolds(await ans('queued'), 'Press up to edit queued messages')).toBe(false);
+  expect(promptHolds(view(['⏺ fix the tests']), 'fix the tests')).toBe(false);
+  expect(promptHolds(view([RULE, '❯ fix the tests', RULE, 'Do you want to proceed?', '❯ 1. Yes', '  2. No', '', 'Esc to cancel']), 'fix the tests')).toBe(false);
+});
+
+test('promptHolds: a text of several lines also as the stand-in Claude Code folds a long paste into; one line never', () => {
+  const folded = (row: string) => edited('idle', { 37: `❯ ${row}` });
+  // Its count: the lines after the first, or all of them.
+  expect(promptHolds(folded('[Pasted text #1 +1 lines]'), 'one\ntwo')).toBe(true);
+  expect(promptHolds(folded('[Pasted text #3 +2 lines]'), 'one\ntwo')).toBe(true);
+  expect(promptHolds(folded('[Pasted text #1 +4 lines]'), 'one\ntwo')).toBe(false);
+  expect(promptHolds(folded('[Pasted text #1]'), 'one\ntwo')).toBe(false);
+  expect(promptHolds(folded('lint [Pasted text #1 +1 lines]'), 'one\ntwo')).toBe(false);
+  // One line, however long, isn't taken for a stand-in.
+  expect(promptHolds(folded('[Pasted text #1]'), 'x'.repeat(900))).toBe(false);
+  expect(promptHolds(folded('[Pasted text #1 +0 lines]'), 'x'.repeat(900))).toBe(false);
+});
+
+test('menuToClose: a menu; a permission, a plan or a question drawn before its hook is none; the trust dialog exits', () => {
+  expect(menuToClose(txt('model'))).toBe('menu');
+  const requests = ['bash', 'bash-second', 'bash-on-no', 'bash-amend', 'edit', 'plan', 'plan-field', 'question', 'question-fruit', 'questions-first', 'questions-review', 'several', 'several-review'];
+  for (const s of requests) expect(menuToClose(txt(s))).toBeNull();
+  for (const s of ['idle', 'working', 'working-typed', 'queued', 'model-typed']) expect(menuToClose(txt(s))).toBeNull();
+  // Each of a request's own marks alone, in a list otherwise a menu's.
+  const list = (o: { above?: string; hint?: string } = {}) =>
+    view([RULE, 'Pick one', ...(o.above ? [o.above] : []), '❯ 1. A', '  2. B', '', o.hint ?? 'Enter to select · Esc to cancel']);
+  expect(menuToClose(list())).toBe('menu');
+  const marks = ['Do you want to proceed?', 'Do you want to make this edit to a.ts?', 'Would you like to proceed?', '☐ Color', '←  ☐ Season  ✔ Submit  →', 'Review your answers'];
+  for (const above of marks) expect(menuToClose(list({ above }))).toBeNull();
+  expect(menuToClose(list({ hint: 'Esc to cancel · Tab to amend' }))).toBeNull();
+  expect(menuToClose(list({ hint: 'shift+tab to approve with this feedback' }))).toBeNull();
+  // A permission longer than the rows a menu keeps (a long diff): its marks near the options still count.
+  const long = edited('edit', {}, { before: 33, rows: Array.from({ length: 45 }, (_, i) => ` ${i + 3} +added line ${i}`) });
+  expect(readDialog(long, null)!.rows).not.toContain('Do you want to make this edit to hello.txt?');
+  expect(menuToClose(long)).toBeNull();
+  // The trust dialog as this version draws it, numbered as others do, and another dialog Esc exits Claude Code from.
+  expect(menuToClose(txt('trust'))).toBe('exits');
+  const framed = (row: string) => `│ ${row.padEnd(56)} │`;
+  const numbered = view([`╭${'─'.repeat(58)}╮`, framed('Do you trust the files in this folder?'), framed(''), framed('/work/app'), framed(''),
+    framed('❯ 1. Yes, proceed'), framed('  2. No, exit'), framed(''), `╰${'─'.repeat(58)}╯`, '   Enter to confirm · Esc to exit']);
+  expect(readDialog(numbered, null)).toMatchObject({ kind: 'menu', trust: false });
+  expect(menuToClose(numbered)).toBe('exits');
+  expect(menuToClose(view([RULE, 'WARNING: Claude Code running in Bypass Permissions mode', '❯ 1. No, exit', '  2. Yes, I accept', '', 'Enter to confirm · Esc to exit']))).toBe('exits');
 });
