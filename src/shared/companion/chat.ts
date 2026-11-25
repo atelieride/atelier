@@ -66,15 +66,15 @@ const firstLine = (s: string) => s.split('\n').find((l) => l.trim()) ?? '';
  * Text kept in an entry: tidied (an invisible character never hides a key from redaction), token-like runs redacted
  * (before any cut, which could leave a piece of a key too short to be recognised), then cut to `max` around its middle.
  */
-function clean(text: string, max: number): string {
+export function clean(text: string, max: number): string {
   if (text.length <= 2 * WIDE) return middleCut(redactSecrets(tidy(text)), max);
   return middleCut(redactSecrets(tidy(`${text.slice(0, WIDE)}\n${text.slice(-WIDE)}`)), max, text.length - 2 * WIDE);
 }
 /** A short one-line value (a command, a pattern, a label, an answer): redacted, then cut at its end. */
-const short = (s: string, max: number) => cutEnd(redactSecrets(oneLine(s.slice(0, 4096))), max);
+export const short = (s: string, max: number) => cutEnd(redactSecrets(oneLine(s.slice(0, 4096))), max);
 
 /** `p` inside the project relative to it, `/`-separated (Windows' C:\… too: Ask cites forward slashes everywhere). */
-function relPath(p: string, root: string): string {
+export function relPath(p: string, root: string): string {
   const r = root.replace(/[\\/]+$/, '');
   if (!r || !isInside(r, p)) return p;
   return p.length === r.length ? '.' : splitPath(p.slice(r.length + 1)).join('/');
