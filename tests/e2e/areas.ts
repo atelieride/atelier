@@ -258,6 +258,8 @@ export const SOURCES: Record<string, Area[]> = {
   // Ask companion: its pure rules, main's runs and threads, the renderer's state and panel.
   'src/shared/companion/': ['companion'],
   'src/main/companion/': ['companion'],
+  // The transcript's incremental JSONL reader, shared by Ask and the phones' conversation view.
+  'src/main/transcript-lines.ts': ['companion', 'iphone'],
   // iPhone access: Noise, pairing, the relay link, the phones' channels and their terminals; the renderer's Settings ›
   // iPhone, pairing sheet, pill, badges and size note; the test relay and the fake phone the spec drives them with.
   'src/main/remote/': ['iphone', 'terminal', 'sessions', 'settings'],
