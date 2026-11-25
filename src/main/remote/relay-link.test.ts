@@ -217,8 +217,8 @@ describe('offers', () => {
     link.start();
     await until(() => relay.offers(roomId).includes(l));
     relay.dropAll();
-    // The relay keeps a room's offers across the dropped connection, so they can't tell whether the offer went again:
-    // the frames the host sent can.
+    // The relay keeps a room's offers across a dropped connection and counts the new one before the link has proved
+    // its room: only the offer frame itself says the offer went again.
     const offerFrames = () => relay.hostFrames.filter((f) => f.frame.t === 'offer');
     await until(() => relay.hostConnections(roomId) === 2 && offerFrames().length === 2);
     const offers = offerFrames().map((f) => f.frame.ttl as number);
