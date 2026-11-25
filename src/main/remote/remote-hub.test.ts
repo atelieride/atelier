@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -18,7 +18,8 @@ import { testSafeStorage } from '../connectors/test-safe-storage';
 import type { RemoteViewer } from '../terminal-hub';
 import { deriveCode, normalizeCode } from './code';
 import { generateKeyPair } from './noise';
-import type { ScreenView } from './prompt';
+import { readDialog, type DialogWait } from './dialog';
+import { screenView, type ScreenView } from './prompt';
 import { RemoteHub, type RemoteHubDeps, type RemoteWindowResult, type RemoteTerminals } from './remote-hub';
 import { projectIdOf } from './state';
 import { collapseKeyOf } from './push';
@@ -87,27 +88,37 @@ class FakeTerminals implements RemoteTerminals {
     return true;
   }
   remoteSized() { return this.sized; }
+  /**
+   * Screens a terminal shows one after the other, as keys change them: each read takes the next one, the last one
+   * stays. Set, they come before `screens`.
+   */
+  views = new Map<string, ScreenView[]>();
+  /** Every screen read ('read') and every key answers pressed, in order. */
+  events: string[] = [];
   /** While set, screen reads wait for it (an answer still on its way). */
   screenGate: Promise<void> | null = null;
   async permissionScreen(id: string) {
     if (!this.list.some((t) => t.id === id)) throw new Error('gone');
     if (this.screenGate) await this.screenGate;
-    return this.screenOf(id);
+    return this.screenOf(id).lines;
   }
   async screenView(id: string): Promise<ScreenView> {
     if (!this.list.some((t) => t.id === id)) throw new Error('gone');
     if (this.screenGate) await this.screenGate;
-    const lines = this.screenOf(id);
-    return { lines, undimmed: this.dims.get(id) ?? lines, cols: 120 };
+    return this.screenOf(id);
   }
   /** The screen a read of terminal `id` finds now (every screen read goes through here). */
-  private screenOf(id: string): string[] {
-    return this.screens.get(id) ?? npmDialog(['❯ 1. Yes', '  2. Yes, and don\'t ask again for npm test commands', '  3. No, and tell Claude what to do differently (esc)']);
+  private screenOf(id: string): ScreenView {
+    this.events.push('read');
+    const next = this.views.get(id);
+    if (next?.length) return next.length > 1 ? next.shift()! : next[0]!;
+    const lines = this.screens.get(id) ?? npmDialog(['❯ 1. Yes', '  2. Yes, and don\'t ask again for npm test commands', '  3. No, and tell Claude what to do differently (esc)']);
+    return { lines, undimmed: this.dims.get(id) ?? lines, cols: 120 };
   }
   windowShows(id: string) { return this.windows.has(id); }
   lastWindowInput(id: string) { return this.windowInput.get(id) ?? 0; }
   accountDirOf(_project: string | null, terminalId: string | undefined) { return terminalId === undefined ? undefined : this.accountDirs.get(terminalId); }
-  answerKey(id: string, key: string) { this.answers.push([id, key]); }
+  answerKey(id: string, key: string) { this.answers.push([id, key]); this.events.push(key); }
   async renameRemote(id: string, name: string) { if (!this.list.some((t) => t.id === id)) throw new Error('gone'); this.renames.push([id, name]); }
   async closeRemote(id: string) { if (!this.list.some((t) => t.id === id)) throw new Error('gone'); this.closes.push(id); this.set(this.list.filter((t) => t.id !== id)); }
   async resumeRemote(id: string, cols: number, rows: number) {
@@ -1426,36 +1437,43 @@ describe('push notifications', () => {
   });
 });
 
+// A Claude session's transcript lines, and a hub that reads them.
+const T = '2026-11-25T10:00:00.000Z';
+const prompt = (text: string) => ({ type: 'user', timestamp: T, message: { role: 'user', content: text } });
+const reply = (text: string) => ({ type: 'assistant', timestamp: T, message: { role: 'assistant', content: [{ type: 'text', text }] } });
+/** A tool call (`Bash` with a command unless named), by Claude or, `side`, by a subagent. */
+const call = (id: string, command: string, o: { name?: string; input?: Record<string, unknown>; side?: true } = {}) => ({
+  type: 'assistant', timestamp: T, ...(o.side ? { isSidechain: true } : {}),
+  message: { role: 'assistant', content: [{ type: 'tool_use', id, name: o.name ?? 'Bash', input: o.input ?? { command } }] }
+});
+const done = (id: string, out: string) => ({
+  type: 'user', timestamp: T, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: out }] }, toolUseResult: { stdout: out, stderr: '' }
+});
+const jsonl = (...lines: unknown[]) => lines.map((l) => `${JSON.stringify(l)}\n`).join('');
+const claude = (sessionId: string) => ({ sessionId, state: 'running', title: null, activity: null, contextPct: null, unread: false, updatedAt: 1 }) as never;
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * A hub whose Claude sessions' transcripts are `<dir>/<terminal id>.jsonl` (`<session id>.jsonl` with `bySession`, as
+ * Claude Code keeps one per session), read every 20 ms; keys typed into a session 5 ms apart.
+ */
+function conversing(o: { lingerMs?: number; chatMs?: number; bySession?: boolean } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'atl-conversation-'));
+  const file = (id: string) => join(dir, `${id}.jsonl`);
+  const timing = { pollMs: 20, chatMs: o.chatMs ?? 20, keyMs: 5, ...(o.lingerMs ? { lingerMs: o.lingerMs } : {}) };
+  const transcriptOf = (x: TerminalInfo) => (x.session ? file(o.bySession ? x.session.sessionId : x.id) : null);
+  const t = setup({ deps: { conversation: { transcriptOf, home: null, timing } } });
+  return {
+    ...t, dir, file,
+    write: (id: string, ...lines: unknown[]) => writeFileSync(file(id), jsonl(...lines)),
+    append: (id: string, ...lines: unknown[]) => appendFileSync(file(id), jsonl(...lines))
+  };
+}
+
 describe('following a Claude session\'s conversation', () => {
-  const T = '2026-11-25T10:00:00.000Z';
-  const prompt = (text: string) => ({ type: 'user', timestamp: T, message: { role: 'user', content: text } });
-  const reply = (text: string) => ({ type: 'assistant', timestamp: T, message: { role: 'assistant', content: [{ type: 'text', text }] } });
-  const call = (id: string, command: string) => ({ type: 'assistant', timestamp: T, message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'Bash', input: { command } }] } });
-  const done = (id: string, out: string) => ({
-    type: 'user', timestamp: T, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: out }] }, toolUseResult: { stdout: out, stderr: '' }
-  });
-  const jsonl = (...lines: unknown[]) => lines.map((l) => `${JSON.stringify(l)}\n`).join('');
-  const claude = (sessionId: string) => ({ sessionId, state: 'running', title: null, activity: null, contextPct: null, unread: false, updatedAt: 1 }) as never;
   const ns = (m: Msg) => (m.entries as Msg[]).map((e) => e.n);
   const UNREADABLE = 'The conversation can\'t be read. Open the terminal.';
-  const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-  /**
-   * A hub whose Claude sessions' transcripts are `<dir>/<terminal id>.jsonl` (`<session id>.jsonl` with `bySession`, as
-   * Claude Code keeps one per session), read every 20 ms.
-   */
-  function conversing(o: { lingerMs?: number; chatMs?: number; bySession?: boolean } = {}) {
-    const dir = mkdtempSync(join(tmpdir(), 'atl-conversation-'));
-    const file = (id: string) => join(dir, `${id}.jsonl`);
-    const timing = { pollMs: 20, chatMs: o.chatMs ?? 20, ...(o.lingerMs ? { lingerMs: o.lingerMs } : {}) };
-    const transcriptOf = (x: TerminalInfo) => (x.session ? file(o.bySession ? x.session.sessionId : x.id) : null);
-    const t = setup({ deps: { conversation: { transcriptOf, home: null, timing } } });
-    return {
-      ...t, dir, file,
-      write: (id: string, ...lines: unknown[]) => writeFileSync(file(id), jsonl(...lines)),
-      append: (id: string, ...lines: unknown[]) => appendFileSync(file(id), jsonl(...lines))
-    };
-  }
   /** Another phone paired with the same computer, after the first. */
   async function another(t: ReturnType<typeof setup>): Promise<FakePhone> {
     const start = await t.hub.startPairing();
@@ -1863,5 +1881,288 @@ describe('following a Claude session\'s conversation', () => {
     t.terms.set([...t.terms.list]);
     await pause(150);
     expect(phone.messages.filter((m) => m.t === 'chat')).toEqual([]);
+  });
+});
+
+describe('a Claude session\'s dialog, read and answered from a phone', () => {
+  const SCREENS = join(__dirname, '../../../tests/fixtures/claude-2.1.332/screens');
+  /** A recorded screen as TerminalHub reads it, its dim text told apart. */
+  const screen = (name: string) => screenView(readFileSync(join(SCREENS, `${name}.ans`), 'utf8'), { cols: 120, rows: 40 });
+  /** The recorded screens terminal `id` shows from now on, one per read, the last one staying. */
+  const shows = async (t: ReturnType<typeof setup>, id: string, ...names: string[]) => { t.terms.views.set(id, await Promise.all(names.map(screen))); };
+  /** The page a recorded screen's dialog reads as, for that wait. */
+  const pageOf = async (name: string, wait: DialogWait | null) => readDialog(await screen(name), wait)!.page;
+  /** A Claude session waiting: for a permission (its activity names the request, or the plan approval), or an answer. */
+  const waiting = (activity: string, o: { question?: true; updatedAt?: number } = {}) =>
+    ({ sessionId: 's', state: 'waiting', waitingFor: o.question ? 'question' : 'permission', title: null, activity, contextPct: null, unread: false, updatedAt: o.updatedAt ?? 5 }) as never;
+  const withSession = (list: TerminalInfo[], id: string, session: unknown) => list.map((x) => (x.id === id ? { ...x, session: session as never } : x));
+  /** The ask of terminal `id` as the phone's state shows it, once it is another than `not`. */
+  const askOf = async (phone: FakePhone, id = 't2', not?: string) =>
+    ((await phone.state((s) => (s.sessions as Msg[]).some((x) => x.id === id && x.ask && x.ask !== not))).sessions as Msg[]).find((x) => x.id === id)!.ask as string;
+  /** Terminal `id`'s wait ends (Claude works on) and `session`'s begins: its ask. */
+  const anew = async (t: ReturnType<typeof setup>, phone: FakePhone, id: string, session: unknown) => {
+    const before = await askOf(phone, id);
+    t.terms.set(withSession(t.terms.list, id, claude('s')));
+    t.terms.set(withSession(t.terms.list, id, session));
+    return askOf(phone, id, before);
+  };
+  const OK = { t: 'ok', rid: expect.any(Number) };
+  const refused = (code: string, message: string) => ({ t: 'error', rid: expect.any(Number), code, message });
+  const CHANGED = refused('busy', 'The request changed');
+  const IN_TERMINAL = refused('invalid', 'Answer in the terminal');
+  const NOT_THROUGH = refused('failed', 'The answer didn\'t go through. Open the terminal.');
+  const DOWN = '\x1b[B';
+  /** The recording's fictional project folder, as the Bash dialog names it (hard-wrapped there). */
+  const PROJECT = `/work/hello/${'nested/'.repeat(16)}nested-/project`;
+
+  test('dialog: the dialog on screen, its ask, and the running call it is about; nothing of what a field holds', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: Bash touch made-by-bash.txt'));
+    t.write('t2', prompt('List the files.'), reply('Sure.'), prompt('Make a file.'), reply('Making it.'), call('b1', 'touch made-by-bash.txt'));
+    await shows(t, 't2', 'bash');
+    const { phone } = await paired(t);
+    const ask = await askOf(phone);
+    expect(await phone.dialog('t2')).toEqual({
+      t: 'dialog', rid: expect.any(Number), id: 't2', ask: `${ask}.${await pageOf('bash', 'permission')}`, kind: 'permission',
+      rows: ['Bash command', 'Tip: auto mode handles these prompts for you — choose "switch to auto mode" below', 'Create empty file made-by-bash.txt', 'touch made-by-bash.txt', 'Do you want to proceed?'],
+      options: [
+        { n: 1, label: 'Yes' },
+        { n: 2, label: `Yes, and always allow access to ${PROJECT} from this project` },
+        { n: 3, label: 'Yes, and switch to auto mode · auto mode handles these prompts for you' },
+        { n: 4, label: 'No', amend: true }
+      ],
+      entry: 5
+    });
+    // The next request, with text typed in No's field on the computer: the dialog as drawn, none of the reader's own.
+    t.terms.set(withSession(t.terms.list, 't2', waiting('waiting: Bash touch second.txt', { updatedAt: 6 })));
+    const next = await askOf(phone, 't2', ask);
+    await shows(t, 't2', 'bash-amend-typed');
+    const d = await phone.dialog('t2');
+    expect(Object.keys(d).sort()).toEqual(['ask', 'id', 'kind', 'options', 'rid', 'rows', 't']);
+    expect(d.ask).toBe(`${next}.${await pageOf('bash-amend-typed', 'permission')}`);
+  });
+
+  test('dialog: two calls alike, a subagent\'s request, a transcript unreadable or not written yet: no entry; nothing readable: "Answer in the terminal"', async () => {
+    const t = conversing();
+    const at = (id: string, activity: string, createdAt: number) => term(id, '/work/app', { createdAt, session: waiting(activity) });
+    t.terms.list = [...t.terms.list, at('alike', 'waiting: Bash npm test', 3), at('sub', 'waiting: Bash rm -rf build', 4), at('broken', 'waiting: Bash npm test', 5), at('new', 'waiting: Bash npm test', 6), at('blank', 'waiting: Bash npm test', 7)];
+    t.write('alike', prompt('Test it twice.'), call('b1', 'npm test'), call('b2', 'npm test'));
+    // The request is the subagent's own call: Claude's only call running is the agent.
+    t.write('sub', prompt('Clean up.'), call('a1', '', { name: 'Agent', input: { description: 'Clean the build', prompt: 'Remove it.' } }), call('s1', 'rm -rf build', { side: true }));
+    mkdirSync(t.file('broken'));
+    t.terms.screens.set('sub', npmDialog(['❯ 1. Yes', '  2. No'], 'rm -rf build'));
+    t.terms.screens.set('blank', ['⏺ Bash(npm test)', '  ⎿  Running…', '', '✻ Testing… (esc to interrupt)']);
+    const { phone } = await paired(t);
+    for (const id of ['alike', 'sub', 'broken', 'new']) {
+      const d = await phone.dialog(id);
+      expect(d).toMatchObject({ t: 'dialog', id, kind: 'permission', ask: expect.stringMatching(/^[\w-]{22}\.[\w-]{8}$/) });
+      expect(d.entry).toBeUndefined();
+    }
+    expect(await phone.dialog('blank')).toEqual(IN_TERMINAL);
+    expect(await phone.dialog('gone')).toEqual(refused('not-found', 'This session is not on this computer any more.'));
+    expect(await phone.dialog('t1')).toEqual(refused('invalid', 'This is not a Claude session.'));
+  });
+
+  test('dialog: /model while nothing waits is a menu with no options and no ask; so is the trust dialog while Claude starts, marked', async () => {
+    const t = conversing();
+    const other = term('w', '/work/app', { createdAt: 3, session: { ...(claude('s-w') as object), state: 'waiting' } as never });
+    t.terms.list = [...withSession(t.terms.list, 't2', claude('s')), other, term('n1', '/work/app', { createdAt: 4 })];
+    t.terms.starting = new Set(['n1']);
+    for (const id of ['t2', 'w']) await shows(t, id, 'model');
+    await shows(t, 'n1', 'trust');
+    const { phone } = await paired(t);
+    const rows = readDialog(await screen('model'), null)!.rows;
+    expect(rows[0]).toBe('Select model');
+    expect(await phone.dialog('t2')).toEqual({ t: 'dialog', rid: expect.any(Number), id: 't2', kind: 'menu', rows, options: [] });
+    // A session waiting for what no dialog of its own answers has an ask; its menu still has none.
+    expect(await askOf(phone, 'w')).toEqual(expect.any(String));
+    expect(await phone.dialog('w')).toEqual({ t: 'dialog', rid: expect.any(Number), id: 'w', kind: 'menu', rows, options: [] });
+    expect(await phone.dialog('n1')).toEqual({ t: 'dialog', rid: expect.any(Number), id: 'n1', kind: 'menu', rows: readDialog(await screen('trust'), null)!.rows, options: [], trust: true });
+  });
+
+  test('choose: the option\'s digit, only while the same wait shows the same page and label; once', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: Bash touch made-by-bash.txt'));
+    await shows(t, 't2', 'bash');
+    const { phone } = await paired(t);
+    const d = await phone.dialog('t2');
+    t.terms.events = [];
+    expect(await phone.choose('t2', d.ask as string, 1, 'Yes')).toEqual(OK);
+    expect(t.terms.events).toEqual(['read', '1']);
+    // The same dialog again (no hook comes until the tool has run): answered already.
+    expect(await phone.choose('t2', d.ask as string, 1, 'Yes')).toEqual(refused('busy', 'This request was answered already'));
+    // The next request: the old ask is another wait's.
+    await shows(t, 't2', 'bash-second');
+    const ask = await anew(t, phone, 't2', waiting('waiting: Bash touch second.txt', { updatedAt: 7 }));
+    expect(await phone.choose('t2', d.ask as string, 1, 'Yes')).toEqual(CHANGED);
+    const next = await phone.dialog('t2');
+    expect(next.ask).toBe(`${ask}.${await pageOf('bash-second', 'permission')}`);
+    // Another dialog on screen under the same wait, an option labelled otherwise, or none of that number: nothing typed.
+    await shows(t, 't2', 'edit');
+    expect(await phone.choose('t2', next.ask as string, 1, 'Yes')).toEqual(CHANGED);
+    await shows(t, 't2', 'bash-second');
+    expect(await phone.choose('t2', next.ask as string, 3, 'Yes')).toEqual(CHANGED);
+    expect(await phone.choose('t2', next.ask as string, 7, 'Maybe')).toEqual(IN_TERMINAL);
+    expect(t.terms.answers).toEqual([['t2', '1']]);
+    // Those typed nothing: the request is still to answer.
+    expect(await phone.choose('t2', next.ask as string, 3, 'Yes, and switch to auto mode · auto mode handles these prompts for you')).toEqual(OK);
+    expect(t.terms.answers).toEqual([['t2', '1'], ['t2', '3']]);
+  });
+
+  test('choose a field: its digit, the text once the cursor is in it, Enter once it shows the text', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: question', { question: true }));
+    await shows(t, 't2', 'question-fruit');
+    const { phone } = await paired(t);
+    const d = await phone.dialog('t2');
+    expect(d.options).toEqual([{ n: 1, label: 'Apple' }, { n: 2, label: 'Pear' }, { n: 3, label: 'Type something.', field: true }, { n: 4, label: 'Chat about this' }]);
+    await shows(t, 't2', 'question-fruit', 'question-field', 'question-field-typed');
+    t.terms.events = [];
+    expect(await phone.choose('t2', d.ask as string, 3, 'Type something.', 'Mango')).toEqual(OK);
+    // Each key right after a read showing the dialog ready for it.
+    expect(t.terms.events).toEqual(['read', '3', 'read', 'Mango', 'read', '\r']);
+    // The digit didn't put the cursor in the field: the keys stop there.
+    await anew(t, phone, 't2', waiting('waiting: question', { question: true, updatedAt: 8 }));
+    await shows(t, 't2', 'question-fruit');
+    const again = await phone.dialog('t2');
+    t.terms.answers = [];
+    expect(await phone.choose('t2', again.ask as string, 3, 'Type something.', 'Mango')).toEqual(NOT_THROUGH);
+    expect(t.terms.answers).toEqual([['t2', '3']]);
+    // The field took the cursor but doesn't show the text: no Enter.
+    await anew(t, phone, 't2', waiting('waiting: question', { question: true, updatedAt: 9 }));
+    await shows(t, 't2', 'question-fruit');
+    const third = await phone.dialog('t2');
+    await shows(t, 't2', 'question-fruit', 'question-field');
+    t.terms.answers = [];
+    expect(await phone.choose('t2', third.ask as string, 3, 'Type something.', 'Mango')).toEqual(NOT_THROUGH);
+    expect(t.terms.answers).toEqual([['t2', '3'], ['t2', 'Mango']]);
+  });
+
+  test('choose No with feedback: each arrow to No, a read showing the cursor there, Tab, the text, Enter', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: Bash touch second.txt'));
+    await shows(t, 't2', 'bash-second');
+    const { phone } = await paired(t);
+    const d = await phone.dialog('t2');
+    await shows(t, 't2', 'bash-second', 'bash-on-no', 'bash-amend', 'bash-amend-typed');
+    t.terms.events = [];
+    expect(await phone.choose('t2', d.ask as string, 4, 'No', 'do not create it, just say ok')).toEqual(OK);
+    expect(t.terms.events).toEqual(['read', DOWN, DOWN, DOWN, 'read', '\t', 'read', 'do not create it, just say ok', 'read', '\r']);
+    // The arrows didn't bring the cursor to No: no Tab.
+    await anew(t, phone, 't2', waiting('waiting: Bash touch second.txt', { updatedAt: 8 }));
+    await shows(t, 't2', 'bash-second');
+    const again = await phone.dialog('t2');
+    t.terms.events = [];
+    expect(await phone.choose('t2', again.ask as string, 4, 'No', 'do not create it, just say ok')).toEqual(NOT_THROUGH);
+    expect(t.terms.events).toEqual(['read', DOWN, DOWN, DOWN, 'read']);
+  });
+
+  test('several questions: after an answer the next page has another ask; Submit answers on the review page', async () => {
+    const t = conversing();
+    const questions = [
+      { header: 'Season', question: 'What is your favorite season?', options: [{ label: 'Summer' }, { label: 'Winter' }] },
+      { header: 'Drink', question: 'What is your favorite drink?', options: [{ label: 'Tea' }, { label: 'Coffee' }] }
+    ];
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: question', { question: true }));
+    t.write('t2', prompt('Ask me two things.'), call('q1', '', { name: 'AskUserQuestion', input: { questions } }));
+    await shows(t, 't2', 'questions-first');
+    const { phone } = await paired(t);
+    const ask = await askOf(phone);
+    const first = await phone.dialog('t2');
+    expect(first).toMatchObject({ kind: 'question', ask: `${ask}.${await pageOf('questions-first', 'question')}`, rows: expect.arrayContaining(['What is your favorite season?']), entry: 2 });
+    expect(await phone.choose('t2', first.ask as string, 2, 'Winter')).toEqual(OK);
+    // The same wait, its next page.
+    await shows(t, 't2', 'questions-second');
+    const second = await phone.dialog('t2');
+    expect(second).toMatchObject({ kind: 'question', ask: `${ask}.${await pageOf('questions-second', 'question')}`, rows: expect.arrayContaining(['What is your favorite drink?']), entry: 2 });
+    expect(await phone.choose('t2', second.ask as string, 1, 'Tea')).toEqual(OK);
+    await shows(t, 't2', 'questions-review');
+    const review = await phone.dialog('t2');
+    expect(review).toMatchObject({ kind: 'question', ask: `${ask}.${await pageOf('questions-review', 'question')}`, options: [{ n: 1, label: 'Submit answers' }, { n: 2, label: 'Cancel' }], entry: 2 });
+    expect(new Set([first.ask, second.ask, review.ask]).size).toBe(3);
+    expect(await phone.choose('t2', review.ask as string, 1, 'Submit answers')).toEqual(OK);
+    expect(t.terms.answers).toEqual([['t2', '2'], ['t2', '1'], ['t2', '1']]);
+  });
+
+  test('choose refuses a menu, several choices, a cursor already in a field, a field without text and text for a plain option, typing nothing', async () => {
+    const t = conversing();
+    t.terms.list = [
+      ...withSession(t.terms.list, 't2', waiting('waiting: question', { question: true })),
+      term('m', '/work/app', { createdAt: 3, session: { ...(claude('s-m') as object), state: 'waiting' } as never }),
+      term('p', '/work/app', { createdAt: 4, session: waiting('waiting: Bash touch second.txt') })
+    ];
+    const { phone } = await paired(t);
+    // A menu has no ask to name: one made of its session's ask and its page is still refused.
+    await shows(t, 'm', 'model');
+    expect((await phone.dialog('m')).ask).toBeUndefined();
+    expect(await phone.choose('m', `${await askOf(phone, 'm')}.${await pageOf('model', null)}`, 4, 'Sonnet 5.5')).toEqual(IN_TERMINAL);
+    await shows(t, 't2', 'several');
+    const several = await phone.dialog('t2');
+    expect(several).toMatchObject({ kind: 'question', several: true });
+    expect(await phone.choose('t2', several.ask as string, 1, '[ ] Cats')).toEqual(IN_TERMINAL);
+    // The cursor in the question's field already, or in No's: a digit would be typed there.
+    await shows(t, 't2', 'question-field');
+    expect(await phone.choose('t2', (await phone.dialog('t2')).ask as string, 1, 'Apple')).toEqual(IN_TERMINAL);
+    await shows(t, 'p', 'bash-amend');
+    expect(await phone.choose('p', (await phone.dialog('p')).ask as string, 1, 'Yes')).toEqual(IN_TERMINAL);
+    await shows(t, 't2', 'question-fruit');
+    const fruit = await phone.dialog('t2');
+    expect(await phone.choose('t2', fruit.ask as string, 3, 'Type something.')).toEqual(refused('invalid', 'This option needs text.'));
+    expect(await phone.choose('t2', fruit.ask as string, 1, 'Apple', 'Green ones')).toEqual(refused('invalid', 'This option takes no text.'));
+    expect(await phone.choose('gone', fruit.ask as string, 1, 'Apple')).toEqual(refused('not-found', 'This session is not on this computer any more.'));
+    expect(await phone.choose('t1', fruit.ask as string, 1, 'Apple')).toEqual(refused('invalid', 'This is not a Claude session.'));
+    expect(t.terms.answers).toEqual([]);
+    // None of them counted as an answer.
+    expect(await phone.choose('t2', fruit.ask as string, 1, 'Apple')).toEqual(OK);
+    expect(t.terms.answers).toEqual([['t2', '1']]);
+  });
+
+  test('a plan\'s wait while the screen shows Bash\'s dialog, its cursor in No\'s field: not the plan\'s page, nothing typed', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: plan approval'));
+    t.write('t2', prompt('Plan it.'), call('p1', '', { name: 'ExitPlanMode', input: { plan: '1. Append Bye.' } }));
+    await shows(t, 't2', 'plan');
+    const { phone } = await paired(t);
+    const plan = await phone.dialog('t2');
+    expect(plan).toMatchObject({ kind: 'plan', entry: 2, options: [{ n: 1, label: 'Yes, and use auto mode' }, { n: 2, label: 'Yes, manually approve edits' }, { n: 3, label: 'Tell Claude what to change', field: true }] });
+    await shows(t, 't2', 'bash-amend');
+    t.terms.events = [];
+    // Read for the plan's wait, Bash's dialog has no field and a "Yes" first: only the page tells it isn't the plan.
+    expect(await phone.choose('t2', plan.ask as string, 1, 'Yes')).toEqual(CHANGED);
+    expect(await phone.choose('t2', plan.ask as string, 1, 'Yes, and use auto mode')).toEqual(CHANGED);
+    expect(await phone.choose('t2', plan.ask as string, 3, 'Tell Claude what to change', 'Skip the verify step.')).toEqual(CHANGED);
+    expect(t.terms.events).toEqual(['read', 'read', 'read']);
+  });
+
+  test('an answer from the row and a choose on the same dialog: one goes, the other is refused', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: Bash touch made-by-bash.txt'));
+    await shows(t, 't2', 'bash');
+    const { phone } = await paired(t);
+    const BEING = refused('busy', 'This request is being answered');
+    const waitKey = async (not?: string) => ((await phone.state((s) => (s.sessions as Msg[]).some((x) => x.id === 't2' && x.wait && x.wait !== not))).sessions as Msg[]).find((x) => x.id === 't2')!.wait as string;
+    // Screen reads wait until opened: whichever comes first is still reading when the other arrives.
+    let open = () => {};
+    const gate = () => { t.terms.screenGate = new Promise<void>((r) => { open = () => { t.terms.screenGate = null; r(); }; }); };
+    const wait = await waitKey();
+    const d = await phone.dialog('t2');
+    gate();
+    const allow = phone.answer('t2', wait, 'allow');
+    const choose = phone.choose('t2', d.ask as string, 1, 'Yes');
+    expect(await choose).toEqual(BEING);
+    open();
+    expect(await allow).toEqual(OK);
+    expect(t.terms.answers).toEqual([['t2', '1']]);
+    // The next request: the choose first, the row's Allow while it reads.
+    await anew(t, phone, 't2', waiting('waiting: Bash touch made-by-bash.txt', { updatedAt: 9 }));
+    const next = await waitKey(wait);
+    const d2 = await phone.dialog('t2');
+    gate();
+    const chose = phone.choose('t2', d2.ask as string, 1, 'Yes');
+    const allowed = phone.answer('t2', next, 'allow');
+    expect(await allowed).toEqual(BEING);
+    open();
+    expect(await chose).toEqual(OK);
+    expect(t.terms.answers).toEqual([['t2', '1'], ['t2', '1']]);
   });
 });

@@ -1,20 +1,24 @@
-// Answers from phones to sessions' permission requests, per terminal: one at a time, and once per wait. Two taps (or
-// two phones) both reading the screen before the first key lands would both type it: the second would answer the
-// dialog that comes next, or leave a stray key in Claude's prompt. And after "Yes" no hook arrives until the tool has
-// run, so the session keeps waiting under the same key all that time: answered again, its Esc would interrupt the
-// tool. A wait answered stays answered until the session's wait key changes.
+// Answers from phones to sessions' requests (a row's Allow/Deny, an option chosen in a dialog), per terminal: one at a
+// time, and once per wait. Two taps (or two phones) both reading the screen before the first key lands would both type
+// it: the second would answer the dialog that comes next, or leave a stray key in Claude's prompt. And after "Yes" no
+// hook arrives until the tool has run, so the session keeps waiting under the same key all that time: answered again,
+// its Esc would interrupt the tool. A wait answered stays answered until the session's wait key changes.
+// Other typing from a phone (a prompt, an interrupt, a menu closed) holds the terminal the same way, so it never goes
+// in between an answer's keys, nor an answer in between its own.
 
 /** Terminals remembered with the wait last answered in them, at most (the oldest go first). */
 const REMEMBERED = 256;
+const BUSY = 'This request is being answered';
 
 export class AnswerBook {
+  /** Terminals an answer or other typing is on its way to. */
   private readonly busy = new Set<string>();
   /** The wait last answered, by terminal. */
   private readonly answered = new Map<string, string>();
 
   /** An answer to terminal `id`'s wait `wait` starts: null, or why it can't (one on its way, or answered already). */
   begin(id: string, wait: string): string | null {
-    if (this.busy.has(id)) return 'This request is being answered';
+    if (this.busy.has(id)) return BUSY;
     if (this.answered.get(id) === wait) return 'This request was answered already';
     this.busy.add(id);
     return null;
@@ -27,5 +31,17 @@ export class AnswerBook {
     this.answered.delete(id);
     this.answered.set(id, wait);
     if (this.answered.size > REMEMBERED) this.answered.delete(this.answered.keys().next().value!);
+  }
+
+  /** Typing into terminal `id` that answers no wait starts: null, or why it can't (an answer or typing on its way). */
+  hold(id: string): string | null {
+    if (this.busy.has(id)) return BUSY;
+    this.busy.add(id);
+    return null;
+  }
+
+  /** That typing is over (only after a `hold` that returned null). */
+  release(id: string): void {
+    this.busy.delete(id);
   }
 }

@@ -1,16 +1,20 @@
 // What a phone asks of Claude sessions' conversations, with no terminal attached: following one as data (the entries
 // ConversationBook reads from its transcript), the newest page first, then what Claude Code adds or changes as it
-// writes, coalesced; an older page on request. Only sessions the state lists, Claude sessions only, at most
-// MAX_FOLLOWED at once per phone. A followed session counts as open on the phone's badge in the windows.
+// writes, coalesced; an older page on request. Reading the dialog at the bottom of a session's screen, and choosing
+// one of its options with Claude Code's own keys, each typed right after a fresh read of the screen that still shows
+// that dialog ready for it. Only sessions the state lists, Claude sessions only, at most MAX_FOLLOWED followed at once
+// per phone. A followed session counts as open on the phone's badge in the windows.
 import { chunks as entryChunks, pageOf } from '@shared/conversation/pages';
 import type { Entry } from '@shared/conversation/types';
 import type { TerminalInfo } from '@shared/protocol';
+import { waitTarget } from '@shared/session-view';
 import { isClaudeProcess } from '@shared/shells';
 import type { AnswerBook } from './answers';
 import type { ConversationBook, ConversationSnapshot } from './conversations';
+import { chooseKeys, fieldHolds, readDialog, type DialogWait, type ScreenDialog } from './dialog';
 import type { DeviceMessage, ErrorCode, HostMessage } from './messages';
 import type { RemoteTerminals } from './remote-hub';
-import type { WaitBook } from './rows';
+import { waitOf, type WaitBook } from './rows';
 
 /** Sessions one phone follows at once, at most. */
 export const MAX_FOLLOWED = 16;
@@ -23,6 +27,14 @@ export const SESSION_GAP_MS = 5000;
 const UNREADABLE = 'The conversation can\'t be read. Open the terminal.';
 const GONE = 'This session is not on this computer any more.';
 const NOT_CLAUDE = 'This is not a Claude session.';
+const IN_TERMINAL = 'Answer in the terminal';
+const CHANGED = 'The request changed';
+const NOT_THROUGH = 'The answer didn\'t go through. Open the terminal.';
+
+type Refusal = { code: ErrorCode; message: string };
+/** Down and up, as `chooseKeys` puts them before a Tab. */
+// eslint-disable-next-line no-control-regex
+const ARROW = /\u001b\[[AB]/g;
 
 const codeOf = (e: unknown) => (typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : null);
 /** An error for the log: its code when it has one (fs errors' messages hold paths), else its message. */
@@ -109,14 +121,146 @@ export class PhoneConversations {
         this.o.host.statusChanged();
         return;
       }
+      case 'dialog': this.dialog(m); return;
+      case 'choose': this.choose(m); return;
       case 'say':
       case 'stop':
       case 'escape':
-      case 'dialog':
-      case 'choose':
         // Not served yet: answered as an Atelier that doesn't know them answers.
         this.error(m.rid, 'invalid', 'This message is not one Atelier understands.');
     }
+  }
+
+  /** Terminal `id` when the state lists it as a Claude session; otherwise null, and `rid` is told why. */
+  private claudeSession(rid: number, id: string): TerminalInfo | null {
+    const t = this.o.host.listed(id) ? this.o.host.terminal(id) : undefined;
+    if (!t) { this.error(rid, 'not-found', GONE); return null; }
+    if (!this.o.host.claude(id)) { this.error(rid, 'invalid', NOT_CLAUDE); return null; }
+    return t;
+  }
+
+  /**
+   * The dialog at the bottom of the session's screen, read for the wait the session is in. Its `ask` is the session's
+   * plus the dialog's page (a menu has none); `entry` the one running call it is about, when exactly one fits.
+   */
+  private dialog(m: Extract<ConversationRequest, { t: 'dialog' }>): void {
+    const { rid, id } = m;
+    if (!this.claudeSession(rid, id)) return;
+    const read = async () => {
+      const view = await this.o.terms.screenView(id);
+      // The session as it is now, with the screen just read.
+      const t = this.claudeSession(rid, id);
+      if (!t) return;
+      const d = readDialog(view, waitOf(t.session));
+      if (!d) { this.error(rid, 'invalid', IN_TERMINAL); return; }
+      const wait = d.kind === 'menu' ? null : d.kind;
+      const ask = wait ? this.o.host.asks.keyOf(t) : null;
+      const entry = wait ? await this.entryOf(t, wait) : null;
+      // Named fields only: the reader's own (the cursor, what a field holds as typed) stay on this computer.
+      this.send({
+        t: 'dialog', rid, id, ...(ask ? { ask: `${ask}.${d.page}` } : {}), kind: d.kind, rows: [...d.rows],
+        options: d.options.map(({ n, label, field, amend }) => ({ n, label, ...(field ? { field } : {}), ...(amend ? { amend } : {}) })),
+        ...(d.several ? { several: true as const } : {}), ...(entry !== null ? { entry } : {}), ...(d.trust ? { trust: true as const } : {})
+      });
+    };
+    read().catch((e: unknown) => {
+      this.o.host.log(`conversations: the dialog of terminal ${id} couldn't be read (${reasonOf(e)})`);
+      this.error(rid, 'invalid', IN_TERMINAL);
+    }).catch((e: unknown) => this.o.host.log(`conversations: the dialog of terminal ${id}: ${reasonOf(e)}`));
+  }
+
+  /**
+   * The entry a dialog is about, when exactly one running call fits it: the question, the plan's ExitPlanMode, or the
+   * tool call the permission names. None when the conversation can't be read (or isn't written yet): the dialog goes
+   * without it.
+   */
+  private async entryOf(t: TerminalInfo, wait: DialogWait): Promise<number | null> {
+    let running: ConversationSnapshot['running'];
+    try { running = (await this.o.book.read(t)).running; } catch { return null; }
+    const target = waitTarget(t.session?.activity);
+    const fits = running.filter((r) => (wait === 'question' ? r.k === 'question'
+      : wait === 'plan' ? r.k === 'tool' && r.tool === 'ExitPlanMode'
+        : r.k === 'tool' && target !== null && r.waitTarget === target));
+    return fits.length === 1 ? fits[0]!.n : null;
+  }
+
+  /**
+   * Option `n` of the dialog a `dialog` answer showed with `ask`: only while the session's ask is still the part before
+   * its `.`, once per dialog page, one answer at a time per terminal (the row's Allow/Deny included).
+   */
+  private choose(m: Extract<ConversationRequest, { t: 'choose' }>): void {
+    const { rid, id } = m;
+    const t = this.claudeSession(rid, id);
+    if (!t) return;
+    const dot = m.ask.indexOf('.');
+    const sessionAsk = m.ask.slice(0, dot);
+    if (this.o.host.asks.keyOf(t) !== sessionAsk) { this.error(rid, 'busy', CHANGED); return; }
+    const busy = this.o.host.answers.begin(id, m.ask);
+    if (busy) { this.error(rid, 'busy', busy); return; }
+    let typed = false;
+    const type = (key: string) => { typed = true; this.o.terms.answerKey(id, key); };
+    void (async () => {
+      let refusal: Refusal | null;
+      try {
+        refusal = await this.typeChoice(m, sessionAsk, m.ask.slice(dot + 1), type);
+      } catch (e) {
+        this.o.host.log(`conversations: a choice in terminal ${id} stopped (${reasonOf(e)})`);
+        refusal = typed ? { code: 'failed', message: NOT_THROUGH } : { code: 'invalid', message: IN_TERMINAL };
+      } finally {
+        this.o.host.answers.end(id, m.ask, typed);
+      }
+      if (refusal) this.error(rid, refusal.code, refusal.message);
+      else this.send({ t: 'ok', rid });
+    })().catch((e: unknown) => this.o.host.log(`conversations: a choice in terminal ${id}: ${reasonOf(e)}`));
+  }
+
+  /**
+   * Types the keys that choose option `n`, each right after a fresh read showing the dialog ready for it: the digit;
+   * for a field, the digit, the text once the cursor is in the field, Enter once the field shows the text; for an
+   * amended "No", each arrow to it, Tab once the cursor is on it, then the text and Enter as for a field. Null once the
+   * last key went; else why not (before any key: the request changed, or it is answered in the terminal; after one:
+   * it didn't go through, and no key follows).
+   */
+  private async typeChoice(m: Extract<ConversationRequest, { t: 'choose' }>, sessionAsk: string, page: string, type: (key: string) => void): Promise<Refusal | null> {
+    const { id, n, label, text } = m;
+    /** The dialog on screen now, read for the session's wait: null when the session left or waits for another request. */
+    const read = async (): Promise<ScreenDialog | null> => {
+      const view = await this.o.terms.screenView(id);
+      const t = this.o.host.listed(id) ? this.o.host.terminal(id) : undefined;
+      if (!t || !this.o.host.claude(id) || this.o.host.asks.keyOf(t) !== sessionAsk) return null;
+      return readDialog(view, waitOf(t.session));
+    };
+    const pause = () => new Promise<void>((r) => setTimeout(r, this.o.timing.keyMs));
+    const notThrough: Refusal = { code: 'failed', message: NOT_THROUGH };
+
+    const shown = await read();
+    if (!shown || shown.page !== page) return { code: 'busy', message: CHANGED };
+    const k = chooseKeys(shown, { n, label, ...(text !== undefined ? { text } : {}) });
+    if (!k.ok) return { code: k.code, message: k.message };
+    if (k.text === undefined) { type(k.keys); return null; }
+
+    /** The same dialog as the phone's (its kind and its rows), its cursor on option `n`. */
+    const onIt = (d: ScreenDialog | null): d is ScreenDialog =>
+      !!d && d.kind === shown.kind && d.rows.length === shown.rows.length && d.rows.every((r, i) => r === shown.rows[i]) && d.focused === n;
+    if (k.keys.endsWith('\t')) {
+      // An amended option: one key at a time, the cursor seen on it (the field not open yet) before Tab.
+      const arrows = k.keys.match(ARROW) ?? [];
+      for (const arrow of arrows) { type(arrow); await pause(); }
+      if (arrows.length > 0) {
+        const d = await read();
+        if (!onIt(d) || d.page !== page || d.inField) return notThrough;
+      }
+      type('\t');
+    } else type(k.keys);
+    await pause();
+    const open = await read();
+    if (!onIt(open) || !open.inField) return notThrough;
+    type(k.text);
+    await pause();
+    const filled = await read();
+    if (!onIt(filled) || !fieldHolds(filled, n, k.text)) return notThrough;
+    type('\r');
+    return null;
   }
 
   /**
@@ -162,9 +306,8 @@ export class PhoneConversations {
 
   private follow(m: Extract<ConversationRequest, { t: 'follow' }>): void {
     const { rid, id } = m;
-    const t = this.o.host.listed(id) ? this.o.host.terminal(id) : undefined;
-    if (!t) { this.error(rid, 'not-found', GONE); return; }
-    if (!this.o.host.claude(id)) { this.error(rid, 'invalid', NOT_CLAUDE); return; }
+    const t = this.claudeSession(rid, id);
+    if (!t) return;
     if (m.before !== undefined) {
       // A page older than what the phone shows: read, nothing followed by it.
       const before = m.before;
