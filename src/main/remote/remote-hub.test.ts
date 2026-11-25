@@ -1440,12 +1440,16 @@ describe('following a Claude session\'s conversation', () => {
   const UNREADABLE = 'The conversation can\'t be read. Open the terminal.';
   const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-  /** A hub whose Claude sessions' transcripts are `<dir>/<terminal id>.jsonl`, read every 20 ms. */
-  function conversing(o: { lingerMs?: number; chatMs?: number } = {}) {
+  /**
+   * A hub whose Claude sessions' transcripts are `<dir>/<terminal id>.jsonl` (`<session id>.jsonl` with `bySession`, as
+   * Claude Code keeps one per session), read every 20 ms.
+   */
+  function conversing(o: { lingerMs?: number; chatMs?: number; bySession?: boolean } = {}) {
     const dir = mkdtempSync(join(tmpdir(), 'atl-conversation-'));
     const file = (id: string) => join(dir, `${id}.jsonl`);
     const timing = { pollMs: 20, chatMs: o.chatMs ?? 20, ...(o.lingerMs ? { lingerMs: o.lingerMs } : {}) };
-    const t = setup({ deps: { conversation: { transcriptOf: (x) => (x.session ? file(x.id) : null), home: null, timing } } });
+    const transcriptOf = (x: TerminalInfo) => (x.session ? file(o.bySession ? x.session.sessionId : x.id) : null);
+    const t = setup({ deps: { conversation: { transcriptOf, home: null, timing } } });
     return {
       ...t, dir, file,
       write: (id: string, ...lines: unknown[]) => writeFileSync(file(id), jsonl(...lines)),
@@ -1608,13 +1612,33 @@ describe('following a Claude session\'s conversation', () => {
     await until(() => badge(t).includes('t2'));
     const since = phone.messages.length;
     // The shell back in front: no Claude session in the terminal any more, none starting.
-    t.terms.set(t.terms.list.map((x) => (x.id === 't2' ? { ...x, session: null } : x)));
+    t.terms.set(t.terms.list.map((x) => (x.id === 't2' ? { ...x, foreground: 'zsh', session: null } : x)));
     await until(() => badge(t).length === 0);
     t.append('t2', reply('Late.'));
     await pause(150);
     expect(phone.messages.slice(since).filter((m) => m.t === 'chat' || m.t === 'error')).toEqual([]);
     expect(phone.conversation('t2').map((e) => e.n)).toEqual([1, 2]);
     expect(await phone.follow('t2')).toMatchObject({ t: 'error', code: 'invalid', message: 'This is not a Claude session.' });
+  });
+
+  test('/clear in a followed terminal: the session ends with Claude still in front, the next one starts; still followed, the new conversation comes under a new key', async () => {
+    const t = conversing({ bySession: true });
+    const inFront = (session: unknown) => t.terms.list.map((x) => (x.id === 't2' ? { ...x, foreground: '2.1.332', session: session as never } : x));
+    t.terms.list = inFront(claude('s-before'));
+    t.write('s-before', prompt('Before.'), reply('Old.'));
+    const { phone } = await paired(t);
+    const page = await phone.follow('t2');
+    // SessionEnd: no session, Claude still the terminal's program.
+    t.terms.set(inFront(null));
+    await pause(150);
+    expect(badge(t)).toContain('t2');
+    // SessionStart with a new id, its transcript written at its first prompt.
+    t.write('s-after', prompt('After.'));
+    t.terms.set(inFront(claude('s-after')));
+    await until(() => phone.conversation('t2').some((e) => e.text === 'After.'));
+    expect(chats(phone, 't2').at(-1)!.conversation).not.toBe(page.conversation);
+    expect(phone.conversation('t2').map((e) => e.text)).toEqual(['After.']);
+    expect(badge(t)).toContain('t2');
   });
 
   test('changes coalesce: many lines within chatMs go in few messages, nothing lost', async () => {

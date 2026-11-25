@@ -5,6 +5,7 @@
 import { chunks as entryChunks, pageOf } from '@shared/conversation/pages';
 import type { Entry } from '@shared/conversation/types';
 import type { TerminalInfo } from '@shared/protocol';
+import { isClaudeProcess } from '@shared/shells';
 import type { AnswerBook } from './answers';
 import type { ConversationBook, ConversationSnapshot } from './conversations';
 import type { DeviceMessage, ErrorCode, HostMessage } from './messages';
@@ -13,6 +14,11 @@ import type { WaitBook } from './rows';
 
 /** Sessions one phone follows at once, at most. */
 export const MAX_FOLLOWED = 16;
+/**
+ * A terminal with no Claude session while Claude is still in front of it (`/clear` ends one session and then starts
+ * the next) stays followed this long, for the next session.
+ */
+export const SESSION_GAP_MS = 5000;
 
 const UNREADABLE = 'The conversation can\'t be read. Open the terminal.';
 const GONE = 'This session is not on this computer any more.';
@@ -53,7 +59,7 @@ interface Followed {
   readonly id: string;
   /** Ends the book's calls for it. */
   stop: () => void;
-  /** The follow asked last: a transcript that stops reading while followed answers it. */
+  /** The follow answered last with a page: a transcript that stops reading while followed answers it. */
   rid: number;
   /** Follows not answered yet, oldest first: each gets the newest page, or why not. */
   asked: number[];
@@ -66,6 +72,8 @@ interface Followed {
   /** The phone was told the transcript can't be read (once, until it reads again). */
   failed: boolean;
   timer: ReturnType<typeof setTimeout> | null;
+  /** Running while the terminal has no Claude session but Claude is in front: the follow ends when it fires. */
+  gap: ReturnType<typeof setTimeout> | null;
   /** When the last read for a send began: the next one waits for chatMs after it. */
   at: number;
   /** One read at a time: a change during one sets `again`. */
@@ -112,19 +120,39 @@ export class PhoneConversations {
   }
 
   /**
-   * Every terminal list: a followed session no longer in it, or no longer a Claude session (Claude exited), is followed
-   * no more. Nothing is sent of it: the phone keeps what it shows, and learns the rest from the session's row.
+   * Every terminal list: a followed session no longer in it, or one Claude has left (no session, and the shell or
+   * another program in front), is followed no more. With no session but Claude still in front (between `/clear`'s end
+   * and its next session), it stays followed for SESSION_GAP_MS. Nothing is sent of a follow that ends: the phone keeps
+   * what it shows, and learns the rest from the session's row.
    */
   terminalsChanged(list: readonly TerminalInfo[]): void {
-    const ids = new Set(list.map((t) => t.id));
+    const byId = new Map(list.map((t) => [t.id, t]));
     let left = false;
     for (const rec of [...this.recs.values()]) {
-      if (!ids.has(rec.id)) this.drop(rec, { code: 'not-found', message: GONE });
-      else if (!this.o.host.claude(rec.id)) this.drop(rec, { code: 'invalid', message: NOT_CLAUDE });
-      else continue;
+      const t = byId.get(rec.id);
+      if (this.o.host.claude(rec.id)) { this.endGap(rec); continue; }
+      if (!t) this.drop(rec, { code: 'not-found', message: GONE });
+      else if (!isClaudeProcess(t.foreground)) this.drop(rec, { code: 'invalid', message: NOT_CLAUDE });
+      else { this.startGap(rec); continue; }
       left = true;
     }
     if (left) this.o.host.statusChanged();
+  }
+
+  private startGap(rec: Followed): void {
+    if (rec.gap) return;
+    rec.gap = setTimeout(() => {
+      rec.gap = null;
+      if (rec.gone || this.o.host.claude(rec.id)) return;
+      this.drop(rec, { code: 'invalid', message: NOT_CLAUDE });
+      this.o.host.statusChanged();
+    }, SESSION_GAP_MS);
+    rec.gap.unref?.();
+  }
+
+  private endGap(rec: Followed): void {
+    if (rec.gap) clearTimeout(rec.gap);
+    rec.gap = null;
   }
 
   dispose(): void {
@@ -152,13 +180,12 @@ export class PhoneConversations {
     let rec = this.recs.get(id);
     if (!rec) {
       if (this.recs.size >= MAX_FOLLOWED) { this.error(rid, 'busy', 'Too many conversations open.'); return; }
-      const r: Followed = { id, stop: () => {}, rid, asked: [], sent: null, failed: false, timer: null, at: 0, busy: false, again: false, gone: false };
+      const r: Followed = { id, stop: () => {}, rid, asked: [], sent: null, failed: false, timer: null, gap: null, at: 0, busy: false, again: false, gone: false };
       r.stop = this.o.book.subscribe(t, () => this.schedule(r));
       this.recs.set(id, r);
       this.o.host.statusChanged();
       rec = r;
     }
-    rec.rid = rid;
     rec.asked.push(rid);
     this.run(rec);
   }
@@ -212,6 +239,8 @@ export class PhoneConversations {
   private answer(rec: Followed, snap: ConversationSnapshot, asked: number[]): void {
     const page = pageOf(snap.entries);
     for (const rid of asked) this.sendPage(rec.id, snap, page, rid);
+    // One answer per follow: a later failure is told to one already answered, never to one still waiting.
+    rec.rid = asked.at(-1) ?? rec.rid;
     rec.sent = { key: snap.key, seq: snap.seq };
     rec.failed = false;
   }
@@ -281,6 +310,7 @@ export class PhoneConversations {
     rec.gone = true;
     if (rec.timer) clearTimeout(rec.timer);
     rec.timer = null;
+    this.endGap(rec);
     rec.stop();
     if (this.recs.get(rec.id) === rec) this.recs.delete(rec.id);
   }
