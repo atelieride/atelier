@@ -7,6 +7,7 @@
 // opens, closed as their own close does) — sends the push notifications phones registered for, and runs pairing (the
 // code, the Allow/Deny question to the windows). Off, no relay connection exists at all. A phone only names what the
 // state listed: opaque project ids, terminal, place and account ids, never paths, commands, directories or profiles.
+// It sees paths and commands only inside a conversation's entries and dialogs, as Claude Code shows them.
 import { randomBytes } from 'node:crypto';
 import type { RemoteDeviceInfo, RemoteLayout, RemotePairingEvent, RemotePairingStart, RemotePlace, RemotePlaceOp, RemotePlaceResult, RemoteRelayState, RemoteRowsEvent, RemoteSized, RemoteStatus } from '@shared/remote';
 import { accountsFor } from '@shared/claude-accounts';
