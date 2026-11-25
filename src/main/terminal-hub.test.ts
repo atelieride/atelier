@@ -1332,11 +1332,18 @@ describe('a paired phone\'s actions on rows, as Atelier\'s own', () => {
     hub.installIpc();
     const call = (kind: 'handle' | 'on', channel: string) => (vi.mocked(ipcMain[kind]).mock.calls as unknown as [string, (e: unknown, arg: unknown) => unknown][]).findLast((c) => c[0] === channel)![1];
     expect(hub.windowShows('w')).toBe(false);
+    // A phone alone is not a window.
+    const key = hub.addRemoteViewer({ snapshot: () => {}, data: () => {}, size: () => {}, exit: () => {} } as never);
+    const phone = hub.remoteAttach(key, 'w', 80, 24);
+    client.emit('snapshot', 'w', 'screen');
+    await phone;
+    expect(hub.windowShows('w')).toBe(false);
     const attached = call('handle', IPC.termAttach)({ sender: w }, 'w') as Promise<void>;
     await Promise.resolve();
     client.emit('snapshot', 'w', 'screen');
     await attached;
     expect(hub.windowShows('w')).toBe(true);
+    // The window goes, the phone stays.
     await (call('handle', IPC.termDetach)({ sender: w }, 'w') as Promise<void>);
     expect(hub.windowShows('w')).toBe(false);
   });

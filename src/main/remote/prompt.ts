@@ -193,12 +193,14 @@ export function screenView(snapshot: string, size: { cols: number; rows: number 
       const buf = screen.buffer.active;
       const lines: string[] = [];
       const undimmed: string[] = [];
+      const scratch = buf.getNullCell();
       for (let i = 0; i < buf.length; i++) {
         const line = buf.getLine(i);
         lines.push(line?.translateToString(true) ?? '');
         let bright = '';
+        // One cell object is refilled for every column: no allocation per cell.
         for (let x = 0; line && x < line.length; x++) {
-          const cell = line.getCell(x);
+          const cell = line.getCell(x, scratch);
           // A wide character's second cell has width 0 and no text: nothing to add for it.
           if (!cell || cell.getWidth() === 0) continue;
           const chars = cell.getChars() || ' ';

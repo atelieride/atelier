@@ -742,7 +742,7 @@ export class TerminalHub {
       if (!o.success) return;
       // Typed while this window's attach is still on its way (the terminal is on screen, its screen not yet): held
       // and sent once attached, never dropped (it was: a lost first keystroke right after opening a terminal).
-      if (o.data.pressed || typesSomething(o.data.data)) this.windowInputAt.set(o.data.id, Date.now());
+      if ((o.data.pressed || typesSomething(o.data.data)) && this.terminals.some((t) => t.id === o.data.id)) this.windowInputAt.set(o.data.id, Date.now());
       if (!this.attachments.has(wcId, o.data.id)) { this.attachments.hold(wcId, o.data.id, o.data.data); return; }
       // A key pressed in a window (the renderer tells), or anything typing there (dictation, a drop…), takes the size
       // back from a phone; never from another window: there only a resize does. The terminal's own answers to its
