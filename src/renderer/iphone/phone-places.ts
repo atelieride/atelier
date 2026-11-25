@@ -1,12 +1,12 @@
 // A paired phone's changes to this project's workspaces and activities, applied by its main window as its own menus
-// and drags would: New Workspace (turning workspaces on first, as the switch does), New Activity (turning activities
-// on first, as View › Activities Inside Workspaces does: one setting for every project), a rename, a row dragged onto
-// a place, Close Workspace… or Close Activity… answered (the phone's user was asked there; unsaved files that close
-// would take are refused, never asked about here). Quietly, like a session the phone starts in a place: nothing comes
-// to the front, no name opens for editing, no toast. Main sends a change once the window is ready (as for its first
+// and drags would: New Workspace (only where workspaces are on), New Activity (only while activities are on: one
+// setting for every project), a rename, a row dragged onto a place, Close Workspace… or Close Activity… answered (the
+// phone's user was asked there; unsaved files that close would take are refused, never asked about here). A phone never
+// turns a feature on: only this computer does. Quietly, like a session the phone starts in a place: nothing comes to
+// the front, no name opens for editing, no toast. Main sends a change once the window is ready (as for its first
 // session list); each answer carries the sidebar's arrangement right after it, so the phone's next layout shows the
 // change.
-import type { RemoteLayout, RemotePlaceOp, RemotePlaceRequest, RemotePlaceResult } from '@shared/remote';
+import { ACTIVITIES_OFF, WORKSPACES_OFF, type RemoteLayout, type RemotePlaceOp, type RemotePlaceRequest, type RemotePlaceResult } from '@shared/remote';
 import { unsavedOnPlaceClose, useApp } from '../store';
 import { resumablesFor } from '../selectors';
 import { t } from '../i18n/en';
@@ -15,9 +15,6 @@ import {
   type WorkspacesState
 } from '../workspaces';
 import { layoutOf } from './layout-sync';
-
-/** Settings' answer reaches this window's store as main's event: waited for this long at most. */
-const SETTINGS_WAIT_MS = 3000;
 
 const notFound = (message: string): RemotePlaceResult => ({ ok: false, code: 'not-found', message });
 const invalid = (message: string): RemotePlaceResult => ({ ok: false, code: 'invalid', message });
@@ -43,35 +40,20 @@ function fitName(name: string): string {
   return out;
 }
 
-/** Waits until the store's settings say so (main's event after a change), for a few seconds at most. */
-function settingsReach(ok: () => boolean): Promise<boolean> {
-  if (ok()) return Promise.resolve(true);
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => { off(); resolve(ok()); }, SETTINGS_WAIT_MS);
-    const off = useApp.subscribe(() => { if (ok()) { clearTimeout(timer); off(); resolve(true); } });
-  });
-}
-
-/** Activities inside workspaces, turned on as the menu's switch does; whether they are on now. */
-async function activitiesOn(): Promise<boolean> {
-  if (useApp.getState().settings.wsActivities) return true;
-  const saved = await window.atelier.settings.set({ wsActivities: true }).catch(() => null);
-  if (!saved?.wsActivities) return false;
-  if (!(await settingsReach(() => useApp.getState().settings.wsActivities))) return false;
-  // What the window does once the setting changes: the activities kept aside come back.
-  useApp.getState().applyWsActivities();
-  return true;
-}
-
 /** Applies one change in this window: how it went. */
 export async function applyPlaceOp(op: RemotePlaceOp): Promise<RemotePlaceResult> {
   const s = useApp.getState();
   if (s.popout || !s.project) return failed('This window is not the project\'s.');
   switch (op.kind) {
     case 'workspace': {
-      if (!s.ws?.on) s.setWorkspacesOn(true);
+      // On in every project, though this window hasn't applied it yet: it just opened, or it shows another space, where
+      // the setting waits for Sessions. Sessions comes forward with them on, as turning workspaces on does.
+      if (!s.ws?.on && s.settings.workspacesEverywhere) {
+        if (s.space !== 'sessions') s.switchSpace('sessions');
+        useApp.getState().applyWorkspacesEverywhere();
+      }
       const cur = useApp.getState();
-      if (!cur.ws?.on) return failed('Workspaces could not be turned on.');
+      if (!cur.ws?.on) return invalid(WORKSPACES_OFF);
       if (workspacesOf(cur.ws).length >= MAX_WORKSPACES) return invalid(`This project has ${MAX_WORKSPACES} workspaces already.`);
       const id = newWorkspaceId();
       const ws = wsCreate(cur.ws, { name: op.name !== undefined ? fitName(op.name) : nextWorkspaceName(cur.ws) }, id);
@@ -80,16 +62,15 @@ export async function applyPlaceOp(op: RemotePlaceOp): Promise<RemotePlaceResult
       return { ok: true, place: id };
     }
     case 'activity': {
-      const target = s.ws?.on ? s.ws.list.find((w) => w.id === op.workspace) : undefined;
-      if (!target) return notFound('This workspace is not in the project any more.');
+      const cur = s.ws?.on ? s.ws : null;
+      const target = cur?.list.find((w) => w.id === op.workspace);
+      if (!cur || !target) return notFound('This workspace is not in the project any more.');
       if (target.parent !== undefined) return invalid('An activity goes inside a workspace.');
-      if (!(await activitiesOn())) return failed('Activities could not be turned on.');
-      const cur = useApp.getState();
-      if (!cur.ws?.on || !cur.ws.list.some((w) => w.id === op.workspace)) return notFound('This workspace is not in the project any more.');
-      if (activitiesOf(cur.ws, op.workspace).length >= MAX_ACTIVITIES) return invalid(`This workspace has ${MAX_ACTIVITIES} activities already.`);
+      if (!s.settings.wsActivities) return invalid(ACTIVITIES_OFF);
+      if (activitiesOf(cur, op.workspace).length >= MAX_ACTIVITIES) return invalid(`This workspace has ${MAX_ACTIVITIES} activities already.`);
       const id = newWorkspaceId();
       // No name: New Activity's own default ("New activity").
-      const ws = createWsActivity(cur.ws, op.workspace, op.name !== undefined ? fitName(op.name) : t.wsAct.defaultName, id);
+      const ws = createWsActivity(cur, op.workspace, op.name !== undefined ? fitName(op.name) : t.wsAct.defaultName, id);
       if (!ws) return failed('The activity could not be made.');
       useApp.setState({ ws });
       return { ok: true, place: id };

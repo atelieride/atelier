@@ -131,10 +131,10 @@ export type RemoteRowsEvent =
 
 /**
  * A change a paired phone asks of a project's workspaces and activities, which its main window applies as its own
- * menus and drags would: a new workspace (workspaces turned on first when they are off; no name: "Workspace N"), a new
- * activity in a workspace (activities turned on first; no name: "New activity"), a place renamed, a row (a terminal or
- * a session to resume) moved into a place, a place closed (what is in it moves, or stops). Main has checked the names
- * and that the places are this project's.
+ * menus and drags would: a new workspace (only where workspaces are on; no name: "Workspace N"), a new activity in a
+ * workspace (only while activities are on; no name: "New activity"), a place renamed, a row (a terminal or a session
+ * to resume) moved into a place, a place closed (what is in it moves, or stops). Main has checked the names and that
+ * the places are this project's. A phone never turns a feature on: that is only done on this computer.
  */
 export type RemotePlaceOp =
   | { kind: 'workspace'; name?: string }
@@ -142,6 +142,10 @@ export type RemotePlaceOp =
   | { kind: 'rename'; place: string; name: string }
   | { kind: 'move'; id: string; place: string }
   | { kind: 'close'; place: string; how: 'move' | 'stop' };
+
+/** Why a phone's New Workspace or New Activity is refused while that switch is off on this computer. */
+export const WORKSPACES_OFF = 'Workspaces are off in this project. Turn them on in Atelier on this computer.';
+export const ACTIVITIES_OFF = 'Activities are off. Turn them on in Atelier on this computer.';
 
 /** One such change on its way to the window, by the id main gave it (its answer names it). */
 export interface RemotePlaceRequest { id: number; op: RemotePlaceOp }

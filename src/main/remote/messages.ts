@@ -138,6 +138,13 @@ export interface RemoteAccount {
   fiveHour?: { pct: number; resetsAt: number }; sevenDay?: { pct: number; resetsAt: number }; updatedAt?: number;
 }
 
+/**
+ * The switches of Settings that decide what a phone may use: they are turned on and off only on this computer, and a
+ * phone offers New Workspace and New Activity only where they are on. Workspaces are also on in a project whose
+ * layout has them.
+ */
+export interface RemoteFeatures { workspacesEverywhere: boolean; activities: boolean }
+
 export type ErrorCode = 'not-found' | 'invalid' | 'busy' | 'failed';
 export type DeniedReason = 'declined' | 'expired' | 'unknown-device' | 'disabled';
 export type ByeReason = 'revoked' | 'disabled' | 'quitting';
@@ -145,7 +152,7 @@ export type ByeReason = 'revoked' | 'disabled' | 'quitting';
 export type HostMessage =
   | { t: 'welcome'; host: { name: string; platform: string; app: string }; room?: string }
   | { t: 'denied'; reason: DeniedReason }
-  | { t: 'state'; projects: RemoteProject[]; sessions: RemoteSession[]; resumables: RemoteResumable[] }
+  | { t: 'state'; projects: RemoteProject[]; sessions: RemoteSession[]; resumables: RemoteResumable[]; features: RemoteFeatures }
   | { t: 'usage'; accounts: RemoteAccount[] }
   | { t: 'layout'; project: string; layout: RemoteLayout | null }
   | { t: 'snapshot'; id: string; cols: number; rows: number; data: string }

@@ -14,9 +14,8 @@ import { applyPlaceOp, installPhonePlaces, nextWorkspaceName } from './phone-pla
 const g = globalThis as { window?: unknown; localStorage?: unknown };
 let had: unknown;
 let hadStorage: unknown;
-/** What Settings › set was asked, and whether it takes the change (the new settings reach the store as main's event). */
+/** What Settings › set was asked (a phone's change never should). */
 const settingsAsked: Partial<Settings>[] = [];
-let settingsTake = true;
 const done: RemotePlaceDone[] = [];
 let held: RemotePlaceRequest[] = [];
 const listeners = new Set<(r: RemotePlaceRequest) => void>();
@@ -35,7 +34,6 @@ beforeAll(() => {
       settings: {
         set: async (p: Partial<Settings>) => {
           settingsAsked.push(p);
-          if (!settingsTake) return null;
           setTimeout(() => useApp.setState({ settings: { ...useApp.getState().settings, ...p } }), 5);
           return { ...useApp.getState().settings, ...p };
         }
@@ -70,7 +68,6 @@ function twoWorkspaces(): WorkspacesState {
 
 beforeEach(() => {
   settingsAsked.length = 0;
-  settingsTake = true;
   done.length = 0;
   held = [];
   readyAsked = 0;
@@ -95,13 +92,29 @@ describe('the default name', () => {
   });
 });
 
+const WORKSPACES_OFF = 'Workspaces are off in this project. Turn them on in Atelier on this computer.';
+const ACTIVITIES_OFF = 'Activities are off. Turn them on in Atelier on this computer.';
+
 describe('workspace', () => {
-  test('workspaces off: turned on as the switch does (everything in Workspace 1), then a new empty "Workspace 2", left behind the one in front', async () => {
+  test('workspaces off in this project: refused in words, nothing turns on, Settings never asked', async () => {
+    st().setTerminals([term('auth', 1), term('bill', 2)]);
+    expect(await applyPlaceOp({ kind: 'workspace' })).toEqual({ ok: false, code: 'invalid', message: WORKSPACES_OFF });
+    useApp.setState({ ws: { ...twoWorkspaces(), on: false } });
+    expect(await applyPlaceOp({ kind: 'workspace', name: 'Release' })).toEqual({ ok: false, code: 'invalid', message: WORKSPACES_OFF });
+    expect(st().ws!.on).toBe(false);
+    expect(st().ws!.list.map((x) => x.name)).toEqual(['Main', 'Billing', 'SSO']);
+    expect(settingsAsked).toEqual([]);
+  });
+
+  test('on in every project, before the window applied it: on as that setting does (everything in Workspace 1), then a new empty "Workspace 2", left behind the one in front', async () => {
+    useApp.setState({ settings: { ...st().settings, workspacesEverywhere: true } });
     st().setTerminals([term('auth', 1), term('bill', 2)]);
     const r = await applyPlaceOp({ kind: 'workspace' });
     expect(r).toEqual({ ok: true, place: expect.any(String) });
     const ws = st().ws!;
     expect(ws.on).toBe(true);
+    // Set by the setting, as Workspaces in every project does: it goes when that setting does.
+    expect(ws.forced).toBe(true);
     expect(ws.list.map((x) => x.name)).toEqual(['Workspace 1', 'Workspace 2']);
     const [first, made] = ws.list;
     expect(made!.id).toBe(r.ok && r.place);
@@ -112,8 +125,21 @@ describe('workspace', () => {
     expect(st().toast).toBeNull();
   });
 
-  test('named; workspaces kept from when they were on come back first', async () => {
-    useApp.setState({ ws: { ...twoWorkspaces(), on: false } });
+  test('on in every project while the window showed another space (the setting waited for Sessions): Sessions comes forward with them on, then the new one', async () => {
+    st().setTerminals([term('auth', 1)]);
+    st().switchSpace('docker');
+    useApp.setState({ settings: { ...st().settings, workspacesEverywhere: true } });
+    st().applyWorkspacesEverywhere();
+    expect(st().ws?.on ?? false).toBe(false);
+    const r = await applyPlaceOp({ kind: 'workspace', name: 'Release' });
+    expect(r).toEqual({ ok: true, place: expect.any(String) });
+    expect(st().space).toBe('sessions');
+    expect(st().ws!.on).toBe(true);
+    expect(st().ws!.list.map((x) => x.name)).toEqual(['Workspace 1', 'Release']);
+  });
+
+  test('named; on in every project, workspaces kept from when they were on come back first', async () => {
+    useApp.setState({ ws: { ...twoWorkspaces(), on: false }, settings: { ...st().settings, workspacesEverywhere: true } });
     st().setTerminals([term('auth', 1), term('okta', 2), term('bill', 3)]);
     const r = await applyPlaceOp({ kind: 'workspace', name: '  Release  ' });
     expect(r.ok).toBe(true);
@@ -129,20 +155,26 @@ describe('workspace', () => {
 });
 
 describe('activity', () => {
-  test('activities off: turned on as View › Activities Inside Workspaces does (the one setting for every project), then "New activity" in that workspace, folded, not in front', async () => {
+  test('activities off: refused in words, Settings never asked, the activities kept aside stay aside', async () => {
     useApp.setState({ ws: twoWorkspaces() });
     st().setTerminals([term('auth', 1), term('okta', 2), term('bill', 3)]);
     // Off: the window keeps SSO aside, as the setting says.
     st().applyWsActivities();
     expect(st().ws!.list.some((x) => x.parent)).toBe(false);
+    expect(await applyPlaceOp({ kind: 'activity', workspace: 'w2' })).toEqual({ ok: false, code: 'invalid', message: ACTIVITIES_OFF });
+    expect(settingsAsked).toEqual([]);
+    expect(st().settings.wsActivities).toBe(false);
+    expect(st().ws!.list.some((x) => x.parent)).toBe(false);
+  });
+
+  test('activities on: "New activity" in that workspace, folded, not in front', async () => {
+    useApp.setState({ ws: twoWorkspaces(), settings: { ...st().settings, wsActivities: true } });
+    st().setTerminals([term('auth', 1), term('okta', 2), term('bill', 3)]);
     const r = await applyPlaceOp({ kind: 'activity', workspace: 'w2' });
-    expect(settingsAsked).toEqual([{ wsActivities: true }]);
     expect(r).toEqual({ ok: true, place: expect.any(String) });
     const ws = st().ws!;
     const made = ws.list.find((x) => r.ok && x.id === r.place)!;
     expect(made).toMatchObject({ name: 'New activity', parent: 'w2' });
-    // SSO is back in Main, okta in it.
-    expect(ws.list.find((x) => x.id === 'a1')).toMatchObject({ parent: 'w1' });
     expect(memberOf(ws, 'okta')).toBe('a1');
     expect(ws.active).toBe('w1');
     expect(st().wsRenaming).toBeNull();
@@ -156,7 +188,7 @@ describe('activity', () => {
     expect(settingsAsked).toEqual([]);
   });
 
-  test('refused: an activity as the workspace, one that is gone, workspaces off, a full workspace, Settings refusing', async () => {
+  test('refused: an activity as the workspace, one that is gone, workspaces off, a full workspace', async () => {
     useApp.setState({ ws: twoWorkspaces(), settings: { ...st().settings, wsActivities: true } });
     expect(await applyPlaceOp({ kind: 'activity', workspace: 'a1' })).toMatchObject({ ok: false, code: 'invalid' });
     expect(await applyPlaceOp({ kind: 'activity', workspace: 'gone' })).toMatchObject({ ok: false, code: 'not-found' });
@@ -164,9 +196,6 @@ describe('activity', () => {
     expect(await applyPlaceOp({ kind: 'activity', workspace: 'w2' })).toEqual({ ok: false, code: 'invalid', message: 'This workspace has 20 activities already.' });
     useApp.setState({ ws: { ...twoWorkspaces(), on: false } });
     expect(await applyPlaceOp({ kind: 'activity', workspace: 'w1' })).toMatchObject({ ok: false, code: 'not-found' });
-    useApp.setState({ ws: twoWorkspaces(), settings: { ...st().settings, wsActivities: false } });
-    settingsTake = false;
-    expect(await applyPlaceOp({ kind: 'activity', workspace: 'w1' })).toMatchObject({ ok: false, code: 'failed' });
   });
 });
 
@@ -287,7 +316,8 @@ describe('the window\'s plumbing', () => {
   const ready = () => useApp.setState({ settingsLoaded: true, tabsRestored: true, daemon: { ...st().daemon, listed: true } });
 
   test('asks for the changes that waited once it has its settings, saved tabs and atelierd\'s list; applies them in order and answers each with its layout', async () => {
-    useApp.setState({ settingsLoaded: false, tabsRestored: false, daemon: { ...st().daemon, listed: false } });
+    // A window just opened for them, in a project that has workspaces through Workspaces in every project.
+    useApp.setState({ settingsLoaded: false, tabsRestored: false, daemon: { ...st().daemon, listed: false }, settings: { ...st().settings, workspacesEverywhere: true } });
     held = [{ id: 1, op: { kind: 'workspace' } }, { id: 2, op: { kind: 'workspace', name: 'Second' } }];
     const off = installPhonePlaces();
     try {
