@@ -15,6 +15,12 @@ import type { WaitBook } from './rows';
 export const MAX_FOLLOWED = 16;
 
 const UNREADABLE = 'The conversation can\'t be read. Open the terminal.';
+const GONE = 'This session is not on this computer any more.';
+const NOT_CLAUDE = 'This is not a Claude session.';
+
+const codeOf = (e: unknown) => (typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : null);
+/** An error for the log: its code when it has one (fs errors' messages hold paths), else its message. */
+const reasonOf = (e: unknown) => codeOf(e) ?? (e instanceof Error ? e.message : 'error');
 
 export type ConversationRequest = Extract<DeviceMessage, { t: 'follow' | 'unfollow' | 'say' | 'stop' | 'escape' | 'dialog' | 'choose' }>;
 
@@ -30,6 +36,7 @@ export interface ConversationHost {
   answers: AnswerBook;
   /** What the windows show of the phones may have changed (the sessions followed). */
   statusChanged(): void;
+  log(message: string): void;
 }
 
 export interface ConversationTiming {
@@ -48,15 +55,14 @@ interface Followed {
   stop: () => void;
   /** The follow asked last: a transcript that stops reading while followed answers it. */
   rid: number;
-  /** Follows waiting for the newest page. */
+  /** Follows not answered yet, oldest first: each gets the newest page, or why not. */
   asked: number[];
   /**
-   * The key the phone holds, the book's seq its entries are as of, and whether it was told pending; null until the
-   * first page went. A seq counts changes within the book's reading of the session, which this subscription keeps
-   * going: a follow made anew (after an unfollow, or by a phone back) starts from its own page, never from a seq of
-   * before.
+   * The key the phone holds and the book's seq its entries are as of; null until the first page went. A seq counts
+   * changes within the book's reading of the session, which this subscription keeps going: a follow made anew (after
+   * an unfollow, or by a phone back) starts from its own page, never from a seq of before.
    */
-  sent: { key: string; seq: number; pending: boolean } | null;
+  sent: { key: string; seq: number } | null;
   /** The phone was told the transcript can't be read (once, until it reads again). */
   failed: boolean;
   timer: ReturnType<typeof setTimeout> | null;
@@ -90,7 +96,8 @@ export class PhoneConversations {
       case 'unfollow': {
         const rec = this.recs.get(m.id);
         if (!rec) return;
-        this.drop(rec);
+        // The phone stopped it: its follows still waiting need no answer.
+        this.drop(rec, null);
         this.o.host.statusChanged();
         return;
       }
@@ -104,13 +111,17 @@ export class PhoneConversations {
     }
   }
 
-  /** Every terminal list: a followed session no longer in it is followed no more. */
+  /**
+   * Every terminal list: a followed session no longer in it, or no longer a Claude session (Claude exited), is followed
+   * no more. Nothing is sent of it: the phone keeps what it shows, and learns the rest from the session's row.
+   */
   terminalsChanged(list: readonly TerminalInfo[]): void {
     const ids = new Set(list.map((t) => t.id));
     let left = false;
     for (const rec of [...this.recs.values()]) {
-      if (ids.has(rec.id)) continue;
-      this.drop(rec);
+      if (!ids.has(rec.id)) this.drop(rec, { code: 'not-found', message: GONE });
+      else if (!this.o.host.claude(rec.id)) this.drop(rec, { code: 'invalid', message: NOT_CLAUDE });
+      else continue;
       left = true;
     }
     if (left) this.o.host.statusChanged();
@@ -118,21 +129,24 @@ export class PhoneConversations {
 
   dispose(): void {
     this.disposed = true;
-    for (const rec of [...this.recs.values()]) this.drop(rec);
+    for (const rec of [...this.recs.values()]) this.drop(rec, null);
   }
 
   private follow(m: Extract<ConversationRequest, { t: 'follow' }>): void {
     const { rid, id } = m;
     const t = this.o.host.listed(id) ? this.o.host.terminal(id) : undefined;
-    if (!t) { this.error(rid, 'not-found', 'This session is not on this computer any more.'); return; }
-    if (!this.o.host.claude(id)) { this.error(rid, 'invalid', 'This is not a Claude session.'); return; }
+    if (!t) { this.error(rid, 'not-found', GONE); return; }
+    if (!this.o.host.claude(id)) { this.error(rid, 'invalid', NOT_CLAUDE); return; }
     if (m.before !== undefined) {
       // A page older than what the phone shows: read, nothing followed by it.
       const before = m.before;
       this.o.book.read(t).then(
         (snap) => this.sendPage(id, snap, pageOf(snap.entries, before), rid),
         () => this.error(rid, 'failed', UNREADABLE)
-      );
+      ).catch((e: unknown) => {
+        this.o.host.log(`conversations: an older page of terminal ${id} didn't go (${reasonOf(e)})`);
+        this.error(rid, 'failed', UNREADABLE);
+      });
       return;
     }
     let rec = this.recs.get(id);
@@ -156,8 +170,9 @@ export class PhoneConversations {
     rec.timer.unref?.();
   }
 
-  // A send that throws (no message here comes near the channel's limit) must not leave a rejection behind.
-  private run(rec: Followed): void { void this.pump(rec).catch(() => {}); }
+  private run(rec: Followed): void {
+    void this.pump(rec).catch((e: unknown) => this.o.host.log(`conversations: terminal ${rec.id}: ${reasonOf(e)}`));
+  }
 
   /** Reads the conversation and sends what the phone lacks: the newest page to the follows waiting, else the changes. */
   private async pump(rec: Followed): Promise<void> {
@@ -167,18 +182,26 @@ export class PhoneConversations {
       do {
         rec.again = false;
         rec.at = Date.now();
-        const asked = rec.asked.splice(0);
-        // Always the terminal as listed now: the book follows its session by it.
-        const t = this.o.host.terminal(rec.id);
-        if (!t) return;
-        let snap: ConversationSnapshot;
-        try { snap = await this.o.book.read(t); } catch {
-          if (!rec.gone) this.unreadable(rec, asked);
-          continue;
+        // The follows this read answers (those that come during it wait for the next one).
+        const n = rec.asked.length;
+        try {
+          // Always the terminal as listed now: the book follows its session by it.
+          const t = this.o.host.terminal(rec.id);
+          if (!t) { this.drop(rec, { code: 'not-found', message: GONE }); this.o.host.statusChanged(); return; }
+          let snap: ConversationSnapshot;
+          try { snap = await this.o.book.read(t); } catch {
+            if (!rec.gone) this.unreadable(rec, rec.asked.splice(0, n));
+            continue;
+          }
+          if (rec.gone) return;
+          // Waiting until answered: a page that can't go leaves them to be told so.
+          if (n > 0) { this.answer(rec, snap, rec.asked.slice(0, n)); rec.asked.splice(0, n); } else this.changes(rec, snap);
+        } catch (e) {
+          // Never silence for a follow: those this read was for are refused as an unreadable one is.
+          this.o.host.log(`conversations: terminal ${rec.id}: ${reasonOf(e)}`);
+          const asked = rec.asked.splice(0, n);
+          if (asked.length > 0 && !rec.gone) this.unreadable(rec, asked);
         }
-        if (rec.gone) return;
-        if (asked.length > 0) this.answer(rec, snap, asked);
-        else this.changes(rec, snap);
       } while (!rec.gone && (rec.again || rec.asked.length > 0));
     } finally {
       rec.busy = false;
@@ -189,7 +212,7 @@ export class PhoneConversations {
   private answer(rec: Followed, snap: ConversationSnapshot, asked: number[]): void {
     const page = pageOf(snap.entries);
     for (const rid of asked) this.sendPage(rec.id, snap, page, rid);
-    rec.sent = { key: snap.key, seq: snap.seq, pending: snap.pending };
+    rec.sent = { key: snap.key, seq: snap.seq };
     rec.failed = false;
   }
 
@@ -201,34 +224,32 @@ export class PhoneConversations {
     if (snap.key !== sent.key) {
       // Another conversation: its newest page, which replaces everything the phone holds.
       this.sendPage(rec.id, snap, pageOf(snap.entries));
-    } else if (snap.pending) {
-      // The transcript isn't there (moved, not written yet): said once, under the key the phone holds, which keeps
-      // its entries; when it is back, only what changed comes.
-      if (!sent.pending || rec.failed) this.sendPage(rec.id, snap, pageOf([]));
-    } else if (rec.failed) {
+    } else if (rec.failed && !snap.pending) {
       // Read again after the phone was told it can't be: the newest page, and what changed older than it.
       const page = pageOf(snap.entries);
       const first = page.entries[0]?.n ?? Infinity;
       this.sendEntries(rec.id, snap, [...snap.entries.filter((e) => e.n < first && snap.versionOf(e.n) > sent.seq), ...page.entries]);
     } else {
+      // Under the key the phone holds (still pending: nothing, its entries come once the transcript is written).
       this.sendEntries(rec.id, snap, snap.entries.filter((e) => snap.versionOf(e.n) > sent.seq));
     }
-    rec.sent = { key: snap.key, seq: snap.seq, pending: snap.pending };
+    rec.sent = { key: snap.key, seq: snap.seq };
     rec.failed = false;
   }
 
   /**
-   * The transcript can't be read: each follow waiting is told. A session followed already stays followed and is told
-   * once (answering its follow); one that never got a page isn't followed (a refused follow is never unfollowed).
+   * The transcript can't be read. Follows asking for it are told, and the session isn't followed (a phone never
+   * unfollows a refused follow): every follow still waiting is told too. A session only followed, no follow asking,
+   * stays followed and is told once, answering its last follow; its entries come again once it reads.
    */
   private unreadable(rec: Followed, asked: number[]): void {
     for (const rid of asked) this.error(rid, 'failed', UNREADABLE);
-    if (!rec.sent) {
-      this.drop(rec);
+    if (asked.length > 0) {
+      this.drop(rec, { code: 'failed', message: UNREADABLE });
       this.o.host.statusChanged();
       return;
     }
-    if (!rec.failed && asked.length === 0) this.error(rec.rid, 'failed', UNREADABLE);
+    if (!rec.failed) this.error(rec.rid, 'failed', UNREADABLE);
     rec.failed = true;
   }
 
@@ -253,7 +274,10 @@ export class PhoneConversations {
     if (!this.disposed) this.o.send(m);
   }
 
-  private drop(rec: Followed): void {
+  /** Followed no more; the follows still waiting are told why (none when the phone stopped it or is gone). */
+  private drop(rec: Followed, why: { code: ErrorCode; message: string } | null): void {
+    if (why) for (const rid of rec.asked) this.error(rid, why.code, why.message);
+    rec.asked = [];
     rec.gone = true;
     if (rec.timer) clearTimeout(rec.timer);
     rec.timer = null;

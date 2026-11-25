@@ -2,7 +2,8 @@
 // by code (or QR text) through a relay, connects again as a paired device, and speaks the app messages: attach,
 // type, resize, create, follow a Claude session's conversation, with each terminal's screen and each conversation
 // kept as received. PhoneChannel is the device end of one Noise channel with no transport (the channel's unit tests
-// feed it bytes directly); FakePhone runs it over the test relay with the `ws` package. Used from vitest and Playwright alike (no import.meta).
+// feed it bytes directly); FakePhone runs it over the test relay with the `ws` package. Used from vitest and
+// Playwright alike (no import.meta).
 import WebSocket from 'ws';
 import { deriveCode, normalizeCode, parsePairUrl } from '../../src/main/remote/code';
 import { NoiseHandshake, generateKeyPair, type KeyPair, type NoiseTransport } from '../../src/main/remote/noise';

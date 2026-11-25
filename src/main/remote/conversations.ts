@@ -4,6 +4,7 @@
 // read before, never when Claude only adds to it or completes an entry. Main only reads transcripts: never through a
 // symlink, regular files only (readJsonLines), never written.
 import { createHash } from 'node:crypto';
+import { pageOf } from '@shared/conversation/pages';
 import { ConversationParser } from '@shared/conversation/parse';
 import type { Entry } from '@shared/conversation/types';
 import type { TerminalInfo } from '@shared/protocol';
@@ -70,8 +71,11 @@ interface Follower {
   entries: readonly Entry[];
   /** versions[n - 1]: the seq entry n last changed at. */
   versions: number[];
+  /** No transcript yet: nothing was read under this key. */
   pending: boolean;
   failed: boolean;
+  /** The transcript read before isn't there now (moved, being replaced): what was read stays until it is back. */
+  missing: boolean;
   seq: number;
   /** The key, `pending` and `failed` as of the last change. */
   told: { key: string; pending: boolean; failed: boolean };
@@ -178,7 +182,7 @@ export class ConversationBook {
     let who = this.identities.get(t.id);
     if (!who) { who = { sid: null, base: '', epoch: 0, key: '' }; this.identities.set(t.id, who); }
     const f: Follower = {
-      id: t.id, who, t, file: null, parser: null, cursor: null, entries: [], versions: [], pending: true, failed: false, seq: 0,
+      id: t.id, who, t, file: null, parser: null, cursor: null, entries: [], versions: [], pending: true, failed: false, missing: false, seq: 0,
       told: { key: '', pending: true, failed: false }, subs: new Set(), watched: null, unwatch: null, rewatch: false,
       poll: null, linger: null, reading: false, again: false, runs: 0, waiters: [], gone: false
     };
@@ -224,6 +228,7 @@ export class ConversationBook {
       if (file !== f.file) { f.file = file; f.parser = null; f.cursor = null; }
       if (file === null) {
         f.pending = true;
+        f.missing = false;
       } else {
         let fresh = f.parser === null;
         let parser = f.parser ?? this.parser(f);
@@ -234,6 +239,7 @@ export class ConversationBook {
         f.parser = parser;
         f.cursor = { offset: end.offset, size: end.size, partial: end.partial };
         f.pending = false;
+        f.missing = false;
         changed = fresh ? this.compare(f, parser) : parser.takeChanged();
         // A copy: a later read that fails partway leaves these as they were, for the next one to compare with.
         if (fresh || changed.length > 0) f.entries = parser.entries.slice();
@@ -244,7 +250,9 @@ export class ConversationBook {
       f.parser = null;
       f.cursor = null;
       if (codeOf(e) === 'ENOENT') {
-        f.pending = true;
+        // Not written yet: still pending. Read before and gone now: not pending; what was read stays, under its key,
+        // until the file is back (read from its start, compared) or the session changes.
+        f.missing = !f.pending;
         f.failed = false;
       } else {
         if (!f.failed) this.d.log?.(`conversations: terminal ${f.id}: the transcript can't be read (${reasonOf(e)})`);
@@ -278,18 +286,22 @@ export class ConversationBook {
     f.entries = [];
     f.versions = [];
     f.pending = true;
+    f.missing = false;
   }
 
   /**
    * A transcript read from the start against what was read before: the same conversation when every entry read
    * before has the same kind at its `n` (then the entries that differ, and the new ones, are what changed); else a
-   * new key, every entry new.
+   * new key, every entry new. A conversation told pending under its key whose transcript, once there, holds more than
+   * a page (a resumed session's history) gets a new key too: a phone then starts from its newest page and pages back,
+   * never sent the whole history as changes.
    */
   private compare(f: Follower, parser: ConversationParser): number[] {
     parser.takeChanged();
     const old = f.entries;
     const now = parser.entries;
-    if (old.length > now.length || old.some((e, i) => now[i]!.k !== e.k)) {
+    const history = f.told.pending && f.told.key === f.who.key && pageOf(now).entries.length < now.length;
+    if (history || old.length > now.length || old.some((e, i) => now[i]!.k !== e.k)) {
       const who = f.who;
       who.epoch = who.base === '' ? nextStamp(who.epoch) : who.epoch + 1;
       who.key = conversationKey(f.id, who.base, who.epoch);
@@ -328,7 +340,7 @@ export class ConversationBook {
 
   /** The watch follows the file read last, while someone is subscribed and the file is there. */
   private syncWatch(f: Follower): void {
-    const want = !f.gone && f.subs.size > 0 && !f.pending && !f.failed ? f.file : null;
+    const want = !f.gone && f.subs.size > 0 && !f.pending && !f.failed && !f.missing ? f.file : null;
     if (want === f.watched && !(want !== null && f.rewatch)) return;
     f.rewatch = false;
     const stop = f.unwatch;

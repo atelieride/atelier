@@ -145,6 +145,83 @@ describe('ConversationBook', () => {
     expect(s.watched()).toEqual([s.fileOf(B)]);
   });
 
+  test('a conversation told pending whose transcript comes with more than a page (a resumed history): a new key; read afresh, the key stays', async () => {
+    const s = setup();
+    const history = (n: number) => Array.from({ length: n }, (_, i) => prompt(`Prompt ${i + 1}.`));
+    // Followed while it starts: pending, then its id, then 201 entries at once.
+    const l = heard();
+    s.book.subscribe(s.t('t1', null), l.on);
+    const starting = await s.book.read(s.t('t1', null));
+    expect(starting.pending).toBe(true);
+    writeFileSync(s.fileOf(A), jsonl(...history(201)));
+    const resumed = await s.book.read(s.t('t1', A));
+    expect(resumed).toMatchObject({ pending: false });
+    expect(resumed.key).toMatch(KEY);
+    expect(resumed.key).not.toBe(starting.key);
+    expect(resumed.entries).toHaveLength(201);
+    expect(resumed.entries.every((e) => resumed.versionOf(e.n) === resumed.seq)).toBe(true);
+    // It goes on under that key.
+    appendFileSync(s.fileOf(A), jsonl(reply('Back.')));
+    expect((await s.book.read(s.t('t1', A))).key).toBe(resumed.key);
+
+    // Known by its id while pending, then exactly a page: the same key.
+    const t2 = s.t('t2', B);
+    const before = await s.book.read(t2);
+    writeFileSync(s.fileOf(B), jsonl(...history(200)));
+    expect(await s.book.read(t2)).toMatchObject({ key: before.key, pending: false });
+
+    // Never told pending (a session read for the first time, its file long already): the key of its id.
+    writeFileSync(s.fileOf(C), jsonl(...history(300)));
+    expect((await s.book.read(s.t('t3', C))).key).toBe(conversationKey('t3', C, 0));
+  });
+
+  test('a transcript read and then gone (moved, being replaced) is not pending: what was read stays under its key until it is back', async () => {
+    const s = setup();
+    const t = s.t('t1', A);
+    const file = s.fileOf(A);
+    writeFileSync(file, jsonl(prompt('Here.'), reply('Yes.')));
+    const l = heard();
+    s.book.subscribe(t, l.on);
+    const one = await s.book.read(t);
+    const heardBefore = l.count;
+    expect(s.watched()).toEqual([file]);
+
+    // Gone: the polls find nothing, nobody hears of it, the snapshot is the one read last; no watch on nothing.
+    rmSync(file);
+    await vi.advanceTimersByTimeAsync(4000);
+    const gone = await s.book.read(t);
+    expect(gone).toMatchObject({ key: one.key, pending: false, seq: one.seq });
+    expect(gone.entries).toEqual(one.entries);
+    expect(l.count).toBe(heardBefore);
+    expect(s.watched()).toEqual([]);
+
+    // Back with one more: read from its start and compared, the same key, only the new entry changed; watched again.
+    writeFileSync(file, jsonl(prompt('Here.'), reply('Yes.'), prompt('More.')));
+    let next = l.next();
+    await vi.advanceTimersByTimeAsync(2000);
+    await next;
+    const back = await s.book.read(t);
+    expect(back).toMatchObject({ key: one.key, pending: false });
+    expect([1, 2, 3].map((n) => back.versionOf(n))).toEqual([one.seq, one.seq, back.seq]);
+    expect(s.watched()).toEqual([file]);
+
+    // Gone, then back as a transcript that doesn't continue it: a new key.
+    rmSync(file);
+    await vi.advanceTimersByTimeAsync(2000);
+    writeFileSync(file, jsonl(reply('Another.')));
+    next = l.next();
+    await vi.advanceTimersByTimeAsync(2000);
+    await next;
+    const other = await s.book.read(t);
+    expect(other.key).not.toBe(one.key);
+    expect(other.entries).toEqual([expect.objectContaining({ n: 1, k: 'reply', text: 'Another.' })]);
+
+    // Gone while its session changes: the new session's conversation, pending until written.
+    rmSync(file);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(await s.book.read(s.t('t1', B))).toMatchObject({ key: conversationKey('t1', B, 0), pending: true, entries: [] });
+  });
+
   test('a new session id: a new key and its own entries from 1', async () => {
     const s = setup();
     writeFileSync(s.fileOf(A), jsonl(prompt('In A.'), reply('A replies.'), prompt('A again.')));

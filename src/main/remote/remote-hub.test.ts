@@ -1441,17 +1441,28 @@ describe('following a Claude session\'s conversation', () => {
   const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   /** A hub whose Claude sessions' transcripts are `<dir>/<terminal id>.jsonl`, read every 20 ms. */
-  function conversing(o: { lingerMs?: number } = {}) {
+  function conversing(o: { lingerMs?: number; chatMs?: number } = {}) {
     const dir = mkdtempSync(join(tmpdir(), 'atl-conversation-'));
     const file = (id: string) => join(dir, `${id}.jsonl`);
-    const t = setup({
-      deps: { conversation: { transcriptOf: (x) => (x.session ? file(x.id) : null), home: null, timing: { pollMs: 20, chatMs: 20, ...(o.lingerMs ? { lingerMs: o.lingerMs } : {}) } } }
-    });
+    const timing = { pollMs: 20, chatMs: o.chatMs ?? 20, ...(o.lingerMs ? { lingerMs: o.lingerMs } : {}) };
+    const t = setup({ deps: { conversation: { transcriptOf: (x) => (x.session ? file(x.id) : null), home: null, timing } } });
     return {
       ...t, dir, file,
       write: (id: string, ...lines: unknown[]) => writeFileSync(file(id), jsonl(...lines)),
       append: (id: string, ...lines: unknown[]) => appendFileSync(file(id), jsonl(...lines))
     };
+  }
+  /** Another phone paired with the same computer, after the first. */
+  async function another(t: ReturnType<typeof setup>): Promise<FakePhone> {
+    const start = await t.hub.startPairing();
+    if (!start.ok) throw new Error(start.message);
+    const phone = t.phone();
+    const welcome = phone.pairByCode(start.pairing.code);
+    await until(() => t.pairing.filter((e) => e.kind === 'request').length === 2);
+    const req = t.pairing.filter((e) => e.kind === 'request').at(-1) as Extract<RemotePairingEvent, { kind: 'request' }>;
+    t.hub.decide(req.request.id, true);
+    expect((await welcome).t).toBe('welcome');
+    return phone;
   }
   /** The `chat`s for a session from message `since` on. */
   const chats = (phone: FakePhone, id: string, since = 0) => phone.messages.slice(since).filter((m) => m.t === 'chat' && m.id === id);
@@ -1541,21 +1552,119 @@ describe('following a Claude session\'s conversation', () => {
     expect(phone.conversation('n1').map((e) => [e.n, e.k])).toEqual([[1, 'prompt'], [2, 'reply']]);
   });
 
-  test('a transcript gone from its place is pending under the key the phone holds; back, only what changed comes', async () => {
+  test('a transcript gone from its place keeps what was read, under its key: nothing is sent, a follow meanwhile gets it; back, only what changed comes', async () => {
     const t = conversing();
     t.write('t2', prompt('Hi.'), reply('Hello.'));
     const { phone } = await paired(t);
     const page = await phone.follow('t2');
     const since = phone.messages.length;
     rmSync(t.file('t2'));
-    const pending = await phone.waitFor((m) => m.t === 'chat' && m.id === 't2', { since });
-    expect(pending).toEqual({ t: 'chat', id: 't2', conversation: page.conversation, entries: [], start: true, pending: true });
-    expect(phone.conversation('t2').map((e) => e.n)).toEqual([1, 2]);
+    await pause(150);
+    expect(chats(phone, 't2', since)).toEqual([]);
+    // Followed again while it is gone (the phone's view opened again): the entries read last, under the same key.
+    const again = await phone.follow('t2');
+    expect(again).toMatchObject({ t: 'chat', id: 't2', conversation: page.conversation, start: true });
+    expect(again.pending).toBeUndefined();
+    expect(ns(again)).toEqual([1, 2]);
     const back = phone.messages.length;
     t.write('t2', prompt('Hi.'), reply('Hello.'), prompt('Again.'));
     await until(() => phone.conversation('t2').length === 3);
     expect(chats(phone, 't2', back).every((m) => m.conversation === page.conversation && m.pending === undefined)).toBe(true);
     expect(chats(phone, 't2', back).flatMap(ns)).toEqual([3]);
+  });
+
+  test('a session followed while it starts whose transcript comes with a long history (a resume): its newest page under a new key, never every entry', async () => {
+    const t = conversing();
+    const starting = term('n1', '/work/app', { createdAt: 9 });
+    t.terms.list = [...t.terms.list, starting];
+    t.terms.starting = new Set(['n1']);
+    const { phone } = await paired(t);
+    const page = await phone.follow('n1');
+    expect(page).toMatchObject({ pending: true, start: true });
+    t.terms.starting = new Set();
+    t.terms.set([...t.terms.list.filter((x) => x.id !== 'n1'), { ...starting, session: claude('s-resumed') }]);
+    await pause(60);
+    // Three hundred entries at once.
+    const since = phone.messages.length;
+    writeFileSync(join(t.dir, 'next.jsonl'), jsonl(...Array.from({ length: 300 }, (_, i) => prompt(`Prompt ${i + 1}.`))));
+    renameSync(join(t.dir, 'next.jsonl'), t.file('n1'));
+    const live = await phone.waitFor((m) => m.t === 'chat' && m.id === 'n1', { since });
+    expect(live.conversation).not.toBe(page.conversation);
+    expect([live.rid, live.start, live.pending]).toEqual([undefined, undefined, undefined]);
+    expect(ns(live)).toEqual(Array.from({ length: 200 }, (_, i) => i + 101));
+    await pause(150);
+    expect(chats(phone, 'n1', since)).toHaveLength(1);
+    // The older ones on request, under that key.
+    const older = await phone.follow('n1', 101);
+    expect(older).toMatchObject({ conversation: live.conversation, start: true });
+    expect(ns(older)).toEqual(Array.from({ length: 100 }, (_, i) => i + 1));
+  });
+
+  test('Claude exiting in a followed terminal ends the follow quietly: off the badge, nothing sent, the phone keeps what it shows', async () => {
+    const t = conversing();
+    t.write('t2', prompt('Hi.'), reply('Hello.'));
+    const { phone } = await paired(t);
+    await phone.follow('t2');
+    await until(() => badge(t).includes('t2'));
+    const since = phone.messages.length;
+    // The shell back in front: no Claude session in the terminal any more, none starting.
+    t.terms.set(t.terms.list.map((x) => (x.id === 't2' ? { ...x, session: null } : x)));
+    await until(() => badge(t).length === 0);
+    t.append('t2', reply('Late.'));
+    await pause(150);
+    expect(phone.messages.slice(since).filter((m) => m.t === 'chat' || m.t === 'error')).toEqual([]);
+    expect(phone.conversation('t2').map((e) => e.n)).toEqual([1, 2]);
+    expect(await phone.follow('t2')).toMatchObject({ t: 'error', code: 'invalid', message: 'This is not a Claude session.' });
+  });
+
+  test('changes coalesce: many lines within chatMs go in few messages, nothing lost', async () => {
+    const t = conversing({ chatMs: 200 });
+    t.write('t2', prompt('Hi.'));
+    const { phone } = await paired(t);
+    await phone.follow('t2');
+    const since = phone.messages.length;
+    for (let i = 0; i < 10; i++) {
+      t.append('t2', prompt(`Line ${i}.`));
+      await pause(5);
+    }
+    await until(() => phone.conversation('t2').length === 11);
+    expect(chats(phone, 't2', since).flatMap(ns)).toEqual(Array.from({ length: 10 }, (_, i) => i + 2));
+    expect(chats(phone, 't2', since).length).toBeLessThanOrEqual(3);
+  });
+
+  test('two phones follow one session: each its own pages; one unfollowing leaves the other\'s', async () => {
+    const t = conversing();
+    t.write('t2', prompt('Hi.'));
+    const { phone: one } = await paired(t);
+    const two = await another(t);
+    const [a, b] = [await one.follow('t2'), await two.follow('t2')];
+    expect(b.conversation).toBe(a.conversation);
+    expect([ns(a), ns(b)]).toEqual([[1], [1]]);
+    one.unfollow('t2');
+    expect(await one.follow('gone')).toMatchObject({ t: 'error' });
+    const since = one.messages.length;
+    t.append('t2', reply('Hello.'));
+    await until(() => two.conversation('t2').length === 2);
+    await pause(100);
+    expect(chats(one, 't2', since)).toEqual([]);
+    await until(() => t.statuses.at(-1)!.devices.filter((d) => d.attached.includes('t2')).length === 1);
+  });
+
+  test('a follow refused while the session is followed: answered, and followed no more; every follow waiting is answered', async () => {
+    const t = conversing();
+    t.write('t2', prompt('Hi.'));
+    const { phone } = await paired(t);
+    const page = await phone.follow('t2');
+    await until(() => badge(t).includes('t2'));
+    const since = phone.messages.length;
+    const real = join(t.dir, 'elsewhere.jsonl');
+    writeFileSync(real, jsonl(prompt('Hi.')));
+    symlinkSync(real, join(t.dir, 'swap'));
+    renameSync(join(t.dir, 'swap'), t.file('t2'));
+    await phone.waitFor((m) => m.t === 'error' && m.rid === page.rid, { since });
+    const failed = { t: 'error', rid: expect.any(Number), code: 'failed', message: UNREADABLE };
+    expect(await Promise.all([phone.follow('t2'), phone.follow('t2')])).toEqual([failed, failed]);
+    await until(() => badge(t).length === 0);
   });
 
   test('a phone following a session shows on its badge: status lists it until unfollow or the channel\'s end', async () => {

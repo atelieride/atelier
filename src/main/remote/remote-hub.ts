@@ -228,7 +228,6 @@ interface SessionHost extends ConversationHost {
   /** Opens or closes the project's main window. */
   openWindow(root: string): Promise<RemoteWindowResult>;
   closeWindow(root: string, sessions?: 'keep' | 'stop'): Promise<RemoteWindowResult>;
-  log(message: string): void;
   rows(root: string, e: RemoteRowsEvent): void;
   /** A phone's push registration (null token: unregistered). */
   registerPush(deviceId: string, m: Extract<DeviceMessage, { t: 'push' }>): void;
