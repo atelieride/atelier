@@ -14,11 +14,16 @@ The project folder becomes `/work/hello/nested/…/project`, a home folder `/hom
 The session's transcript, 119 lines, already filtered to `user`, `assistant`, `system`, `queue-operation`,
 `permission-mode`, `agent-name` and the `queued_command` / `plan_mode` attachments.
 
-## `rewind.jsonl`
+## Sessions recorded on their own
 
-Derived by the same script from `transcript.jsonl`: its first 23 lines (four prompts, the fourth interrupted), then
-what Claude Code writes when the person rewinds to the second prompt and types another: a prompt `Only list the
-files.` whose `parentUuid` is line 8 (the first turn's end), and Claude's reply `hello.txt` to it.
+Three more sessions of the same Claude Code 2.1.332, each in a scratch folder of its own (Haiku 5.5, one-line
+prompts), filtered the same way:
+
+| File | Shows |
+|---|---|
+| `rewind.jsonl` | three prompts; a rewind (Esc Esc, the second prompt, Restore conversation) and a new prompt whose `parentUuid` is line 4, the first turn's end, as the prompt it replaces had; then a rewind to the first prompt and a new prompt with `parentUuid: null`, as the first prompt had |
+| `commands.jsonl` | bash mode (`! ls`), `/cost` (it writes nothing), Esc while a reply streams, `/compact`, then `/exit` and `claude --continue`, which appends to the same file; each followed by a prompt whose parent is the line before it in the whole transcript (here, at times, a line filtered out) |
+| `esc-before-reply.jsonl` | a prompt taken back by Esc before any reply (it stays in the file), then another prompt whose `parentUuid` is the same line 4: a branch, as a rewind writes |
 
 ## `screens/`
 

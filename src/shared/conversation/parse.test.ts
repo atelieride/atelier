@@ -7,12 +7,18 @@ type ToolEntry = Extract<Entry, { k: 'tool' }>;
 
 const linesOf = (file: string) => readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>);
 const LINES = linesOf('tests/fixtures/claude-2.1.332/transcript.jsonl');
-/** The 2.1.332 session's first 23 lines, then a rewind to its second prompt: another prompt after the first reply. */
+/** Recorded: three prompts, a rewind to the second (line 12), then a rewind to the first (line 15). */
 const REWIND = linesOf('tests/fixtures/claude-2.1.332/rewind.jsonl');
+/** Recorded: bash mode, /cost, Esc mid-reply, /compact, /exit then --continue, each followed by a prompt. */
+const COMMANDS = linesOf('tests/fixtures/claude-2.1.332/commands.jsonl');
+/** Recorded: a prompt, another taken back by Esc before any reply (line 6), then a third (line 7). */
+const ESC_BEFORE_REPLY = linesOf('tests/fixtures/claude-2.1.332/esc-before-reply.jsonl');
 const ROOT = LINES.find((l) => typeof l.cwd === 'string')!.cwd as string;
 const HOME = '/home/uuuuuuuu';
 const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
 const newParser = () => new ConversationParser({ projectRoot: ROOT, home: HOME });
+/** The first `k` of these lines through one parser (all of them when `k` is absent). */
+const parsed = (lines: readonly unknown[], k = lines.length) => { const p = newParser(); for (const l of lines.slice(0, k)) p.push(l); return p; };
 
 /** The fixture's first `k` lines through one parser (all of them when `k` is absent). */
 function parsedUpTo(k = LINES.length): ConversationParser {
@@ -59,32 +65,80 @@ describe('ConversationParser on the 2.1.332 session', () => {
   });
 
   test('a prompt that goes back before earlier prompts marks the parser forked, at its line and its parent\'s; the 2.1.332 prompts never do', () => {
-    const p = newParser();
-    for (const l of REWIND) p.push(l);
-    expect(p.forked).toEqual({ after: 8, at: 23 });
+    // The recorded rewind to the second prompt: its new prompt (line 12) follows the first turn's end (line 4).
+    const p = parsed(REWIND, 15);
+    expect(p.forked).toEqual({ after: 4, at: 12 });
     // The new prompt and what follows it wait for a rebuild: the entries stay those of the lines before it.
-    expect(p.entries).toEqual(parsedUpTo(23).entries);
-    expect(parsedUpTo(23).forked).toBeNull();
+    expect(p.entries).toEqual(parsed(REWIND, 12).entries);
+    expect(parsed(REWIND, 12).forked).toBeNull();
     expect(parsedUpTo().forked).toBeNull();
-    // A prompt whose parent isn't a line read (a transcript may lack it), or is a line after the last prompt: no fork.
+    // A prompt whose parent isn't a line read (a transcript may lack it), is a line after the last prompt, or that has
+    // no parent field at all: no fork.
     const kept = run({ ...prompt('One.'), uuid: 'u1' }, { ...assistant([{ type: 'text', text: 'Yes.' }]), uuid: 'u2', parentUuid: 'u1' },
-      { ...prompt('Two.'), uuid: 'u3', parentUuid: 'elsewhere' }, { ...prompt('Three.'), uuid: 'u4', parentUuid: 'u3' });
+      { ...prompt('Two.'), uuid: 'u3', parentUuid: 'elsewhere' }, { ...prompt('Three.'), uuid: 'u4', parentUuid: 'u3' }, prompt('Four.'));
     expect(kept.forked).toBeNull();
-    expect(kept.entries).toHaveLength(4);
+    expect(kept.entries).toHaveLength(5);
+  });
+
+  test('a rewind to the first prompt: a prompt with no parent after a prompt forks after line -1', () => {
+    // The recorded rewind to the first prompt (line 15), read without the turns the first rewind left behind.
+    const p = new ConversationParser({ projectRoot: ROOT, home: HOME, skip: [[5, 11]] });
+    for (const l of REWIND) p.push(l);
+    expect(p.forked).toEqual({ after: -1, at: 15 });
+    // The first prompt of a transcript has no parent either: no fork.
+    expect(parsed(REWIND, 2).forked).toBeNull();
   });
 
   test('skipped lines are read as if absent: the rewound branch alone, its prompt no fork', () => {
-    const p = new ConversationParser({ projectRoot: ROOT, home: HOME, skip: [[9, 22]] });
-    for (const l of REWIND) p.push(l);
+    const said = (q: ConversationParser) => q.entries.map((e) => [e.n, e.k, 'text' in e ? e.text : null]);
+    const p = new ConversationParser({ projectRoot: ROOT, home: HOME, skip: [[5, 11]] });
+    for (const l of REWIND.slice(0, 15)) p.push(l);
     expect(p.forked).toBeNull();
-    expect(p.entries.map((e) => [e.n, e.k, 'text' in e ? e.text : e.k === 'tool' ? e.target : null])).toEqual([
-      [1, 'prompt', 'Run ls with the Bash tool. Reply in one short sentence.'], [2, 'tool', 'ls'],
-      [3, 'reply', 'The directory contains one file, `hello.txt`.'], [4, 'prompt', 'Only list the files.'], [5, 'reply', 'hello.txt']
-    ]);
+    expect(said(p)).toEqual([[1, 'prompt', 'Say hi in one word.'], [2, 'reply', 'Ciao.'], [3, 'prompt', 'Name a fruit in one word.'], [4, 'reply', 'Mela.']]);
     // Several ranges, an empty one among them, each ignored on its own.
-    const q = new ConversationParser({ projectRoot: ROOT, home: HOME, skip: [[9, 13], [30, 20], [14, 22]] });
-    for (const l of REWIND) q.push(l);
+    const q = new ConversationParser({ projectRoot: ROOT, home: HOME, skip: [[5, 8], [30, 20], [9, 11]] });
+    for (const l of REWIND.slice(0, 15)) q.push(l);
     expect(q.entries).toEqual(p.entries);
+    // Both rewinds cut: the newest conversation alone.
+    const r = new ConversationParser({ projectRoot: ROOT, home: HOME, skip: [[5, 11], [0, 14]] });
+    for (const l of REWIND) r.push(l);
+    expect(r.forked).toBeNull();
+    expect(said(r)).toEqual([[1, 'prompt', 'Name an animal in one word.'], [2, 'reply', 'Heron']]);
+  });
+
+  test('recorded turns that never branch: bash mode, /cost, Esc mid-reply, /compact, /exit then --continue', () => {
+    const p = parsed(COMMANDS);
+    expect(p.forked).toBeNull();
+    expect(p.entries.filter((e) => e.k === 'prompt').map((e) => (e as { text: string }).text)).toEqual([
+      'Say hi in one word.', '! ls', 'Say ok in one word.', 'Say no in one word.', 'Write the numbers from 1 to 400 separated by spaces, nothing else.',
+      'Write a 500-word story about a lighthouse.', 'Say done in one word.', '/compact', 'Say yes in one word.', 'Say again in one word.'
+    ]);
+  });
+
+  test('a local command\'s lines are no prompt read before: a prompt that links past them is no rewind', () => {
+    // Claude Code writes a local command (`/model`) as system lines, which the next prompt's branch may leave out.
+    const command = (uuid: string, parentUuid: string, content: string) => ({ type: 'system', subtype: 'local_command', timestamp: T, content, uuid, parentUuid });
+    const p = run(
+      { ...prompt('One.'), uuid: 'u1', parentUuid: null }, { ...assistant([{ type: 'text', text: 'Yes.' }]), uuid: 'u2', parentUuid: 'u1' },
+      command('u3', 'u2', '<command-name>/model</command-name><command-args></command-args>'), command('u4', 'u3', '<local-command-stdout>Kept model</local-command-stdout>'),
+      { ...prompt('Two.'), uuid: 'u5', parentUuid: 'u2' }
+    );
+    expect(p.forked).toBeNull();
+    expect(p.entries.map((e) => (e as { text: string }).text)).toEqual(['One.', 'Yes.', '/model', 'Two.']);
+    // A local command that goes back is a rewind like any prompt.
+    const q = run(...[{ ...prompt('One.'), uuid: 'u1', parentUuid: null }, { ...assistant([{ type: 'text', text: 'Yes.' }]), uuid: 'u2', parentUuid: 'u1' },
+      { ...prompt('Two.'), uuid: 'u3', parentUuid: 'u2' }, command('u4', 'u2', '<command-name>/model</command-name><command-args></command-args>')]);
+    expect(q.forked).toEqual({ after: 1, at: 3 });
+  });
+
+  test('Esc before the reply writes a branch: the prompt it took back, then another prompt after the same line', () => {
+    // Claude Code drops the prompt it put back in the input from the conversation: the next prompt is its sibling.
+    expect(parsed(ESC_BEFORE_REPLY, 7).entries.at(-1)).toMatchObject({ k: 'prompt', text: 'Say maybe in one word.' });
+    const p = parsed(ESC_BEFORE_REPLY);
+    expect(p.forked).toEqual({ after: 4, at: 7 });
+    const q = new ConversationParser({ projectRoot: ROOT, home: HOME, skip: [[5, 6]] });
+    for (const l of ESC_BEFORE_REPLY) q.push(l);
+    expect(q.entries.map((e) => (e as { text: string }).text)).toEqual(['Say hi in one word.', 'Hi', 'Say sure in one word.', 'Sure']);
   });
 
   test('the whole session: a background Bash, a plan approved, a mid-turn prompt, a cut-short reply', () => {

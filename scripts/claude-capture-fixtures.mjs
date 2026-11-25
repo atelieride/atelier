@@ -6,7 +6,8 @@
 //
 // The recording folder holds one folder per scenario (`02-bash/01-dialog.lines.txt`, `….snapshot.ans`) and
 // `session/transcript.jsonl`. A scenario recorded in a folder of its own, where nothing was sent (so no transcript
-// names it), names that folder in its `project.txt`. Nothing here names a person, account or folder of the machine
+// names it), names that folder in its `project.txt`; a session recorded on its own keeps its transcript in its
+// scenario folder (TRANSCRIPTS). Nothing here names a person, account or folder of the machine
 // that made the recording: the rewrites are generic patterns, and `check` refuses what is left.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -127,28 +128,14 @@ export function check(text, root) {
 }
 
 /**
- * `rewind.jsonl`, from the sanitised transcript: the session up to its fourth prompt's interrupt (lines 0…22), then
- * what Claude Code writes when the person rewinds to the second prompt and types another one: a prompt whose parent is
- * the line the second prompt followed (line 8, the first turn's end), then Claude's reply to it. Both are shaped as
- * the recorded lines they stand for (line 9, the prompt they replace; line 7, a reply), with ids of their own.
+ * Fixture name <- the filtered transcript of a session recorded on its own (`<scenario>/transcript.jsonl`), in a
+ * folder of its own: sanitised with that folder.
  */
-export function rewindOf(transcript) {
-  const lines = transcript.split('\n').filter(Boolean);
-  const kept = lines.slice(0, 23);
-  const [back, replaced, answer, next] = [8, 9, 7, 23].map((i) => JSON.parse(lines[i]));
-  const id = (n) => `5e7e0000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-  const at = Date.parse(next.timestamp);
-  const prompt = {
-    ...replaced, parentUuid: back.uuid, promptId: id(1), turnPromptId: id(1), uuid: id(2),
-    message: { role: 'user', content: 'Only list the files.' }, timestamp: new Date(at).toISOString(),
-  };
-  const reply = {
-    ...answer, parentUuid: prompt.uuid, requestId: 'req_rewind', requestRef: id(3), uuid: id(4),
-    message: { ...answer.message, id: 'msg_rewind', content: [{ type: 'text', text: 'hello.txt' }] },
-    timestamp: new Date(at + 2000).toISOString(),
-  };
-  return [...kept, JSON.stringify(prompt), JSON.stringify(reply)].map((l) => `${l}\n`).join('');
-}
+export const TRANSCRIPTS = {
+  'rewind.jsonl': '12-rewind/transcript.jsonl',
+  'commands.jsonl': '13-commands/transcript.jsonl',
+  'esc-before-reply.jsonl': '14-esc-before-reply/transcript.jsonl',
+};
 
 /** The folder the session ran in: the first `cwd` of the transcript. */
 function projectOf(transcript) {
@@ -169,9 +156,11 @@ function generate(recording, target, root) {
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, text);
   };
-  const sanitised = sanitize(transcript, { project });
-  write('transcript.jsonl', sanitised);
-  write('rewind.jsonl', rewindOf(sanitised));
+  write('transcript.jsonl', sanitize(transcript, { project }));
+  for (const [name, source] of Object.entries(TRANSCRIPTS)) {
+    const own = readFileSync(join(recording, source), 'utf8');
+    write(name, sanitize(own, { project: projectOf(own) }));
+  }
   /** The folder a scenario's captures were made in: its own when it names one, else the session's. */
   const projectFor = (source) => {
     const own = join(recording, source.split('/')[0], 'project.txt');

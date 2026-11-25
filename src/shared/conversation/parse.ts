@@ -3,8 +3,9 @@
 // Code calls the line format internal: whatever isn't recognised is skipped. Pure; the caller keeps the cursor.
 //
 // A rewind (the person going back to an earlier prompt) appends a prompt whose parent is a line from before prompts
-// already read: the parser stops there (`forked`), and the caller reads the file again without the turns it left
-// (`skip`). Lines are never walked by their parents, which a transcript may lack.
+// already read, or no parent at all when it went back to the first one: the parser stops there (`forked`), and the
+// caller reads the file again without the turns it left (`skip`). So does Esc before any reply, which takes the prompt
+// back: the next prompt is its sibling. Lines are never walked by their parents, which a transcript may lack.
 import { clean, commandParts, itemText, short, taskCreated, taskUpdate, tasksOf, todoItems, withoutAgentMeta, type ChatState } from '../companion/chat';
 import { oneLine } from '../companion/text';
 import { toolCall, toolDone, waitTargetOf, contentText } from './tools';
@@ -32,7 +33,10 @@ export interface ParserOptions {
   skip?: readonly (readonly [number, number])[];
 }
 
-/** A rewind: `at`, the line of the prompt that went back; `after`, its parent's line, which earlier prompts came after. */
+/**
+ * A rewind: `at`, the line of the prompt that went back; `after`, its parent's line, which earlier prompts came after
+ * (-1: no parent, back to the start).
+ */
 export interface Fork { after: number; at: number }
 
 /** The text between `<tag>` and `</tag>` (the first pair), or null. */
@@ -89,10 +93,14 @@ export class ConversationParser {
   private readonly creating = new Set<string>();
   /** The task list TaskCreate and TaskUpdate keep, in the shape the Ask companion's helpers update. */
   private readonly chat: ChatState = { prompts: 0, tools: {} };
-  /** The next line's ordinal; the line being read, and its parent's uuid. */
+  /**
+   * The next line's ordinal; the line being read, its parent's uuid (null: none, as a conversation's first line;
+   * undefined: no parent field), and whether it is a user line or a queued prompt (not a local command's).
+   */
   private count = 0;
   private line = -1;
-  private parent: string | null = null;
+  private parent: string | null | undefined;
+  private typedLine = false;
   /** The line of each uuid read, and of the last prompt. */
   private readonly lines = new Map<string, number>();
   private lastPrompt = -1;
@@ -123,7 +131,8 @@ export class ConversationParser {
     if (this.fork || this.o.skip?.some(([a, b]) => i >= a && i <= b)) return;
     if (!isObj(line) || line.isSidechain === true) return;
     this.line = i;
-    this.parent = str(line.parentUuid);
+    this.parent = line.parentUuid === null ? null : str(line.parentUuid) ?? undefined;
+    this.typedLine = line.type === 'user' || line.type === 'attachment';
     this.read(line);
     const uuid = str(line.uuid);
     if (uuid) this.lines.set(uuid, i);
@@ -253,10 +262,12 @@ export class ConversationParser {
   private prompt(raw: string, at: number | null): void {
     const text = clean(raw, CAPS.prompt);
     if (!text) return;
-    // Its parent read before the last prompt: the person went back. A prompt's parent is otherwise the line before it.
-    const after = this.parent === null ? undefined : this.lines.get(this.parent);
+    // Its parent read before the last prompt, or a typed prompt with none after one (back to the start): the person
+    // went back. A prompt's parent is otherwise the line before it.
+    const after = this.parent === null ? (this.typedLine ? -1 : undefined) : this.parent === undefined ? undefined : this.lines.get(this.parent);
     if (after !== undefined && after < this.lastPrompt) { this.fork = { after, at: this.line }; return; }
-    this.lastPrompt = this.line;
+    // A local command's lines (system) may sit off the branch the next prompt links to: never a prompt read before it.
+    if (this.typedLine) this.lastPrompt = this.line;
     this.add({ k: 'prompt', at, text });
   }
 
