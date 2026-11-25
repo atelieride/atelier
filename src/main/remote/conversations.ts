@@ -41,29 +41,40 @@ export function conversationKey(terminalId: string, sessionId: string, epoch: nu
 
 interface Waiter { want: number; resolve(s: ConversationSnapshot): void; reject(e: unknown): void }
 
-interface Follower {
-  readonly id: string;
-  /** The terminal as last heard of: from the list, a read or a subscribe. */
-  t: TerminalInfo;
+/**
+ * What a terminal's conversation is keyed by. It outlives the terminal's followers (a phone back after a minute away
+ * finds the key it holds) and goes with the terminal.
+ */
+interface Identity {
   /** The session id read last ('' while the terminal has none); null before the first read. */
   sid: string | null;
-  /** What the key is made of: a session id ('' for a conversation that started with none) and an epoch. */
+  /** A session id ('' for a conversation that started with none) and an epoch. */
   base: string;
   epoch: number;
   key: string;
+}
+
+interface Follower {
+  readonly id: string;
+  readonly who: Identity;
+  /** The terminal as last heard of: from the list, a read or a subscribe. */
+  t: TerminalInfo;
   file: string | null;
   /** Null: the next read starts from the start with a fresh parser, compared with `entries`. */
   parser: ConversationParser | null;
   cursor: LineCursor | null;
-  /** The entries the last read gave, kept while the file is missing or unreadable to compare the next read with. */
+  /**
+   * The entries as of the last read that ended well, never changed in place: kept while the file is missing or
+   * unreadable, to compare the next read with.
+   */
   entries: readonly Entry[];
   /** versions[n - 1]: the seq entry n last changed at. */
   versions: number[];
   pending: boolean;
   failed: boolean;
   seq: number;
-  /** The key and `pending` as of the last change. */
-  told: { key: string; pending: boolean };
+  /** The key, `pending` and `failed` as of the last change. */
+  told: { key: string; pending: boolean; failed: boolean };
   subs: Set<{ onChange(): void }>;
   watched: string | null;
   unwatch: (() => void) | null;
@@ -86,9 +97,12 @@ const sameEntry = (a: Entry, b: Entry) => a === b || JSON.stringify(a) === JSON.
  */
 const nextStamp = (last: number) => Math.max(Date.now(), last + 1);
 const codeOf = (e: unknown) => (typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : null);
+/** An error for the log: its code when it has one (fs errors' messages hold paths), else its message. */
+const reasonOf = (e: unknown) => codeOf(e) ?? (e instanceof Error ? e.message : 'error');
 
 export class ConversationBook {
   private readonly followers = new Map<string, Follower>();
+  private readonly identities = new Map<string, Identity>();
   private readonly watch: (file: string, onChange: () => void) => () => void;
   private readonly pollMs: number;
   private readonly lingerMs: number;
@@ -103,9 +117,15 @@ export class ConversationBook {
   /** Every terminal list: news for followed sessions (updatedAt moved), new session ids, terminals gone. */
   terminals(list: readonly TerminalInfo[]): void {
     const byId = new Map(list.map((t) => [t.id, t]));
-    for (const f of [...this.followers.values()]) {
+    for (const id of [...this.identities.keys()]) {
+      if (byId.has(id)) continue;
+      this.identities.delete(id);
+      const f = this.followers.get(id);
+      if (f) this.drop(f);
+    }
+    for (const f of this.followers.values()) {
       const t = byId.get(f.id);
-      if (!t) { this.drop(f); continue; }
+      if (!t) continue;
       const news = (t.session?.sessionId ?? '') !== (f.t.session?.sessionId ?? '') || t.session?.updatedAt !== f.t.session?.updatedAt;
       f.t = t;
       if (news && f.subs.size > 0) this.kick(f);
@@ -149,15 +169,18 @@ export class ConversationBook {
   dispose(): void {
     this.disposed = true;
     for (const f of [...this.followers.values()]) this.drop(f);
+    this.identities.clear();
   }
 
   private follower(t: TerminalInfo): Follower {
     const known = this.followers.get(t.id);
     if (known) { known.t = t; return known; }
+    let who = this.identities.get(t.id);
+    if (!who) { who = { sid: null, base: '', epoch: 0, key: '' }; this.identities.set(t.id, who); }
     const f: Follower = {
-      id: t.id, t, sid: null, base: '', epoch: 0, key: '', file: null, parser: null, cursor: null, entries: [], versions: [],
-      pending: true, failed: false, seq: 0, told: { key: '', pending: true }, subs: new Set(), watched: null, unwatch: null,
-      rewatch: false, poll: null, linger: null, reading: false, again: false, runs: 0, waiters: [], gone: false
+      id: t.id, who, t, file: null, parser: null, cursor: null, entries: [], versions: [], pending: true, failed: false, seq: 0,
+      told: { key: '', pending: true, failed: false }, subs: new Set(), watched: null, unwatch: null, rewatch: false,
+      poll: null, linger: null, reading: false, again: false, runs: 0, waiters: [], gone: false
     };
     this.followers.set(t.id, f);
     return f;
@@ -166,29 +189,35 @@ export class ConversationBook {
   private kick(f: Follower): void {
     if (f.reading) { f.again = true; return; }
     f.reading = true;
-    void this.loop(f);
+    void this.loop(f).catch((e) => this.d.log?.(`conversations: terminal ${f.id}: ${reasonOf(e)}`));
   }
 
   private async loop(f: Follower): Promise<void> {
-    do {
-      f.again = false;
-      const run = ++f.runs;
-      let error: unknown = null;
-      try { await this.readOnce(f); } catch (e) { error = e; }
-      this.syncWatch(f);
-      const ready = f.waiters.filter((w) => w.want <= run);
-      if (ready.length === 0) continue;
-      f.waiters = f.waiters.filter((w) => w.want > run);
-      // Taken now, before another read can start: the snapshot is the state this read left.
-      const snap = error === null ? this.snapshot(f) : null;
-      for (const w of ready) if (snap) w.resolve(snap); else w.reject(error);
-    } while (f.again);
-    f.reading = false;
+    try {
+      do {
+        f.again = false;
+        const run = ++f.runs;
+        let error: unknown = null;
+        try { await this.readOnce(f); } catch (e) { error = e; }
+        this.syncWatch(f);
+        const ready = f.waiters.filter((w) => w.want <= run);
+        if (ready.length === 0) continue;
+        f.waiters = f.waiters.filter((w) => w.want > run);
+        // Taken now, before another read can start: the snapshot is the state this read left.
+        let snap: ConversationSnapshot | null = null;
+        if (error === null) try { snap = this.snapshot(f); } catch (e) { error = e; }
+        for (const w of ready) if (snap) w.resolve(snap); else w.reject(error);
+      } while (f.again);
+    } finally {
+      // Whatever went wrong, the next cue reads again.
+      f.reading = false;
+    }
   }
 
   private async readOnce(f: Follower): Promise<void> {
     this.followSession(f);
     let changed: readonly number[] = [];
+    let failure: ConversationUnreadable | null = null;
     try {
       const file = f.t.session ? this.d.transcriptOf(f.t) : null;
       // Another path (Claude Code moved the file into a worktree's folder): read from the start, compared.
@@ -206,23 +235,26 @@ export class ConversationBook {
         f.cursor = { offset: end.offset, size: end.size, partial: end.partial };
         f.pending = false;
         changed = fresh ? this.compare(f, parser) : parser.takeChanged();
-        f.entries = parser.entries;
+        // A copy: a later read that fails partway leaves these as they were, for the next one to compare with.
+        if (fresh || changed.length > 0) f.entries = parser.entries.slice();
       }
       f.failed = false;
     } catch (e) {
       // The parser goes: the next read starts from the start, compared with the entries read before.
       f.parser = null;
       f.cursor = null;
-      const code = codeOf(e);
-      if (code !== 'ENOENT') {
-        if (!f.failed) this.d.log?.(`conversations: terminal ${f.id}: the transcript can't be read (${code ?? (e instanceof Error ? e.message : 'error')})`);
+      if (codeOf(e) === 'ENOENT') {
+        f.pending = true;
+        f.failed = false;
+      } else {
+        if (!f.failed) this.d.log?.(`conversations: terminal ${f.id}: the transcript can't be read (${reasonOf(e)})`);
         f.failed = true;
-        throw new ConversationUnreadable('The conversation can\'t be read', { cause: e });
+        failure = new ConversationUnreadable('The conversation can\'t be read', { cause: e });
       }
-      f.pending = true;
-      f.failed = false;
     }
+    // Failing and reading again are changes too: a subscriber's read then rejects, or answers once more.
     this.settle(f, changed);
+    if (failure) throw failure;
   }
 
   /**
@@ -231,14 +263,15 @@ export class ConversationBook {
    * of its own, which the first id it gets keeps: that session's entries follow under it.
    */
   private followSession(f: Follower): void {
+    const who = f.who;
     const sid = f.t.session?.sessionId ?? '';
-    if (sid === f.sid) return;
-    const was = f.sid;
-    f.sid = sid;
+    if (sid === who.sid) return;
+    const was = who.sid;
+    who.sid = sid;
     if (was === '' && sid !== '') return;
-    f.base = sid;
-    f.epoch = sid === '' ? nextStamp(f.epoch) : 0;
-    f.key = conversationKey(f.id, f.base, f.epoch);
+    who.base = sid;
+    who.epoch = sid === '' ? nextStamp(who.epoch) : 0;
+    who.key = conversationKey(f.id, who.base, who.epoch);
     f.file = null;
     f.parser = null;
     f.cursor = null;
@@ -257,8 +290,9 @@ export class ConversationBook {
     const old = f.entries;
     const now = parser.entries;
     if (old.length > now.length || old.some((e, i) => now[i]!.k !== e.k)) {
-      f.epoch = f.base === '' ? nextStamp(f.epoch) : f.epoch + 1;
-      f.key = conversationKey(f.id, f.base, f.epoch);
+      const who = f.who;
+      who.epoch = who.base === '' ? nextStamp(who.epoch) : who.epoch + 1;
+      who.key = conversationKey(f.id, who.base, who.epoch);
       return now.map((e) => e.n);
     }
     return now.filter((e, i) => i >= old.length || !sameEntry(e, old[i]!)).map((e) => e.n);
@@ -266,22 +300,23 @@ export class ConversationBook {
 
   /** One change, if this read made one: a new seq for what changed, every subscriber told once. */
   private settle(f: Follower, changed: readonly number[]): void {
-    const keyed = f.key !== f.told.key;
-    if (!keyed && f.pending === f.told.pending && changed.length === 0) return;
+    const { told } = f;
+    const keyed = f.who.key !== told.key;
+    if (!keyed && f.pending === told.pending && f.failed === told.failed && changed.length === 0) return;
     f.seq += 1;
     if (keyed) f.versions = f.entries.map(() => f.seq);
     else for (const n of changed) f.versions[n - 1] = f.seq;
-    f.told = { key: f.key, pending: f.pending };
+    f.told = { key: f.who.key, pending: f.pending, failed: f.failed };
     for (const s of [...f.subs]) {
-      try { s.onChange(); } catch (e) { this.d.log?.(`conversations: a subscriber failed: ${e instanceof Error ? e.message : String(e)}`); }
+      try { s.onChange(); } catch (e) { this.d.log?.(`conversations: a subscriber failed: ${reasonOf(e)}`); }
     }
   }
 
   private snapshot(f: Follower): ConversationSnapshot {
-    const entries = f.pending ? [] : f.entries.slice();
+    const entries = f.pending ? [] : f.entries;
     const versions = f.versions.slice(0, entries.length);
     return {
-      key: f.key, pending: f.pending, entries, seq: f.seq,
+      key: f.who.key, pending: f.pending, entries, seq: f.seq,
       versionOf: (n) => versions[n - 1] ?? 0,
       running: !f.pending && f.parser ? f.parser.running() : []
     };
@@ -296,15 +331,27 @@ export class ConversationBook {
     const want = !f.gone && f.subs.size > 0 && !f.pending && !f.failed ? f.file : null;
     if (want === f.watched && !(want !== null && f.rewatch)) return;
     f.rewatch = false;
-    f.unwatch?.();
+    const stop = f.unwatch;
     f.unwatch = null;
     f.watched = want;
-    if (want !== null) f.unwatch = this.watch(want, () => { if (!f.gone && f.watched === want) this.kick(f); });
+    // A watch that fails leaves the poll to follow the file.
+    try { stop?.(); } catch (e) { this.d.log?.(`conversations: terminal ${f.id}: a file watch didn't stop (${reasonOf(e)})`); }
+    if (want === null) return;
+    try {
+      f.unwatch = this.watch(want, () => { if (!f.gone && f.watched === want) this.kick(f); });
+    } catch (e) {
+      this.d.log?.(`conversations: terminal ${f.id}: no file watch (${reasonOf(e)})`);
+    }
   }
 
   private startLinger(f: Follower): void {
     this.stopLinger(f);
-    f.linger = setTimeout(() => { if (f.subs.size === 0) this.drop(f); }, this.lingerMs);
+    f.linger = setTimeout(() => {
+      if (f.subs.size > 0) return;
+      // Never dropped halfway through a read: the terminal's next follower shares its identity, one reader at a time.
+      if (f.reading) this.startLinger(f);
+      else this.drop(f);
+    }, this.lingerMs);
   }
 
   private stopLinger(f: Follower): void {

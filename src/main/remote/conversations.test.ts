@@ -2,6 +2,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSyn
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { ConversationParser } from '@shared/conversation/parse';
 import type { TerminalInfo } from '@shared/protocol';
 import { ConversationBook, ConversationUnreadable, conversationKey } from './conversations';
 
@@ -25,8 +26,11 @@ const term = (id: string, root: string, session: string | null, updatedAt = 1): 
   session: session === null ? null : { sessionId: session, state: 'running', title: null, activity: null, contextPct: null, unread: false, updatedAt }
 });
 
-/** A book over a temp folder: each session's transcript at `<dir>/<id>.jsonl` unless `paths` moves it; the watch in memory. */
-function setup() {
+/**
+ * A book over a temp folder: each session's transcript at `<dir>/<id>.jsonl` unless `paths` moves it; the watch in
+ * memory unless `failingWatch`, which throws at every watch.
+ */
+function setup(o: { failingWatch?: boolean } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'conversations-'));
   const paths = new Map<string, string>();
   const fileOf = (session: string) => paths.get(session) ?? join(dir, `${session}.jsonl`);
@@ -36,6 +40,7 @@ function setup() {
   const book = new ConversationBook({
     transcriptOf, home: null, log,
     watch: (file, onChange) => {
+      if (o.failingWatch) throw new Error('no watch here');
       const set = watches.get(file) ?? new Set();
       watches.set(file, set);
       const own = () => onChange();
@@ -234,6 +239,12 @@ describe('ConversationBook', () => {
       expect.objectContaining({ n: 2, k: 'reply', text: 'Elsewhere.' })
     ]);
     expect(s.watched()).toEqual([other]);
+
+    // Emptied: nothing continues it, a new key with no entries.
+    writeFileSync(other, '');
+    const seven = await s.book.read(t);
+    expect(seven).toMatchObject({ pending: false, entries: [] });
+    expect([one.key, four.key, five.key, six.key]).not.toContain(seven.key);
   });
 
   test('news comes from the terminal list, from the file watch and from the poll; subscribers hear each change once', async () => {
@@ -370,5 +381,118 @@ describe('ConversationBook', () => {
     expect(s.transcriptOf.mock.calls.length).toBe(reads);
     expect(l.count).toBe(0);
     expect((await s.book.read(t)).seq).toBe(1);
+
+    // Disposed: reads refused, a subscription inert.
+    s.book.dispose();
+    await expect(s.book.read(t)).rejects.toThrow('closed');
+    s.book.subscribe(t, l.on);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(s.watched()).toEqual([]);
+    expect(l.count).toBe(0);
+  });
+
+  test('what keys a conversation outlives its follower and goes with its terminal', async () => {
+    const s = setup();
+    // A conversation that started while followed: pending, then its id and its entries, under one key.
+    const starting = await s.book.read(s.t('t1', null));
+    const off = s.book.subscribe(s.t('t1', null), () => {});
+    writeFileSync(s.fileOf(C), jsonl(prompt('In C.')));
+    expect(await s.book.read(s.t('t1', C))).toMatchObject({ key: starting.key, entries: [{ n: 1, text: 'In C.' }] });
+    // Nobody follows it for a minute: the follower goes (its seq starts over), the key stays.
+    off();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(await s.book.read(s.t('t1', C))).toMatchObject({ seq: 1, key: starting.key, entries: [{ n: 1, text: 'In C.' }] });
+
+    // A conversation whose transcript stopped continuing it keeps its epoch too.
+    writeFileSync(s.fileOf(B), jsonl(prompt('In B.'), reply('B replies.')));
+    await s.book.read(s.t('t2', B));
+    writeFileSync(s.fileOf(B), jsonl(reply('Rewritten.')));
+    const rewritten = await s.book.read(s.t('t2', B));
+    expect(rewritten.key).toBe(conversationKey('t2', B, 1));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(await s.book.read(s.t('t2', B))).toMatchObject({ seq: 1, key: rewritten.key });
+
+    // A terminal gone from the list takes it: the same id later is keyed afresh; the others keep theirs.
+    s.book.terminals([s.t('t2', B)]);
+    expect((await s.book.read(s.t('t1', C))).key).toBe(conversationKey('t1', C, 0));
+    expect((await s.book.read(s.t('t2', B))).key).toBe(rewritten.key);
+  });
+
+  test('a transcript that can\'t be read while followed: subscribers hear it, and again once it can', async () => {
+    const s = setup();
+    const t = s.t('t1', A);
+    const file = s.fileOf(A);
+    const text = jsonl(prompt('Here.'), reply('Yes.'));
+    writeFileSync(file, text);
+    const one = await s.book.read(t);
+    const l = heard();
+    s.book.subscribe(t, l.on);
+    await s.book.read(t);
+    expect(l.count).toBe(0);
+
+    // A symlink in its place: the watch's read fails, subscribers hear it once, and read() says so.
+    const elsewhere = join(s.dir, 'elsewhere.jsonl');
+    writeFileSync(elsewhere, text);
+    rmSync(file);
+    symlinkSync(elsewhere, file);
+    let next = l.next();
+    s.fire(file);
+    await next;
+    expect(l.count).toBe(1);
+    await expect(s.book.read(t)).rejects.toBeInstanceOf(ConversationUnreadable);
+    expect(s.watched()).toEqual([]);
+    // Still unreadable at the next polls: nothing more to hear.
+    await vi.advanceTimersByTimeAsync(4000);
+    await expect(s.book.read(t)).rejects.toBeInstanceOf(ConversationUnreadable);
+    expect(l.count).toBe(1);
+
+    // The same transcript back: the poll finds it, heard once more, its entries as they were.
+    rmSync(file);
+    writeFileSync(file, text);
+    next = l.next();
+    await vi.advanceTimersByTimeAsync(2000);
+    await next;
+    const back = await s.book.read(t);
+    expect(l.count).toBe(2);
+    expect(back).toMatchObject({ key: one.key, pending: false });
+    expect(back.entries).toEqual(one.entries);
+    expect([1, 2].map((n) => back.versionOf(n))).toEqual([one.seq, one.seq]);
+    expect(s.watched()).toEqual([file]);
+  });
+
+  test('a read that fails partway: what it took is read again as a change', async () => {
+    const s = setup();
+    const t = s.t('t1', A);
+    const file = s.fileOf(A);
+    writeFileSync(file, jsonl(prompt('One.'), reply('Two.')));
+    const one = await s.book.read(t);
+    // The parser fails on a line after taking the one before it (as a read error halfway through a file would).
+    const push = ConversationParser.prototype.push;
+    const spy = vi.spyOn(ConversationParser.prototype, 'push').mockImplementation(function (this: ConversationParser, line: unknown) {
+      if ((line as { type?: unknown }).type === 'unknown-kind') throw new Error('cannot parse');
+      push.call(this, line);
+    });
+    appendFileSync(file, jsonl(prompt('Three.'), { type: 'unknown-kind' }));
+    await expect(s.book.read(t)).rejects.toBeInstanceOf(ConversationUnreadable);
+    spy.mockRestore();
+    const back = await s.book.read(t);
+    expect(back.entries.map((e) => [e.n, e.k])).toEqual([[1, 'prompt'], [2, 'reply'], [3, 'prompt']]);
+    expect([1, 2, 3].map((n) => back.versionOf(n))).toEqual([one.seq, one.seq, back.seq]);
+  });
+
+  test('a file watch that fails leaves the poll to follow', async () => {
+    const s = setup({ failingWatch: true });
+    const t = s.t('t1', A);
+    writeFileSync(s.fileOf(A), jsonl(prompt('One.')));
+    await s.book.read(t);
+    const l = heard();
+    expect(() => s.book.subscribe(t, l.on)).not.toThrow();
+    expect((await s.book.read(t)).entries).toHaveLength(1);
+    expect(s.log).toHaveBeenCalledWith(expect.stringContaining('no file watch'));
+    appendFileSync(s.fileOf(A), jsonl(reply('Two.')));
+    const next = l.next();
+    await vi.advanceTimersByTimeAsync(2000);
+    await next;
+    expect((await s.book.read(t)).entries).toHaveLength(2);
   });
 });
