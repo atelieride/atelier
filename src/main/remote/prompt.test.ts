@@ -90,6 +90,33 @@ test('what stands above the dialog\'s top edge is not the dialog\'s', () => {
   expect(allowKey(screen, 'Bash rm -rf build')).toEqual({ ok: true, key: '1' });
 });
 
+test('Claude Code 2.1.332: the command between two dashed rules, below the dialog\'s top edge, four options', () => {
+  // As the full-screen renderer draws it at 120 columns (the transcript above, the dialog at the bottom).
+  const dashed = '╌'.repeat(118);
+  const screen = [
+    '❯ Run touch made-by-bash.txt with the Bash tool.', '  Creating empty file made-by-bash.txt', '  ⎿  $ touch made-by-bash.txt',
+    '─'.repeat(120),
+    ' Bash command', ' Tip: auto mode handles these prompts for you — choose "switch to auto mode" below', ' Create empty file made-by-bash.txt',
+    dashed, ' touch made-by-bash.txt', dashed,
+    ' Do you want to proceed?',
+    ' ❯ 1. Yes',
+    '   2. Yes, and always allow access to /work/projects/acme-store/packages/web/src/generated/very/long/folder/name/that',
+    '      /wraps from this project',
+    '   3. Yes, and switch to auto mode · auto mode handles these prompts for you',
+    '   4. No',
+    ' Esc to cancel · Tab to amend'
+  ];
+  const touch = 'Bash touch made-by-bash.txt';
+  expect(allowKey(screen, touch)).toEqual({ ok: true, key: '1' });
+  expect(denyKey(screen, touch)).toEqual({ ok: true, key: '\x1b' });
+  // Still only for the request the dialog names: the command between the rules.
+  expect(allowKey(screen, 'Bash touch other.txt')).toMatchObject({ ok: false });
+  expect(denyKey(screen, 'Bash touch other.txt')).toMatchObject({ ok: false });
+  // The solid rule stays the dialog's top edge: the transcript's "$ touch made-by-bash.txt" above it doesn't count.
+  const named = screen.map((l) => (l === ' touch made-by-bash.txt' ? ' touch elsewhere.txt' : l));
+  expect(allowKey(named, touch)).toMatchObject({ ok: false });
+});
+
 test('a file\'s permission: the dialog names that file; another one, or a name that only starts the same, is refused', () => {
   const edit = (file: string) => ['Edit file', '╭────────────────────────────╮', `│ src/${file}`, '│  12 -  const retries = 3;', '│  12 +  const retries = 5;', '╰────────────────────────────╯', `Do you want to make this edit to ${file}?`, '❯ 1. Yes', '  2. Yes, allow all edits during this session (shift+tab)', '  3. No, and tell Claude what to do differently (esc)'];
   expect(allowKey(edit('upload.ts'), 'Edit upload.ts')).toEqual({ ok: true, key: '1' });
