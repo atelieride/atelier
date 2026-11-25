@@ -114,6 +114,7 @@ const lineCount = (s: string) => (s.trim() ? s.trimEnd().split('\n').length : 0)
 function failure(content: unknown, result: unknown, line: Obj): { status: ToolStatus; summary: string; detail?: string; feedback?: string } {
   const text = contentText(content).trim();
   const feedback = str(line.userFeedback);
+  if (text.startsWith('[Request interrupted by user')) return { status: 'error', summary: 'Interrupted' };
   if (feedback) return { status: 'error', summary: 'Rejected', feedback: clean(feedback, CAPS.feedback) };
   if (result === 'User rejected tool use' || text.startsWith("The user doesn't want to proceed")) return { status: 'error', summary: 'Interrupted' };
   // The wrapper is cut by hand: a regex over a long run of spaces would take quadratic time.
@@ -130,6 +131,11 @@ export function toolDone(
   if (isError) return failure(content, result, line);
   const r = isObj(result) ? result : {};
   const text = contentText(content);
+  // Esc while the call ran: Claude Code still writes a result, flagged `interrupted`, with the output so far.
+  if (r.interrupted === true) {
+    const partial = [r.stdout, r.stderr].filter((v): v is string => typeof v === 'string' && v.trim() !== '').join('\n');
+    return { status: 'error', summary: 'Interrupted', ...(partial ? { detail: tail(partial) } : {}) };
+  }
   switch (name) {
     case 'Bash': {
       if (typeof r.backgroundTaskId === 'string') return { status: 'ok', summary: 'In background' };

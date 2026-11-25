@@ -101,9 +101,9 @@ function toolLine(name: string, input: Obj, root: string): string {
 }
 
 const statusOf = (v: unknown) => (typeof v === 'string' && /^[A-Za-z_-]{1,24}$/.test(v) ? v : 'unknown');
-const itemText = (s: string) => short(s, TODO_TEXT_MAX);
+export const itemText = (s: string) => short(s, TODO_TEXT_MAX);
 
-function todoItems(v: unknown): { text: string; status: string }[] | null {
+export function todoItems(v: unknown): { text: string; status: string }[] | null {
   if (!Array.isArray(v)) return null;
   return v.filter(isObj).flatMap((t) => { const text = str(t.content); return text ? [{ text: itemText(text), status: statusOf(t.status) }] : []; }).slice(0, TODOS_MAX);
 }
@@ -120,11 +120,11 @@ function questionText(v: unknown): string | null {
 }
 
 const taskIdOf = (v: unknown): string | null => { const s = typeof v === 'number' ? String(v) : typeof v === 'string' ? v.trim() : ''; return /^[\w-]{1,32}$/.test(s) ? s : null; };
-const tasksOf = (st: ChatState) => (st.tasks ??= { items: {}, pending: {} });
+export const tasksOf = (st: ChatState) => (st.tasks ??= { items: {}, pending: {} });
 const taskList = (st: ChatState) => Object.entries(tasksOf(st).items)
   .sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true })).slice(0, TODOS_MAX).map(([, item]) => item);
 
-function taskUpdate(input: Obj, at: number | null, st: ChatState): ChatEntry[] {
+export function taskUpdate(input: Obj, at: number | null, st: ChatState): ChatEntry[] {
   const id = taskIdOf(input.taskId);
   if (!id) return [];
   const t = tasksOf(st);
@@ -185,7 +185,7 @@ function resultText(content: unknown): string {
 }
 
 /** A foreground Agent's result ends with its id and usage for Claude ("agentId: …", "<usage>…</usage>"): not report. */
-function withoutAgentMeta(s: string): string {
+export function withoutAgentMeta(s: string): string {
   const i = s.lastIndexOf('agentId: ');
   if (i < 0 || (i > 0 && s[i - 1] !== '\n')) return s;
   return /^agentId: [\w-]+[^\n]*(?:\n<usage>[^]*<\/usage>)?\s*$/.test(s.slice(i)) ? s.slice(0, i) : s;
@@ -214,7 +214,7 @@ function answerText(c: Obj, result: Obj | null): string | null {
   return short(pairs.length === 1 ? pairs[0]![1] : pairs.map(([q, a]) => `${q} → ${a}`).join(' / '), ANSWER_MAX);
 }
 
-function taskCreated(useId: string, c: Obj, result: Obj | null, at: number | null, st: ChatState): ChatEntry[] {
+export function taskCreated(useId: string, c: Obj, result: Obj | null, at: number | null, st: ChatState): ChatEntry[] {
   const t = tasksOf(st);
   const subject = t.pending[useId];
   delete t.pending[useId];
