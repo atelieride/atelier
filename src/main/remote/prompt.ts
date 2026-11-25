@@ -23,6 +23,11 @@ const NEAR_BOTTOM = 4;
 const PLAIN = /^(Yes|No)$|\((?:esc|[a-z]+(?:\+[a-z]+)+)\)$/;
 /** A row that only draws a line: the dialog's top edge, a frame's or a box's edge. The dialog starts below it. */
 const RULE = /^[─━═╌╍┄┅┈┉╭╮╰╯┌┐└┘┏┓┗┛├┤┬┴\s]*[─━═╌╍┄┅┈┉][─━═╌╍┄┅┈┉╭╮╰╯┌┐└┘┏┓┗┛├┤┬┴\s]*$/;
+/**
+ * A row of dashes only: inside the dialog, around the command or the diff it asks about (Claude Code 2.1 draws the
+ * command between two). Skipped, never its top edge, which is a solid line.
+ */
+const DASHED = /^[╌╍┄┅┈┉\s]*[╌╍┄┅┈┉][╌╍┄┅┈┉\s]*$/;
 /** The transcript's marks (a message, a tool call, its result): above the dialog, never part of it. */
 const TRANSCRIPT = /^[⏺●⎿]/;
 /** At most this many rows above its options are the dialog's. */
@@ -54,6 +59,7 @@ function dialogAtBottom(lines: readonly string[]): Dialog | null {
   const focused = options.find((o) => o.focused);
   const above: string[] = [];
   for (let i = first - 1; i >= 0 && above.length < DIALOG_ROWS; i--) {
+    if (DASHED.test(rows[i]!)) continue;
     if (RULE.test(rows[i]!) || TRANSCRIPT.test(rows[i]!)) break;
     above.unshift(rows[i]!);
   }
