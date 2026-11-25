@@ -151,6 +151,25 @@ test('a field holds the text only from its start, its dim placeholder no text; a
   expect(chooseKeys(readDialog(txt('plan'), 'plan')!, { n: 3, label: 'Tell Claude what to change', text: 'x' })).toEqual({ ok: true, keys: '3', text: 'x' });
 });
 
+test('a list typed in a field, its numbers starting rows, takes no digit: a read with no option under the cursor is answered in the terminal', () => {
+  // Typed as "1. first\n2. second", the list's first item sits on the field's own row: the options read as drawn.
+  const inline = readDialog(edited('plan-field-typed', { 36: '   ❯ 3. 1. first' }, { before: 37, rows: ['        2. second'] }), 'plan')!;
+  expect(inline).toMatchObject({ focused: 3, inField: true });
+  expect(inline.options[2]).toEqual({ n: 3, label: '1. first 2. second', field: true });
+  // Below a first line, or pushed to the next row by a wrap, its numbers start rows and pass for the options.
+  const plan = edited('plan-field-typed', { 36: '   ❯ 3. Changes:' }, { before: 37, rows: ['        1. first', '        2. second'] });
+  const amend = edited('bash-amend-typed', { 37: ' ❯ 4. No, changes:' }, { before: 38, rows: ['      1. first', '      2. second'] });
+  const wrapped = edited('bash-amend-typed', { 37: ' ❯ 4. No, run the checks again in this order, stop at the first one that fails, then tell me what broke and' }, { before: 38, rows: ['      1. first 2. second'] });
+  for (const [screen, wait] of [[plan, 'plan'], [amend, 'permission'], [wrapped, 'permission']] as const) {
+    const d = readDialog(screen, wait)!;
+    expect(d.focused).toBeNull();
+    const first = d.options[0]!;
+    expect(first.label.startsWith('first')).toBe(true);
+    expect(chooseKeys(d, { n: 1, label: first.label })).toMatchObject({ ok: false, code: 'invalid', message: 'Answer in the terminal' });
+    expect(fieldHolds(d, 1, 'first')).toBe(false);
+  }
+});
+
 test('a permission\'s hint row tells an option from its field: "Tab to amend" on an option, "Esc to cancel" alone in the field', () => {
   for (const s of ['bash', 'bash-second', 'bash-on-no', 'edit']) expect(readDialog(txt(s), 'permission'), s).toMatchObject({ inField: false });
   for (const s of ['bash-amend', 'bash-amend-typed']) expect(readDialog(txt(s), 'permission'), s).toMatchObject({ inField: true });

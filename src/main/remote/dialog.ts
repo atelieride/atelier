@@ -19,7 +19,7 @@ export interface ScreenDialog {
   rows: string[];
   /** Always empty for a menu. */
   options: DialogOption[];
-  /** The option the cursor is on, if any. */
+  /** The option the cursor is on, if any (none: answered in the terminal). */
   focused: number | null;
   /** The cursor is in a text field: a digit would be typed into it. */
   inField: boolean;
@@ -276,9 +276,11 @@ const DOWN = '\x1b[B', UP = '\x1b[A';
  * from the cursor to it and Tab, then the text. Refused when the dialog is answered in the terminal (a menu,
  * checkboxes, the cursor already in a field: a digit would be typed there; a field holding text already: the phone's
  * would go after it), or the option isn't the one shown.
+ * A dialog always draws its cursor on an option or in a field: with no option under it, the numbered rows read may be
+ * a list typed in a field (its numbers starting rows), the real options above them, so that is refused too.
  */
 export function chooseKeys(d: ScreenDialog, o: { n: number; label: string; text?: string }): ChooseKeys {
-  if (d.kind === 'menu' || d.several || d.inField) return IN_TERMINAL;
+  if (d.kind === 'menu' || d.several || d.inField || d.focused === null) return IN_TERMINAL;
   const option = d.options.find((x) => x.n === o.n);
   if (!option) return IN_TERMINAL;
   if (option.label !== o.label) return { ok: false, code: 'busy', message: 'The request changed' };
@@ -288,7 +290,6 @@ export function chooseKeys(d: ScreenDialog, o: { n: number; label: string; text?
   }
   if (!o.text) return { ok: true, keys: String(o.n) };
   if (!option.amend) return { ok: false, code: 'invalid', message: 'This option takes no text.' };
-  if (d.focused === null) return IN_TERMINAL;
   const steps = o.n - d.focused;
   return { ok: true, keys: (steps > 0 ? DOWN : UP).repeat(Math.abs(steps)) + '\t', text: o.text };
 }
