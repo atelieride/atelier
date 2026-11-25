@@ -1,0 +1,40 @@
+[?1049h[H[38;2;215;119;87m ▝▝   ▝▝ [2C[38;2;153;153;153m/…/nested/nested/nested/nested/nested/nested/nested/nested/nested-/project
+
+[38;2;255;193;7m⚠[0m [38;2;255;193;7mYour login expires in 2 days[38;2;153;153;153m · run /login to renew
+
+[48;2;55;55;55m❯ [38;2;255;255;255mRun ls with the Bash tool. Reply in one short sentence.[39m                                                               
+[0m
+[2C[38;2;153;153;153mListed [1m1[22m directory 
+
+[38;2;255;255;255m⏺[1C[0mThe[1Cdirectory[1Ccontains[1Cone[1Cfile,[1C[38;2;177;185;249mhello.txt[0m.
+ 
+[38;2;153;153;153m✻[1CBaked for 2s · done 10:03 AM
+
+[48;2;55;55;55m❯ [38;2;255;255;255mRun touch made-by-bash.txt with the Bash tool. Reply in one short sentence.[39m                                           
+[0m
+[2C[38;2;153;153;153mRan [1m1[22m shell command 
+
+[38;2;255;255;255m⏺[1C[0mI[1Ccreated[1Cthe[1Cempty[1Cfile[1C[38;2;177;185;249mmade-by-bash.txt[1C[0min[1Cthe[1Ccurrent[1Cdirectory.
+ 
+[38;2;153;153;153m✻[1CCooked for 2s · done 10:05 AM
+
+[48;2;55;55;55m❯ [38;2;255;255;255mRun touch second.txt with the Bash tool. Reply in one short sentence.[39m                                                 
+[0m
+[38;2;153;153;153m [1C[0mCreating empty file second.txt
+[38;2;153;153;153m  ⎿  $ touch second.txt
+
+[38;2;177;185;249m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[1C[1mBash command
+[1C[39mTip: auto mode handles these prompts for you — choose "switch to auto mode" below
+[1C[38;2;153;153;153;22mCreate empty file second.txt
+[38;2;80;80;80m╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+[1C[0mtouch[1Csecond.txt
+[38;2;80;80;80m╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+[1C[0mDo[1Cyou[1Cwant[1Cto[1Cproceed?
+   [38;2;153;153;153m1. [0mYes
+   [38;2;153;153;153m2. [0mYes, and always allow access to [1m/work/hello/nested/nested/nested/nested/nested/nested/nested/nested/nested/nested
+[6C/nested/nested/nested/nested/nested/nested/nested-/project[0m from this project
+   [38;2;153;153;153m3. [0mYes, and switch to auto mode[38;2;153;153;153m · auto mode handles these prompts for you
+[0m [38;2;177;185;249m❯[1C[38;2;153;153;153m4. [38;2;177;185;249mNo, [39;2mand tell Claude what to do differently
+
+[1C[38;2;153;153;153;22mEsc to cancel[2A[4D[0m[?2004h[?1004h[?1003h[?1006h[?25h

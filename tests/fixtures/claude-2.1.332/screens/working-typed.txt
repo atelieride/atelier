@@ -1,0 +1,40 @@
+
+❯ What is 2+2? One word.                                                                                                
+
+⏺ Four.
+
+✻ Baked for 0s · done 10:12 AM
+
+❯ Run sleep 25 && echo done with the Bash tool. Reply in one short sentence.                                            
+
+  Ran 2 shell commands · 1 failed 
+
+⏺ The foreground run was blocked, so I started sleep 25 && echo done in the background instead, and I'll be notified
+  when it finishes.
+  
+✻ Baked for 5s · done 10:12 AM
+
+❯ What is 3+3? One word.                                                                                                
+
+⏺ Six.
+
+✻ Cogitated for 0s · done 10:12 AM
+
+⏺ Background command "Sleep 25 seconds then print done" completed (exit code 0)
+
+⏺ The background sleep 25 && echo done command finished successfully (exit code 0).
+
+✻ Baked for 1s · done 10:12 AM
+
+❯ Run sleep 12 && echo done with the Bash tool, in the foreground. Reply in one short sentence.                         
+
+  Sleeping 12 seconds then printing done · 5s
+  ⎿  $ sleep 12 && echo done (5s)
+     (ctrl+b to run in background)
+
+✶ Wibbling… (6s · ↓ 89 tokens)
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ What is 3+4? One word.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ manual mode on

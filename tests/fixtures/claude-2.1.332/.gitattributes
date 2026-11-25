@@ -1,0 +1,2 @@
+# Terminal snapshots keep their CRLF row ends byte for byte (the repository otherwise checks out LF).
+*.ans -text

@@ -1,0 +1,40 @@
+ ▝▝   ▝▝   /…/nested/nested/nested/nested/nested/nested/nested/nested/nested-/project
+
+⚠ Your login expires in 2 days · run /login to renew
+
+❯ Run ls with the Bash tool. Reply in one short sentence.                                                               
+
+  Listed 1 directory 
+
+⏺ The directory contains one file, hello.txt.
+ 
+✻ Baked for 2s · done 10:03 AM
+
+❯ Run touch made-by-bash.txt with the Bash tool. Reply in one short sentence.                                           
+
+  Ran 1 shell command 
+
+⏺ I created the empty file made-by-bash.txt in the current directory.
+ 
+✻ Cooked for 2s · done 10:05 AM
+
+❯ Run touch second.txt with the Bash tool. Reply in one short sentence.                                                 
+
+  Creating empty file second.txt
+  ⎿  $ touch second.txt
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Bash command
+ Tip: auto mode handles these prompts for you — choose "switch to auto mode" below
+ Create empty file second.txt
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ touch second.txt
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Do you want to proceed?
+   1. Yes
+   2. Yes, and always allow access to /work/hello/nested/nested/nested/nested/nested/nested/nested/nested/nested/nested
+      /nested/nested/nested/nested/nested/nested/nested-/project from this project
+   3. Yes, and switch to auto mode · auto mode handles these prompts for you
+ ❯ 4. No, and tell Claude what to do differently
+
+ Esc to cancel

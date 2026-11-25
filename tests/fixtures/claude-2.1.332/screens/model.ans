@@ -1,0 +1,40 @@
+[?1049h[H[38;2;153;153;153m  ⎿  $ touch second.txt
+  ⎿  Not run · rejected
+
+[38;2;255;255;255m⏺[1C[0mOk.
+
+[38;2;153;153;153m✻[1CCogitated for 2s · done 10:06 AM
+
+[48;2;55;55;55m❯ [38;2;255;255;255mRun touch third.txt with the Bash tool. Reply in one short sentence.[39m                                                  
+[0m
+  [38;2;153;153;153mDid not run [1m1[22m call 
+  ⎿  $ touch third.txt
+  ⎿  Interrupted · What should Claude do instead?
+
+[48;2;55;55;55m❯ [38;2;255;255;255mIn hello.txt, use the Edit tool to change world to there. Reply in one short sentence.[39m                                
+[0m
+[2C[38;2;153;153;153mRead [1m1[22m file 
+
+[38;2;78;186;101m⏺[1C[39;1mUpdate[0m(hello.txt)
+[38;2;153;153;153m  ⎿  [0mAdded [1m1[0m line, removed[1C[1m1[1C[0mline
+     [38;2;220;90;90;48;2;61;1;0m 1 -[38;2;248;248;242mHello, [48;2;92;2;0mworld[48;2;61;1;0m!                                                                                           [0m
+     [38;2;80;200;80;48;2;2;40;0m 1 +[38;2;248;248;242mHello, [48;2;4;71;0mthere[48;2;2;40;0m!                                                                                           [0m
+[5C[2m 2 [1C[0mThis[1Cfile[1Cis[1Cfor[1Cedit[1Ctests.
+
+[38;2;255;255;255m⏺[1C[0mI[1Cchanged[1C"world"[1Cto[1C"there"[1Cin[1C[38;2;177;185;249mhello.txt[0m,[1Cso[1Cthe[1Cfirst[1Cline[1Cnow[1Creads[1C"Hello,[1Cthere!".
+
+[38;2;153;153;153m✻[1CBaked for 4s · done 10:07 AM
+[38;2;177;185;249m▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+[0m  [38;2;177;185;249;1mSelect model
+[0m  [38;2;153;153;153mYour pick is the default for new sessions. For other models, use --model.
+
+[4C1.  [0mDefault[1C(recommended)[2C[38;2;153;153;153mOpus 5.5 · Best for everyday, complex tasks
+[2C[0m  [38;2;153;153;153m2.  [0mOpus 5.5               [38;2;153;153;153mFor complex work and everyday tasks
+[0m [1C  [38;2;153;153;153m3.  [38;2;215;119;87mFable 5.2[0m              [38;2;153;153;153mFor your toughest challenges
+[2C[38;2;177;185;249m❯[0m [38;2;153;153;153m4.  [38;2;78;186;101mSonnet 5.5[0m [38;2;78;186;101m✔[0m           [38;2;153;153;153mMost efficient for simpler tasks
+[0m    [38;2;153;153;153m5.  [0mHaiku 5.5              [38;2;153;153;153mFastest for quick answers
+[2C[0m  [38;2;153;153;153m▸   [0mMore models            [38;2;153;153;153m 
+
+[0m  [38;2;215;119;87m○[38;2;153;153;153m Low effort ←/→ to adjust
+
+[1C[0m [38;2;153;153;153;3ms to use this session only · Enter to save · Esc to cancel[6A[58D[0m[?2004h[?1004h[?1003h[?1006h[?25l

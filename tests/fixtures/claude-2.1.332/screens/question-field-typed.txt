@@ -1,0 +1,40 @@
+
+⏺ Update(hello.txt)
+  ⎿  Added 1 line, removed 1 line
+      1 -Hello, world!                                                                                           
+      1 +Hello, there!                                                                                           
+      2  This file is for edit tests.
+
+⏺ I changed "world" to "there" in hello.txt, so the first line now reads "Hello, there!".
+
+✻ Baked for 4s · done 10:07 AM
+     
+❯ /model 
+  ⎿  Kept model as Sonnet 5.5
+
+❯ Use the AskUserQuestion tool to ask me one question: my favorite color, options Red, Green, Blue. Then reply in one   
+  short sentence.                                                                                                       
+
+⏺ Answered Claude's questions:
+  ⎿  · What is your favorite color? → Green
+
+⏺ Your favorite color is Green.
+
+✻ Crunched for 2s · done 10:08 AM
+
+❯ Use the AskUserQuestion tool to ask me one question: my favorite fruit, options Apple, Pear. Then reply in one short  
+  sentence.                                                                                                             
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Fruit 
+
+What is your favorite fruit?
+
+  1. Apple
+     Apple
+  2. Pear
+     Pear
+❯ 3. Mango
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · ↑/↓ to navigate · ctrl+g to edit in Vim · Esc to cancel
