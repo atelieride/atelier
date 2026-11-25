@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { allowKey, denyKey, screenLines } from './prompt';
 
 /** What the phone's row showed for the usual dialog's request. */
@@ -115,6 +115,58 @@ test('Claude Code 2.1.332: the command between two dashed rules, below the dialo
   // The solid rule stays the dialog's top edge: the transcript's "$ touch made-by-bash.txt" above it doesn't count.
   const named = screen.map((l) => (l === ' touch made-by-bash.txt' ? ' touch elsewhere.txt' : l));
   expect(allowKey(named, touch)).toMatchObject({ ok: false });
+});
+
+describe('Claude Code 2.1: what stands between the dashed rules is the request itself, never a name for another one', () => {
+  const dashed = '╌'.repeat(118);
+  const top = '─'.repeat(120);
+  const options = [' ❯ 1. Yes', '   2. Yes, and always allow access to src/ from this project', '   3. No', ' Esc to cancel · Tab to amend'];
+  const bash = (command: string[]) => ['⏺ Running it.', top, ' Bash command', ' Run the checks', dashed, ...command.map((c) => ` ${c}`), dashed, ' Do you want to proceed?', ...options];
+
+  test('an edit\'s diff that mentions another file doesn\'t name it: the phone\'s request for that file is refused', () => {
+    // Parallel agents: the phone shows the latest request (README.md), the dialog asks the oldest (CONTRIBUTING.md).
+    const edit = [
+      '⏺ Updating the docs.', top,
+      ' Edit file', ' docs/CONTRIBUTING.md',
+      dashed, ' 12  - Read the guide.', ' 12  + Read README.md first.', dashed,
+      ' Do you want to make this edit to CONTRIBUTING.md?',
+      ' ❯ 1. Yes', '   2. Yes, allow all edits during this session (shift+tab)', '   3. No', ' Esc to cancel · Tab to amend'
+    ];
+    expect(allowKey(edit, 'Edit CONTRIBUTING.md')).toEqual({ ok: true, key: '1' });
+    expect(allowKey(edit, 'Edit README.md')).toMatchObject({ ok: false });
+    expect(denyKey(edit, 'Edit README.md')).toMatchObject({ ok: false });
+  });
+
+  test('a command is every row between the rules: a part of them is another command', () => {
+    expect(allowKey(bash(['npm test', 'rm -rf build']), NPM)).toMatchObject({ ok: false });
+    expect(denyKey(bash(['npm test', 'rm -rf build']), NPM)).toMatchObject({ ok: false });
+    expect(allowKey(bash(['rm -rf build', 'npm test']), NPM)).toMatchObject({ ok: false });
+    // As atelierd names a command of two lines: its whitespace as single spaces.
+    expect(allowKey(bash(['npm test', 'rm -rf build']), 'Bash npm test rm -rf build')).toEqual({ ok: true, key: '1' });
+    // Wrapped at the screen's width, or cut at 60 characters ("…") and matched by its start.
+    const long = 'git commit -m "Retry the upload when the relay drops the socket mid-way through"';
+    const wrapped = bash(['git commit -m "Retry the upload when the relay drops the', 'socket mid-way through"']);
+    expect(allowKey(wrapped, `Bash ${long}`)).toEqual({ ok: true, key: '1' });
+    expect(allowKey(wrapped, `Bash ${long.slice(0, 59)}…`)).toEqual({ ok: true, key: '1' });
+    expect(allowKey(wrapped, 'Bash git commit -m "Retry the download…')).toMatchObject({ ok: false });
+  });
+
+  test('a tool named alone: a word of a command between the rules is not its name', () => {
+    expect(allowKey(bash(['grep -rn Deploy src']), 'Deploy')).toMatchObject({ ok: false });
+    expect(denyKey(bash(['grep -rn Deploy src']), 'Deploy')).toMatchObject({ ok: false });
+  });
+
+  test('one dashed rule alone: a dialog of an unknown shape, refused', () => {
+    const one = ['⏺ Running it.', top, ' Bash command', dashed, ' npm test', ' Do you want to proceed?', ...options];
+    expect(allowKey(one, NPM)).toMatchObject({ ok: false });
+    expect(denyKey(one, NPM)).toMatchObject({ ok: false });
+  });
+
+  test('the solid top edge ends the dialog: a file named only in the transcript above it is not the dialog\'s', () => {
+    const edit = ['Read README.md first.', top, ' Edit file', ' docs/CONTRIBUTING.md', dashed, ' 12  + Hello', dashed, ' Do you want to make this edit to CONTRIBUTING.md?', ...options];
+    expect(allowKey(edit, 'Edit README.md')).toMatchObject({ ok: false });
+    expect(allowKey(edit, 'Edit CONTRIBUTING.md')).toEqual({ ok: true, key: '1' });
+  });
 });
 
 test('a file\'s permission: the dialog names that file; another one, or a name that only starts the same, is refused', () => {
