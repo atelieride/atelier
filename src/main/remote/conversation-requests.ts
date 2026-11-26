@@ -14,8 +14,9 @@ import { waitKind, waitTarget } from '@shared/session-view';
 import { isClaudeProcess } from '@shared/shells';
 import type { AnswerBook } from './answers';
 import type { ConversationBook, ConversationSnapshot } from './conversations';
-import { chooseKeys, fieldHolds, menuToClose, promptHolds, promptState, readDialog, type DialogWait, type ScreenDialog } from './dialog';
+import { chooseKeys, claudeWorking, fieldHolds, menuToClose, promptHolds, promptState, readDialog, type DialogWait, type ScreenDialog } from './dialog';
 import type { DeviceMessage, ErrorCode, HostMessage } from './messages';
+import { shows } from './prompt';
 import type { RemoteTerminals } from './remote-hub';
 import { waitOf, type WaitBook } from './rows';
 
@@ -34,6 +35,7 @@ const GONE = 'This session is not on this computer any more.';
 const NOT_CLAUDE = 'This is not a Claude session.';
 const IN_TERMINAL = 'Answer in the terminal';
 const CHANGED = 'The request changed';
+const ANSWERED = 'This request was answered already';
 const NOT_THROUGH = 'The answer didn\'t go through. Open the terminal.';
 
 type Refusal = { code: ErrorCode; message: string };
@@ -84,6 +86,8 @@ export interface ConversationTiming {
   keyMs: number;
   enterMs: number;
   enterCapMs: number;
+  /** The clock an Enter's wait is measured on (ms): Date.now unless given. */
+  now?: () => number;
 }
 
 /** One followed session: what its phone holds of it, and the reads that send to it. */
@@ -185,11 +189,26 @@ export class PhoneConversations {
     })().catch((e: unknown) => this.o.host.log(`conversations: ${what} in terminal ${id}: ${reasonOf(e)}`));
   }
 
-  /** Terminal `id` as listed now, a Claude session waiting for nothing; else why not. */
+  /** Terminal `id` as listed now, a Claude session waiting for nothing a phone didn't answer; else why not. */
   private free(id: string): TerminalInfo | Refusal {
     const t = this.sessionOf(id);
     if ('code' in t) return t;
-    return waitKind(t.session) ? ANSWER_FIRST : t;
+    return this.waits(t) ? ANSWER_FIRST : t;
+  }
+
+  /**
+   * Whether a phone answered the wait session `t` is in (by its row or in its dialog). After "Yes" no hook comes until
+   * the tool has run, so the session waits under the same ask all that time while Claude works: with no dialog on
+   * screen, that wait is over. One answered on the computer can't be told from one still to answer.
+   */
+  private answered(t: TerminalInfo): boolean {
+    const ask = this.o.host.asks.keyOf(t);
+    return ask !== null && this.o.host.answers.isAnswered(t.id, ask);
+  }
+
+  /** Session `t` waits for an answer no phone gave (a dialog still on screen is checked apart). */
+  private waits(t: TerminalInfo): boolean {
+    return waitKind(t.session) !== null && !this.answered(t);
   }
 
   /**
@@ -221,18 +240,19 @@ export class PhoneConversations {
     if (state === 'typed') return TYPED;
     // One input: within the 16 KiB a prompt may take, the paste needs no chunks.
     type(promptPaste(body).join(''));
-    const pasted = Date.now();
+    const clock = this.o.timing.now ?? Date.now;
+    const pasted = clock();
     await sleep(this.o.timing.enterMs);
     for (;;) {
       const shown = await this.o.terms.screenView(id);
       const t = this.sessionOf(id);
       if ('code' in t) return t;
       if (this.disposed) return NOT_REACHED;
-      if (waitKind(t.session) || readDialog(shown, null)) return MEANWHILE;
+      if (this.waits(t) || readDialog(shown, null)) return MEANWHILE;
       // What a window typed may be in the prompt with the text: Enter would send it too.
       if (this.o.terms.lastWindowInput(id) >= started) return TYPED;
       if (promptHolds(shown, body)) { type('\r'); return null; }
-      if (Date.now() - pasted + this.o.timing.keyMs > this.o.timing.enterCapMs) return NOT_REACHED;
+      if (clock() - pasted + this.o.timing.keyMs > this.o.timing.enterCapMs) return NOT_REACHED;
       await sleep(this.o.timing.keyMs);
     }
   }
@@ -243,9 +263,11 @@ export class PhoneConversations {
   }
 
   /**
-   * Esc while Claude works and nothing on screen asks: it interrupts Claude, as in the terminal. A wait or a dialog
-   * comes first (Esc would decline the request, or close the menu), then whether Claude is working at all, then a
-   * window typing just now (a second Esc after its own would clear its draft or open the rewind menu).
+   * Esc while the screen shows Claude working and nothing asks: it interrupts Claude, as in the terminal. A dialog, or
+   * a wait no phone answered, comes first (Esc would decline the request, or close the menu); then the screen must
+   * offer Esc to interrupt, whatever the hooks say (a late Stop hook leaves an idle prompt, where Esc arms the rewind;
+   * text typed in the prompt takes the hint's place); then a window typing just now (a second Esc after its own would
+   * clear its draft or open the rewind menu).
    */
   private async typeStop(id: string, type: (key: string) => void): Promise<Refusal | null> {
     const view = await this.o.terms.screenView(id);
@@ -253,8 +275,8 @@ export class PhoneConversations {
     if ('code' in t) return t;
     // The phone gone: no key, and nothing is answered.
     if (this.disposed) return NOT_WORKING;
-    if (waitKind(t.session) || readDialog(view, null)) return ANSWER_FIRST;
-    if (t.session?.state !== 'running') return NOT_WORKING;
+    if (this.waits(t) || readDialog(view, null)) return ANSWER_FIRST;
+    if (!claudeWorking(view)) return promptState(view) === 'typed' ? TYPED : NOT_WORKING;
     if (this.typedLately(id)) return TYPED;
     type(ESC);
     return null;
@@ -296,7 +318,8 @@ export class PhoneConversations {
 
   /**
    * The dialog at the bottom of the session's screen, read for the wait the session is in. Its `ask` is the session's
-   * plus the dialog's page (a menu has none); `entry` the one running call it is about, when exactly one fits.
+   * plus the dialog's page (a menu has none); `entry` the one running call it is about, when exactly one fits. None on
+   * screen while a phone's answer to that wait is under way in Claude: answered already.
    */
   private dialog(m: Extract<ConversationRequest, { t: 'dialog' }>): void {
     const { rid, id } = m;
@@ -307,10 +330,14 @@ export class PhoneConversations {
       const t = this.claudeSession(rid, id);
       if (!t) return;
       const d = readDialog(view, waitOf(t.session));
-      if (!d) { this.error(rid, 'invalid', IN_TERMINAL); return; }
+      if (!d) {
+        if (!readDialog(view, null) && this.answered(t)) this.error(rid, 'busy', ANSWERED);
+        else this.error(rid, 'invalid', IN_TERMINAL);
+        return;
+      }
       const wait = d.kind === 'menu' ? null : d.kind;
       const ask = wait ? this.o.host.asks.keyOf(t) : null;
-      const entry = wait ? await this.entryOf(t, wait) : null;
+      const entry = wait ? await this.entryOf(t, wait, d.rows) : null;
       // Named fields only: the reader's own (the cursor, what a field holds as typed) stay on this computer.
       this.send({
         t: 'dialog', rid, id, ...(ask ? { ask: `${ask}.${d.page}` } : {}), kind: d.kind, rows: [...d.rows],
@@ -325,20 +352,23 @@ export class PhoneConversations {
   }
 
   /**
-   * The entry a dialog is about, when exactly one running call fits it: the question, the plan's ExitPlanMode, or the
-   * tool call the permission names. None when the conversation can't be read (or isn't written yet): the dialog goes
-   * without it.
+   * The entry a dialog is about, when exactly one running call fits it: the question, the plan's ExitPlanMode, or for a
+   * permission the call whose request the dialog's own `rows` name (its command, its file), of the tool the session's
+   * hook names. Parallel calls ask in turn and a hook may name another one than the dialog drawn: the rows decide, and
+   * a hook for another tool leaves the dialog without its entry. None too when the conversation can't be read (or
+   * isn't written yet).
    */
-  private async entryOf(t: TerminalInfo, wait: DialogWait): Promise<number | null> {
+  private async entryOf(t: TerminalInfo, wait: DialogWait, rows: readonly string[]): Promise<number | null> {
     let running: ConversationSnapshot['running'];
     try { running = (await this.o.book.read(t)).running; } catch (e) {
       this.o.host.log(`conversations: the dialog of terminal ${t.id} goes without its entry (${reasonOf(e)})`);
       return null;
     }
     const target = waitTarget(t.session?.activity);
+    const tool = target?.split(' ', 1)[0] ?? null;
     const fits = running.filter((r) => (wait === 'question' ? r.k === 'question'
       : wait === 'plan' ? r.k === 'tool' && r.tool === 'ExitPlanMode'
-        : r.k === 'tool' && target !== null && r.waitTarget === target));
+        : r.k === 'tool' && r.tool === tool && shows(rows, r.waitTarget)));
     return fits.length === 1 ? fits[0]!.n : null;
   }
 
@@ -377,9 +407,9 @@ export class PhoneConversations {
    * Types the keys that choose option `n`, each right after a fresh read showing the dialog ready for it: the digit;
    * for a field, the digit, the text once the cursor is in the empty field, Enter once the field holds that text and
    * nothing else; for an amended "No", each arrow once the cursor shows where the last one left it, Tab once it is on
-   * the option, then the text and Enter as for a field. A window typing in the terminal meanwhile, or the phone gone,
-   * stops it too. Null once the last key went; else why not (before any key: the request changed, or it is answered
-   * in the terminal; after one: it didn't go through, and no key follows).
+   * the option, then the text and Enter as for a field. A window typing in the terminal meanwhile or just before, or
+   * the phone gone, stops it too. Null once the last key went; else why not (before any key: the request changed, or
+   * it is answered in the terminal; after one: it didn't go through, and no key follows).
    */
   private async typeChoice(m: Extract<ConversationRequest, { t: 'choose' }>, sessionAsk: string, page: string, type: (key: string) => void): Promise<Refusal | null> {
     const { id, n, label, text } = m;
@@ -398,7 +428,8 @@ export class PhoneConversations {
     const notThrough: Refusal = { code: 'failed', message: NOT_THROUGH };
 
     const shown = await read();
-    if (!shown || shown.page !== page) return { code: 'busy', message: CHANGED };
+    // A key a window typed just before may not be drawn yet: the dialog read may be the one it answered.
+    if (!shown || shown.page !== page || this.typedLately(id)) return { code: 'busy', message: CHANGED };
     const k = chooseKeys(shown, { n, label, ...(text !== undefined ? { text } : {}) });
     if (!k.ok) return { code: k.code, message: k.message };
     if (k.text === undefined) { type(k.keys); return null; }

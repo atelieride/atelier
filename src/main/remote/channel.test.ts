@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import { PhoneChannel, type Msg } from '../../../tests/support/fake-phone';
 import { SecureChannel, type Admission, type ChannelDeps, type PairCode } from './channel';
-import { CLOSE, type DeviceMessage } from './messages';
+import { CLOSE, deviceMessageSchema, type DeviceMessage } from './messages';
 import { generateKeyPair } from './noise';
 import { MAX_FRAGMENT, b64url } from './wire';
 
@@ -385,6 +385,20 @@ describe('messages', () => {
     for (const m of bad) o.send(m);
     expect(o.received).toHaveLength(ok.length);
     expect(o.got.filter((m) => m.t === 'error').map((m) => [m.rid, m.code])).toEqual(bad.map((m) => [m.rid, 'invalid']));
+  });
+
+  test('a choose\'s label far too long is refused before its characters are counted one by one', () => {
+    const ask = 'k'.repeat(22) + '.AbCd_-12';
+    const choose = (label: string) => deviceMessageSchema.safeParse({ t: 'choose', rid: 1, id: 't1', ask, n: 1, label });
+    // 300 characters of two UTF-16 units each still go.
+    expect(choose('😀'.repeat(300)).success).toBe(true);
+    const counted = vi.spyOn(String.prototype as unknown as Record<symbol, () => Iterator<string>>, Symbol.iterator);
+    try {
+      expect(choose('x'.repeat(2 * 1024 * 1024)).success).toBe(false);
+      expect(counted).not.toHaveBeenCalled();
+    } finally {
+      counted.mockRestore();
+    }
   });
 
   test('limits: follow and dialog share 120 a minute; say, stop, escape and choose 30, apart from the row actions', async () => {

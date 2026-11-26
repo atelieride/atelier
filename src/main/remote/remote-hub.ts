@@ -132,9 +132,10 @@ export interface RemoteHubDeps {
   link?: Pick<RelayLinkOptions, 'timing' | 'budget'>;
   /**
    * The conversations phones follow: where a session's transcript is (by default as Claude Code keeps it, in the
-   * session's own account's folder), the home `~` stands for (the user's), and the timings.
+   * session's own account's folder), the home `~` stands for (the user's), and the timings, an Enter's wait measured on
+   * `now` when given.
    */
-  conversation?: Partial<ConversationDeps> & { timing?: { chatMs?: number; keyMs?: number; enterMs?: number; enterCapMs?: number } };
+  conversation?: Partial<ConversationDeps> & { timing?: { chatMs?: number; keyMs?: number; enterMs?: number; enterCapMs?: number; now?: () => number } };
 }
 
 /** State goes out at most this often (coalesced), only when it changed. */
@@ -691,7 +692,8 @@ export class RemoteHub {
       book: this.book,
       conversationTiming: {
         chatMs: c.timing?.chatMs ?? CHAT_TIMING.chatMs, keyMs: c.timing?.keyMs ?? CHAT_TIMING.keyMs,
-        enterMs: c.timing?.enterMs ?? CHAT_TIMING.enterMs, enterCapMs: c.timing?.enterCapMs ?? CHAT_TIMING.enterCapMs
+        enterMs: c.timing?.enterMs ?? CHAT_TIMING.enterMs, enterCapMs: c.timing?.enterCapMs ?? CHAT_TIMING.enterCapMs,
+        ...(c.timing?.now ? { now: c.timing.now } : {})
       },
       rootOf: (pid) => this.computeState().roots.get(pid) ?? null,
       layoutOf: (root) => this.liveLayoutOf(root),

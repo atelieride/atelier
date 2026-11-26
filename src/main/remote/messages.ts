@@ -40,6 +40,11 @@ const bytesAtMost = (max: number) => (s: string) => Buffer.byteLength(s, 'utf8')
 const sayText = z.string().min(1).max(MAX_SAY_BYTES).refine(bytesAtMost(MAX_SAY_BYTES), 'text too large').refine((s) => s.trim().length > 0 && !CONTROL_NOT_LINES.test(s), 'text');
 /** Text for a dialog's field: one line, not blank. */
 const fieldText = z.string().min(1).max(MAX_FIELD_BYTES).refine(bytesAtMost(MAX_FIELD_BYTES), 'text too large').refine((s) => s.trim().length > 0 && !CONTROL.test(s), 'text');
+/**
+ * An option's label as the phone saw it: at most 300 characters (an emoji counts once), so at most 1200 UTF-16 units;
+ * a longer one is refused before its characters are counted one by one.
+ */
+const optionLabel = z.string().min(1).max(1200, { abort: true }).refine((s) => [...s].length <= 300, 'label too long');
 /** A dialog's key: the Session's `ask`, a `.`, and the dialog page's 8 characters. */
 const dialogAsk = z.string().regex(/^[A-Za-z0-9_-]{1,64}\.[A-Za-z0-9_-]{8}$/);
 
@@ -92,7 +97,7 @@ export const deviceMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('stop'), rid, id: terminalId }).strict(),
   z.object({ t: z.literal('escape'), rid, id: terminalId }).strict(),
   z.object({ t: z.literal('dialog'), rid, id: terminalId }).strict(),
-  z.object({ t: z.literal('choose'), rid, id: terminalId, ask: dialogAsk, n: z.number().int().min(1).max(9), label: z.string().min(1).refine((s) => [...s].length <= 300, 'label too long'), text: fieldText.optional() }).strict()
+  z.object({ t: z.literal('choose'), rid, id: terminalId, ask: dialogAsk, n: z.number().int().min(1).max(9), label: optionLabel, text: fieldText.optional() }).strict()
 ]);
 /** Reading a conversation or its dialog (answered `busy` past their shared limit). */
 export const CONVERSATION_READS: ReadonlySet<DeviceMessage['t']> = new Set(['follow', 'dialog']);

@@ -52,6 +52,11 @@ export class AnswerBook {
     if (this.answered.size > REMEMBERED) this.answered.delete(this.answered.keys().next().value!);
   }
 
+  /** Whether a key of an answer to terminal `id`'s wait `ask` went: by the row, or in a page of its dialog. */
+  isAnswered(id: string, ask: string): boolean {
+    return this.answered.get(id)?.ask === ask;
+  }
+
   /** Typing into terminal `id` that answers no wait starts: null, or why it can't (an answer or typing on its way). */
   hold(id: string): string | null {
     if (this.busy.has(id)) return BUSY;

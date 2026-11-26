@@ -257,8 +257,9 @@ export const IGNORED = [
 ];
 
 export const SOURCES: Record<string, Area[]> = {
-  // Ask companion: its pure rules, main's runs and threads, the renderer's state and panel.
-  'src/shared/companion/': ['companion'],
+  // Ask companion: its pure rules (the phones' conversation view reads transcripts with them too), main's runs and
+  // threads, the renderer's state and panel.
+  'src/shared/companion/': ['companion', 'iphone'],
   'src/main/companion/': ['companion'],
   // The transcript's incremental JSONL reader, shared by Ask and the phones' conversation view.
   'src/main/transcript-lines.ts': ['companion', 'iphone'],

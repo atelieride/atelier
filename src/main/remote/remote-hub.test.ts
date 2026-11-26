@@ -94,8 +94,9 @@ class FakeTerminals implements RemoteTerminals {
    * stays (an error: that read fails). Set, they come before `screens`.
    */
   views = new Map<string, (ScreenView | Error)[]>();
-  /** Every screen read ('read') and every key answers pressed, in order. */
+  /** Every screen read ('read') and every key answers pressed, in order; and how many screen reads there were. */
   events: string[] = [];
+  reads = 0;
   /** Called with each key answers press, once it is pressed (what the computer does meanwhile). */
   onKey: ((id: string, key: string) => void) | null = null;
   /** While set, screen reads wait for it (an answer still on its way); `gated` counts the reads that waited. */
@@ -114,6 +115,7 @@ class FakeTerminals implements RemoteTerminals {
   /** The screen a read of terminal `id` finds now (every screen read goes through here). */
   private screenOf(id: string): ScreenView {
     this.events.push('read');
+    this.reads++;
     const next = this.views.get(id);
     if (next?.length) {
       const v = next.length > 1 ? next.shift()! : next[0]!;
@@ -1464,14 +1466,16 @@ const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /**
  * A hub whose Claude sessions' transcripts are `<dir>/<terminal id>.jsonl` (`<session id>.jsonl` with `bySession`, as
  * Claude Code keeps one per session), read every 20 ms; keys typed into a session 5 ms apart, an Enter after a prompt
- * waited for 150 ms at most.
+ * waited for 150 ms at most of a clock that moves 5 ms with each screen read: a slow machine reads no fewer times.
  */
 function conversing(o: { lingerMs?: number; chatMs?: number; bySession?: boolean } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'atl-conversation-'));
   const file = (id: string) => join(dir, `${id}.jsonl`);
-  const timing = { pollMs: 20, chatMs: o.chatMs ?? 20, keyMs: 5, enterMs: 5, enterCapMs: 150, ...(o.lingerMs ? { lingerMs: o.lingerMs } : {}) };
+  let reads = () => 0;
+  const timing = { pollMs: 20, chatMs: o.chatMs ?? 20, keyMs: 5, enterMs: 5, enterCapMs: 150, now: () => reads() * 5, ...(o.lingerMs ? { lingerMs: o.lingerMs } : {}) };
   const transcriptOf = (x: TerminalInfo) => (x.session ? file(o.bySession ? x.session.sessionId : x.id) : null);
   const t = setup({ deps: { conversation: { transcriptOf, home: null, timing } } });
+  reads = () => t.terms.reads;
   return {
     ...t, dir, file,
     write: (id: string, ...lines: unknown[]) => writeFileSync(file(id), jsonl(...lines)),
@@ -1669,16 +1673,14 @@ describe('following a Claude session\'s conversation', () => {
     expect(badge(t)).toContain('t2');
   });
 
-  test('changes coalesce: many lines within chatMs go in few messages, nothing lost', async () => {
+  test('changes coalesce: lines Claude Code writes together go in few messages, nothing lost', async () => {
+    // How changes 5 ms apart wait for chatMs is the conversations' own test, on its clock.
     const t = conversing({ chatMs: 200 });
     t.write('t2', prompt('Hi.'));
     const { phone } = await paired(t);
     await phone.follow('t2');
     const since = phone.messages.length;
-    for (let i = 0; i < 10; i++) {
-      t.append('t2', prompt(`Line ${i}.`));
-      await pause(5);
-    }
+    t.append('t2', ...Array.from({ length: 10 }, (_, i) => prompt(`Line ${i}.`)));
     await until(() => phone.conversation('t2').length === 11);
     expect(chats(phone, 't2', since).flatMap(ns)).toEqual(Array.from({ length: 10 }, (_, i) => i + 2));
     expect(chats(phone, 't2', since).length).toBeLessThanOrEqual(3);
@@ -1983,6 +1985,37 @@ describe('a Claude session\'s dialog, read and answered from a phone', () => {
     expect(await phone.dialog('t1')).toEqual(refused('invalid', 'This is not a Claude session.'));
   });
 
+  test('dialog: the entry is the running call the dialog on screen names, never another one the session\'s hook names; a hook for another tool: no entry', async () => {
+    const t = conversing();
+    const edit = (id: string, file: string) => call(id, '', { name: 'Edit', input: { file_path: `/work/app/${file}`, old_string: 'world', new_string: 'there' } });
+    // Two Edits run at once: the hook names b.ts while Claude Code draws a.ts's dialog first.
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: Edit b.ts'));
+    t.write('t2', prompt('Edit both.'), edit('e1', 'a.ts'), edit('e2', 'b.ts'));
+    const forA = await replaced('edit', 'hello.txt', 'a.ts');
+    const forB = await replaced('edit', 'hello.txt', 'b.ts');
+    await shows(t, 't2', forA);
+    const { phone } = await paired(t);
+    expect(await phone.dialog('t2')).toMatchObject({ kind: 'permission', rows: expect.arrayContaining(['a.ts', 'Do you want to make this edit to a.ts?']), entry: 2 });
+    await shows(t, 't2', forB);
+    expect((await phone.dialog('t2')).entry).toBe(3);
+    // The hook naming a.ts, b.ts's dialog drawn: b.ts's.
+    t.terms.set(withSession(t.terms.list, 't2', waiting('waiting: Edit a.ts', { updatedAt: 6 })));
+    expect((await phone.dialog('t2')).entry).toBe(3);
+    // A Bash request waiting while an Edit's dialog shows: the hook and the screen disagree on the request, so no
+    // entry, whichever call runs.
+    t.append('t2', call('b1', 'touch made-by-bash.txt'));
+    t.terms.set(withSession(t.terms.list, 't2', waiting('waiting: Bash touch made-by-bash.txt', { updatedAt: 7 })));
+    for (const v of [forA, await screen('edit')]) {
+      await shows(t, 't2', v);
+      const d = await phone.dialog('t2');
+      expect(d).toMatchObject({ t: 'dialog', kind: 'permission' });
+      expect(d.entry).toBeUndefined();
+    }
+    // Bash's own dialog: its entry.
+    await shows(t, 't2', 'bash');
+    expect((await phone.dialog('t2')).entry).toBe(4);
+  });
+
   test('dialog: /model while nothing waits is a menu with no options and no ask; so is the trust dialog while Claude starts, marked', async () => {
     const t = conversing();
     const other = term('w', '/work/app', { createdAt: 3, session: { ...(claude('s-w') as object), state: 'waiting' } as never });
@@ -2027,6 +2060,22 @@ describe('a Claude session\'s dialog, read and answered from a phone', () => {
     // Those typed nothing: the request is still to answer.
     expect(await phone.choose('t2', next.ask as string, 3, 'Yes, and switch to auto mode · auto mode handles these prompts for you')).toEqual(OK);
     expect(t.terms.answers).toEqual([['t2', '1'], ['t2', '3']]);
+  });
+
+  test('choose refuses right after a window typed in the terminal: its key may not be drawn yet, and the digit would answer the next question', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: question', { question: true }));
+    await shows(t, 't2', 'questions-first');
+    const { phone } = await paired(t);
+    const d = await phone.dialog('t2');
+    t.terms.windowInput.set('t2', Date.now() - 500);
+    t.terms.events = [];
+    expect(await phone.choose('t2', d.ask as string, 2, 'Winter')).toEqual(CHANGED);
+    expect(t.terms.answers).toEqual([]);
+    // Typed a while ago, nothing since: the choice goes.
+    t.terms.windowInput.set('t2', Date.now() - TYPED_RECENTLY_MS - 100);
+    expect(await phone.choose('t2', d.ask as string, 2, 'Winter')).toEqual(OK);
+    expect(t.terms.answers).toEqual([['t2', '2']]);
   });
 
   test('choose a field: its digit, the text once the cursor is in it, Enter once it shows the text', async () => {
@@ -2611,6 +2660,82 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     expect(await phone.stop('t1')).toEqual(NOT_CLAUDE);
     expect(t.terms.answers).toEqual([['t2', ESC]]);
     sizeKept(t);
+  });
+
+  test('stop goes only while the screen shows Claude working, whatever the hooks say: a late Stop hook leaves no Esc on an idle prompt', async () => {
+    const t = conversing();
+    // Still running by its hooks, its turn over on screen.
+    t.terms.list = withSession(t.terms.list, 't2', claude('s'));
+    await shows(t, 't2', 'idle');
+    const { phone } = await paired(t);
+    expect(await phone.stop('t2')).toEqual(NOT_WORKING);
+    // Working, with text typed in Claude's prompt: Claude Code no longer offers Esc to interrupt.
+    await shows(t, 't2', 'working-typed');
+    expect(await phone.stop('t2')).toEqual(TYPED);
+    expect(t.terms.answers).toEqual([]);
+    // Its turn over by its hooks, working on screen (a prompt typed on the computer, its hook not here yet).
+    t.terms.set(withSession(t.terms.list, 't2', finished));
+    await shows(t, 't2', 'working');
+    expect(await phone.stop('t2')).toEqual(OK);
+    expect(keys(t)).toEqual([ESC]);
+  });
+
+  test('a phone\'s answer, then the tool it allowed runs with the session still waiting (no hook until it is done): the dialog was answered, a prompt and an interrupt go; a dialog drawn meanwhile refuses them', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: Bash touch made-by-bash.txt'));
+    await shows(t, 't2', 'bash');
+    const { phone } = await paired(t);
+    const ALREADY = refused('busy', 'This request was answered already');
+    const d = await phone.dialog('t2');
+    expect(await phone.choose('t2', d.ask as string, 1, 'Yes')).toEqual(OK);
+    // The command runs: Claude Code draws it working, the session waits under the same ask.
+    await shows(t, 't2', 'working');
+    expect(await phone.dialog('t2')).toEqual(ALREADY);
+    // A prompt goes through the usual checks; Claude Code queues it.
+    await shows(t, 't2', 'working', await prompted('working', 'run the build'));
+    t.terms.answers = [];
+    expect(await phone.say('t2', 'run the build')).toEqual(OK);
+    expect(keys(t)).toEqual([PASTE('run the build'), '\r']);
+    await shows(t, 't2', 'working-typed');
+    expect(await phone.say('t2', 'run the build')).toEqual(TYPED);
+    // An interrupt stops the command allowed.
+    await shows(t, 't2', 'working');
+    t.terms.answers = [];
+    expect(await phone.stop('t2')).toEqual(OK);
+    expect(keys(t)).toEqual([ESC]);
+    // The next request drawn meanwhile, the hooks still on the first one: everything waits for its answer.
+    await shows(t, 't2', 'bash-second');
+    expect(await phone.dialog('t2')).toMatchObject({ t: 'dialog', kind: 'permission', ask: expect.stringContaining('.') });
+    t.terms.answers = [];
+    expect(await phone.say('t2', 'run the build')).toEqual(ANSWER_FIRST);
+    expect(await phone.stop('t2')).toEqual(ANSWER_FIRST);
+    // A screen read while the prompt waits for its Enter: the dialog drawn then gets no Enter.
+    await shows(t, 't2', 'working', 'bash-second');
+    expect(await phone.say('t2', 'run the build')).toEqual(MEANWHILE);
+    expect(keys(t)).toEqual([PASTE('run the build')]);
+  });
+
+  test('a wait the row answered is answered alike; one answered on the computer, of which nothing tells this one, is refused as before', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: Bash touch made-by-bash.txt'));
+    const { phone } = await paired(t);
+    const ALREADY = refused('busy', 'This request was answered already');
+    const waitKey = async (not?: string) => ((await phone.state((s) => (s.sessions as Msg[]).some((x) => x.id === 't2' && x.wait && x.wait !== not))).sessions as Msg[]).find((x) => x.id === 't2')!.wait as string;
+    const first = await waitKey();
+    await shows(t, 't2', 'bash', 'working');
+    expect(await phone.answer('t2', first, 'allow')).toEqual(OK);
+    expect(await phone.dialog('t2')).toEqual(ALREADY);
+    expect(await phone.stop('t2')).toEqual(OK);
+    expect(keys(t)).toEqual(['1', ESC]);
+    // The next wait, answered on the computer: its dialog gone, the session still waiting.
+    t.terms.set(withSession(t.terms.list, 't2', claude('s')));
+    t.terms.set(withSession(t.terms.list, 't2', waiting('waiting: Bash touch made-by-bash.txt', { updatedAt: 9 })));
+    await waitKey(first);
+    await shows(t, 't2', 'working');
+    expect(await phone.dialog('t2')).toEqual(IN_TERMINAL);
+    expect(await phone.stop('t2')).toEqual(ANSWER_FIRST);
+    expect(await phone.say('t2', 'run the build')).toEqual(ANSWER_FIRST);
+    expect(keys(t)).toEqual(['1', ESC]);
   });
 
   test('escape: Esc on a menu only; refused on a permission, a question, the trust dialog, or nothing', async () => {

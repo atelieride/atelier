@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
-import { chooseKeys, fieldHolds, MAX_ROW, menuToClose, promptHolds, promptState, readDialog, type ScreenDialog } from './dialog';
+import { chooseKeys, claudeWorking, fieldHolds, MAX_ROW, menuToClose, promptHolds, promptState, readDialog, type ScreenDialog } from './dialog';
 import { screenView, type ScreenView } from './prompt';
 
 const SCREENS = join(__dirname, '../../../tests/fixtures/claude-2.1.332/screens');
@@ -272,6 +272,21 @@ test('promptState: empty, a dim placeholder or suggestion, typed text, or no pro
   expect(promptState(view(['⏺ Done.', '', RULE, '❯ 1. Build the app', '  2. Run the tests', RULE, '  ⏸ manual mode on']))).toBe('typed');
   // Text typed on the box's second row only, under a titled rule.
   expect(promptState(view([`${'─'.repeat(100)} a-title ─`, '❯ ', '  second line', RULE]))).toBe('typed');
+});
+
+test('claudeWorking: Claude Code\'s "esc to interrupt" under its prompt box, with no dialog; nowhere else', async () => {
+  expect(claudeWorking(await ans('working'))).toBe(true);
+  expect(claudeWorking(await ans('queued'))).toBe(true);
+  // Text typed in the prompt takes the hint's place; a turn over, a dialog or a menu has none.
+  for (const s of ['working-typed', 'idle', 'plan-after', 'bash-after', 'bash', 'question', 'model', 'trust']) expect(claudeWorking(await ans(s)), s).toBe(false);
+  // The words in a reply above the box, or under it but not as the hint's own part of its row.
+  const working = txt('working').lines;
+  expect(claudeWorking(view([...working.slice(0, 25), '⏺ Press esc to interrupt it.', ...working.slice(26, 39), '  ⏸ manual mode on']))).toBe(false);
+  expect(claudeWorking(view([...working.slice(0, 39), '  ⏸ manual mode on · press esc to interrupt it']))).toBe(false);
+  // Another mode's row, a status line below it.
+  expect(claudeWorking(view([...working.slice(0, 39), '  ⏵⏵ accept edits on · esc to interrupt', '  main · Opus 5.5']))).toBe(true);
+  // A numbered list at the bottom (a menu over the box) wins: Esc would close it.
+  expect(claudeWorking(view([...working.slice(0, 40), '❯ 1. Yes', '  2. No']))).toBe(false);
 });
 
 test('chooseKeys: a digit, a field\'s digit and text, No amended through arrows and Tab; refusals in words', () => {

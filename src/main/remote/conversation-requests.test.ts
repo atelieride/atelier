@@ -19,7 +19,7 @@ const snap = (entries: Entry[]): ConversationSnapshot => ({ key: 'K'.repeat(16),
  * The conversations of one phone over a book whose reads wait until the test settles them, one at a time, and a send
  * that refuses `chat`s while `refuse` is set (as one too large for the channel would throw).
  */
-function setup() {
+function setup(opts: { chatMs?: number } = {}) {
   let list = [claudeTerm('a')];
   const reads: { resolve(s: ConversationSnapshot): void; reject(e: unknown): void }[] = [];
   /** What the book tells of a change, by its subscribers. */
@@ -40,7 +40,7 @@ function setup() {
   };
   const c = new PhoneConversations({
     send: (m) => { if (o.refuse && m.t === 'chat') throw new Error('message too large'); sent.push(m); },
-    host, terms: {} as RemoteTerminals, book, timing: { chatMs: 0, keyMs: 0, enterMs: 0, enterCapMs: 0 }
+    host, terms: {} as RemoteTerminals, book, timing: { chatMs: opts.chatMs ?? 0, keyMs: 0, enterMs: 0, enterCapMs: 0 }
   });
   return { c, sent, reads, changes, log, o, statusChanged, setList: (l: TerminalInfo[]) => { list = l; c.terminalsChanged(l); } };
 }
@@ -155,5 +155,36 @@ describe('PhoneConversations: a terminal with no Claude session', () => {
     const answers = (rid: number) => s.sent.filter((m) => 'rid' in m && m.rid === rid).map((m) => m.t);
     expect(answers(1)).toEqual(['chat', 'error']);
     expect(answers(2)).toEqual(['chat']);
+  });
+});
+
+describe('PhoneConversations: changes coalesce', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  test('changes within chatMs of the last read go in one read and one message, nothing lost; later ones wait chatMs after it', async () => {
+    vi.useFakeTimers();
+    const s = setup({ chatMs: 200 });
+    s.c.handle({ t: 'follow', rid: 1, id: 'a' });
+    s.reads[0]!.resolve(snap([entry(1)]));
+    await vi.advanceTimersByTimeAsync(0);
+    // Ten changes 5 ms apart, the first right after the page went.
+    for (let i = 0; i < 10; i++) {
+      s.changes[0]!();
+      await vi.advanceTimersByTimeAsync(5);
+    }
+    await vi.advanceTimersByTimeAsync(200 - 50 - 1);
+    expect(s.reads).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.reads).toHaveLength(2);
+    const all = Array.from({ length: 11 }, (_, i) => entry(i + 1));
+    s.reads[1]!.resolve({ ...snap(all), seq: 2, versionOf: (n) => (n > 1 ? 2 : 1) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.sent.slice(1)).toEqual([{ t: 'chat', id: 'a', conversation: 'K'.repeat(16), entries: all.slice(1) }]);
+    // One more change right after: its read waits for chatMs after the last one began.
+    s.changes[0]!();
+    await vi.advanceTimersByTimeAsync(199);
+    expect(s.reads).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.reads).toHaveLength(3);
   });
 });

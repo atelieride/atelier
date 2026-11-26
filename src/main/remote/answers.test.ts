@@ -59,3 +59,23 @@ test('typing holds a terminal as an answer does: neither starts while the other 
   expect(b.begin('a', { ask: 'w1' })).toBe(ALREADY);
   expect(b.begin('a', { ask: 'w2' })).toBeNull();
 });
+
+test('isAnswered: a wait any answer went to (the row, a page of its dialog), until another wait comes; nothing typed is no answer', () => {
+  const b = new AnswerBook();
+  expect(b.isAnswered('a', 'w1')).toBe(false);
+  expect(b.begin('a', { ask: 'w1', page: 'p1' })).toBeNull();
+  // On its way, nothing typed yet.
+  expect(b.isAnswered('a', 'w1')).toBe(false);
+  b.end('a', { ask: 'w1', page: 'p1' }, true);
+  expect(b.isAnswered('a', 'w1')).toBe(true);
+  expect(b.isAnswered('a', 'w2')).toBe(false);
+  expect(b.isAnswered('b', 'w1')).toBe(false);
+  // The row answers the next wait; one whose keys never went isn't answered.
+  expect(b.begin('a', { ask: 'w2' })).toBeNull();
+  b.end('a', { ask: 'w2' }, true);
+  expect(b.isAnswered('a', 'w2')).toBe(true);
+  expect(b.isAnswered('a', 'w1')).toBe(false);
+  expect(b.begin('b', { ask: 'w3' })).toBeNull();
+  b.end('b', { ask: 'w3' }, false);
+  expect(b.isAnswered('b', 'w3')).toBe(false);
+});

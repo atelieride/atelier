@@ -335,6 +335,24 @@ export function menuToClose(view: ScreenView): 'menu' | 'exits' | null {
   return REQUEST_MARKS.some((m) => all.includes(flat(m))) || rows.some((r) => QUESTION_ROW.test(r)) ? null : 'menu';
 }
 
+/** The part of a row under Claude's prompt box that offers Esc while Claude works ("⏸ manual mode on · esc to …"). */
+const WORKING_HINT = 'esc to interrupt';
+
+/**
+ * Whether the screen shows Claude working, so that Esc interrupts it: no dialog or menu at the bottom, Claude's prompt
+ * box, and under it a row whose own part (between `·`) is Claude Code's "esc to interrupt". Text typed in the prompt
+ * takes that hint's place: Esc there is no interrupt.
+ */
+export function claudeWorking(view: ScreenView): boolean {
+  if (readDialog(view, null)) return false;
+  const box = promptBox(view.lines);
+  if (!box) return false;
+  for (let i = box.to + 1; i < view.lines.length; i++) {
+    if (textOf(view.lines[i]).split('·').some((part) => part.trim() === WORKING_HINT)) return true;
+  }
+  return false;
+}
+
 export type ChooseKeys = { ok: true; keys: string; text?: string } | { ok: false; code: 'busy' | 'invalid'; message: string };
 
 const IN_TERMINAL: ChooseKeys = { ok: false, code: 'invalid', message: 'Answer in the terminal' };

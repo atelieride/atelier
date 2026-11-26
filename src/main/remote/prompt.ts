@@ -121,28 +121,43 @@ const fileIn = (row: string, name: string) => new RegExp(`(?:^|[\\s/\\\\(\`'"])$
 /** A tool's name as a word of its own. */
 const wordIn = (row: string, word: string) => new RegExp(`(?:^|[^\\w-])${escape(word)}(?![\\w-])`).test(row);
 
-/**
- * Whether the dialog's rows name the request `target` names, as a session's wait does: "Bash npm test" (a command),
- * "Edit upload.ts" (a file), or the tool alone ("Deploy"). Nothing named: nothing to check, false. A file or a tool
- * counts only outside the dashed rules; a command between them must be all of what they hold.
- */
-function shows(d: Dialog, target: string | null): boolean {
-  if (!target) return false;
+/** A wait's target as it names its request: the tool, and what it acts on ('' for the tool alone). */
+function requestOf(target: string): { tool: string; what: string } {
   const space = target.indexOf(' ');
-  const tool = space === -1 ? target : target.slice(0, space);
-  const what = space === -1 ? '' : target.slice(space + 1).trim();
-  if (!what) return d.above.some((r) => wordIn(r, tool));
+  if (space === -1) return { tool: target, what: '' };
+  return { tool: target.slice(0, space), what: target.slice(space + 1).trim() };
+}
+
+/**
+ * Whether these rows name the request `target` names, as a session's wait does: "Bash npm test" (a command),
+ * "Edit upload.ts" (a file), or the tool alone ("Deploy"). Nothing named: nothing to check, false.
+ */
+export function shows(rows: readonly string[], target: string | null): boolean {
+  if (!target) return false;
+  const { tool, what } = requestOf(target);
+  if (!what) return rows.some((r) => wordIn(r, tool));
   if (FILE_TOOLS.has(tool)) {
     const name = what.split(/[\\/]/).filter(Boolean).at(-1) ?? what;
-    return d.above.some((r) => fileIn(r, name));
+    return rows.some((r) => fileIn(r, name));
   }
-  return d.body ? commandIs(d.body, what) : commandIn(d.above, what);
+  return commandIn(rows, what);
+}
+
+/**
+ * Whether the dialog asks for the request `target` names, as `shows` reads it. A file or a tool counts only outside
+ * the dashed rules; a command between them must be all of what they hold.
+ */
+function asksFor(d: Dialog, target: string | null): boolean {
+  if (!target) return false;
+  const { tool, what } = requestOf(target);
+  if (d.body && what && !FILE_TOOLS.has(tool)) return commandIs(d.body, what);
+  return shows(d.above, target);
 }
 
 /** The digit that chooses "Yes" in the permission dialog at the bottom of the screen for `target`, or why it can't. */
 export function allowKey(lines: readonly string[], target: string | null): AllowKey {
   const d = dialogAtBottom(lines);
-  if (!d || d.inField || !shows(d, target)) return REFUSED;
+  if (!d || d.inField || !asksFor(d, target)) return REFUSED;
   const yes = d.options.find((o) => o.label === 'Yes');
   return yes ? { ok: true, key: String(yes.n) } : REFUSED;
 }
@@ -154,7 +169,7 @@ export function allowKey(lines: readonly string[], target: string | null): Allow
  */
 export function denyKey(lines: readonly string[], target: string | null): AllowKey {
   const d = dialogAtBottom(lines);
-  return !d || !shows(d, target) ? REFUSED : { ok: true, key: '\x1b' };
+  return !d || !asksFor(d, target) ? REFUSED : { ok: true, key: '\x1b' };
 }
 
 /**
