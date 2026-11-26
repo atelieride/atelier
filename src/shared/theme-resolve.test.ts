@@ -45,6 +45,14 @@ test('as hex only: #RRGGBB when opaque, #RRGGBBAA with the alpha rounded to a by
   expect(resolveHex(b, 'glass', '--almost')).toBe('#010203');
 });
 
+test('a channel past 255 is 255, as CSS clamps it: never a third hex digit', () => {
+  const b = parseThemeCss(':root { --hot: rgb(300,0,255.6); --hot-glass: rgba(300,0,0,.5); }');
+  expect(resolveHex(b, 'aurora', '--hot')).toBe('#FF00FF');
+  expect(resolveToken(b, 'aurora', '--hot')).toBe('#FF00FF');
+  expect(resolveHex(b, 'aurora', '--hot-glass')).toBe('#FF000080');
+  expect(resolveToken(b, 'aurora', '--hot-glass')).toBe('rgba(255,0,0,0.5)');
+});
+
 test('a theme overrides :root, and what refers to an overridden token follows it', () => {
   const b = parseThemeCss(css);
   expect(resolveToken(b, 'paper', '--alias')).toBe('#FFFFFF');

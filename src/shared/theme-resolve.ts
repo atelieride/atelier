@@ -30,11 +30,13 @@ export function resolveToken(blocks: ThemeBlocks, theme: string, name: string): 
  */
 export function resolveHex(blocks: ThemeBlocks, theme: string, name: string): string {
   const c = color(blocks, theme, `var(${name})`, name, new Set());
-  const a = Math.round(c.a * 255);
-  const rgb = [c.r, c.g, c.b].map((x) => hex2(Math.round(x))).join('');
-  return `#${rgb}${a >= 255 ? '' : hex2(a)}`;
+  const a = byte(c.a * 255);
+  const rgb = [c.r, c.g, c.b].map((x) => hex2(byte(x))).join('');
+  return `#${rgb}${a === 255 ? '' : hex2(a)}`;
 }
 
+/** A channel as CSS draws it: rounded, and clamped to 0…255 (`rgb(300,0,0)` is red). */
+const byte = (x: number) => Math.min(255, Math.max(0, Math.round(x)));
 const hex2 = (x: number) => x.toString(16).padStart(2, '0').toUpperCase();
 
 function lookup(blocks: ThemeBlocks, theme: string, name: string): string | undefined {
@@ -77,7 +79,7 @@ function mixed(a: Rgba, p: number, b: Rgba): Rgba {
 }
 
 function format(c: Rgba): string {
-  const r = Math.round(c.r), g = Math.round(c.g), b = Math.round(c.b);
-  if (c.a >= 1) return `#${[r, g, b].map((x) => x.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+  const r = byte(c.r), g = byte(c.g), b = byte(c.b);
+  if (c.a >= 1) return `#${[r, g, b].map(hex2).join('')}`;
   return `rgba(${r},${g},${b},${+c.a.toFixed(4)})`;
 }

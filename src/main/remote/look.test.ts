@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings';
-import { resolveToken } from '@shared/theme-resolve';
+import { resolveHex, resolveToken } from '@shared/theme-resolve';
 import { THEMES } from '@shared/themes';
 import { THEME_BLOCKS } from '../theme-chrome';
 import { LOOK_SETTINGS, LOOK_TOKENS, lookKey, remoteLook } from './look';
@@ -22,8 +22,8 @@ describe('the themes a phone gets', () => {
   test('the tokens, interface then terminal, in this order', () => {
     const n = (p: string) => Array.from({ length: p === 'ansi' ? 16 : 8 }, (_, i) => `${p}-${p === 'ansi' ? i : i + 1}`);
     expect(LOOK_TOKENS).toEqual([
-      'bg-0', 'bg-1', 'bg-2', 'bg-3', 'bg-float', 'line', 'line-soft', 'line-strong', 'text', 'text-2', 'text-3', 'text-4', 'text-error', 'link',
-      'violet', 'violet-soft', 'violet-light', 'pink', 'on-brand', 'waiting', 'working', 'done', 'error', ...n('ws'), ...n('person'),
+      'bg-0', 'bg-1', 'bg-2', 'bg-3', 'bg-float', 'bg-sel', 'line', 'line-soft', 'line-strong', 'text', 'text-2', 'text-3', 'text-4', 'text-error', 'link',
+      'violet', 'violet-soft', 'violet-light', 'pink', 'brand', 'on-brand', 'waiting', 'working', 'done', 'error', ...n('ws'), ...n('person'),
       'worktree', 'worktree-text', 'abyss', 'term-bg', 'term-fg', 'term-cursor', 'term-sel', ...n('ansi')
     ]);
   });
@@ -47,6 +47,20 @@ describe('the themes a phone gets', () => {
     expect(by.get('aurora')!['bg-float']).toBe('#121220DB');
     // Each theme's terminals are its own: Daylight's are light, not Aurora's.
     expect(by.get('daylight')!['term-bg']).not.toBe(by.get('aurora')!['term-bg']);
+  });
+
+  test('the brand fill and the selection are each theme\'s own, never worked out from its pair', () => {
+    const by = new Map(look().themes.map((t) => [t.id, t.colors]));
+    for (const t of THEMES) {
+      expect(by.get(t.id)!.brand, t.id).toBe(resolveToken(THEME_BLOCKS, t.id, '--brand'));
+      expect(by.get(t.id)!['bg-sel'], t.id).toBe(resolveHex(THEME_BLOCKS, t.id, '--bg-sel'));
+    }
+    // Ember's brand is its orange, not the middle of orange and rose (the coral its error red sits on); Tide's is the
+    // middle of its pair, neither end.
+    expect(by.get('ember')!.brand).toBe(by.get('ember')!.violet);
+    expect([by.get('tide')!.violet, by.get('tide')!.pink]).not.toContain(by.get('tide')!.brand);
+    // Ink's selection is a neutral step, not a violet tint.
+    expect(by.get('ink')!['bg-sel']).toBe(by.get('ink')!['bg-3']);
   });
 
   test('resolved once: the same themes every time', () => {
@@ -75,5 +89,12 @@ describe('the theme in use and the terminal', () => {
     expect(Object.keys(changed).sort()).toEqual([...LOOK_SETTINGS].sort());
     for (const k of LOOK_SETTINGS) expect(lookKey(look({ [k]: changed[k] })), k).not.toBe(base);
     expect(lookKey(look({ remoteRelay: 'wss://relay.invalid', projectTint: !DEFAULT_SETTINGS.projectTint, interfaceSize: 'large' }))).toBe(base);
+  });
+
+  // main sends the look again only when one of LOOK_SETTINGS changes: a setting read without being listed would never
+  // reach a connected phone. The type takes the listed ones alone, so reading another one doesn't compile.
+  test('built from the settings LOOK_SETTINGS names, and nothing else', () => {
+    const only = Object.fromEntries(LOOK_SETTINGS.map((k) => [k, DEFAULT_SETTINGS[k]])) as Pick<Settings, (typeof LOOK_SETTINGS)[number]>;
+    expect(remoteLook(only, THEME_BLOCKS)).toEqual(look());
   });
 });
