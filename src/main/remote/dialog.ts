@@ -42,14 +42,20 @@ export interface ScreenDialog {
   trust: boolean;
   /**
    * b64url(SHA-256(kind, rows, labels))[0..8]: the same dialog page reads the same wherever the cursor is among its
-   * options (a menu's rows show its cursor).
+   * options (a menu's rows show its cursor). A request's rows counted all, those `rows` leaves out too: two requests
+   * that differ only there are two pages.
    */
   page: string;
 }
 export const MAX_ROWS = 40, MAX_ROW = 300;
 
-/** A row's text: no frame sides, no indent. */
-const textOf = (line: string | undefined) => (line ?? '').replace(FRAME, '').trim();
+/**
+ * Direction marks and overrides: the terminal draws them as nothing, a phone lays the text out by them (a command
+ * could read otherwise there than on the computer).
+ */
+const BIDI = /[؜‎‏‪-‮⁦-⁩]/g;
+/** A row's text: no frame sides, no indent, no direction marks. */
+const textOf = (line: string | undefined) => (line ?? '').replace(BIDI, '').replace(FRAME, '').trim();
 /** Characters two columns wide, as Claude Code lays them out: East Asian wide and full-width ones, and emoji. */
 const WIDE: readonly (readonly [number, number])[] = [
   [0x1100, 0x115f], [0x2e80, 0x303e], [0x3041, 0x33ff], [0x3400, 0x4dbf], [0x4e00, 0x9fff], [0xa000, 0xa4cf],
@@ -254,7 +260,8 @@ export function readDialog(view: ScreenView, wait: DialogWait | null): ScreenDia
   if (!wait) return menu(lines, d.options[0]!.line, false);
 
   const top = topAbove(lines, d.options[0]!.line - 1);
-  const rows = capped(rowsBetween(lines, top, d.options[0]!.line));
+  const all = rowsBetween(lines, top, d.options[0]!.line);
+  const rows = capped(all);
   if (wait === 'question' && !rows.some((r) => QUESTION_ROW.test(r))) return null;
   const field = fieldOf(lines, d.options, wait, rows);
   // A plan's wait may outlive its dialog (its hook lags the screen): only the plan dialog's own marks make it one, its
@@ -288,7 +295,7 @@ export function readDialog(view: ScreenView, wait: DialogWait | null): ScreenDia
     fieldText: typed !== null && wait === 'permission' ? typed.replace(/^No,\s*/, '') : typed,
     several: options.some((o) => CHECKBOX.test(o.label)),
     trust: false,
-    page: pageOf(wait, rows, options)
+    page: pageOf(wait, all, options)
   };
 }
 

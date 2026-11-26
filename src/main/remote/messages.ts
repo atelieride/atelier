@@ -219,7 +219,7 @@ export type HostMessage =
   | { t: 'size'; id: string; cols: number; rows: number }
   | { t: 'exit'; id: string }
   | { t: 'chat'; id: string; rid?: number; conversation: string; entries: Entry[]; start?: true; pending?: true }
-  /** The dialog at the bottom of a session's screen: only what a phone may see (never the text typed in a field). */
+  /** The dialog at the bottom of a session's screen, its rows and options as drawn (a field's label shows what it holds). */
   | { t: 'dialog'; rid: number; id: string; ask?: string; kind: DialogKind; rows: string[]; options: DialogOption[]; several?: true; entry?: number; trust?: true }
   | { t: 'ok'; rid: number }
   | { t: 'created'; rid: number; id: string }
