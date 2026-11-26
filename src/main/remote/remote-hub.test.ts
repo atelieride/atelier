@@ -1471,15 +1471,24 @@ const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function conversing(o: { lingerMs?: number; chatMs?: number; bySession?: boolean } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'atl-conversation-'));
   const file = (id: string) => join(dir, `${id}.jsonl`);
+  // A transcript moved (as Claude Code moves one into a worktree's folder) swaps it for a file made beforehand in one
+  // step. A rename over it would too, but Windows refuses that rename (EPERM) while the 20 ms poll has the file open.
+  const moved = new Map<string, string>();
   let reads = () => 0;
   const timing = { pollMs: 20, chatMs: o.chatMs ?? 20, keyMs: 5, enterMs: 5, enterCapMs: 150, now: () => reads() * 5, ...(o.lingerMs ? { lingerMs: o.lingerMs } : {}) };
-  const transcriptOf = (x: TerminalInfo) => (x.session ? file(o.bySession ? x.session.sessionId : x.id) : null);
+  const transcriptOf = (x: TerminalInfo) => {
+    if (!x.session) return null;
+    const key = o.bySession ? x.session.sessionId : x.id;
+    return moved.get(key) ?? file(key);
+  };
   const t = setup({ deps: { conversation: { transcriptOf, home: null, timing } } });
   reads = () => t.terms.reads;
   return {
     ...t, dir, file,
     write: (id: string, ...lines: unknown[]) => writeFileSync(file(id), jsonl(...lines)),
-    append: (id: string, ...lines: unknown[]) => appendFileSync(file(id), jsonl(...lines))
+    append: (id: string, ...lines: unknown[]) => appendFileSync(file(id), jsonl(...lines)),
+    /** The session's transcript is at `to` from now on, a file (or link) made at `to` beforehand. */
+    move: (id: string, to: string) => { moved.set(id, to); }
   };
 }
 
@@ -1713,8 +1722,8 @@ describe('following a Claude session\'s conversation', () => {
     const since = phone.messages.length;
     const real = join(t.dir, 'elsewhere.jsonl');
     writeFileSync(real, jsonl(prompt('Hi.')));
-    symlinkSync(real, join(t.dir, 'swap'));
-    renameSync(join(t.dir, 'swap'), t.file('t2'));
+    symlinkSync(real, join(t.dir, 'link.jsonl'));
+    t.move('t2', join(t.dir, 'link.jsonl'));
     await phone.waitFor((m) => m.t === 'error' && m.rid === page.rid, { since });
     const failed = { t: 'error', rid: expect.any(Number), code: 'failed', message: UNREADABLE };
     expect(await Promise.all([phone.follow('t2'), phone.follow('t2')])).toEqual([failed, failed]);
@@ -1806,16 +1815,16 @@ describe('following a Claude session\'s conversation', () => {
     const since = phone.messages.length;
     const real = join(t.dir, 'elsewhere.jsonl');
     writeFileSync(real, jsonl(...lines));
-    // Each change in one step (a rename over it): never a moment with no file, which would read as pending.
-    const swap = (make: (at: string) => void) => { const at = join(t.dir, 'swap'); make(at); renameSync(at, t.file('t2')); };
-    swap((at) => symlinkSync(real, at));
+    // Each change in one step (the transcript moved to a path made beforehand): never a moment with no file.
+    const swap = (name: string, make: (at: string) => void) => { const at = join(t.dir, name); make(at); t.move('t2', at); };
+    swap('link.jsonl', (at) => symlinkSync(real, at));
     expect(await phone.waitFor((m) => m.t === 'error', { since })).toEqual({ t: 'error', rid: page.rid, code: 'failed', message: UNREADABLE });
     await pause(150);
     expect(phone.messages.slice(since).filter((m) => m.t === 'error')).toHaveLength(1);
     expect(badge(t)).toEqual(['t2']);
     // A file again, with the command done meanwhile: the newest page again, and the change to entry 1 with it.
     const back = phone.messages.length;
-    swap((at) => writeFileSync(at, jsonl(...lines, done('b1', 'passed'), prompt('Back.'))));
+    swap('back.jsonl', (at) => writeFileSync(at, jsonl(...lines, done('b1', 'passed'), prompt('Back.'))));
     await until(() => phone.conversation('t2').at(-1)?.text === 'Back.' && phone.conversation('t2')[0]?.n === 1);
     expect(chats(phone, 't2', back).every((m) => m.rid === undefined && m.conversation === page.conversation)).toBe(true);
     expect(chats(phone, 't2', back).flatMap(ns)).toEqual([1, ...Array.from({ length: 200 }, (_, i) => i + 3)]);
@@ -1847,11 +1856,12 @@ describe('following a Claude session\'s conversation', () => {
     expect(page.start).toBeUndefined();
     expect(bytes(page)).toBeLessThanOrEqual(PAGE_BYTES);
     // 140 more at once: split into messages that each fit.
-    // Written at once (a new file in its place, the same lines first): read in one go, sent in one change.
+    // Written at once (the transcript moved to a whole new file, the same lines first): read in one go, sent in one
+    // change.
     const since = phone.messages.length;
     const all = jsonl(...Array.from({ length: 280 }, (_, i) => sized(i + 1)));
     writeFileSync(join(t.dir, 'next.jsonl'), all);
-    renameSync(join(t.dir, 'next.jsonl'), t.file(id));
+    t.move(id, join(t.dir, 'next.jsonl'));
     await until(() => phone.conversation(id).at(-1)?.n === 280);
     const live = chats(phone, id, since);
     expect(live.flatMap(ns)).toEqual(Array.from({ length: 140 }, (_, i) => i + 141));
