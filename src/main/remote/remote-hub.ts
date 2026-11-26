@@ -38,6 +38,7 @@ import { Pairing } from './pairing';
 import { RelayLink, type RelayLinkOptions } from './relay-link';
 import { AnswerBook } from './answers';
 import { PhoneConversations, type ConversationHost, type ConversationTiming } from './conversation-requests';
+import { PromptOutbox, type OutboxTiming } from './prompt-outbox';
 import { ConversationBook, type ConversationDeps } from './conversations';
 import { allowKey, denyKey, type ScreenView } from './prompt';
 import { WaitBook, anyWait } from './rows';
@@ -133,9 +134,9 @@ export interface RemoteHubDeps {
   /**
    * The conversations phones follow: where a session's transcript is (by default as Claude Code keeps it, in the
    * session's own account's folder), the home `~` stands for (the user's), and the timings, an Enter's wait measured on
-   * `now` when given.
+   * `now` when given, and how soon a prompt waiting for an idle Claude is tried again.
    */
-  conversation?: Partial<ConversationDeps> & { timing?: { chatMs?: number; keyMs?: number; enterMs?: number; enterCapMs?: number; now?: () => number } };
+  conversation?: Partial<ConversationDeps> & { timing?: { chatMs?: number; keyMs?: number; enterMs?: number; enterCapMs?: number; now?: () => number } & Partial<OutboxTiming> };
 }
 
 /** State goes out at most this often (coalesced), only when it changed. */
@@ -158,6 +159,11 @@ const DEFAULT_SIZE: Size = { cols: 120, rows: 36 };
  * before an Enter, and waits for an Enter at most this long.
  */
 const CHAT_TIMING: ConversationTiming = { chatMs: 100, keyMs: 300, enterMs: 400, enterCapMs: 2000 };
+/**
+ * A prompt waiting for an idle Claude is tried this soon after it came or its session's hooks changed, then twice as
+ * long after each try, up to every 5 s (each try reads the screen).
+ */
+const OUTBOX_TIMING: OutboxTiming = { retryMs: 400, slowMs: 5000 };
 /** While sessions are starting, the state is looked at again this often (a start that never came ends at 30 s). */
 const STARTING_RECHECK_MS = 5000;
 /** Channels still in their handshake (or waiting to be let in) at once, at most. */
@@ -215,6 +221,8 @@ interface SessionHost extends ConversationHost {
   /** The conversations phones follow, read once for all of them. */
   book: ConversationBook;
   conversationTiming: ConversationTiming;
+  /** Every phone's prompts, typed or waiting for an idle Claude. */
+  outbox: PromptOutbox;
   /** A resumable the state lists: its project's root. */
   resumableRoot(id: string): string | null;
   /** A row the state lists (a session, a terminal or a resumable): its project's root. */
@@ -257,7 +265,7 @@ class PhoneSession implements RemoteViewer {
 
   constructor(readonly c: SecureChannel, readonly deviceId: string, private readonly host: SessionHost, private readonly terms: RemoteTerminals) {
     this.key = terms.addRemoteViewer(this);
-    this.conversations = new PhoneConversations({ send: (m) => this.send(m), host, terms, book: host.book, timing: host.conversationTiming });
+    this.conversations = new PhoneConversations({ send: (m) => this.send(m), host, terms, book: host.book, timing: host.conversationTiming, outbox: host.outbox, device: deviceId });
   }
 
   send(msg: HostMessage): void {
@@ -628,6 +636,7 @@ export class RemoteHub {
   private readonly asks = new WaitBook(anyWait);
   /** The conversations phones follow: each session's transcript read once, whoever follows it. */
   private readonly book: ConversationBook;
+  private readonly outbox: PromptOutbox;
   private readonly pushes: PushStore;
   private readonly decider: PushDecider;
   /** Pushes the relay hasn't answered yet: their id → the token they went to (a dead one is forgotten). */
@@ -679,28 +688,42 @@ export class RemoteHub {
       this.waits.update(list);
       this.asks.update(list);
       this.book.terminals(list);
+      this.outbox.terminalsChanged(list);
       for (const s of this.sessions.values()) s.conversations.terminalsChanged(list);
       this.scheduleState();
     });
-    this.host = {
+    const conversing: ConversationHost = {
       listed: (id) => this.d.terminals.allTerminals().some((t) => t.id === id),
       claude: (id) => {
         const t = this.d.terminals.allTerminals().find((x) => x.id === id);
         return !!t && (t.session !== null || this.d.terminals.startingIds().has(id));
       },
       asks: this.asks,
+      terminal: (id) => this.d.terminals.allTerminals().find((t) => t.id === id),
+      answers: new AnswerBook(),
+      log: (message) => this.d.log?.(message),
+      statusChanged: () => this.statusChanged()
+    };
+    const conversationTiming: ConversationTiming = {
+      chatMs: c.timing?.chatMs ?? CHAT_TIMING.chatMs, keyMs: c.timing?.keyMs ?? CHAT_TIMING.keyMs,
+      enterMs: c.timing?.enterMs ?? CHAT_TIMING.enterMs, enterCapMs: c.timing?.enterCapMs ?? CHAT_TIMING.enterCapMs,
+      ...(c.timing?.now ? { now: c.timing.now } : {})
+    };
+    this.outbox = new PromptOutbox({
+      host: conversing, terms: d.terminals, timing: conversationTiming,
+      outbox: { retryMs: c.timing?.retryMs ?? OUTBOX_TIMING.retryMs, slowMs: c.timing?.slowMs ?? OUTBOX_TIMING.slowMs },
+      // A prompt goes only for a phone still paired, with iPhone access on.
+      allowed: (device) => this.d.settings().remoteAccess && this.devices.byId(device) !== null
+    });
+    this.host = {
+      ...conversing,
       book: this.book,
-      conversationTiming: {
-        chatMs: c.timing?.chatMs ?? CHAT_TIMING.chatMs, keyMs: c.timing?.keyMs ?? CHAT_TIMING.keyMs,
-        enterMs: c.timing?.enterMs ?? CHAT_TIMING.enterMs, enterCapMs: c.timing?.enterCapMs ?? CHAT_TIMING.enterCapMs,
-        ...(c.timing?.now ? { now: c.timing.now } : {})
-      },
+      conversationTiming,
+      outbox: this.outbox,
       rootOf: (pid) => this.computeState().roots.get(pid) ?? null,
       layoutOf: (root) => this.liveLayoutOf(root),
       features: () => this.features(),
-      terminal: (id) => this.d.terminals.allTerminals().find((t) => t.id === id),
       waitKey: (t) => this.waits.keyOf(t),
-      answers: new AnswerBook(),
       resumableRoot: (id) => {
         const st = this.computeState();
         const r = st.resumables.find((x) => x.id === id);
@@ -721,14 +744,12 @@ export class RemoteHub {
       windowOpen: (root) => this.d.projects().open.includes(root),
       openWindow: (root) => this.d.windows?.open(root) ?? Promise.resolve({ ok: false, code: 'failed', message: 'The project\'s window could not be opened.' }),
       closeWindow: (root, sessions) => this.d.windows?.close(root, sessions) ?? Promise.resolve({ ok: false, code: 'failed', message: 'The project\'s window could not be closed.' }),
-      log: (message) => this.d.log?.(message),
       rows: (root, e) => this.d.rows?.(root, e),
       registerPush: (deviceId, m) => {
         if (m.token === null || !m.env || !m.key) this.pushes.forgetDevice(deviceId);
         else this.pushes.set(deviceId, { token: m.token.toLowerCase(), env: m.env, key: Buffer.from(m.key, 'base64url') });
       },
       scheduleState: () => this.scheduleState(),
-      statusChanged: () => this.statusChanged(),
       outMs: d.timing?.outMs ?? OUT_MS
     };
   }
@@ -807,7 +828,7 @@ export class RemoteHub {
   }
 
   private apply(): void {
-    if (!this.d.settings().remoteAccess) { this.shutDown('disabled'); return; }
+    if (!this.d.settings().remoteAccess) { this.outbox.clear(); this.shutDown('disabled'); return; }
     this.availableKnown = null;
     if (!this.available()) {
       this.shutDown('disabled');
@@ -883,6 +904,7 @@ export class RemoteHub {
     if (this.usageTimer) { clearTimeout(this.usageTimer); this.usageTimer = null; }
     if (this.startingTimer) { clearTimeout(this.startingTimer); this.startingTimer = null; }
     await this.shutDown('quitting', { flushMs: 500 });
+    this.outbox.dispose();
     this.book.dispose();
   }
 
@@ -1166,12 +1188,14 @@ export class RemoteHub {
   private letGo(id: string): void {
     for (const s of [...this.sessions.values()]) if (s.deviceId === id) s.c.bye('revoked');
     this.pushes.forgetDevice(id);
+    this.outbox.forget(id);
   }
 
   /** A new identity (a new room and key): every phone is unpaired and must pair again. */
   reset(): void {
     for (const s of [...this.sessions.values()]) s.c.bye('revoked');
     void this.shutDown('revoked', { keepState: true });
+    this.outbox.clear();
     this.devices.clear();
     this.pushes.clear();
     this.identities.reset();

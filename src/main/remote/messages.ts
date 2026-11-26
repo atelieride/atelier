@@ -221,7 +221,8 @@ export type HostMessage =
   | { t: 'chat'; id: string; rid?: number; conversation: string; entries: Entry[]; start?: true; pending?: true }
   /** The dialog at the bottom of a session's screen, its rows and options as drawn (a field's label shows what it holds). */
   | { t: 'dialog'; rid: number; id: string; ask?: string; kind: DialogKind; rows: string[]; options: DialogOption[]; several?: true; entry?: number; trust?: true }
-  | { t: 'ok'; rid: number }
+  /** `queued`: a prompt (`say`) waiting on this computer while Claude works; it goes once Claude is idle. */
+  | { t: 'ok'; rid: number; queued?: true }
   | { t: 'created'; rid: number; id: string }
   /** rid 0: the refused message carried none (input, resize, detach). */
   | { t: 'error'; rid: number; code: ErrorCode; message: string }

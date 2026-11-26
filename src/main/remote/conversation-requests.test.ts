@@ -5,6 +5,7 @@ import { AnswerBook } from './answers';
 import { PhoneConversations, SESSION_GAP_MS, type ConversationHost } from './conversation-requests';
 import type { ConversationBook, ConversationSnapshot } from './conversations';
 import type { HostMessage } from './messages';
+import type { PromptOutbox } from './prompt-outbox';
 import type { RemoteTerminals } from './remote-hub';
 import { WaitBook } from './rows';
 
@@ -40,7 +41,8 @@ function setup(opts: { chatMs?: number } = {}) {
   };
   const c = new PhoneConversations({
     send: (m) => { if (o.refuse && m.t === 'chat') throw new Error('message too large'); sent.push(m); },
-    host, terms: {} as RemoteTerminals, book, timing: { chatMs: opts.chatMs ?? 0, keyMs: 0, enterMs: 0, enterCapMs: 0 }
+    host, terms: {} as RemoteTerminals, book, timing: { chatMs: opts.chatMs ?? 0, keyMs: 0, enterMs: 0, enterCapMs: 0 },
+    outbox: {} as PromptOutbox, device: 'phone'
   });
   return { c, sent, reads, changes, log, o, statusChanged, setList: (l: TerminalInfo[]) => { list = l; c.terminalsChanged(l); } };
 }
