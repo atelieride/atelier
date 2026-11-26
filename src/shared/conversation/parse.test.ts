@@ -543,6 +543,16 @@ describe('ConversationParser: agents, questions, plans, todos, compaction, queue
     expect(fine.entries[0]).toMatchObject({ status: 'ok', summary: '1 line' });
   });
 
+  test('running() gives a command\'s whole text when its waitTarget cuts it, never otherwise', () => {
+    const long = `cd /work/app && ${'npm run build && '.repeat(4)}npm test`;
+    const p = run(use('a', 'Bash', { command: long }), use('b', 'Bash', { command: 'ls  -la' }), use('c', 'Edit', { file_path: '/work/app/a.ts', old_string: 'x', new_string: 'y' }));
+    expect(p.running()).toEqual([
+      { n: 1, k: 'tool', tool: 'Bash', waitTarget: `Bash ${long.slice(0, 59)}…`, command: long },
+      { n: 2, k: 'tool', tool: 'Bash', waitTarget: 'Bash ls -la' },
+      { n: 3, k: 'tool', tool: 'Edit', waitTarget: 'Edit a.ts' }
+    ]);
+  });
+
   test('running() keeps the unredacted waitTarget, which no entry carries', () => {
     const key = 'sk-ant-api03-' + 'Ab1'.repeat(10);
     const p = run(use('a', 'Bash', { command: `curl ${key}` }));

@@ -274,6 +274,17 @@ test('promptState: empty, a dim placeholder or suggestion, typed text, or no pro
   expect(promptState(view([`${'─'.repeat(100)} a-title ─`, '❯ ', '  second line', RULE]))).toBe('typed');
 });
 
+test('subject: a request\'s rows outside the dashed rules (its title, its path) and its question, never the diff or command between them', () => {
+  expect(readDialog(txt('edit'), 'permission')!.subject).toEqual(['Edit file', 'hello.txt', 'Do you want to make this edit to hello.txt?']);
+  expect(readDialog(txt('bash'), 'permission')!.subject).toEqual(['Bash command', 'Tip: auto mode handles these prompts for you — choose "switch to auto mode" below', 'Create empty file made-by-bash.txt', 'Do you want to proceed?']);
+  // No dashed rules: only its question, wrapped over two rows.
+  const lines = txt('edit').lines;
+  const at = lines.findIndex((l) => l.includes('Do you want to make'));
+  const plain = view([...lines.slice(0, at).filter((l) => !/╌/.test(l)), ' Do you want to make this edit to', ' hello.txt?', ...lines.slice(at + 1)]);
+  expect(readDialog(plain, 'permission')!.subject).toEqual(['Do you want to make this edit to', 'hello.txt?']);
+  expect(readDialog(txt('model'), null)!.subject).toEqual([]);
+});
+
 test('claudeWorking: Claude Code\'s "esc to interrupt" under its prompt box, with no dialog; nowhere else', async () => {
   expect(claudeWorking(await ans('working'))).toBe(true);
   expect(claudeWorking(await ans('queued'))).toBe(true);

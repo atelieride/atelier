@@ -121,9 +121,17 @@ export class ConversationParser {
     return out;
   }
 
-  /** The calls still waiting for a result, with the target atelierd shows while the session waits on them. */
-  running(): { n: number; k: 'tool' | 'agent' | 'question'; tool: string; waitTarget: string }[] {
-    return [...this.pending.values()].map((p) => ({ n: p.n, k: p.k, tool: p.tool, waitTarget: waitTargetOf(p.tool, p.input) }));
+  /**
+   * The calls still waiting for a result, with the target atelierd shows while the session waits on them, and a
+   * command's whole text when that target cuts it short.
+   */
+  running(): { n: number; k: 'tool' | 'agent' | 'question'; tool: string; waitTarget: string; command?: string }[] {
+    return [...this.pending.values()].map((p) => {
+      const waitTarget = waitTargetOf(p.tool, p.input);
+      const command = str(p.input.command);
+      const cut = command !== null && !str(p.input.file_path) && !str(p.input.notebook_path) && waitTarget.endsWith('…');
+      return { n: p.n, k: p.k, tool: p.tool, waitTarget, ...(cut ? { command } : {}) };
+    });
   }
 
   push(line: unknown): void {

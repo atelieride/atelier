@@ -2016,6 +2016,37 @@ describe('a Claude session\'s dialog, read and answered from a phone', () => {
     expect((await phone.dialog('t2')).entry).toBe(4);
   });
 
+  test('dialog: a subagent\'s request never carries a running call\'s entry: a file named in its diff, a command sharing a cut one\'s start', async () => {
+    const t = conversing();
+    const editCall = (id: string, file: string) => call(id, '', { name: 'Edit', input: { file_path: `/work/app/${file}`, old_string: 'world', new_string: 'there' } });
+    const agent = call('a1', '', { name: 'Agent', input: { description: 'Tidy the imports', prompt: 'Tidy them.' } });
+    // Claude runs an agent and Edit a.ts; the agent's Edit c.ts asks first, its diff naming a.ts.
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: Edit c.ts'));
+    t.write('t2', prompt('Tidy up.'), agent, editCall('e1', 'a.ts'));
+    const forC = edit(await replaced('edit', 'hello.txt', 'c.ts'), (row) => row.replace('This file is for edit tests.', 'import { x } from \'./a.ts\';'));
+    expect(readDialog(forC, 'permission')!.rows).toContain('2  import { x } from \'./a.ts\';');
+    await shows(t, 't2', forC);
+    const { phone } = await paired(t);
+    expect((await phone.dialog('t2')).entry).toBeUndefined();
+    // The hook naming a.ts: the dialog still asks about c.ts.
+    t.terms.set(withSession(t.terms.list, 't2', waiting('waiting: Edit a.ts', { updatedAt: 6 })));
+    expect((await phone.dialog('t2')).entry).toBeUndefined();
+    // a.ts's own dialog: its entry, by its path and its question.
+    await shows(t, 't2', await replaced('edit', 'hello.txt', 'a.ts'));
+    expect((await phone.dialog('t2')).entry).toBe(3);
+    // Two long commands alike in their first 59 characters, the hook's target cut there: only the running one's whole
+    // command is its dialog.
+    const start = `cd /work/app/packages/server/${'deep/'.repeat(6)}src && npm run`;
+    const [main, side] = [`${start} build -- --watch`, `${start} lint -- --fix`];
+    t.append('t2', call('b1', main), call('s1', side, { side: true }));
+    t.terms.set(withSession(t.terms.list, 't2', waiting(`waiting: Bash ${side.slice(0, 59)}…`, { updatedAt: 7 })));
+    t.terms.views.delete('t2');
+    t.terms.screens.set('t2', npmDialog(['❯ 1. Yes', '  2. No'], side));
+    expect((await phone.dialog('t2')).entry).toBeUndefined();
+    t.terms.screens.set('t2', npmDialog(['❯ 1. Yes', '  2. No'], main));
+    expect((await phone.dialog('t2')).entry).toBe(4);
+  });
+
   test('dialog: /model while nothing waits is a menu with no options and no ask; so is the trust dialog while Claude starts, marked', async () => {
     const t = conversing();
     const other = term('w', '/work/app', { createdAt: 3, session: { ...(claude('s-w') as object), state: 'waiting' } as never });
@@ -2671,6 +2702,9 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     expect(await phone.stop('t2')).toEqual(NOT_WORKING);
     // Working, with text typed in Claude's prompt: Claude Code no longer offers Esc to interrupt.
     await shows(t, 't2', 'working-typed');
+    expect(await phone.stop('t2')).toEqual(TYPED);
+    // Text typed while the hint stays drawn (as another version may draw it): Esc would reach that draft.
+    await shows(t, 't2', await prompted('working', 'a draft on the computer'));
     expect(await phone.stop('t2')).toEqual(TYPED);
     expect(t.terms.answers).toEqual([]);
     // Its turn over by its hooks, working on screen (a prompt typed on the computer, its hook not here yet).

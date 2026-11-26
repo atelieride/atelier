@@ -19,6 +19,12 @@ export interface ScreenDialog {
   kind: DialogKind;
   /** The dialog's own rows above its options (a menu: all of them). */
   rows: string[];
+  /**
+   * The rows that say what a request is about, never what it shows: those above the dashed rules around its command
+   * or diff (its title, its path; none when it draws no such rule), and its question ("Do you want to …?") down to its
+   * options. Empty for a menu. For checks on this computer, not for the phone.
+   */
+  subject: string[];
   /** Always empty for a menu. */
   options: DialogOption[];
   /** The option the cursor is on, if any (none: answered in the terminal). */
@@ -125,6 +131,31 @@ function rowsBetween(lines: readonly string[], from: number, to: number): string
   return rows;
 }
 
+/** A request's question, as its row starts ("Do you want to make this edit to upload.ts?", "Do you want to proceed?"). */
+const QUESTION = /^Do you want to /;
+
+/**
+ * A request's subject rows strictly between two indices: those above its first dashed rule (only when it draws one),
+ * then its question from the last row that starts one, when that row is below them.
+ */
+function subjectOf(lines: readonly string[], from: number, to: number): string[] {
+  const head: string[] = [];
+  const all: string[] = [];
+  let dashed = false;
+  for (let i = from + 1; i < to; i++) {
+    const row = textOf(lines[i]);
+    if (!row) continue;
+    if (DASHED.test(row)) { dashed = true; continue; }
+    if (RULE.test(row)) continue;
+    if (!dashed) head.push(cut(row));
+    all.push(cut(row));
+  }
+  let ask = all.length - 1;
+  while (ask >= 0 && !QUESTION.test(all[ask]!)) ask--;
+  const start = dashed ? head.length : 0;
+  return [...(dashed ? head : []), ...(ask >= start ? all.slice(ask) : [])];
+}
+
 /**
  * At most `MAX_ROWS` of a dialog's rows: its first ones (what it asks about: the tool, the command, the file) and those
  * nearest its options (what it asks), with `…` where rows were left out.
@@ -176,7 +207,7 @@ const pageOf = (kind: DialogKind, rows: string[], options: DialogOption[]) =>
 /** A menu: all its rows from its top edge (above row `at`) to its last row, its first `MAX_ROWS`. */
 function menu(lines: readonly string[], at: number, trust: boolean): ScreenDialog {
   const rows = rowsBetween(lines, topAbove(lines, at), lastRow(lines) + 1).slice(0, MAX_ROWS);
-  return { kind: 'menu', rows, options: [], focused: null, inField: false, fieldText: null, several: false, trust, page: pageOf('menu', rows, []) };
+  return { kind: 'menu', rows, subject: [], options: [], focused: null, inField: false, fieldText: null, several: false, trust, page: pageOf('menu', rows, []) };
 }
 
 /** The option that is the dialog's text field, and for the plan the row of its feedback hint (null: none). */
@@ -218,7 +249,8 @@ export function readDialog(view: ScreenView, wait: DialogWait | null): ScreenDia
   if (box && box.to > d.options[0]!.line) return null;
   if (!wait) return menu(lines, d.options[0]!.line, false);
 
-  const rows = capped(rowsBetween(lines, topAbove(lines, d.options[0]!.line - 1), d.options[0]!.line));
+  const top = topAbove(lines, d.options[0]!.line - 1);
+  const rows = capped(rowsBetween(lines, top, d.options[0]!.line));
   if (wait === 'question' && !rows.some((r) => QUESTION_ROW.test(r))) return null;
   const field = fieldOf(lines, d.options, wait, rows);
   // A plan's wait may outlive its dialog (its hook lags the screen): only the plan dialog's own marks make it one, its
@@ -246,7 +278,7 @@ export function readDialog(view: ScreenView, wait: DialogWait | null): ScreenDia
     : (focused !== null && focused === field.n) || (wait === 'question' && hint.includes(EDITOR));
   const typed = inField && at ? typedIn(view.undimmed, at.row, at.end) : null;
   return {
-    kind: wait, rows, options, focused, inField,
+    kind: wait, rows, subject: subjectOf(lines, top, d.options[0]!.line), options, focused, inField,
     fieldText: typed !== null && wait === 'permission' ? typed.replace(/^No,\s*/, '') : typed,
     several: options.some((o) => CHECKBOX.test(o.label)),
     trust: false,

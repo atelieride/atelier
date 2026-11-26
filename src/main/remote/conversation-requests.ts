@@ -16,7 +16,7 @@ import type { AnswerBook } from './answers';
 import type { ConversationBook, ConversationSnapshot } from './conversations';
 import { chooseKeys, claudeWorking, fieldHolds, menuToClose, promptHolds, promptState, readDialog, type DialogWait, type ScreenDialog } from './dialog';
 import type { DeviceMessage, ErrorCode, HostMessage } from './messages';
-import { shows } from './prompt';
+import { FILE_TOOLS, shows } from './prompt';
 import type { RemoteTerminals } from './remote-hub';
 import { waitOf, type WaitBook } from './rows';
 
@@ -268,10 +268,10 @@ export class PhoneConversations {
 
   /**
    * Esc while the screen shows Claude working and nothing asks: it interrupts Claude, as in the terminal. A dialog, or
-   * a wait no phone answered, comes first (Esc would decline the request, or close the menu); then the screen must
-   * offer Esc to interrupt, whatever the hooks say (a late Stop hook leaves an idle prompt, where Esc arms the rewind;
-   * text typed in the prompt takes the hint's place); then a window typing just now (a second Esc after its own would
-   * clear its draft or open the rewind menu).
+   * a wait no phone answered, comes first (Esc would decline the request, or close the menu); then text typed in the
+   * prompt (Esc would reach that draft); then the screen must offer Esc to interrupt, whatever the hooks say (a late
+   * Stop hook leaves an idle prompt, where Esc arms the rewind); then a window typing just now (a second Esc after its
+   * own would clear its draft or open the rewind menu).
    */
   private async typeStop(id: string, type: (key: string) => void): Promise<Refusal | null> {
     const view = await this.o.terms.screenView(id);
@@ -280,7 +280,9 @@ export class PhoneConversations {
     // The phone gone: no key, and nothing is answered.
     if (this.disposed) return NOT_WORKING;
     if (this.waits(t) || readDialog(view, null)) return ANSWER_FIRST;
-    if (!claudeWorking(view)) return promptState(view) === 'typed' ? TYPED : NOT_WORKING;
+    // Esc would reach text in the prompt, whatever the hint says.
+    if (promptState(view) === 'typed') return TYPED;
+    if (!claudeWorking(view)) return NOT_WORKING;
     if (this.typedLately(id)) return TYPED;
     type(ESC);
     return null;
@@ -341,7 +343,7 @@ export class PhoneConversations {
       }
       const wait = d.kind === 'menu' ? null : d.kind;
       const ask = wait ? this.o.host.asks.keyOf(t) : null;
-      const entry = wait ? await this.entryOf(t, wait, d.rows) : null;
+      const entry = wait ? await this.entryOf(t, wait, d) : null;
       // Named fields only: the reader's own (the cursor, what a field holds as typed) stay on this computer.
       this.send({
         t: 'dialog', rid, id, ...(ask ? { ask: `${ask}.${d.page}` } : {}), kind: d.kind, rows: [...d.rows],
@@ -357,12 +359,13 @@ export class PhoneConversations {
 
   /**
    * The entry a dialog is about, when exactly one running call fits it: the question, the plan's ExitPlanMode, or for a
-   * permission the call whose request the dialog's own `rows` name (its command, its file), of the tool the session's
-   * hook names. Parallel calls ask in turn and a hook may name another one than the dialog drawn: the rows decide, and
-   * a hook for another tool leaves the dialog without its entry. None too when the conversation can't be read (or
-   * isn't written yet).
+   * permission the call of the tool the session's hook names whose request the dialog asks for: a file by its name on
+   * the dialog's subject rows (its path, its question), never in the diff or content it shows; a command as a whole,
+   * the whole of one its target cuts short. Parallel calls ask in turn and a hook may name another one than the dialog
+   * drawn: the dialog decides, a subagent's own request (never a running call) matches none, and a hook for another
+   * tool leaves the dialog without its entry. None too when the conversation can't be read (or isn't written yet).
    */
-  private async entryOf(t: TerminalInfo, wait: DialogWait, rows: readonly string[]): Promise<number | null> {
+  private async entryOf(t: TerminalInfo, wait: DialogWait, d: ScreenDialog): Promise<number | null> {
     let running: ConversationSnapshot['running'];
     try { running = (await this.o.book.read(t)).running; } catch (e) {
       this.o.host.log(`conversations: the dialog of terminal ${t.id} goes without its entry (${reasonOf(e)})`);
@@ -372,7 +375,9 @@ export class PhoneConversations {
     const tool = target?.split(' ', 1)[0] ?? null;
     const fits = running.filter((r) => (wait === 'question' ? r.k === 'question'
       : wait === 'plan' ? r.k === 'tool' && r.tool === 'ExitPlanMode'
-        : r.k === 'tool' && r.tool === tool && shows(rows, r.waitTarget)));
+        : r.k === 'tool' && r.tool === tool && (FILE_TOOLS.has(r.tool)
+          ? shows(d.subject, r.waitTarget)
+          : shows(d.rows, r.command !== undefined ? `${r.tool} ${r.command}` : r.waitTarget))));
     return fits.length === 1 ? fits[0]!.n : null;
   }
 

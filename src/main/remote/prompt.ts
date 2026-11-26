@@ -34,7 +34,7 @@ export const TRANSCRIPT = /^[⏺●⎿]/;
 /** At most this many rows above its options are the dialog's. */
 const DIALOG_ROWS = 100;
 /** Tools whose request names a file by its last part ("Edit upload.ts"), as their dialog names it. */
-const FILE_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit', 'Read']);
+export const FILE_TOOLS: ReadonlySet<string> = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit', 'Read']);
 
 export interface Row { n: number; label: string; focused: boolean; /** The row's index in the lines given (untrimmed, empty rows counted). */ line: number }
 
