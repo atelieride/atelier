@@ -6,7 +6,7 @@ import type { SessionInfo } from '@shared/session';
 import { inboxSection } from '../../renderer/inbox';
 import { sessionSubtitle } from '../../renderer/selectors';
 import { t as words } from '../../renderer/i18n/en';
-import { MAX_DETAIL, WaitBook, detailOf, isPlanApproval, permissionOf, sectionOf } from './rows';
+import { MAX_DETAIL, WaitBook, anyWait, detailOf, isPlanApproval, permissionOf, sectionOf, waitOf } from './rows';
 
 const term = (session: SessionInfo | null, work?: BackgroundWork): TerminalInfo => ({
   id: 't1', projectRoot: '/p', cwd: '/p', title: 'T', name: null, color: '#B794F6', foreground: 'claude', createdAt: 1, session, ...(work ? { work } : {})
@@ -113,4 +113,26 @@ test('a wait\'s key: only for a permission the row can answer, the same for the 
   expect(book.keyOf({ id: 't1', session: { ...waiting, state: 'idle', waitingFor: 'input' } })).toBeNull();
   expect(book.keyOf({ id: 't1', session: { ...waiting, state: 'error', errorReason: 'rate_limit', waitingFor: null, limitPause: { since: 1, resetsAt: null } } })).toBeNull();
   expect(book.keyOf({ id: 't1', session: null })).toBeNull();
+});
+
+test('any wait gets a key, plan and question too; the answerable book still keys only what a row can answer', () => {
+  const perm = session({ state: 'waiting', waitingFor: 'permission', activity: 'waiting: Bash npm test', updatedAt: 10 });
+  const plan = { ...perm, activity: 'waiting: plan approval' };
+  const question = { ...perm, waitingFor: 'question' as const, activity: 'waiting: question' };
+  const nameless = { ...perm, activity: 'waiting for you' };
+  const paused = { ...perm, state: 'error' as const, errorReason: 'rate_limit', waitingFor: null, limitPause: { since: 1, resetsAt: null } } as SessionInfo;
+  const every = new WaitBook(anyWait);
+  const answerable = new WaitBook();
+  const keys = [perm, plan, question, nameless].map((s, i) => every.keyOf({ id: `t${i}`, session: s }));
+  for (const k of keys) expect(k).toMatch(/^[A-Za-z0-9_-]{22}$/);
+  expect(new Set(keys).size).toBe(4);
+  expect([perm, plan, question, nameless].map((s, i) => answerable.keyOf({ id: `t${i}`, session: s }) !== null)).toEqual([true, false, false, false]);
+  // The same wait keeps its key through later events; no key for a usage-limit pause, an idle notice or no session.
+  expect(every.keyOf({ id: 't0', session: { ...perm, updatedAt: 11 } })).toBe(keys[0]);
+  expect(every.keyOf({ id: 't1', session: paused })).toBeNull();
+  expect(every.keyOf({ id: 't1', session: { ...perm, state: 'idle', waitingFor: 'input' } })).toBeNull();
+  expect(every.keyOf({ id: 't1', session: null })).toBeNull();
+  // What the dialog read expects: question, plan, permission (even one that names no request), nothing for a pause.
+  expect([perm, plan, question, nameless, paused].map((s) => waitOf(s))).toEqual(['permission', 'plan', 'question', 'permission', null]);
+  expect(waitOf(null)).toBeNull();
 });

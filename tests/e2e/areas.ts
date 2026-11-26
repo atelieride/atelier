@@ -192,6 +192,8 @@ export const SPECS: Record<string, Area[]> = {
   'iphone-terminal.spec.ts': ['iphone', 'terminal', 'workspace'],
   // The pairing sheet and Settings › iPhone at the keyboard: commands, Esc, the relay field, Forget All, two windows.
   'iphone-sheet.spec.ts': ['iphone', 'settings'],
+  // A Claude session's conversation on the phone: followed, a prompt typed in, a dialog answered; the window's size kept.
+  'iphone-conversation.spec.ts': ['iphone', 'sessions', 'terminal'],
   'terminal-font.spec.ts': ['settings', 'terminal'],
   'window.spec.ts': ['workspace'],
   'word-wrap.spec.ts': ['editor', 'settings'],
@@ -255,9 +257,14 @@ export const IGNORED = [
 ];
 
 export const SOURCES: Record<string, Area[]> = {
-  // Ask companion: its pure rules, main's runs and threads, the renderer's state and panel.
-  'src/shared/companion/': ['companion'],
+  // Ask companion: its pure rules (the phones' conversation view reads transcripts with them too), main's runs and
+  // threads, the renderer's state and panel.
+  'src/shared/companion/': ['companion', 'iphone'],
   'src/main/companion/': ['companion'],
+  // The transcript's incremental JSONL reader, shared by Ask and the phones' conversation view.
+  'src/main/transcript-lines.ts': ['companion', 'iphone'],
+  // The phones' conversation view: the transcript read as numbered entries.
+  'src/shared/conversation/': ['iphone'],
   // iPhone access: Noise, pairing, the relay link, the phones' channels and their terminals; the renderer's Settings ›
   // iPhone, pairing sheet, pill, badges and size note; the test relay and the fake phone the spec drives them with.
   'src/main/remote/': ['iphone', 'terminal', 'sessions', 'settings'],

@@ -3,7 +3,11 @@
 // `t`; requests carry `rid`, a positive integer the phone picks, repeated in the answer.
 import { z } from 'zod';
 import { ACCOUNT_ID } from '@shared/claude-accounts';
+import type { Entry } from '@shared/conversation/types';
 import type { RemoteLayout } from '@shared/remote';
+import type { DialogKind, DialogOption } from './dialog';
+
+export type { Entry };
 
 /** Control and line-separator characters: names are shown as plain text on both ends. */
 // eslint-disable-next-line no-control-regex
@@ -25,6 +29,25 @@ const dim = z.number().int().min(2).max(1000);
 /** At most 64 KiB of UTF-8 per input message. */
 export const MAX_INPUT_BYTES = 64 * 1024;
 
+/** At most 16 KiB of UTF-8 per `say`, 4 KiB per `choose` text. */
+export const MAX_SAY_BYTES = 16384;
+export const MAX_FIELD_BYTES = 4096;
+/** Control characters but newline and tab (a prompt may have lines), and the line separators. */
+// eslint-disable-next-line no-control-regex
+const CONTROL_NOT_LINES = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u2028\u2029]/;
+const bytesAtMost = (max: number) => (s: string) => Buffer.byteLength(s, 'utf8') <= max;
+/** A prompt to type: not blank, lines and tabs allowed, no other control character. */
+const sayText = z.string().min(1).max(MAX_SAY_BYTES).refine(bytesAtMost(MAX_SAY_BYTES), 'text too large').refine((s) => s.trim().length > 0 && !CONTROL_NOT_LINES.test(s), 'text');
+/** Text for a dialog's field: one line, not blank. */
+const fieldText = z.string().min(1).max(MAX_FIELD_BYTES).refine(bytesAtMost(MAX_FIELD_BYTES), 'text too large').refine((s) => s.trim().length > 0 && !CONTROL.test(s), 'text');
+/**
+ * An option's label as the phone saw it: at most 300 characters (an emoji counts once), so at most 1200 UTF-16 units;
+ * a longer one is refused before its characters are counted one by one.
+ */
+const optionLabel = z.string().min(1).max(1200, { abort: true }).refine((s) => [...s].length <= 300, 'label too long');
+/** A dialog's key: the Session's `ask`, a `.`, and the dialog page's 8 characters. */
+const dialogAsk = z.string().regex(/^[A-Za-z0-9_-]{1,64}\.[A-Za-z0-9_-]{8}$/);
+
 /** A workspace or activity of a project's layout, as the sidebar names it. */
 const placeId = z.string().regex(/^[\w-]{1,40}$/);
 /** A Claude account, by the id `usage` lists (never a directory). */
@@ -41,7 +64,7 @@ const projectId = z.string().min(1).max(64);
 const placeName = z.string().max(MAX_NAME * 4);
 
 export const deviceMessageSchema = z.discriminatedUnion('t', [
-  z.object({ t: z.literal('attach'), rid, id: terminalId, cols: dim, rows: dim }).strict(),
+  z.object({ t: z.literal('attach'), rid, id: terminalId, cols: dim, rows: dim, fit: z.literal(true).optional() }).strict(),
   z.object({ t: z.literal('detach'), id: terminalId }).strict(),
   z.object({ t: z.literal('input'), id: terminalId, data: z.string().max(MAX_INPUT_BYTES).refine((s) => Buffer.byteLength(s, 'utf8') <= MAX_INPUT_BYTES, 'input too large') }).strict(),
   z.object({ t: z.literal('resize'), id: terminalId, cols: dim, rows: dim }).strict(),
@@ -66,8 +89,20 @@ export const deviceMessageSchema = z.discriminatedUnion('t', [
   // A project's window, opened as a recent project opens, or closed as its own close does: `sessions` is the phone's
   // user's answer to the question Atelier asks about what is still busy in it.
   z.object({ t: z.literal('openWindow'), rid, project: projectId }).strict(),
-  z.object({ t: z.literal('closeWindow'), rid, project: projectId, sessions: z.enum(['keep', 'stop']).optional() }).strict()
+  z.object({ t: z.literal('closeWindow'), rid, project: projectId, sessions: z.enum(['keep', 'stop']).optional() }).strict(),
+  // A Claude session's conversation, and answering what it asks.
+  z.object({ t: z.literal('follow'), rid, id: terminalId, before: z.number().int().min(1).max(2 ** 31 - 1).optional() }).strict(),
+  z.object({ t: z.literal('unfollow'), id: terminalId }).strict(),
+  z.object({ t: z.literal('say'), rid, id: terminalId, text: sayText }).strict(),
+  z.object({ t: z.literal('stop'), rid, id: terminalId }).strict(),
+  z.object({ t: z.literal('escape'), rid, id: terminalId }).strict(),
+  z.object({ t: z.literal('dialog'), rid, id: terminalId }).strict(),
+  z.object({ t: z.literal('choose'), rid, id: terminalId, ask: dialogAsk, n: z.number().int().min(1).max(9), label: optionLabel, text: fieldText.optional() }).strict()
 ]);
+/** Reading a conversation or its dialog (answered `busy` past their shared limit). */
+export const CONVERSATION_READS: ReadonlySet<DeviceMessage['t']> = new Set(['follow', 'dialog']);
+/** Typing into, stopping or answering a session (answered `busy` past their shared limit). */
+export const CONVERSATION_TYPES: ReadonlySet<DeviceMessage['t']> = new Set(['say', 'stop', 'escape', 'choose']);
 /** The requests that change rows, places or windows (answered `busy` past their shared limit). */
 export const ROW_ACTIONS: ReadonlySet<DeviceMessage['t']> = new Set(['answer', 'rename', 'close', 'resume', 'dismiss', 'workspace', 'activity', 'renamePlace', 'move', 'closePlace', 'openWindow', 'closeWindow']);
 export type DeviceMessage = z.infer<typeof deviceMessageSchema>;
@@ -105,6 +140,8 @@ export interface RemoteSession {
   permission?: string;
   /** While waiting: a key of this very wait (an `answer` names it). */
   wait?: string;
+  /** While waiting for a permission, a plan approval or an answer: a key of this very wait, every kind (`wait` stays for the waits a row can answer). */
+  ask?: string;
   lastMessageAt?: number;
   model?: string;
   contextPct?: number;
@@ -181,6 +218,9 @@ export type HostMessage =
   | { t: 'out'; id: string; data: string }
   | { t: 'size'; id: string; cols: number; rows: number }
   | { t: 'exit'; id: string }
+  | { t: 'chat'; id: string; rid?: number; conversation: string; entries: Entry[]; start?: true; pending?: true }
+  /** The dialog at the bottom of a session's screen: only what a phone may see (never the text typed in a field). */
+  | { t: 'dialog'; rid: number; id: string; ask?: string; kind: DialogKind; rows: string[]; options: DialogOption[]; several?: true; entry?: number; trust?: true }
   | { t: 'ok'; rid: number }
   | { t: 'created'; rid: number; id: string }
   /** rid 0: the refused message carried none (input, resize, detach). */

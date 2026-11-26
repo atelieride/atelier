@@ -1,0 +1,40 @@
+[?1049h[H
+[38;2;153;153;153;48;2;55;55;55m❯[39m [38;2;255;255;255m/model[39m [0m
+[38;2;153;153;153m  ⎿  [0mKept[1Cmodel[1Cas[1C[38;2;177;185;249mSonnet 5.5
+
+[38;2;153;153;153;48;2;55;55;55m❯ [38;2;255;255;255mUse the AskUserQuestion tool to ask me one question: my favorite color, options Red, Green, Blue. Then reply in one [39m  
+  [38;2;255;255;255mshort sentence.[39m                                                                                                       
+[0m
+[38;2;153;153;153m⏺[0m Answered[1CClaude's[1Cquestions:
+[38;2;153;153;153m  ⎿  · What is your favorite color? → Green
+
+[38;2;255;255;255m⏺[0m Your favorite color is Green.
+
+[38;2;153;153;153m✻[1CCrunched for 2s · done 10:08 AM
+
+[48;2;55;55;55m❯ [38;2;255;255;255mUse the AskUserQuestion tool to ask me one question: my favorite fruit, options Apple, Pear. Then reply in one short [39m 
+  [38;2;255;255;255msentence.[39m                                                                                                             
+[0m
+[38;2;153;153;153m⏺[1C[0mAnswered[1CClaude's[1Cquestions:
+[38;2;153;153;153m  ⎿  · What is your favorite fruit? → Mango
+
+[38;2;255;255;255m⏺[0m Your favorite fruit is Mango, which you entered as a custom answer.
+
+[38;2;153;153;153m✻[1CSautéed for 2s · done 10:09 AM
+
+[48;2;55;55;55m❯ [38;2;255;255;255mCall AskUserQuestion once with two questions: my favorite season (Summer, Winter) and my favorite drink (Tea, [39m        
+  [38;2;255;255;255mCoffee). Then reply in one short sentence.[39m                                                                            
+[38;2;153;153;153;49m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[0m←  ☒ Season [38;2;0;0;0;48;2;177;185;249m ☐ Drink [0m[1C✔[1CSubmit[2C→
+
+[38;2;255;255;255;1mWhat is your favorite drink?
+
+[38;2;177;185;249;22m❯[0m [38;2;153;153;153m1.[0m [38;2;177;185;249mTea
+[5C[38;2;153;153;153mTea
+[0m [1C[38;2;153;153;153m2.[0m Coffee
+     [38;2;153;153;153mCoffee
+[2C3. Type something.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[0m  4.[1CChat[1Cabout[1Cthis
+
+[38;2;153;153;153mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[8A[60D[0m[?2004h[?1004h[?1003h[?1006h[?25l

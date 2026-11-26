@@ -1,0 +1,40 @@
+[?1049h[H
+
+[38;2;255;255;255m⏺[1C[0mI[1Ccreated[1Cthe[1Cempty[1Cfile[1C[38;2;177;185;249mmade-by-bash.txt[1C[0min[1Cthe[1Ccurrent[1Cdirectory.
+
+[38;2;153;153;153m✻[1CCooked for 2s · done 10:05 AM
+
+[48;2;55;55;55m❯ [38;2;255;255;255mRun touch second.txt with the Bash tool. Reply in one short sentence.[39m                                                 
+[0m
+[2C[38;2;153;153;153mDid not run [1m1[22m call 
+  ⎿  $ touch second.txt
+  ⎿  Not run · rejected
+
+[38;2;255;255;255m⏺[1C[0mOk.
+
+[38;2;153;153;153m✻[1CCogitated for 2s · done 10:06 AM
+
+[48;2;55;55;55m❯ [38;2;255;255;255mRun touch third.txt with the Bash tool. Reply in one short sentence.[39m                                                  
+[0m
+[2C[38;2;153;153;153mDid not run [1m1[22m call 
+  ⎿  $ touch third.txt
+  ⎿  Interrupted · What should Claude do instead?
+
+[48;2;55;55;55m❯ [38;2;255;255;255mIn hello.txt, use the Edit tool to change world to there. Reply in one short sentence.[39m                                
+[0m
+[2C[38;2;153;153;153mRead [1m1[22m file 
+
+[38;2;78;186;101m⏺[1C[39;1mUpdate[0m(hello.txt)
+[38;2;153;153;153m  ⎿  [0mAdded [1m1[0m line, removed[1C[1m1[1C[0mline
+     [38;2;220;90;90;48;2;61;1;0m 1 -[38;2;248;248;242mHello, [48;2;92;2;0mworld[48;2;61;1;0m!                                                                                           [0m
+[5C[38;2;80;200;80;48;2;2;40;0m 1 +[38;2;248;248;242mHello, [48;2;4;71;0mthere[48;2;2;40;0m!                                                                                           [0m
+
+[2C[38;2;177;185;249m❯ /[1mmodel[22m                      Switch [1mmodel[22m (currently Sonnet 5.5)
+[0m [1C[38;2;153;153;153m  /auto-mode-setup            Teach auto mode about your environment
+[2C  /code-review                3 free /ultrareview · Review the current diff or a PR for bugs
+[0m  [38;2;153;153;153m  /effort                     Set the [39;1mmodel[38;2;153;153;153;22m's effort level
+[2C  /claude-api                 Build and debug apps that use the Claude API
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[0m❯ [38;2;177;185;249m/model
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[1C[0m [38;2;153;153;153m⏸ manual mode on[2A[10D[0m[?2004h[?1004h[?1003h[?1006h[?25h

@@ -49,10 +49,37 @@ print "FAKE-CLAUDE starting\n" if $ENV{ATELIER_FAKE_START_DELAY} || $ENV{ATELIER
 select(undef, undef, undef, $ENV{ATELIER_FAKE_START_DELAY}) if $ENV{ATELIER_FAKE_START_DELAY};
 if (my $gate = $ENV{ATELIER_FAKE_START_GATE}) { my $until = time() + 60; select(undef, undef, undef, 0.05) until -e $gate || time() > $until; unlink $gate; }
 send_hook(qq({"hook_event_name":"SessionStart","session_id":"$sid","transcript_path":"$tp","source":"@{[$resume ? 'resume' : 'startup']}"@{[title_field()]}}));
-send_hook(qq({"hook_event_name":"UserPromptSubmit","session_id":"$sid","prompt":"x"@{[title_field()]}}));
-send_hook(qq({"hook_event_name":"PreToolUse","session_id":"$sid","tool_name":"Edit","tool_input":{"file_path":"/p/SpeakerPanel.tsx"}}));
+# ATELIER_FAKE_CONVERSATION (opt-in, with ATELIER_FAKE_UUID_SESSIONS: a transcript is found by a UUID session id): a
+# conversation written to the session's transcript as Claude Code writes one. Its first turn runs the tests (the prompt,
+# a reply, the Bash call and its result) and asks no permission, unless ATELIER_FAKE_PERMISSION_KEYS: then its dialog
+# comes between the call and its result, the result only once allowed. Then Claude's prompt box, where each prompt typed
+# or pasted is answered "You said: <prompt>" (see the prompt box below).
+my $conversation = $ENV{ATELIER_FAKE_CONVERSATION};
+# The conversation's transcript lines, each one's parent the line before it, as Claude Code chains them.
+my ($parent, $written) = ('null', 0);
+sub transcript {
+  my ($type, $message, $extra) = @_;
+  my $uuid = sprintf('%08x-0000-4000-8000-%012d', ++$written, $$);
+  append_file(session_file(), qq({"parentUuid":$parent,"isSidechain":false,"type":"$type","message":$message,"uuid":"$uuid","timestamp":") . stamp() . '","cwd":"' . js(Cwd::getcwd()) . qq(","sessionId":"$sid"@{[$extra // '']}}\n));
+  $parent = qq("$uuid");
+}
+sub prompt_line { transcript('user', '{"role":"user","content":"' . js($_[0]) . '"}'); }
+sub reply_line { transcript('assistant', '{"role":"assistant","content":[{"type":"text","text":"' . js($_[0]) . '"}]}'); }
+my $tests = "toolu_tests_$$";
+# A rule as Claude Code draws one above its dialogs and around its prompt box (U+2500 as UTF-8 bytes).
+my $rule = "\xE2\x94\x80" x 40;
+if ($conversation) {
+  send_hook(qq({"hook_event_name":"UserPromptSubmit","session_id":"$sid","prompt":"Run the tests"@{[title_field()]}}));
+  prompt_line('Run the tests');
+  reply_line('Running the test suite.');
+  transcript('assistant', qq({"role":"assistant","content":[{"type":"tool_use","id":"$tests","name":"Bash","input":{"command":"npm test","description":"Run the tests"}}]}));
+  send_hook(qq({"hook_event_name":"PreToolUse","session_id":"$sid","tool_name":"Bash","tool_input":{"command":"npm test"}}));
+} else {
+  send_hook(qq({"hook_event_name":"UserPromptSubmit","session_id":"$sid","prompt":"x"@{[title_field()]}}));
+  send_hook(qq({"hook_event_name":"PreToolUse","session_id":"$sid","tool_name":"Edit","tool_input":{"file_path":"/p/SpeakerPanel.tsx"}}));
+}
 send_status(qq("model":{"id":"claude-opus-5-5","display_name":"Opus 5.5"},"cost":{"total_cost_usd":4.126,"total_lines_added":120,"total_lines_removed":30},"context_window":{"used_percentage":58},"rate_limits":{"five_hour":{"used_percentage":$p5,"resets_at":$r5},"seven_day":{"used_percentage":18,"resets_at":$r7}}));
-send_hook(qq({"hook_event_name":"PermissionRequest","session_id":"$sid","tool_name":"Bash","tool_input":{"command":"npm test"}}));
+send_hook(qq({"hook_event_name":"PermissionRequest","session_id":"$sid","tool_name":"Bash","tool_input":{"command":"npm test"}})) if !$conversation || $ENV{ATELIER_FAKE_PERMISSION_KEYS};
 use Cwd ();
 # The arguments of a resume (or of every start with ATELIER_FAKE_PRINT_ARGS), without Atelier's --settings (a temporary path).
 my @shown; for (my $i = 0; $i <= $#ARGV; $i++) { if ($ARGV[$i] eq '--settings') { $i++; next; } push @shown, $ARGV[$i]; }
@@ -61,14 +88,15 @@ print "FAKE-CLAUDE cwd=" . Cwd::getcwd() . "\n";
 my ($line, $denied) = ('', 0);
 if (my $mode = $ENV{ATELIER_FAKE_PERMISSION_KEYS}) {
   # ATELIER_FAKE_PERMISSION_KEYS (opt-in): the permission waits as Claude Code's dialog does, the request and its
-  # options drawn as it draws them and chosen one key at a time (raw mode, nothing echoed): a digit chooses that
-  # option, Esc declines. "no-first" lists No before Yes; "always-only" offers no plain Yes; "other-request" shows
-  # another agent's request (asked first) than the one its hook reported; anything else is the usual three options.
+  # options drawn as it draws them (below a rule) and chosen one key at a time (raw mode, nothing echoed): a digit
+  # chooses that option, Esc declines. "no-first" lists No before Yes; "always-only" offers no plain Yes;
+  # "other-request" shows another agent's request (asked first) than the one its hook reported; anything else is the
+  # usual three options.
   my @options = $mode eq 'no-first' ? ('No', 'Yes')
     : $mode eq 'always-only' ? ("Yes, and don't ask again for this session", 'No, and tell Claude what to do differently (esc)')
     : ('Yes', "Yes, and don't ask again for npm test commands", 'No, and tell Claude what to do differently (esc)');
   my $shown = $mode eq 'other-request' ? 'rm -rf build' : 'npm test';
-  print "Bash command\n\n  $shown\n  Run the requested command\n\nDo you want to proceed?\n";
+  print "$rule\nBash command\n\n  $shown\n  Run the requested command\n\nDo you want to proceed?\n";
   # The cursor mark (U+276F) and the hints' dot (U+00B7) as UTF-8 bytes, as the terminal gets them.
   for my $i (0..$#options) { printf "%s %d. %s\n", ($i == 0 ? "\xE2\x9D\xAF" : ' '), $i + 1, $options[$i]; }
   print "\nEsc to cancel \xC2\xB7 Tab to amend\n";
@@ -89,7 +117,7 @@ if (my $mode = $ENV{ATELIER_FAKE_PERMISSION_KEYS}) {
     printf "FAKE-CLAUDE key=%02x\n", ord $key;
   }
   $t->setlflag($saved); $t->setattr(0, POSIX::TCSANOW());
-} else {
+} elsif (!$conversation) {
   print "FAKE-CLAUDE waiting; press enter\n";
   $line = <STDIN>;
   $line = '' unless defined $line; chomp $line; $line =~ s/\r$//;
@@ -97,7 +125,11 @@ if (my $mode = $ENV{ATELIER_FAKE_PERMISSION_KEYS}) {
 }
 # Declined: no tool runs and no Stop comes; Claude Code's idle notice brings the session back to its prompt.
 if ($denied) { send_hook(qq({"hook_event_name":"Notification","session_id":"$sid","notification_type":"idle_prompt","message":"Claude is waiting for your input"})); }
-else { send_hook(qq({"hook_event_name":"PostToolUse","session_id":"$sid","tool_name":"Bash","tool_input":{"command":"npm test"}})); }
+else {
+  # The conversation's tests ran: their result in its transcript.
+  transcript('user', qq({"role":"user","content":[{"tool_use_id":"$tests","type":"tool_result","content":"12 passed","is_error":false}]}), ',"toolUseResult":{"stdout":"12 passed","stderr":"","interrupted":false,"isImage":false,"noOutputExpected":false}') if $conversation;
+  send_hook(qq({"hook_event_name":"PostToolUse","session_id":"$sid","tool_name":"Bash","tool_input":{"command":"npm test"}}));
+}
 # "hold": keeps working until the next line; "fail": the turn stops on an error (StopFailure).
 if ($line eq 'hold') { print "FAKE-CLAUDE working; press enter\n"; my $more = <STDIN>; }
 if ($denied) {
@@ -116,7 +148,8 @@ my @listeners;
 use POSIX ();
 my (%bg, @bg_order, @servers);
 my $crons = '[]';
-sub js { my ($s) = @_; $s =~ s/(["\\])/\\$1/g; return $s; }
+# Text inside a JSON string: quotes and backslashes escaped, control characters (a pasted prompt's line breaks) as \uXXXX.
+sub js { my ($s) = @_; $s =~ s/(["\\])/\\$1/g; $s =~ s/([\x00-\x1f])/sprintf('\\u%04x', ord $1)/ge; return $s; }
 sub bg_list {
   my @ids = @_ ? @_ : @bg_order;
   return join(',', map { my $b = $bg{$_}; my $d = js($b->{description} // $b->{command}); my $c = js($b->{command});
@@ -315,11 +348,142 @@ sub ev {
 # Atelier someone looks at keeps its sessions, their ports and their background work for that long.
 my $linger = ($ENV{ATELIER_FAKE_LINGER} // '') =~ /^\d+$/ ? $ENV{ATELIER_FAKE_LINGER} : 30;
 $SIG{ALRM} = sub { exit 0 }; alarm $linger;
-while (my $next = <STDIN>) {
-  chomp $next; $next =~ s/\r$//; print "FAKE-CLAUDE got=$next\n";
-  # "/exit": Claude Code quits: its SessionEnd, then the process ends and the shell is back.
+# A line typed at Claude's prompt, printed back. "/exit": Claude Code quits (its SessionEnd, then the process ends and
+# the shell is back); "ev:<what>": that event. True for any other line.
+sub typed_line {
+  my ($next) = @_;
+  print "FAKE-CLAUDE got=$next\n";
   if ($next eq '/exit') { send_hook(qq({"hook_event_name":"SessionEnd","session_id":"$sid","reason":"prompt_input_exit"})); print "FAKE-CLAUDE bye\n"; exit 0; }
-  ev($1) if $next =~ /^ev:(.+)$/;
+  if ($next =~ /^ev:(.+)$/) { ev($1); return 0; }
+  return 1;
+}
+# The conversation's prompt box, as Claude Code 2.1.332 draws it below its output: a rule, the prompt row ("❯ " and the
+# text typed, each line of it a row of its own, or a dim suggestion while there is none), a rule, a status row, with
+# the cursor at the end of the text. Keys are read as they come (raw mode, nothing echoed) and the box drawn again: a
+# bracketed paste's text goes in whole, line breaks included, without its markers; other keys and the terminal's
+# reports are ignored. Enter sends what the box holds, if anything: printed back, "ev:<what>" an event as above; a prompt
+# gets a user line and the reply "You said: <prompt>" in the transcript, between its UserPromptSubmit and its Stop.
+my ($typed, $box_rows, $tty, $tty_lflag) = ('', 0);
+END { if ($tty) { $tty->setlflag($tty_lflag); $tty->setattr(0, POSIX::TCSANOW()); } }
+sub columns { my $c = (split ' ', qx(stty size 2>/dev/null) // '')[1]; return $c && $c > 0 ? $c : 80; }
+sub width { my ($s) = @_; utf8::decode($s); return length $s; }
+sub draw_box {
+  my $cols = columns();
+  my $edge = "\xE2\x94\x80" x ($cols < 40 ? $cols : 40);
+  my @lines = length $typed ? split(/\n/, $typed, -1) : ('');
+  my $text = length $typed ? join("\n  ", @lines) : "\e[2mTry \"fix the tests\"\e[22m";
+  print "$edge\n\xE2\x9D\xAF $text\n$edge\n\e[2m  ? for shortcuts\e[22m";
+  # Back to the end of the text: the rows its lines take at the terminal's width, the column its last one ends at.
+  my $end = 0;
+  $box_rows = 0;
+  for my $l (@lines) { my $w = 2 + width($l); $box_rows += int(($w + $cols - 1) / $cols); $end = $w % $cols || $cols; }
+  print "\e[2A\e[@{[$end + 1]}G";
+}
+# From the end of the text, up to the box's top rule, and everything from there on erased.
+sub erase_box { print "\e[${box_rows}A\r\e[J"; }
+sub send_typed {
+  my $said = $typed;
+  $typed = '';
+  erase_box();
+  if (typed_line($said)) {
+    send_hook(qq({"hook_event_name":"UserPromptSubmit","session_id":"$sid","prompt":") . js($said) . qq("@{[title_field()]}}));
+    prompt_line($said);
+    reply_line("You said: $said");
+    print "\xE2\x8F\xBA You said: $said\n";
+    send_hook(qq({"hook_event_name":"Stop","session_id":"$sid"}));
+  }
+  draw_box();
+}
+# ATELIER_FAKE_SIZE_FILE (a path, opt-in): the terminal's size, a line "<cols>x<rows>" appended on entering the prompt
+# box and again after every SIGWINCH (before the box SIGWINCH stays ignored: the start's dialog reads its key as without
+# it). ATELIER_FAKE_ASK_FILE (a path, opt-in): once that file exists, Claude asks for a permission (see ask_build).
+my ($size_file, $ask_file, $winched) = ($ENV{ATELIER_FAKE_SIZE_FILE}, $ENV{ATELIER_FAKE_ASK_FILE}, 0);
+sub size_line { my ($rows, $cols) = split ' ', (qx(stty size 2>/dev/null) // ''); append_file($size_file, ($cols // 0) . 'x' . ($rows // 0) . "\n"); }
+# The keys typed within 250 ms (undef: none yet; '': the terminal is gone). It waits in select, so a signal never cuts
+# a read; a size changed meanwhile is recorded first.
+my $keys;
+sub keys_in {
+  if ($winched) { $winched = 0; size_line(); }
+  return undef unless $keys->can_read(0.25);
+  my $n = sysread(STDIN, my $chunk, 4096);
+  return $chunk if $n;
+  return defined $n || !$!{EINTR} ? '' : undef;
+}
+# A permission asked on cue: a Bash call in the transcript, its PreToolUse and PermissionRequest, and the dialog in
+# place of the prompt box, drawn as Claude Code 2.1.332 draws it, answered with one key: 1 (or 2) runs it ("Build
+# finished" in the transcript, PostToolUse, Stop), 3 or Esc declines (the idle notice). Then the prompt box again.
+my $builds = 0;
+sub ask_build {
+  my $use = "toolu_build_${$}_" . ++$builds;
+  transcript('assistant', qq({"role":"assistant","content":[{"type":"tool_use","id":"$use","name":"Bash","input":{"command":"npm run build","description":"Build the app"}}]}));
+  send_hook(qq({"hook_event_name":"PreToolUse","session_id":"$sid","tool_name":"Bash","tool_input":{"command":"npm run build"}}));
+  send_hook(qq({"hook_event_name":"PermissionRequest","session_id":"$sid","tool_name":"Bash","tool_input":{"command":"npm run build"}}));
+  erase_box();
+  my @options = ('Yes', "Yes, and don't ask again for npm run build commands", 'No');
+  my @rows = ($rule, 'Bash command', '  npm run build', '  Build the app', 'Do you want to proceed?',
+    (map { sprintf '%s %d. %s', ($_ == 0 ? "\xE2\x9D\xAF" : ' '), $_ + 1, $options[$_] } 0..$#options), '', "Esc to cancel \xC2\xB7 Tab to amend");
+  print join("\n", @rows);
+  # One key: an arrow or a terminal's report is no key; any other is printed back, and the dialog waits on.
+  my ($key, $shown) = ('', scalar @rows);
+  KEY: for (;;) {
+    my $chunk = keys_in();
+    next unless defined $chunk;
+    last unless length $chunk;
+    alarm $linger;
+    while (length $chunk) {
+      next if $chunk =~ s/^\e(?:\[[0-9;?]*[\x40-\x7e]|O.)//s;
+      my $c = substr($chunk, 0, 1, '');
+      if ($c =~ /^[123]$/ || $c eq "\e") { $key = $c; last KEY; }
+      printf "\nFAKE-CLAUDE key=%02x", ord $c;
+      $shown++;
+    }
+  }
+  # The dialog gone: from its last row up to its rule, everything erased.
+  print "\r\e[" . ($shown - 1) . "A\e[J";
+  if ($key eq '1' || $key eq '2') {
+    print 'FAKE-CLAUDE allowed' . ($key eq '2' ? ' always' : '') . " npm run build\n";
+    transcript('user', qq({"role":"user","content":[{"tool_use_id":"$use","type":"tool_result","content":"Build finished","is_error":false}]}), ',"toolUseResult":{"stdout":"Build finished","stderr":"","interrupted":false,"isImage":false,"noOutputExpected":false}');
+    send_hook(qq({"hook_event_name":"PostToolUse","session_id":"$sid","tool_name":"Bash","tool_input":{"command":"npm run build"}}));
+    send_hook(qq({"hook_event_name":"Stop","session_id":"$sid"}));
+  } elsif (length $key) {
+    print "FAKE-CLAUDE denied npm run build\n";
+    send_hook(qq({"hook_event_name":"Notification","session_id":"$sid","notification_type":"idle_prompt","message":"Claude is waiting for your input"}));
+  }
+  draw_box();
+}
+if ($conversation) {
+  require IO::Select;
+  $keys = IO::Select->new(\*STDIN);
+  $tty = POSIX::Termios->new; $tty->getattr(0); $tty_lflag = $tty->getlflag;
+  $tty->setlflag($tty_lflag & ~(POSIX::ECHO() | POSIX::ICANON())); $tty->setcc(POSIX::VMIN(), 1); $tty->setcc(POSIX::VTIME(), 0); $tty->setattr(0, POSIX::TCSANOW());
+  if ($size_file) { $SIG{WINCH} = sub { $winched = 1 }; size_line(); }
+  draw_box();
+  my ($buf, $paste) = ('', 0);
+  for (;;) {
+    if ($ask_file && -e $ask_file) { unlink $ask_file; ask_build(); }
+    my $chunk = keys_in();
+    next unless defined $chunk;
+    last unless length $chunk;
+    alarm $linger;
+    $buf .= $chunk;
+    my $changed = 0;
+    while (length $buf) {
+      if ($buf =~ s/^\e\[20([01])~//) { $paste = $1 eq '0'; next; }
+      next if $buf =~ s/^\e(?:\[[0-9;?]*[\x40-\x7e]|O.)?//s;
+      my $c = substr($buf, 0, 1, '');
+      if (($c eq "\r" || $c eq "\n") && !$paste) { if (length $typed) { send_typed(); $changed = 0; } }
+      elsif ($c eq "\r" || $c eq "\n") { $typed .= "\n"; $changed = 1; }
+      # Backspace: the last character (UTF-8 bytes).
+      elsif ($c eq "\x7f" || $c eq "\b") { $changed = 1 if $typed =~ s/(?:[\x00-\x7f]|[\xc0-\xff][\x80-\xbf]*)$//; }
+      elsif ($c eq "\t" || ord($c) >= 0x20) { $typed .= $c; $changed = 1; }
+    }
+    if ($changed) { erase_box(); draw_box(); }
+  }
+  $tty->setlflag($tty_lflag); $tty->setattr(0, POSIX::TCSANOW()); $tty = undef;
+}
+while (my $next = <STDIN>) {
+  chomp $next; $next =~ s/\r$//;
+  typed_line($next);
   alarm $linger;
 }
 sleep 30;

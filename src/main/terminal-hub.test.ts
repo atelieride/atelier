@@ -905,8 +905,8 @@ describe('remote viewers (a paired phone): watched like a window, with one size 
     client.send.mockClear(); client.request.mockClear();
     const sent = () => client.send.mock.calls.map((c) => c[0] as Record<string, unknown>);
     const requests = () => client.request.mock.calls.map((c) => (c as unknown[])[0] as Record<string, unknown>);
-    const phoneAttach = async (id = 'a', cols = 60, rows = 30) => {
-      const p = hub.remoteAttach(key, id, cols, rows);
+    const phoneAttach = async (id = 'a', cols = 60, rows = 30, take = true) => {
+      const p = hub.remoteAttach(key, id, cols, rows, take);
       await Promise.resolve();
       client.emit('snapshot', id, `screen of ${id}`);
       await p;
@@ -1022,6 +1022,23 @@ describe('remote viewers (a paired phone): watched like a window, with one size 
     expect(t.requests()).toEqual([{ t: 'attach', id: 'a' }]);
     t.client.emit('data', 'a', 'after');
     expect(t.got.filter((g) => g[0] === 'data')).toEqual([]);
+  });
+
+  test('a phone\'s attach replaced by one that leaves the size (detach, then attach not taking it): the window has its size back and keeps it', async () => {
+    const t = await withWindow();
+    await t.phoneAttach();
+    t.hub.remoteDetach(t.key, 'a');
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 60, rows: 30 }, { t: 'resize', id: 'a', cols: 120, rows: 40 }]);
+    t.client.send.mockClear();
+    await t.phoneAttach('a', 60, 30, false);
+    // No resize: the screen comes at the window's size, and no phone owns it.
+    expect(t.sent()).toEqual([]);
+    expect(t.got.at(-1)).toEqual(['snapshot', 'a', 'screen of a', { cols: 120, rows: 40 }]);
+    expect(t.hub.remoteSized()).toEqual([]);
+    // The phone types: it takes the size, at its own.
+    expect(t.hub.remoteInput(t.key, 'a', 'x')).toBe(true);
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 60, rows: 30 }, { t: 'input', id: 'a', data: 'x' }]);
+    expect(t.hub.remoteSized()).toEqual([{ id: 'a', cols: 60, rows: 30 }]);
   });
 
   test('the last viewer: a phone alone detaches atelierd when it leaves; a window leaving while the phone watches does not', async () => {
@@ -1310,6 +1327,83 @@ describe('a paired phone\'s actions on rows, as Atelier\'s own', () => {
     expect(lines.filter(Boolean)).toEqual(['Do you want to proceed?', '❯ 1. Yes', '  2. No']);
     expect((client.request.mock.calls as unknown as unknown[][]).map((c) => c[0])).toEqual([{ t: 'attach', id: 'w' }, { t: 'detach', id: 'w' }]);
     await expect(hub.permissionScreen('gone')).rejects.toThrow();
+  });
+
+  test('screenView reads the screen through its own attach, as permissionScreen does', async () => {
+    const { hub, client } = setup();
+    client.emit('terminals', [waiting('w')]);
+    client.request.mockImplementation((async (m: { t: string; id: string }) => {
+      if (m.t === 'attach') queueMicrotask(() => client.emit('snapshot', m.id, '\x1b[2mdim\x1b[0m bright'));
+      return {};
+    }) as never);
+    const view = await hub.screenView('w');
+    expect(view.lines[0]).toBe('dim bright');
+    expect(view.undimmed[0]).toBe('    bright');
+    expect((client.request.mock.calls as unknown as unknown[][]).map((c) => c[0])).toEqual([{ t: 'attach', id: 'w' }, { t: 'detach', id: 'w' }]);
+  });
+
+  test('windowShows: true only while a window is attached', async () => {
+    const { hub, register, client } = setup();
+    const w = wc(1); win(w); register(w);
+    client.emit('terminals', [waiting('w')]);
+    hub.installIpc();
+    const call = (kind: 'handle' | 'on', channel: string) => (vi.mocked(ipcMain[kind]).mock.calls as unknown as [string, (e: unknown, arg: unknown) => unknown][]).findLast((c) => c[0] === channel)![1];
+    expect(hub.windowShows('w')).toBe(false);
+    // A phone alone is not a window.
+    const key = hub.addRemoteViewer({ snapshot: () => {}, data: () => {}, size: () => {}, exit: () => {} } as never);
+    const phone = hub.remoteAttach(key, 'w', 80, 24);
+    client.emit('snapshot', 'w', 'screen');
+    await phone;
+    expect(hub.windowShows('w')).toBe(false);
+    const attached = call('handle', IPC.termAttach)({ sender: w }, 'w') as Promise<void>;
+    await Promise.resolve();
+    client.emit('snapshot', 'w', 'screen');
+    await attached;
+    expect(hub.windowShows('w')).toBe(true);
+    // The window goes, the phone stays.
+    await (call('handle', IPC.termDetach)({ sender: w }, 'w') as Promise<void>);
+    expect(hub.windowShows('w')).toBe(false);
+  });
+
+  test('lastWindowInput: a window\'s typing, not its terminal reports, nor a phone\'s', async () => {
+    vi.useFakeTimers();
+    try {
+      const { hub, register, client } = setup();
+      const w = wc(1); win(w); register(w);
+      client.emit('terminals', [waiting('w')]);
+      hub.installIpc();
+      const call = (kind: 'handle' | 'on', channel: string) => (vi.mocked(ipcMain[kind]).mock.calls as unknown as [string, (e: unknown, arg: unknown) => unknown][]).findLast((c) => c[0] === channel)![1];
+      const attached = call('handle', IPC.termAttach)({ sender: w }, 'w') as Promise<void>;
+      await Promise.resolve();
+      client.emit('snapshot', 'w', 'screen');
+      await attached;
+      const input = (data: string, pressed = false) => call('on', IPC.termInput)({ sender: w }, pressed ? { id: 'w', data, pressed: true } : { id: 'w', data });
+      expect(hub.lastWindowInput('w')).toBe(0);
+      vi.setSystemTime(10_000);
+      // A reply the terminal gives its program (cursor position report, device attributes) is not typing.
+      input('\x1b[1;1R');
+      input('\x1b[?1;2c');
+      expect(hub.lastWindowInput('w')).toBe(0);
+      input('a');
+      expect(hub.lastWindowInput('w')).toBe(10_000);
+      // A key that types nothing counts when the renderer says it was pressed.
+      vi.setSystemTime(20_000);
+      input('\x1b[1;1R', true);
+      expect(hub.lastWindowInput('w')).toBe(20_000);
+      // A phone's input is not a window's.
+      vi.setSystemTime(30_000);
+      const key = hub.addRemoteViewer({ snapshot: () => {}, data: () => {}, size: () => {}, exit: () => {} } as never);
+      const phone = hub.remoteAttach(key, 'w', 80, 24);
+      client.emit('snapshot', 'w', 'screen');
+      await phone;
+      expect(hub.remoteInput(key, 'w', 'hello')).toBe(true);
+      expect(hub.lastWindowInput('w')).toBe(20_000);
+      // Forgotten when the terminal exits.
+      client.emit('exit', 'w');
+      expect(hub.lastWindowInput('w')).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('a screen later than the read waits for: atelierd\'s attach goes again, unless a window watches the terminal', async () => {

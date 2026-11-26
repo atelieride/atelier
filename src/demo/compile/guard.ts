@@ -39,7 +39,9 @@ export const BACKEND_ONLY_SHARED: readonly string[] = [
   // Ask's backend: the `claude -p` argv builder, the chat digest, the rules and facts it
   // writes (live.ts too), the stream parser. The demo plays
   // a script instead; the renderer's own parts (answer, catch-up, thread, stale, types) ship.
-  'companion/args.ts', 'companion/chat.ts', 'companion/facts.ts', 'companion/live.ts', 'companion/rules.ts', 'companion/stream.ts', 'companion/text.ts'
+  'companion/args.ts', 'companion/chat.ts', 'companion/facts.ts', 'companion/live.ts', 'companion/rules.ts', 'companion/stream.ts', 'companion/text.ts',
+  // The phones' conversation view: the transcript read as numbered entries (main's remote hub sends them).
+  'conversation/types.ts', 'conversation/tools.ts', 'conversation/parse.ts', 'conversation/pages.ts'
   // Databases view: none left. databases.ts, databases-url.ts and pg-json.ts are the sidebar's (pasted URLs,
   // passwordless copies, quoted names), pg-format.ts and databases-filters.ts the table tab's (values as text,
   // masked), in their lazy chunks; the demo's own Databases engine (engine/databases*.ts, a chunk of its own) reads

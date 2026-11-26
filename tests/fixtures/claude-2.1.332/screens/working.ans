@@ -1,0 +1,40 @@
+[?1049h[H
+[38;2;255;255;255m⏺[0m The[1Cforeground[1Crun[1Cwas[1Cblocked,[1Cso[1CI[1Cstarted[1C[38;2;177;185;249msleep 25 && echo done[1C[0min[1Cthe[1Cbackground[1Cinstead,[1Cand[1CI'll[1Cbe[1Cnotified
+ [1Cwhen it finishes.
+ 
+[38;2;153;153;153m✻[1CBaked for 5s · done 10:12 AM
+
+[48;2;55;55;55m❯ [38;2;255;255;255mWhat is 3+3? One word.[39m                                                                                                
+[0m
+[38;2;255;255;255m⏺[1C[0mSix.
+
+[38;2;153;153;153m✻[1CCogitated for 0s · done 10:12 AM
+
+[38;2;78;186;101m⏺[1C[0mBackground[1Ccommand[1C"Sleep[1C25[1Cseconds[1Cthen[1Cprint[1Cdone"[1Ccompleted[1C(exit[1Ccode[1C0)
+
+[38;2;255;255;255m⏺[1C[0mThe[1Cbackground[1C[38;2;177;185;249msleep 25 && echo done[1C[0mcommand[1Cfinished[1Csuccessfully[1C(exit[1Ccode[1C0).
+
+[38;2;153;153;153m✻[1CBaked for 1s · done 10:12 AM
+
+[48;2;55;55;55m❯ [38;2;255;255;255mRun sleep 12 && echo done with the Bash tool, in the foreground. Reply in one short sentence.[39m                         
+[0m
+[2C[38;2;153;153;153mRan [1m1[22m shell command 
+
+[48;2;55;55;55m❯ [38;2;255;255;255mWhat is 3+4? One word.[39m                                                                                                
+[0m
+[38;2;255;255;255m⏺[1C[0mThe[1C12-second[1Csleep[1Cfinished[1Cand[1Cprinted[1C"done".[1C3+4[1Cis[1CSeven.
+
+[38;2;153;153;153m✻[1CBaked for 14s · done 10:13 AM
+
+[48;2;55;55;55m❯ [38;2;255;255;255mRun sleep 12 && echo done with the Bash tool, in the foreground. Reply in one short sentence.[39m                         
+[0m
+[38;2;153;153;153m [1C[0mSleeping[1C12[1Cseconds[1Cthen[1Cprinting[1Cdone[38;2;153;153;153m · 3s
+  ⎿  $ sleep 12 && echo done (4s)
+[0m     [38;2;153;153;153m(ctrl+b to run in background)
+
+[38;2;215;119;87m✽[1C[38;2;220;129;97mMisting…[38;2;215;119;87m [38;2;153;153;153m(5s · ↓[1C89 tokens)
+
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;2;153;153;153m❯ 
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[2C[38;2;153;153;153m⏸ manual mode on · esc to interrupt[2A[35D[0m[?2004h[?1004h[?1003h[?1006h[?25h

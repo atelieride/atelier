@@ -1,13 +1,16 @@
 // iPhone access in the main process: with Settings › iPhone on, this computer keeps one connection to the relay and
 // serves each paired phone that connects through it — the state of its projects and sessions as their sidebar rows
 // show them, each project's sidebar arrangement, the accounts' limits, how Atelier looks (its theme and terminal
-// settings), a terminal's screen and output, typing, sizes, new sessions, the actions on rows (Allow / Deny, rename,
-// close, resume, dismiss), on workspaces and activities (new, renamed, closed, a row moved in: applied by the
-// project's window, opened for it when closed) and on the project windows themselves (opened as a recent project
-// opens, closed as their own close does) — sends the push notifications phones registered for, and runs pairing (the
-// code, the Allow/Deny question to the windows). Off, no relay connection exists at all. A phone only names what the
-// state listed: opaque project ids, terminal, place and account ids, never paths, commands, directories or profiles.
+// settings), a terminal's screen and output, a Claude session's conversation as data (followed with no terminal
+// attached), typing, sizes, new sessions, the actions on rows (Allow / Deny, rename, close, resume, dismiss), on
+// workspaces and activities (new, renamed, closed, a row moved in: applied by the project's window, opened for it when
+// closed) and on the project windows themselves (opened as a recent project opens, closed as their own close does) —
+// sends the push notifications phones registered for, and runs pairing (the code, the Allow/Deny question to the
+// windows). Off, no relay connection exists at all. A phone only names what the state listed: opaque project ids,
+// terminal, place and account ids, never paths, commands, directories or profiles. It sees paths and commands only
+// inside a conversation's entries and dialogs, as Claude Code shows them.
 import { randomBytes } from 'node:crypto';
+import { homedir } from 'node:os';
 import type { RemoteDeviceInfo, RemoteLayout, RemotePairingEvent, RemotePairingStart, RemotePlace, RemotePlaceOp, RemotePlaceResult, RemoteRelayState, RemoteRowsEvent, RemoteSized, RemoteStatus } from '@shared/remote';
 import { accountsFor } from '@shared/claude-accounts';
 import { ACTIVITIES_OFF, WORKSPACES_OFF, relayBase } from '@shared/remote';
@@ -17,6 +20,7 @@ import type { PrEntry } from '@shared/pr';
 import type { Resumable, TerminalInfo } from '@shared/protocol';
 import type { UsageEntry } from '@shared/session';
 import { waitTarget } from '@shared/session-view';
+import { sessionTranscript } from '../claude-history';
 import type { SecretStore } from '../connectors/secret-store';
 import type { RemoteViewer } from '../terminal-hub';
 import type { Size } from '../terminal-sizes';
@@ -33,8 +37,10 @@ import { CLOSE, placeNameProblem, type ByeReason, type DeviceMessage, type HostM
 import { Pairing } from './pairing';
 import { RelayLink, type RelayLinkOptions } from './relay-link';
 import { AnswerBook } from './answers';
-import { allowKey, denyKey } from './prompt';
-import { WaitBook } from './rows';
+import { PhoneConversations, type ConversationHost, type ConversationTiming } from './conversation-requests';
+import { ConversationBook, type ConversationDeps } from './conversations';
+import { allowKey, denyKey, type ScreenView } from './prompt';
+import { WaitBook, anyWait } from './rows';
 import { remoteState, remoteUsage, type RemoteState, type WorkingTreeLink } from './state';
 import { MAX_APP_MESSAGE, type ChannelKind } from './wire';
 
@@ -50,7 +56,8 @@ export interface RemoteTerminals {
   onShown(cb: () => void): () => void;
   addRemoteViewer(v: RemoteViewer): number;
   removeRemoteViewer(key: number): void;
-  remoteAttach(key: number, id: string, cols: number, rows: number): Promise<void>;
+  /** The viewer watches a terminal from its screen on, at its size: taking the terminal's size unless `take` is false. */
+  remoteAttach(key: number, id: string, cols: number, rows: number, take?: boolean): Promise<void>;
   remoteDetach(key: number, id: string): void;
   remoteInput(key: number, id: string, data: string): boolean;
   remoteResize(key: number, id: string, cols: number, rows: number): boolean;
@@ -58,6 +65,14 @@ export interface RemoteTerminals {
   createRemoteSession(o: { project: string; kind: 'claude' | 'terminal'; cols: number; rows: number; account?: string }): Promise<TerminalInfo>;
   /** A session's screen as text rows (Allow reads the permission dialog's own "Yes" from it). */
   permissionScreen(id: string): Promise<string[]>;
+  /** A session's screen with its dim text told apart (the dialog at its bottom is read from it). */
+  screenView(id: string): Promise<ScreenView>;
+  /** An Atelier window has the terminal open. */
+  windowShows(id: string): boolean;
+  /** When a window last typed in the terminal (ms), 0 if it hasn't. */
+  lastWindowInput(id: string): number;
+  /** A project's terminal's Claude account dir, when it isn't the default account (its transcripts are there). */
+  accountDirOf(project: string | null, terminalId: string | undefined): string | undefined;
   /** A key pressed in a session's permission dialog: the digit of an option, or Esc. */
   answerKey(id: string, key: string): void;
   renameRemote(id: string, name: string): Promise<void>;
@@ -115,6 +130,12 @@ export interface RemoteHubDeps {
   log?(message: string): void;
   timing?: Partial<{ stateMs: number; usageMs: number; outMs: number; decideMs: number; codeTtlMs: number }>;
   link?: Pick<RelayLinkOptions, 'timing' | 'budget'>;
+  /**
+   * The conversations phones follow: where a session's transcript is (by default as Claude Code keeps it, in the
+   * session's own account's folder), the home `~` stands for (the user's), and the timings, an Enter's wait measured on
+   * `now` when given.
+   */
+  conversation?: Partial<ConversationDeps> & { timing?: { chatMs?: number; keyMs?: number; enterMs?: number; enterCapMs?: number; now?: () => number } };
 }
 
 /** State goes out at most this often (coalesced), only when it changed. */
@@ -132,6 +153,11 @@ const OUT_CHUNK = 512 * 1024;
 /** A screen larger than a message can carry loses its oldest lines. */
 const SNAPSHOT_MAX = MAX_APP_MESSAGE - 64 * 1024;
 const DEFAULT_SIZE: Size = { cols: 120, rows: 36 };
+/**
+ * A followed conversation's changes go at most this often; typing into a session pauses this long between keys and
+ * before an Enter, and waits for an Enter at most this long.
+ */
+const CHAT_TIMING: ConversationTiming = { chatMs: 100, keyMs: 300, enterMs: 400, enterCapMs: 2000 };
 /** While sessions are starting, the state is looked at again this often (a start that never came ends at 30 s). */
 const STARTING_RECHECK_MS = 5000;
 /** Channels still in their handshake (or waiting to be let in) at once, at most. */
@@ -178,18 +204,17 @@ function chunks(text: string, n: number): string[] {
   return out;
 }
 
-interface SessionHost {
-  listed(id: string): boolean;
+interface SessionHost extends ConversationHost {
   rootOf(projectId: string): string | null;
   /** A listed project's layout, as its window last showed it (null: never shown with iPhone access on). */
   layoutOf(root: string): RemoteLayout | null;
   /** Settings' switches for what a phone may use, now. */
   features(): RemoteFeatures;
-  terminal(id: string): TerminalInfo | undefined;
   /** The key of the wait a session is in, when the row may answer it. */
   waitKey(t: TerminalInfo): string | null;
-  /** The answers given to waits, every phone's. */
-  answers: AnswerBook;
+  /** The conversations phones follow, read once for all of them. */
+  book: ConversationBook;
+  conversationTiming: ConversationTiming;
   /** A resumable the state lists: its project's root. */
   resumableRoot(id: string): string | null;
   /** A row the state lists (a session, a terminal or a resumable): its project's root. */
@@ -204,19 +229,18 @@ interface SessionHost {
   /** Opens or closes the project's main window. */
   openWindow(root: string): Promise<RemoteWindowResult>;
   closeWindow(root: string, sessions?: 'keep' | 'stop'): Promise<RemoteWindowResult>;
-  log(message: string): void;
   rows(root: string, e: RemoteRowsEvent): void;
   /** A phone's push registration (null token: unregistered). */
   registerPush(deviceId: string, m: Extract<DeviceMessage, { t: 'push' }>): void;
   scheduleState(): void;
-  statusChanged(): void;
   outMs: number;
 }
 
-/** One connected phone: the terminals it watches through TerminalHub, and what it is sent. */
+/** One connected phone: the terminals it watches through TerminalHub, the conversations it follows, and what it is sent. */
 class PhoneSession implements RemoteViewer {
   readonly key: number;
   readonly attached = new Set<string>();
+  readonly conversations: PhoneConversations;
   /** Attach requests waiting for their terminal's screen, by terminal. */
   private readonly waiting = new Map<string, number[]>();
   /** Output held back (coalescing, or a backlog at the relay link), by terminal, in arrival order. */
@@ -233,6 +257,7 @@ class PhoneSession implements RemoteViewer {
 
   constructor(readonly c: SecureChannel, readonly deviceId: string, private readonly host: SessionHost, private readonly terms: RemoteTerminals) {
     this.key = terms.addRemoteViewer(this);
+    this.conversations = new PhoneConversations({ send: (m) => this.send(m), host, terms, book: host.book, timing: host.conversationTiming });
   }
 
   send(msg: HostMessage): void {
@@ -283,7 +308,9 @@ class PhoneSession implements RemoteViewer {
         if (!this.host.listed(m.id)) { this.error(m.rid, 'not-found', 'This terminal is not on this computer any more.'); return; }
         this.lastSize = { cols: m.cols, rows: m.rows };
         this.waiting.set(m.id, [...(this.waiting.get(m.id) ?? []), m.rid]);
-        this.terms.remoteAttach(this.key, m.id, m.cols, m.rows).catch(() => {
+        // Fitted to a Claude session a window has open, the phone leaves it its size: it takes it once it types.
+        const keep = m.fit === true && this.host.claude(m.id) && this.terms.windowShows(m.id);
+        this.terms.remoteAttach(this.key, m.id, m.cols, m.rows, !keep).catch(() => {
           const rids = this.waiting.get(m.id) ?? [];
           this.waiting.delete(m.id);
           for (const rid of rids) this.error(rid, 'failed', 'The terminal could not be opened.');
@@ -329,8 +356,10 @@ class PhoneSession implements RemoteViewer {
         // Only the very request the phone saw, while it is still waiting for an answer (no key: not one to answer here).
         const still = () => { const now = this.host.terminal(m.id); return !!now && this.host.waitKey(now) === m.wait; };
         if (!still()) { this.error(m.rid, 'busy', 'The request changed'); return; }
-        // One answer at a time per terminal, and once per wait (from any phone).
-        const refused = this.host.answers.begin(m.id, m.wait);
+        // One answer at a time per terminal, and once per wait (from any phone, by its row or in its dialog): kept under
+        // the session's ask, which an option chosen in the dialog is kept under too. The row answers the whole wait.
+        const to = { ask: this.host.asks.keyOf(t) ?? m.wait };
+        const refused = this.host.answers.begin(m.id, to);
         if (refused) { this.error(m.rid, 'busy', refused); return; }
         // The request the phone's row named: the key of a wait is made of it, so it is the same while `still` holds.
         const target = waitTarget(t.session?.activity);
@@ -347,7 +376,7 @@ class PhoneSession implements RemoteViewer {
             this.send({ t: 'ok', rid: m.rid });
           },
           () => this.error(m.rid, 'invalid', 'Open the session to answer')
-        ).finally(() => this.host.answers.end(m.id, m.wait, typed));
+        ).finally(() => this.host.answers.end(m.id, to, typed));
         return;
       }
       case 'rename':
@@ -438,7 +467,16 @@ class PhoneSession implements RemoteViewer {
           },
           () => this.error(m.rid, 'failed', m.t === 'openWindow' ? 'The project\'s window could not be opened.' : 'The project\'s window could not be closed.')
         );
+        return;
       }
+      case 'follow':
+      case 'unfollow':
+      case 'say':
+      case 'stop':
+      case 'escape':
+      case 'dialog':
+      case 'choose':
+        this.conversations.handle(m);
     }
   }
 
@@ -532,6 +570,7 @@ class PhoneSession implements RemoteViewer {
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = null;
     this.held.clear();
+    this.conversations.dispose();
     this.terms.removeRemoteViewer(this.key);
   }
 
@@ -585,6 +624,10 @@ export class RemoteHub {
   private readonly layouts: LayoutStore;
   /** Every wait a row may answer, followed across terminal lists so a key lasts the whole wait. */
   private readonly waits = new WaitBook();
+  /** Every wait of every kind (a row's `ask`), followed the same way. */
+  private readonly asks = new WaitBook(anyWait);
+  /** The conversations phones follow: each session's transcript read once, whoever follows it. */
+  private readonly book: ConversationBook;
   private readonly pushes: PushStore;
   private readonly decider: PushDecider;
   /** Pushes the relay hasn't answered yet: their id → the token they went to (a dead one is forgotten). */
@@ -622,9 +665,36 @@ export class RemoteHub {
     this.decider = new PushDecider({ settings: () => this.d.settings(), away: () => this.d.away?.() ?? false });
     this.stateMs = d.timing?.stateMs ?? STATE_MS;
     this.usageMs = d.timing?.usageMs ?? USAGE_MS;
-    this.offShown = d.terminals.onShown(() => { this.waits.update(this.d.terminals.allTerminals()); this.scheduleState(); });
+    const c = d.conversation ?? {};
+    this.book = new ConversationBook({
+      transcriptOf: c.transcriptOf ?? ((t) => this.transcriptOf(t)),
+      home: c.home === undefined ? homedir() : c.home,
+      watch: c.watch,
+      timing: { pollMs: c.timing?.pollMs, lingerMs: c.timing?.lingerMs },
+      log: c.log ?? ((message) => this.d.log?.(message))
+    });
+    this.offShown = d.terminals.onShown(() => {
+      // The whole list, every time: the book stops reading a session that isn't in it.
+      const list = this.d.terminals.allTerminals();
+      this.waits.update(list);
+      this.asks.update(list);
+      this.book.terminals(list);
+      for (const s of this.sessions.values()) s.conversations.terminalsChanged(list);
+      this.scheduleState();
+    });
     this.host = {
       listed: (id) => this.d.terminals.allTerminals().some((t) => t.id === id),
+      claude: (id) => {
+        const t = this.d.terminals.allTerminals().find((x) => x.id === id);
+        return !!t && (t.session !== null || this.d.terminals.startingIds().has(id));
+      },
+      asks: this.asks,
+      book: this.book,
+      conversationTiming: {
+        chatMs: c.timing?.chatMs ?? CHAT_TIMING.chatMs, keyMs: c.timing?.keyMs ?? CHAT_TIMING.keyMs,
+        enterMs: c.timing?.enterMs ?? CHAT_TIMING.enterMs, enterCapMs: c.timing?.enterCapMs ?? CHAT_TIMING.enterCapMs,
+        ...(c.timing?.now ? { now: c.timing.now } : {})
+      },
       rootOf: (pid) => this.computeState().roots.get(pid) ?? null,
       layoutOf: (root) => this.liveLayoutOf(root),
       features: () => this.features(),
@@ -795,6 +865,17 @@ export class RemoteHub {
   /** A phone is connected now. */
   hasPhones(): boolean { return this.sessions.size > 0; }
 
+  /**
+   * Where a session's transcript is now, as Claude Code keeps it: under its own account's config dir (the default
+   * account's projects folder for the default one), by the folder it started in.
+   */
+  private transcriptOf(t: TerminalInfo): string | null {
+    const s = t.session;
+    if (!s) return null;
+    const cwd = s.cwd ?? t.cwd;
+    return sessionTranscript({ sessionId: s.sessionId, cwd, configDir: this.d.terminals.accountDirOf(t.projectRoot, t.id) ?? null }, [t.projectRoot, cwd]);
+  }
+
   /** The app quits: every phone is told, then the connection closes. */
   async dispose(): Promise<void> {
     this.offShown();
@@ -802,6 +883,7 @@ export class RemoteHub {
     if (this.usageTimer) { clearTimeout(this.usageTimer); this.usageTimer = null; }
     if (this.startingTimer) { clearTimeout(this.startingTimer); this.startingTimer = null; }
     await this.shutDown('quitting', { flushMs: 500 });
+    this.book.dispose();
   }
 
   // ── Channels ──
@@ -921,6 +1003,7 @@ export class RemoteHub {
       resumables: this.d.terminals.allResumables(), accounts: s.claudeAccounts, defaultDir: this.d.defaultDir(),
       features: this.features(),
       waits: this.waits,
+      asks: this.asks,
       ports: (id) => of(ports, this.d.ports, id)?.[id],
       pr: (id) => of(prs, this.d.prs, id)?.[id],
       ...(this.d.realOf ? { realOf: this.d.realOf } : {}),
@@ -997,6 +1080,7 @@ export class RemoteHub {
     for (const s of this.sessions.values()) {
       const set = live.get(s.deviceId) ?? new Set<string>();
       for (const id of s.attached) set.add(id);
+      for (const id of s.conversations.followed) set.add(id);
       live.set(s.deviceId, set);
     }
     return {

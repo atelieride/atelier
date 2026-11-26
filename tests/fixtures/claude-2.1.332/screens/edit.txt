@@ -1,0 +1,40 @@
+
+
+✻ Cooked for 2s · done 10:05 AM
+
+❯ Run touch second.txt with the Bash tool. Reply in one short sentence.                                                 
+
+  Did not run 1 call 
+  ⎿  $ touch second.txt
+  ⎿  Not run · rejected
+
+⏺ Ok.
+
+✻ Cogitated for 2s · done 10:06 AM
+
+❯ Run touch third.txt with the Bash tool. Reply in one short sentence.                                                  
+
+  Did not run 1 call 
+  ⎿  $ touch third.txt
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ In hello.txt, use the Edit tool to change world to there. Reply in one short sentence.                                
+
+  Read 1 file 
+
+⏺ Update(hello.txt)
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Edit file
+ hello.txt
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ 1 -Hello, world!                                                                                                       
+ 1 +Hello, there!                                                                                                       
+ 2  This file is for edit tests.
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Do you want to make this edit to hello.txt?
+ ❯ 1. Yes
+   2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)
+   3. No
+
+ Esc to cancel · Tab to amend

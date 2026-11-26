@@ -1,0 +1,40 @@
+
+❯ /model 
+  ⎿  Kept model as Sonnet 5.5
+
+❯ Use the AskUserQuestion tool to ask me one question: my favorite color, options Red, Green, Blue. Then reply in one   
+  short sentence.                                                                                                       
+
+⏺ Answered Claude's questions:
+  ⎿  · What is your favorite color? → Green
+
+⏺ Your favorite color is Green.
+
+✻ Crunched for 2s · done 10:08 AM
+
+❯ Use the AskUserQuestion tool to ask me one question: my favorite fruit, options Apple, Pear. Then reply in one short  
+  sentence.                                                                                                             
+
+⏺ Answered Claude's questions:
+  ⎿  · What is your favorite fruit? → Mango
+
+⏺ Your favorite fruit is Mango, which you entered as a custom answer.
+
+✻ Sautéed for 2s · done 10:09 AM
+
+❯ Call AskUserQuestion once with two questions: my favorite season (Summer, Winter) and my favorite drink (Tea,         
+  Coffee). Then reply in one short sentence.                                                                            
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☐ Season  ☐ Drink  ✔ Submit  →
+
+What is your favorite season?
+
+❯ 1. Summer
+     Summer
+  2. Winter
+     Winter
+  3. Type something.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel

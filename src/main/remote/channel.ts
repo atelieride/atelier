@@ -4,7 +4,7 @@
 // limits answer `busy` beyond them, and a channel that keeps getting refused, fails to decrypt or doesn't parse is
 // closed. Whether a phone is let in at all (the allowlist, or the user's Allow) is the hub's call.
 import { TokenBucket } from './bucket';
-import { CLOSE, ROW_ACTIONS, deviceHelloSchema, deviceMessageSchema, type ByeReason, type DeniedReason, type DeviceHello, type DeviceMessage, type ErrorCode, type HostMessage } from './messages';
+import { CLOSE, CONVERSATION_READS, CONVERSATION_TYPES, ROW_ACTIONS, deviceHelloSchema, deviceMessageSchema, type ByeReason, type DeniedReason, type DeviceHello, type DeviceMessage, type ErrorCode, type HostMessage } from './messages';
 import { NOISE_MAX_MESSAGE, NoiseHandshake, type KeyPair, type NoiseTransport } from './noise';
 import { MAX_APP_MESSAGE, Reassembler, b64url, fragments, prologue, protocolOf, type ChannelKind } from './wire';
 
@@ -25,6 +25,10 @@ export interface ChannelLimits {
   createsPerMin: number;
   /** Answer, rename, close, resume and dismiss together. */
   actionsPerMin: number;
+  /** `follow` and `dialog` together. */
+  readsPerMin: number;
+  /** `say`, `stop`, `escape` and `choose` together (apart from the row actions). */
+  typesPerMin: number;
   /** Push registrations. */
   pushesPerMin: number;
   /** Refused messages (busy, invalid) tolerated within strikeWindowMs before the channel closes. */
@@ -37,7 +41,7 @@ export interface ChannelLimits {
 }
 
 const LIMITS: ChannelLimits = {
-  messagesPerSec: 200, inputBytesPerSec: 1024 * 1024, createsPerMin: 10, actionsPerMin: 30, pushesPerMin: 5,
+  messagesPerSec: 200, inputBytesPerSec: 1024 * 1024, createsPerMin: 10, actionsPerMin: 30, readsPerMin: 120, typesPerMin: 30, pushesPerMin: 5,
   strikes: 50, strikeWindowMs: 10_000, handshakeMs: 30_000, maxMessages: 2 ** 32
 };
 
@@ -91,6 +95,8 @@ export class SecureChannel {
   private readonly inputBytes: TokenBucket;
   private readonly creates: TokenBucket;
   private readonly actions: TokenBucket;
+  private readonly reads: TokenBucket;
+  private readonly types: TokenBucket;
   private readonly pushes: TokenBucket;
   private strikesAt: number[] = [];
   private readonly timer: ReturnType<typeof setTimeout>;
@@ -104,6 +110,8 @@ export class SecureChannel {
     this.inputBytes = new TokenBucket(this.limits.inputBytesPerSec, this.limits.inputBytesPerSec, this.now);
     this.creates = new TokenBucket(this.limits.createsPerMin, this.limits.createsPerMin / 60, this.now);
     this.actions = new TokenBucket(this.limits.actionsPerMin, this.limits.actionsPerMin / 60, this.now);
+    this.reads = new TokenBucket(this.limits.readsPerMin, this.limits.readsPerMin / 60, this.now);
+    this.types = new TokenBucket(this.limits.typesPerMin, this.limits.typesPerMin / 60, this.now);
     this.pushes = new TokenBucket(this.limits.pushesPerMin, this.limits.pushesPerMin / 60, this.now);
     this.timer = setTimeout(() => { if (this.state === 'hello' || this.state === 'auth') this.close(CLOSE.timeout); }, this.limits.handshakeMs);
     this.timer.unref?.();
@@ -205,6 +213,8 @@ export class SecureChannel {
     if (m.t === 'input' && !this.inputBytes.tryTake(Buffer.byteLength(m.data, 'utf8'))) { this.refuse(0, 'busy', 'Too much input at once; some was not typed.'); return; }
     if (m.t === 'create' && !this.creates.tryTake(1)) { this.refuse(m.rid, 'busy', 'Too many new sessions; try again in a minute.'); return; }
     if (ROW_ACTIONS.has(m.t) && 'rid' in m && !this.actions.tryTake(1)) { this.refuse(m.rid, 'busy', 'Too many changes at once; try again in a minute.'); return; }
+    if (CONVERSATION_READS.has(m.t) && 'rid' in m && !this.reads.tryTake(1)) { this.refuse(m.rid, 'busy', 'Too many requests; try again in a minute.'); return; }
+    if (CONVERSATION_TYPES.has(m.t) && 'rid' in m && !this.types.tryTake(1)) { this.refuse(m.rid, 'busy', 'Too many changes at once; try again in a minute.'); return; }
     if (m.t === 'push' && !this.pushes.tryTake(1)) { this.refuse(m.rid, 'busy', 'Too many registrations; try again in a minute.'); return; }
     this.d.message(this, m);
   }

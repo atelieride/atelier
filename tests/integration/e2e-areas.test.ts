@@ -64,6 +64,10 @@ test('the editor modules of Find in Files run its specs too (files), not only th
   }
 });
 
+test('the companion\'s shared rules run the iPhone specs too: the phones\' conversation view reads transcripts with them', () => {
+  expect(classify('src/shared/companion/chat.ts', map)).toEqual({ kind: 'areas', areas: ['companion', 'iphone'] });
+});
+
 // A committed .only would make every "full" run a partial one (and the full-green stamp a lie).
 test('no spec commits a test.only or describe.only', () => {
   const offenders = specs.filter((s) => /\b(test|describe)(\.describe)?\.only\(/.test(readFileSync(join(e2eDir, s), 'utf8')));

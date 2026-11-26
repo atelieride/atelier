@@ -66,15 +66,15 @@ const firstLine = (s: string) => s.split('\n').find((l) => l.trim()) ?? '';
  * Text kept in an entry: tidied (an invisible character never hides a key from redaction), token-like runs redacted
  * (before any cut, which could leave a piece of a key too short to be recognised), then cut to `max` around its middle.
  */
-function clean(text: string, max: number): string {
+export function clean(text: string, max: number): string {
   if (text.length <= 2 * WIDE) return middleCut(redactSecrets(tidy(text)), max);
   return middleCut(redactSecrets(tidy(`${text.slice(0, WIDE)}\n${text.slice(-WIDE)}`)), max, text.length - 2 * WIDE);
 }
 /** A short one-line value (a command, a pattern, a label, an answer): redacted, then cut at its end. */
-const short = (s: string, max: number) => cutEnd(redactSecrets(oneLine(s.slice(0, 4096))), max);
+export const short = (s: string, max: number) => cutEnd(redactSecrets(oneLine(s.slice(0, 4096))), max);
 
 /** `p` inside the project relative to it, `/`-separated (Windows' C:\… too: Ask cites forward slashes everywhere). */
-function relPath(p: string, root: string): string {
+export function relPath(p: string, root: string): string {
   const r = root.replace(/[\\/]+$/, '');
   if (!r || !isInside(r, p)) return p;
   return p.length === r.length ? '.' : splitPath(p.slice(r.length + 1)).join('/');
@@ -101,9 +101,9 @@ function toolLine(name: string, input: Obj, root: string): string {
 }
 
 const statusOf = (v: unknown) => (typeof v === 'string' && /^[A-Za-z_-]{1,24}$/.test(v) ? v : 'unknown');
-const itemText = (s: string) => short(s, TODO_TEXT_MAX);
+export const itemText = (s: string) => short(s, TODO_TEXT_MAX);
 
-function todoItems(v: unknown): { text: string; status: string }[] | null {
+export function todoItems(v: unknown): { text: string; status: string }[] | null {
   if (!Array.isArray(v)) return null;
   return v.filter(isObj).flatMap((t) => { const text = str(t.content); return text ? [{ text: itemText(text), status: statusOf(t.status) }] : []; }).slice(0, TODOS_MAX);
 }
@@ -120,11 +120,11 @@ function questionText(v: unknown): string | null {
 }
 
 const taskIdOf = (v: unknown): string | null => { const s = typeof v === 'number' ? String(v) : typeof v === 'string' ? v.trim() : ''; return /^[\w-]{1,32}$/.test(s) ? s : null; };
-const tasksOf = (st: ChatState) => (st.tasks ??= { items: {}, pending: {} });
+export const tasksOf = (st: ChatState) => (st.tasks ??= { items: {}, pending: {} });
 const taskList = (st: ChatState) => Object.entries(tasksOf(st).items)
   .sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true })).slice(0, TODOS_MAX).map(([, item]) => item);
 
-function taskUpdate(input: Obj, at: number | null, st: ChatState): ChatEntry[] {
+export function taskUpdate(input: Obj, at: number | null, st: ChatState): ChatEntry[] {
   const id = taskIdOf(input.taskId);
   if (!id) return [];
   const t = tasksOf(st);
@@ -185,7 +185,7 @@ function resultText(content: unknown): string {
 }
 
 /** A foreground Agent's result ends with its id and usage for Claude ("agentId: …", "<usage>…</usage>"): not report. */
-function withoutAgentMeta(s: string): string {
+export function withoutAgentMeta(s: string): string {
   const i = s.lastIndexOf('agentId: ');
   if (i < 0 || (i > 0 && s[i - 1] !== '\n')) return s;
   return /^agentId: [\w-]+[^\n]*(?:\n<usage>[^]*<\/usage>)?\s*$/.test(s.slice(i)) ? s.slice(0, i) : s;
@@ -214,7 +214,7 @@ function answerText(c: Obj, result: Obj | null): string | null {
   return short(pairs.length === 1 ? pairs[0]![1] : pairs.map(([q, a]) => `${q} → ${a}`).join(' / '), ANSWER_MAX);
 }
 
-function taskCreated(useId: string, c: Obj, result: Obj | null, at: number | null, st: ChatState): ChatEntry[] {
+export function taskCreated(useId: string, c: Obj, result: Obj | null, at: number | null, st: ChatState): ChatEntry[] {
   const t = tasksOf(st);
   const subject = t.pending[useId];
   delete t.pending[useId];
@@ -250,13 +250,19 @@ function notification(raw: string, at: number | null): ChatEntry[] {
   return text ? [{ k: 'agent', at, text }] : [];
 }
 
-/** A slash command typed with arguments is a prompt ("/review PR 42"); one without (/clear, /model) is not. */
-function command(raw: string, at: number | null, st: ChatState): ChatEntry[] {
+/** A slash command's name ("/review") and arguments from Claude Code's command tags; null when the name isn't one. */
+export function commandParts(raw: string): { name: string; args: string } | null {
   const name = /<command-name>([^<]*)<\/command-name>/.exec(raw)?.[1]?.trim() ?? '';
   const args = /<command-args>([\s\S]*?)<\/command-args>/.exec(raw)?.[1]?.trim() ?? '';
   const slash = name.startsWith('/') ? name : `/${name}`;
-  if (!args || !COMMAND_NAME.test(slash)) return [];
-  const text = clean(`${slash} ${args}`, PROMPT_MAX);
+  return COMMAND_NAME.test(slash) ? { name: slash, args } : null;
+}
+
+/** A slash command typed with arguments is a prompt ("/review PR 42"); one without (/clear, /model) is not. */
+function command(raw: string, at: number | null, st: ChatState): ChatEntry[] {
+  const c = commandParts(raw);
+  if (!c || !c.args) return [];
+  const text = clean(`${c.name} ${c.args}`, PROMPT_MAX);
   return text ? [{ k: 'prompt', n: ++st.prompts, at, text }] : [];
 }
 

@@ -1,8 +1,9 @@
 // A phone for tests: the iPhone app's side of iPhone access, in Node, on Atelier's own Noise and wire code. It pairs
 // by code (or QR text) through a relay, connects again as a paired device, and speaks the app messages: attach,
-// type, resize, create, with each terminal's screen kept as the text received. PhoneChannel is the device end of one
-// Noise channel with no transport (the channel's unit tests feed it bytes directly); FakePhone runs it over the test
-// relay with the `ws` package. Used from vitest and Playwright alike (no import.meta).
+// type, resize, create, follow a Claude session's conversation, with each terminal's screen and each conversation
+// kept as received. PhoneChannel is the device end of one Noise channel with no transport (the channel's unit tests
+// feed it bytes directly); FakePhone runs it over the test relay with the `ws` package. Used from vitest and
+// Playwright alike (no import.meta).
 import WebSocket from 'ws';
 import { deriveCode, normalizeCode, parsePairUrl } from '../../src/main/remote/code';
 import { NoiseHandshake, generateKeyPair, type KeyPair, type NoiseTransport } from '../../src/main/remote/noise';
@@ -11,6 +12,8 @@ import { Reassembler, fragments, prologue, protocolOf, type ChannelKind } from '
 export type Msg = Record<string, unknown> & { t: string };
 
 export interface PhoneHello { name: string; model: string; app: string }
+/** The messages that answer a request, by its `rid`. */
+const ANSWERS = new Set(['ok', 'created', 'chat', 'dialog', 'error']);
 const HELLO: PhoneHello = { name: 'Test iPhone', model: 'iPhone17,1', app: '1.0.0' };
 
 export interface PhoneChannelOptions {
@@ -218,11 +221,11 @@ export class FakePhone {
     return this.waitFor((m) => m.t === 'state' && pred(m), { since: this.messages.length, ...(ms ? { ms } : {}) });
   }
 
-  /** Attaches at a size; resolves with the snapshot (its `ok` follows). */
-  async attach(id: string, cols = 80, rows = 24): Promise<Msg> {
+  /** Attaches at a size (`fit`: leaving the size to a window showing it); resolves with the snapshot (its `ok` follows). */
+  async attach(id: string, cols = 80, rows = 24, o: { fit?: true } = {}): Promise<Msg> {
     const since = this.messages.length;
     const rid = ++this.rid;
-    this.send({ t: 'attach', rid, id, cols, rows });
+    this.send({ t: 'attach', rid, id, cols, rows, ...(o.fit ? { fit: true } : {}) });
     return this.waitFor((m) => (m.t === 'snapshot' && m.id === id) || (m.t === 'error' && m.rid === rid), { since });
   }
 
@@ -235,12 +238,39 @@ export class FakePhone {
     return this.request({ t: 'create', project, kind, ...o });
   }
 
-  /** A request with the next rid; resolves with its answer: `ok`, `created` or `error`. */
+  /** A request with the next rid; resolves with its answer: `ok`, `created`, `chat`, `dialog` or `error`. */
   request(msg: Record<string, unknown> & { t: string }, ms?: number): Promise<Msg> {
     const since = this.messages.length;
     const rid = ++this.rid;
     this.send({ ...msg, rid });
-    return this.waitFor((m) => (m.t === 'ok' || m.t === 'created' || m.t === 'error') && m.rid === rid, { since, ...(ms ? { ms } : {}) });
+    return this.waitFor((m) => ANSWERS.has(m.t) && m.rid === rid, { since, ...(ms ? { ms } : {}) });
+  }
+
+  // A Claude session's conversation, and answering what it asks.
+  /** The newest page of a session's conversation (or, with `before`, the page older than that entry): `chat` or `error`. */
+  follow(id: string, before?: number): Promise<Msg> { return this.request({ t: 'follow', id, ...(before !== undefined ? { before } : {}) }); }
+  unfollow(id: string): void { this.send({ t: 'unfollow', id }); }
+  say(id: string, text: string): Promise<Msg> { return this.request({ t: 'say', id, text }); }
+  stop(id: string): Promise<Msg> { return this.request({ t: 'stop', id }); }
+  escape(id: string): Promise<Msg> { return this.request({ t: 'escape', id }); }
+  dialog(id: string): Promise<Msg> { return this.request({ t: 'dialog', id }); }
+  choose(id: string, ask: string, n: number, label: string, text?: string): Promise<Msg> {
+    return this.request({ t: 'choose', id, ask, n, label, ...(text !== undefined ? { text } : {}) });
+  }
+
+  /**
+   * A session's conversation as received, in order of `n`: every `chat` for it, an entry sent again replacing the one
+   * of its `n`, and a `chat` under another key starting over.
+   */
+  conversation(id: string): Msg[] {
+    let key: unknown = null;
+    let byN = new Map<number, Msg>();
+    for (const m of this.messages) {
+      if (m.t !== 'chat' || m.id !== id) continue;
+      if (m.conversation !== key) { key = m.conversation; byN = new Map(); }
+      for (const e of m.entries as Msg[]) byN.set(e.n as number, e);
+    }
+    return [...byN.values()].sort((a, b) => (a.n as number) - (b.n as number));
   }
 
   /** Allow or Deny on a session's permission request, naming the wait the state showed. */

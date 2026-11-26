@@ -1,0 +1,40 @@
+[?1049h[H
+[38;2;215;119;87m ▐[48;2;0;0;0m▛███▛█[0m[3C[1mClaude Code[1C[38;2;153;153;153;22mv2.1.332
+[38;2;215;119;87m▝▜[48;2;0;0;0m█████[49m█▀[0m  [38;2;153;153;153mSonnet 5.5 with low effort · Claude Ultra
+[38;2;215;119;87m ▝▝   ▝▝ [2C[38;2;153;153;153m/…/nested/nested/nested/nested/nested/nested/nested/nested/nested-/project
+
+[38;2;255;193;7m⚠[1CYour login expires in 2 days[38;2;153;153;153m · run /login to renew
+
+[48;2;55;55;55m❯ [38;2;255;255;255mRun ls with the Bash tool. Reply in one short sentence.[39m                                                               
+[0m
+ [1C[38;2;153;153;153mListed [1m1[22m directory 
+
+[38;2;255;255;255m⏺[1C[0mThe[1Cdirectory[1Ccontains[1Cone[1Cfile,[1C[38;2;177;185;249mhello.txt[0m.
+
+[38;2;153;153;153m✻[1CBaked for 2s · done 10:03 AM
+
+[48;2;55;55;55m❯ [38;2;255;255;255mRun touch made-by-bash.txt with the Bash tool. Reply in one short sentence.[39m                                           
+[0m
+ [1C[38;2;153;153;153mRan [1m1[22m shell command 
+
+[38;2;255;255;255m⏺[1C[0mI[1Ccreated[1Cthe[1Cempty[1Cfile[1C[38;2;177;185;249mmade-by-bash.txt[1C[0min[1Cthe[1Ccurrent[1Cdirectory.
+
+[38;2;153;153;153m✻[1CCooked for 2s · done 10:05 AM
+
+[48;2;55;55;55m❯ [38;2;255;255;255mRun touch second.txt with the Bash tool. Reply in one short sentence.[39m                                                 
+[0m
+  [38;2;153;153;153mDid not run [1m1[22m call [0m 
+[38;2;153;153;153m  ⎿  $ touch second.txt
+  ⎿  Not run · rejected
+
+[38;2;255;255;255m⏺[1C[0mOk.
+
+[38;2;153;153;153m✻[1CCogitated for 2s · done 10:06 AM
+
+
+
+
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[0m❯ 
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[1C[0m [38;2;153;153;153m⏸ manual mode on · ? for shortcuts[2A[34D[0m[?2004h[?1004h[?1003h[?1006h[?25h

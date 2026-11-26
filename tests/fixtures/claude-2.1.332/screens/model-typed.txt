@@ -1,0 +1,40 @@
+
+
+⏺ I created the empty file made-by-bash.txt in the current directory.
+
+✻ Cooked for 2s · done 10:05 AM
+
+❯ Run touch second.txt with the Bash tool. Reply in one short sentence.                                                 
+
+  Did not run 1 call 
+  ⎿  $ touch second.txt
+  ⎿  Not run · rejected
+
+⏺ Ok.
+
+✻ Cogitated for 2s · done 10:06 AM
+
+❯ Run touch third.txt with the Bash tool. Reply in one short sentence.                                                  
+
+  Did not run 1 call 
+  ⎿  $ touch third.txt
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ In hello.txt, use the Edit tool to change world to there. Reply in one short sentence.                                
+
+  Read 1 file 
+
+⏺ Update(hello.txt)
+  ⎿  Added 1 line, removed 1 line
+      1 -Hello, world!                                                                                           
+      1 +Hello, there!                                                                                           
+
+  ❯ /model                      Switch model (currently Sonnet 5.5)
+    /auto-mode-setup            Teach auto mode about your environment
+    /code-review                3 free /ultrareview · Review the current diff or a PR for bugs
+    /effort                     Set the model's effort level
+    /claude-api                 Build and debug apps that use the Claude API
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ /model
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ manual mode on

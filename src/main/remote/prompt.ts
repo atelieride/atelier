@@ -11,41 +11,42 @@ export type AllowKey = { ok: true; key: string } | { ok: false; message: string 
 
 const REFUSED: AllowKey = { ok: false, message: 'Open the session to answer' };
 /** A dialog's numbered row: the cursor's mark when it is on it, its number, its label. */
-const OPTION = /^(?:([❯›>▸])\s*)?(\d)\.\s+(.+)$/;
+export const OPTION = /^(?:([❯›>▸])\s*)?(\d)\.\s+(.+)$/;
 /** A bordered frame's sides, drawn by some versions. */
-const FRAME = /^[│┃|]\s?|\s?[│┃|]$/g;
+export const FRAME = /^[│┃|]\s?|\s?[│┃|]$/g;
 /**
  * The dialog must end this close to the bottom of the screen: after it only its hints, a frame's bottom edge and a
  * status line. An older one, answered already, doesn't count.
  */
 const NEAR_BOTTOM = 4;
 /** A row the dialog always draws as it is: "Yes", "No", or a label ending in its key hint ("(esc)", "(shift+tab)"). */
-const PLAIN = /^(Yes|No)$|\((?:esc|[a-z]+(?:\+[a-z]+)+)\)$/;
+export const PLAIN = /^(Yes|No)$|\((?:esc|[a-z]+(?:\+[a-z]+)+)\)$/;
 /** A row that only draws a line: the dialog's top edge, a frame's or a box's edge. The dialog starts below it. */
-const RULE = /^[─━═╌╍┄┅┈┉╭╮╰╯┌┐└┘┏┓┗┛├┤┬┴\s]*[─━═╌╍┄┅┈┉][─━═╌╍┄┅┈┉╭╮╰╯┌┐└┘┏┓┗┛├┤┬┴\s]*$/;
+export const RULE = /^[─━═╌╍┄┅┈┉╭╮╰╯┌┐└┘┏┓┗┛├┤┬┴\s]*[─━═╌╍┄┅┈┉][─━═╌╍┄┅┈┉╭╮╰╯┌┐└┘┏┓┗┛├┤┬┴\s]*$/;
 /**
  * A row of dashes only: inside the dialog, around the command or the diff it asks about (Claude Code 2.1 draws it
  * between two), never its top edge, which is a solid line. What stands between them is the request itself: a command
  * must be all of it, and a diff's text names nothing (it may mention any file or tool).
  */
-const DASHED = /^[╌╍┄┅┈┉\s]*[╌╍┄┅┈┉][╌╍┄┅┈┉\s]*$/;
+export const DASHED = /^[╌╍┄┅┈┉\s]*[╌╍┄┅┈┉][╌╍┄┅┈┉\s]*$/;
 /** The transcript's marks (a message, a tool call, its result): above the dialog, never part of it. */
-const TRANSCRIPT = /^[⏺●⎿]/;
+export const TRANSCRIPT = /^[⏺●⎿]/;
 /** At most this many rows above its options are the dialog's. */
 const DIALOG_ROWS = 100;
 /** Tools whose request names a file by its last part ("Edit upload.ts"), as their dialog names it. */
-const FILE_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit', 'Read']);
+export const FILE_TOOLS: ReadonlySet<string> = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit', 'Read']);
 
-interface Row { n: number; label: string; focused: boolean }
+export interface Row { n: number; label: string; focused: boolean; /** The row's index in the lines given (untrimmed, empty rows counted). */ line: number }
 
 /**
  * The dialog at the bottom of the screen: its options, the rows of its own above them outside the dashed rules, the
  * rows between those rules (null when it draws none), and the cursor in a field.
  */
-interface Dialog { options: Row[]; above: string[]; body: string[] | null; inField: boolean }
+export interface Dialog { options: Row[]; above: string[]; body: string[] | null; inField: boolean }
 
-function dialogAtBottom(lines: readonly string[]): Dialog | null {
-  const rows = lines.map((l) => l.replace(FRAME, '').trim()).filter((l) => l.length > 0);
+export function dialogAtBottom(lines: readonly string[]): Dialog | null {
+  const at: number[] = [];
+  const rows = lines.map((l) => l.replace(FRAME, '').trim()).filter((l, i) => { if (l.length > 0) at.push(i); return l.length > 0; });
   // The last row numbered 1, and the rows that follow it in order: the dialog's options.
   let first = -1;
   for (let i = rows.length - 1; i >= 0 && first === -1; i--) if (OPTION.exec(rows[i]!)?.[2] === '1') first = i;
@@ -56,7 +57,7 @@ function dialogAtBottom(lines: readonly string[]): Dialog | null {
     const m = OPTION.exec(rows[i]!);
     if (!m) continue;
     if (Number(m[2]) !== options.length + 1) break;
-    options.push({ n: Number(m[2]), label: m[3]!.trim(), focused: m[1] !== undefined });
+    options.push({ n: Number(m[2]), label: m[3]!.trim(), focused: m[1] !== undefined, line: at[i]! });
     last = i;
   }
   if (rows.length - 1 - last > NEAR_BOTTOM) return null;
@@ -120,28 +121,43 @@ const fileIn = (row: string, name: string) => new RegExp(`(?:^|[\\s/\\\\(\`'"])$
 /** A tool's name as a word of its own. */
 const wordIn = (row: string, word: string) => new RegExp(`(?:^|[^\\w-])${escape(word)}(?![\\w-])`).test(row);
 
-/**
- * Whether the dialog's rows name the request `target` names, as a session's wait does: "Bash npm test" (a command),
- * "Edit upload.ts" (a file), or the tool alone ("Deploy"). Nothing named: nothing to check, false. A file or a tool
- * counts only outside the dashed rules; a command between them must be all of what they hold.
- */
-function shows(d: Dialog, target: string | null): boolean {
-  if (!target) return false;
+/** A wait's target as it names its request: the tool, and what it acts on ('' for the tool alone). */
+function requestOf(target: string): { tool: string; what: string } {
   const space = target.indexOf(' ');
-  const tool = space === -1 ? target : target.slice(0, space);
-  const what = space === -1 ? '' : target.slice(space + 1).trim();
-  if (!what) return d.above.some((r) => wordIn(r, tool));
+  if (space === -1) return { tool: target, what: '' };
+  return { tool: target.slice(0, space), what: target.slice(space + 1).trim() };
+}
+
+/**
+ * Whether these rows name the request `target` names, as a session's wait does: "Bash npm test" (a command),
+ * "Edit upload.ts" (a file), or the tool alone ("Deploy"). Nothing named: nothing to check, false.
+ */
+export function shows(rows: readonly string[], target: string | null): boolean {
+  if (!target) return false;
+  const { tool, what } = requestOf(target);
+  if (!what) return rows.some((r) => wordIn(r, tool));
   if (FILE_TOOLS.has(tool)) {
     const name = what.split(/[\\/]/).filter(Boolean).at(-1) ?? what;
-    return d.above.some((r) => fileIn(r, name));
+    return rows.some((r) => fileIn(r, name));
   }
-  return d.body ? commandIs(d.body, what) : commandIn(d.above, what);
+  return commandIn(rows, what);
+}
+
+/**
+ * Whether the dialog asks for the request `target` names, as `shows` reads it. A file or a tool counts only outside
+ * the dashed rules; a command between them must be all of what they hold.
+ */
+function asksFor(d: Dialog, target: string | null): boolean {
+  if (!target) return false;
+  const { tool, what } = requestOf(target);
+  if (d.body && what && !FILE_TOOLS.has(tool)) return commandIs(d.body, what);
+  return shows(d.above, target);
 }
 
 /** The digit that chooses "Yes" in the permission dialog at the bottom of the screen for `target`, or why it can't. */
 export function allowKey(lines: readonly string[], target: string | null): AllowKey {
   const d = dialogAtBottom(lines);
-  if (!d || d.inField || !shows(d, target)) return REFUSED;
+  if (!d || d.inField || !asksFor(d, target)) return REFUSED;
   const yes = d.options.find((o) => o.label === 'Yes');
   return yes ? { ok: true, key: String(yes.n) } : REFUSED;
 }
@@ -153,7 +169,7 @@ export function allowKey(lines: readonly string[], target: string | null): Allow
  */
 export function denyKey(lines: readonly string[], target: string | null): AllowKey {
   const d = dialogAtBottom(lines);
-  return !d || !shows(d, target) ? REFUSED : { ok: true, key: '\x1b' };
+  return !d || !asksFor(d, target) ? REFUSED : { ok: true, key: '\x1b' };
 }
 
 /**
@@ -169,6 +185,46 @@ export function screenLines(snapshot: string, size: { cols: number; rows: number
       for (let i = 0; i < buf.length; i++) out.push(buf.getLine(i)?.translateToString(true) ?? '');
       screen.dispose();
       resolve(out);
+    });
+  });
+}
+
+/** A screen's rows, which of their text is dim, and the terminal's width. */
+export interface ScreenView {
+  lines: string[];
+  /** `lines[i]` with each dim cell's characters as spaces (same indices). */
+  undimmed: string[];
+  cols: number;
+}
+
+/** The width a terminal is taken to have when its size is unknown. */
+const DEFAULT_COLS = 120;
+
+/** A screen as `screenLines` reads it, with a second set of rows that leaves out the dim text (hints, placeholders). */
+export function screenView(snapshot: string, size: { cols: number; rows: number } | null): Promise<ScreenView> {
+  const screen = new Headless({ cols: Math.max(size?.cols ?? 0, 300), rows: Math.max(size?.rows ?? 0, 100), scrollback: 2000, allowProposedApi: true });
+  return new Promise((resolve) => {
+    screen.write(snapshot, () => {
+      const buf = screen.buffer.active;
+      const lines: string[] = [];
+      const undimmed: string[] = [];
+      const scratch = buf.getNullCell();
+      for (let i = 0; i < buf.length; i++) {
+        const line = buf.getLine(i);
+        lines.push(line?.translateToString(true) ?? '');
+        let bright = '';
+        // One cell object is refilled for every column: no allocation per cell.
+        for (let x = 0; line && x < line.length; x++) {
+          const cell = line.getCell(x, scratch);
+          // A wide character's second cell has width 0 and no text: nothing to add for it.
+          if (!cell || cell.getWidth() === 0) continue;
+          const chars = cell.getChars() || ' ';
+          bright += cell.isDim() ? ' '.repeat(cell.getWidth()) : chars;
+        }
+        undimmed.push(bright.trimEnd());
+      }
+      screen.dispose();
+      resolve({ lines, undimmed, cols: size?.cols || DEFAULT_COLS });
     });
   });
 }

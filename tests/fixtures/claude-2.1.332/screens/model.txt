@@ -1,0 +1,40 @@
+  ⎿  $ touch second.txt
+  ⎿  Not run · rejected
+
+⏺ Ok.
+
+✻ Cogitated for 2s · done 10:06 AM
+
+❯ Run touch third.txt with the Bash tool. Reply in one short sentence.                                                  
+
+  Did not run 1 call 
+  ⎿  $ touch third.txt
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ In hello.txt, use the Edit tool to change world to there. Reply in one short sentence.                                
+
+  Read 1 file 
+
+⏺ Update(hello.txt)
+  ⎿  Added 1 line, removed 1 line
+      1 -Hello, world!                                                                                           
+      1 +Hello, there!                                                                                           
+      2  This file is for edit tests.
+
+⏺ I changed "world" to "there" in hello.txt, so the first line now reads "Hello, there!".
+
+✻ Baked for 4s · done 10:07 AM
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+  Select model
+  Your pick is the default for new sessions. For other models, use --model.
+
+    1.  Default (recommended)  Opus 5.5 · Best for everyday, complex tasks
+    2.  Opus 5.5               For complex work and everyday tasks
+    3.  Fable 5.2              For your toughest challenges
+  ❯ 4.  Sonnet 5.5 ✔           Most efficient for simpler tasks
+    5.  Haiku 5.5              Fastest for quick answers
+    ▸   More models             
+
+  ○ Low effort ←/→ to adjust
+
+  s to use this session only · Enter to save · Esc to cancel

@@ -1,0 +1,40 @@
+[?1049h[H[38;2;153;153;153;48;2;55;55;55m❯ [38;2;255;255;255mUse the AskUserQuestion tool to ask me one question: my favorite fruit, options Apple, Pear. Then reply in one short [39m 
+  [38;2;255;255;255msentence.[39m                                                                                                             
+[0m
+[38;2;153;153;153m⏺[1C[0mAnswered[1CClaude's[1Cquestions:
+[38;2;153;153;153m  ⎿  · What is your favorite fruit? → Mango
+
+[38;2;255;255;255m⏺[1C[0mYour[1Cfavorite[1Cfruit[1Cis[1CMango,[1Cwhich[1Cyou[1Centered[1Cas[1Ca[1Ccustom[1Canswer.
+
+[38;2;153;153;153m✻[0m [38;2;153;153;153mSautéed for 2s · done 10:09 AM
+
+[48;2;55;55;55m❯ [38;2;255;255;255mCall AskUserQuestion once with two questions: my favorite season (Summer, Winter) and my favorite drink (Tea, [39m        
+  [38;2;255;255;255mCoffee). Then reply in one short sentence.[39m                                                                            
+[0m
+[38;2;153;153;153m⏺[1C[0mAnswered[1CClaude's[1Cquestions:
+[38;2;153;153;153m  ⎿  · What is your favorite season? → Winter
+[5C· What is your favorite drink? → Tea
+
+[38;2;255;255;255m⏺[1C[0mYou[1Cpicked[1CWinter[1Cas[1Cyour[1Cfavorite[1Cseason[1Cand[1CTea[1Cas[1Cyour[1Cfavorite[1Cdrink.
+
+[38;2;153;153;153m✻[1CSautéed for 2s · done 10:10 AM
+
+[48;2;55;55;55m❯ [38;2;255;255;255mCall AskUserQuestion with one multiSelect question: which pets I like (Cats, Dogs, Fish). Then reply in one short [39m    
+  [38;2;255;255;255msentence.[39m                                                                                                             
+[38;2;153;153;153;49m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;2;0;0;0;48;2;177;185;249m ☒ Pets [0m ✔ Submit  →
+     
+[38;2;255;255;255;1mWhich pets do you like?
+
+[0m [1C[38;2;153;153;153m1.[1C[38;2;78;186;101m[✔][1C[0mCats
+         [38;2;153;153;153mCats
+[0m [1C[38;2;153;153;153m2.[1C[0m[[1C][1CDogs
+         [38;2;153;153;153mDogs
+[0m  [38;2;153;153;153m3.[0m [38;2;78;186;101m[✔][0m Fish
+[9C[38;2;153;153;153mFish
+[0m [1C[38;2;153;153;153m4. [0m[ ] [38;2;153;153;153mType something
+[38;2;177;185;249m❯[4C[1mSubmit
+[38;2;153;153;153;22m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[0m  5.[1CChat[1Cabout[1Cthis
+
+[38;2;153;153;153mEnter to select · ↑/↓ to navigate · ctrl+g to edit in Vim · Esc to cancel[73D[0m[?2004h[?1004h[?1003h[?1006h[?25l

@@ -56,7 +56,7 @@ import { join, toOut } from './cpath';
 import { atelierHome } from '@shared/paths.node';
 import { Osc7Tracker } from './osc7';
 import { SessionTray, type TrayActions, type TrayHost } from './tray';
-import { screenLines } from './remote/prompt';
+import { screenLines, screenView, type ScreenView } from './remote/prompt';
 
 interface WindowEntry { wc: WebContents; project: string }
 
@@ -93,6 +93,8 @@ export class TerminalHub {
   /** Each terminal's one size, and which view owns it (windows and remote viewers alike). */
   private readonly sizes = new TerminalSizes();
   private readonly remotes = new Map<number, RemoteViewer>();
+  /** When a window last typed in each terminal. */
+  private readonly windowInputAt = new Map<string, number>();
   private nextRemote = -1;
   /** Which terminals a remote viewer owns the size of may have changed (index.ts: the iPhone status). */
   onRemoteSized: () => void = () => {};
@@ -270,6 +272,7 @@ export class TerminalHub {
     });
     client.on('exit', (id: string) => {
       this.osc7?.forget(id);
+      this.windowInputAt.delete(id);
       this.launching.delete(id);
       const remotes = this.attachments.watchers(id).filter(isRemote);
       this.attachments.forgetTerminal(id);
@@ -739,6 +742,7 @@ export class TerminalHub {
       if (!o.success) return;
       // Typed while this window's attach is still on its way (the terminal is on screen, its screen not yet): held
       // and sent once attached, never dropped (it was: a lost first keystroke right after opening a terminal).
+      if ((o.data.pressed || typesSomething(o.data.data)) && this.terminals.some((t) => t.id === o.data.id)) this.windowInputAt.set(o.data.id, Date.now());
       if (!this.attachments.has(wcId, o.data.id)) { this.attachments.hold(wcId, o.data.id, o.data.data); return; }
       // A key pressed in a window (the renderer tells), or anything typing there (dictation, a drop…), takes the size
       // back from a phone; never from another window: there only a resize does. The terminal's own answers to its
@@ -1201,6 +1205,26 @@ export class TerminalHub {
    * (a terminal windows watch keeps its stream; one nobody watches is detached again).
    */
   async permissionScreen(id: string): Promise<string[]> {
+    return screenLines(await this.screenData(id), this.sizeOf(id));
+  }
+
+  /** A session's screen with its dim text told apart, read as `permissionScreen` does. */
+  async screenView(id: string): Promise<ScreenView> {
+    return screenView(await this.screenData(id), this.sizeOf(id));
+  }
+
+  /** Whether a window of Atelier is attached to the terminal (it is open there), as a phone's viewer is not. */
+  windowShows(id: string): boolean {
+    return this.attachments.watchers(id).some((v) => !isRemote(v));
+  }
+
+  /** When a window last typed in the terminal (ms), 0 if it hasn't: its keys and what it typed, not its terminal's own replies nor a phone's input. */
+  lastWindowInput(id: string): number {
+    return this.windowInputAt.get(id) ?? 0;
+  }
+
+  /** atelierd's screen for a terminal, as the escape sequences it sends on attach, through an attach of our own. */
+  private async screenData(id: string): Promise<string> {
     if (!this.terminals.some((t) => t.id === id)) throw new Error('no such terminal');
     // A viewer key of its own: the attach's place among the windows' and the phones', then gone.
     const key = this.nextRemote--;
@@ -1221,7 +1245,7 @@ export class TerminalHub {
         this.client.request({ t: 'attach', id }).catch((err: Error) => { clearTimeout(timer); this.client.off('snapshot', onSnap); reject(err); });
       });
       attached = this.attachments.complete(key, id) !== null;
-      return await screenLines(data, this.sizeOf(id));
+      return data;
     } finally {
       if (!attached) {
         this.attachments.abort(key, id);

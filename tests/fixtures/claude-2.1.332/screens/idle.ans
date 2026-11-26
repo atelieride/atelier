@@ -1,0 +1,40 @@
+[?1049h[H
+[38;2;255;255;255m⏺[0m Four.
+
+[38;2;153;153;153m✻[1CBaked for 0s · done 10:12 AM
+
+[48;2;55;55;55m❯ [38;2;255;255;255mRun sleep 25 && echo done with the Bash tool. Reply in one short sentence.[39m                                            
+[0m
+  [38;2;153;153;153mRan [1m2[22m shell commands · [38;2;255;107;128m1 failed[38;2;153;153;153m 
+
+[38;2;255;255;255m⏺[1C[0mThe foreground run was blocked, so[1CI[1Cstarted[1C[38;2;177;185;249msleep 25 && echo done[1C[0min[1Cthe[1Cbackground[1Cinstead,[1Cand[1CI'll[1Cbe[1Cnotified
+[2Cwhen[1Cit[1Cfinishes.
+
+[38;2;153;153;153m✻[1CBaked for 5s · done 10:12 AM
+
+[48;2;55;55;55m❯ [38;2;255;255;255mWhat is 3+3? One word.[39m                                                                                                
+[0m
+[38;2;255;255;255m⏺[0m Six.
+
+[38;2;153;153;153m✻[1CCogitated for 0s · done 10:12 AM
+
+[38;2;78;186;101m⏺[1C[0mBackground command "Sleep 25 seconds[1Cthen[1Cprint[1Cdone"[1Ccompleted[1C(exit[1Ccode[1C0)
+
+[38;2;255;255;255m⏺[1C[0mThe background [38;2;177;185;249msleep 25 && echo done[1C[0mcommand finished[1Csuccessfully (exit code[1C0).
+
+[38;2;153;153;153m✻[1CBaked for 1s · done 10:12 AM
+
+[48;2;55;55;55m❯ [38;2;255;255;255mRun sleep 12 && echo done with the Bash tool, in the foreground. Reply in one short sentence.[39m                         
+[0m
+  [38;2;153;153;153mRan [1m1[22m shell command 
+
+[48;2;55;55;55m❯ [38;2;255;255;255mWhat is 3+4? One word.[39m                                                                                                
+[0m
+[38;2;255;255;255m⏺[0m The 12-second sleep finished and printed "done". 3+4 is Seven.
+
+[38;2;153;153;153m✻[1CBaked for 14s · done 10:13 AM
+
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[0m❯ 
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[2C[38;2;153;153;153m⏸ manual mode on · ? for shortcuts[2A[34D[0m[?2004h[?1004h[?1003h[?1006h[?25h
