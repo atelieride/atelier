@@ -123,7 +123,8 @@ test('live: the iOS app pairs through the relay, mirrors the sidebar, acts on it
     await expect(rows).toContainText('Do you want to proceed?', { timeout: 15_000 });
     // Activities, and Release made from the workspace's "+"; then Workspace 1 back in front, so a terminal the phone
     // starts in Release lands there because it asked for it.
-    await settingsSet(win, { wsActivities: true });
+    // Daylight too: the phone dresses like this computer, and its side checks it wears a light theme.
+    await settingsSet(win, { wsActivities: true, theme: 'daylight' });
     const ws = win.locator('.ws-group', { has: win.locator('.ws-name', { hasText: new RegExp(`^${WORKSPACE}$`) }) });
     await ws.locator('.ws-head').hover();
     await ws.locator('.ws-plus').click();

@@ -131,6 +131,7 @@ import { branchAt, companionAccountDir, companionFacts, sessionFiles } from './c
 import { randomUUID } from 'node:crypto';
 import { installMedia, registerMediaScheme } from './media-ipc';
 import { RemoteHub } from './remote/remote-hub';
+import { LOOK_SETTINGS } from './remote/look';
 import { PlaceRequests } from './remote/places';
 import { PhoneWindows } from './remote/phone-windows';
 import { installRemoteIpc } from './remote/ipc';
@@ -536,12 +537,13 @@ if (!app.requestSingleInstanceLock()) {
     if (s.countBackgroundWork !== prevSettings.countBackgroundWork) hub.workSettingsChanged();
     if (s.claudeMcpNotice !== prevSettings.claudeMcpNotice) hub.mcpSettingsChanged();
     if (s.prStatus !== prevSettings.prStatus) prHub.settingsChanged();
-    // iPhone access: on/off and the relay; project colors, accounts, ports, background work and the default profile change
-    // what phones show, the workspaces and activities switches what they may use.
+    // iPhone access: on/off and the relay; project colors, accounts, ports, background work, the default profile and the
+    // look (theme, terminal font and cursor) change what phones show, the workspaces and activities switches what they
+    // may use.
     if (s.remoteAccess !== prevSettings.remoteAccess || s.remoteRelay !== prevSettings.remoteRelay || s.projectTint !== prevSettings.projectTint || s.projectColors !== prevSettings.projectColors
       || s.claudeAccounts !== prevSettings.claudeAccounts || s.showPorts !== prevSettings.showPorts || s.showEphemeralPorts !== prevSettings.showEphemeralPorts
       || s.terminalProfile !== prevSettings.terminalProfile || s.workspacesEverywhere !== prevSettings.workspacesEverywhere
-      || s.wsActivities !== prevSettings.wsActivities) remote?.settingsChanged();
+      || s.wsActivities !== prevSettings.wsActivities || LOOK_SETTINGS.some((k) => s[k] !== prevSettings[k])) remote?.settingsChanged();
     if (s.autoFetch !== prevSettings.autoFetch) scmHub.fetchSettingsChanged();
     if (s.repoSearchDepth !== prevSettings.repoSearchDepth) gitHub.settingsChanged();
     if (s.showServices !== prevSettings.showServices) servicesHub.settingsChanged();

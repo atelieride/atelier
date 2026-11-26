@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { parseThemeCss, resolveToken } from './theme-resolve';
+import { parseThemeCss, resolveHex, resolveToken } from './theme-resolve';
 
 const css = `
 :root {
@@ -31,6 +31,18 @@ test('resolves hex, var, fallbacks, rgba and color-mix to #RRGGBB or rgba()', ()
   expect(resolveToken(b, 'aurora', '--half')).toBe('rgba(139,92,246,0.175)');
   expect(resolveToken(b, 'aurora', '--blend')).toBe('#BC52C8');
   expect(resolveToken(b, 'aurora', '--raw')).toBe('rgba(16,16,28,0.86)');
+});
+
+test('as hex only: #RRGGBB when opaque, #RRGGBBAA with the alpha rounded to a byte', () => {
+  const b = parseThemeCss(`${css}\n:root[data-theme="glass"] { --clear: transparent; --almost: rgba(1,2,3,.999); }`);
+  expect(resolveHex(b, 'aurora', '--short')).toBe('#FFFFFF');
+  expect(resolveHex(b, 'aurora', '--blend')).toBe('#BC52C8');
+  // 0.86 × 255 = 219.3 → DB; 0.175 × 255 = 44.6 → 2D.
+  expect(resolveHex(b, 'aurora', '--raw')).toBe('#10101CDB');
+  expect(resolveHex(b, 'aurora', '--half')).toBe('#8B5CF62D');
+  expect(resolveHex(b, 'glass', '--clear')).toBe('#00000000');
+  // Opaque at a byte's precision: no alpha byte.
+  expect(resolveHex(b, 'glass', '--almost')).toBe('#010203');
 });
 
 test('a theme overrides :root, and what refers to an overridden token follows it', () => {

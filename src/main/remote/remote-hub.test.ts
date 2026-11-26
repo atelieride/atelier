@@ -718,6 +718,47 @@ describe('what the sidebar shows', () => {
   });
 });
 
+describe('how Atelier looks', () => {
+  const looks = (phone: FakePhone) => phone.messages.filter((m) => m.t === 'look');
+
+  test('after the first state: the theme in use, the terminal settings and every theme', async () => {
+    const t = setup({ settings: { theme: 'ember', terminalFontSize: 16, cursorStyle: 'block' } });
+    const { phone } = await paired(t);
+    const state = await phone.state();
+    const look = await phone.waitFor((m) => m.t === 'look');
+    expect(phone.messages.indexOf(look)).toBeGreaterThan(phone.messages.indexOf(state));
+    expect(look).toMatchObject({ theme: 'ember', terminalColors: 'theme', terminal: { font: 'JetBrains Mono', size: 16, lineHeight: 1.2, cursor: 'block', blink: true } });
+    expect((look.themes as Msg[]).map((x) => x.id)).toEqual(['aurora', 'ember', 'tide', 'daylight', 'ink', 'paper', 'docsy', 'docsy-night']);
+    expect(((look.themes as Msg[])[1]!.colors as Record<string, string>)['bg-0']).toMatch(/^#[0-9A-F]{6}$/);
+  });
+
+  test('a change in Settings › Appearance or Terminal sends it again; anything else, or the same look, does not', async () => {
+    const t = setup();
+    const { phone } = await paired(t);
+    await phone.waitFor((m) => m.t === 'look');
+    t.set({ theme: 'daylight' });
+    expect(await phone.waitFor((m) => m.t === 'look' && m.theme === 'daylight')).toBeTruthy();
+    t.set({ cursorBlink: false });
+    expect(await phone.waitFor((m) => m.t === 'look' && (m.terminal as Msg).blink === false)).toMatchObject({ theme: 'daylight' });
+    // The project colors (sent in the state) and the same look again: no new look.
+    t.set({ projectColors: { '/work/app': 6 } });
+    await phone.state((s) => (s.projects as Msg[])[0]!.color === 6);
+    t.set({ theme: 'daylight', cursorBlink: false });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(looks(phone)).toHaveLength(3);
+  });
+
+  test('a phone that connects again gets it again', async () => {
+    const t = setup({ settings: { theme: 'tide' } });
+    const { phone } = await paired(t);
+    await phone.waitFor((m) => m.t === 'look');
+    await phone.close();
+    await until(() => !t.hub.hasPhones());
+    await phone.connect();
+    expect(await phone.waitFor((m) => m.t === 'look')).toMatchObject({ theme: 'tide' });
+  });
+});
+
 describe('each project\'s sidebar arrangement', () => {
   const L = (o: Partial<RemoteLayout> = {}): RemoteLayout => ({
     groupByState: true, pins: ['t2'], order: { sessions: [], terminals: ['t1'] },

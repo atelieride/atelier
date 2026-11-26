@@ -24,6 +24,19 @@ export function resolveToken(blocks: ThemeBlocks, theme: string, name: string): 
   return format(color(blocks, theme, `var(${name})`, name, new Set()));
 }
 
+/**
+ * A token's color as hex only, for what reads no CSS (an iPhone): `#RRGGBB` when opaque, else `#RRGGBBAA` with the
+ * alpha rounded to a byte (one that rounds to 255 is opaque).
+ */
+export function resolveHex(blocks: ThemeBlocks, theme: string, name: string): string {
+  const c = color(blocks, theme, `var(${name})`, name, new Set());
+  const a = Math.round(c.a * 255);
+  const rgb = [c.r, c.g, c.b].map((x) => hex2(Math.round(x))).join('');
+  return `#${rgb}${a >= 255 ? '' : hex2(a)}`;
+}
+
+const hex2 = (x: number) => x.toString(16).padStart(2, '0').toUpperCase();
+
 function lookup(blocks: ThemeBlocks, theme: string, name: string): string | undefined {
   return blocks[theme]?.[name] ?? blocks['']?.[name];
 }

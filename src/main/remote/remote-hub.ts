@@ -1,9 +1,10 @@
 // iPhone access in the main process: with Settings › iPhone on, this computer keeps one connection to the relay and
 // serves each paired phone that connects through it — the state of its projects and sessions as their sidebar rows
-// show them, each project's sidebar arrangement, the accounts' limits, a terminal's screen and output, typing, sizes,
-// new sessions, the actions on rows (Allow / Deny, rename, close, resume, dismiss), on workspaces and activities (new,
-// renamed, closed, a row moved in: applied by the project's window, opened for it when closed) and on the project
-// windows themselves (opened as a recent project opens, closed as their own close does) — sends the push
+// show them, each project's sidebar arrangement, the accounts' limits, how Atelier looks (its theme and terminal
+// settings), a terminal's screen and output, typing, sizes, new sessions, the actions on rows (Allow / Deny, rename,
+// close, resume, dismiss), on workspaces and activities (new, renamed, closed, a row moved in: applied by the
+// project's window, opened for it when closed) and on the project windows themselves (opened as a recent project
+// opens, closed as their own close does) — sends the push
 // notifications phones registered for, and runs pairing (the code, the Allow/Deny question to the windows). Off, no
 // relay connection exists at all. A phone only names what the state listed: opaque project ids, terminal, place and
 // account ids, never paths, commands, directories or profiles.
@@ -27,7 +28,9 @@ import { LayoutStore } from './layouts';
 import { PushDecider, collapseKeyOf, noticeJson, type AttentionNews } from './push';
 import { pushKeyId, sealPush } from './push-seal';
 import { PushStore } from './push-store';
-import { CLOSE, placeNameProblem, type ByeReason, type DeviceMessage, type HostMessage, type RemoteAccount, type RemoteFeatures } from './messages';
+import { THEME_BLOCKS } from '../theme-chrome';
+import { lookKey, remoteLook } from './look';
+import { CLOSE, placeNameProblem, type ByeReason, type DeviceMessage, type HostMessage, type RemoteAccount, type RemoteFeatures, type RemoteLook } from './messages';
 import { Pairing } from './pairing';
 import { RelayLink, type RelayLinkOptions } from './relay-link';
 import { AnswerBook } from './answers';
@@ -224,6 +227,7 @@ class PhoneSession implements RemoteViewer {
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private lastState = '';
   private lastUsage = '';
+  private lastLook = '';
   /** Each listed project's layout as this phone last got it (JSON). */
   private readonly lastLayouts = new Map<string, string>();
   private lastSize: Size | null = null;
@@ -261,6 +265,13 @@ class PhoneSession implements RemoteViewer {
     if (!this.lastState || key === this.lastUsage) return;
     this.lastUsage = key;
     this.send({ t: 'usage', accounts });
+  }
+
+  /** How Atelier looks, after the first state; only when it changed. */
+  sendLook(key: string, look: RemoteLook): void {
+    if (!this.lastState || key === this.lastLook) return;
+    this.lastLook = key;
+    this.send({ t: 'look', ...look });
   }
 
   private error(rid: number, code: 'not-found' | 'invalid' | 'busy' | 'failed', message: string): void {
@@ -655,11 +666,16 @@ export class RemoteHub {
 
   start(): void { this.apply(); }
 
-  /** Settings changed: remote access, the relay, the project colors, the accounts, the ports shown. */
+  /** Settings changed: remote access, the relay, the project colors, the accounts, the ports shown, the look. */
   settingsChanged(): void {
     this.apply();
     this.scheduleState();
     this.scheduleUsage();
+    // Rare enough (a choice in Settings) to go at once; a phone gets it only when what it shows changed.
+    if (this.sessions.size > 0) {
+      const l = this.computeLook();
+      for (const s of this.sessions.values()) s.sendLook(l.key, l.look);
+    }
   }
 
   /** Something a row shows that TerminalHub doesn't know changed: a port, a pull request. */
@@ -853,6 +869,8 @@ export class RemoteHub {
     s.sendLayouts(st);
     const u = this.computeUsage();
     s.sendUsage(u.key, u.accounts);
+    const l = this.computeLook();
+    s.sendLook(l.key, l.look);
     this.devices.seen(deviceId);
     this.statusChanged();
   }
@@ -942,6 +960,12 @@ export class RemoteHub {
     const accounts = remoteUsage({ usage: this.d.terminals.usageList(), accounts: this.d.settings().claudeAccounts, defaultDir: this.d.defaultDir(), now: Date.now() });
     // updatedAt alone moving changes nothing a phone shows.
     return { key: JSON.stringify(accounts.map(({ updatedAt: _u, ...rest }) => rest)), accounts };
+  }
+
+  /** The themes are resolved once (look.ts): what is left is a few settings. */
+  private computeLook(): { key: string; look: RemoteLook } {
+    const look = remoteLook(this.d.settings(), THEME_BLOCKS);
+    return { key: lookKey(look), look };
   }
 
   private scheduleUsage(): void {

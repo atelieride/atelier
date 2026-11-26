@@ -182,6 +182,8 @@ tile + white Λ).
 - iPhone-only renderer code (the settings section, the pairing sheet, `access-on.ts` with what a window does for the
   phones, the marks' CSS and the phones' model names) loads with `import()`/`lazy()`: in the first bundle it would push
   the live demo over its first-paint budget (`tests/integration/demo-build.test.ts`).
+- A setting a paired phone shows must also be in `src/main/index.ts`'s condition for `remote.settingsChanged()` (the
+  look's are `LOOK_SETTINGS`): left out, a change to it never reaches the phone.
 - Claude accounts (`CLAUDE_CONFIG_DIR`): the default account is **never** launched with an explicit
   `CLAUDE_CONFIG_DIR` (Claude Code keys its sign-in on the dir it is given), and another account starts as
   `CLAUDE_CONFIG_DIR='<dir>' claude`, an assignment, never `env …` (that skips Atelier's zsh function and the hooks).
