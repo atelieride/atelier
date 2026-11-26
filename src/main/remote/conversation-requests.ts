@@ -45,6 +45,7 @@ const NO_PROMPT: Refusal = { code: 'busy', message: 'Claude\'s prompt isn\'t on 
 const MEANWHILE: Refusal = { code: 'busy', message: 'Claude asked something meanwhile. Check the terminal.' };
 const NOT_REACHED: Refusal = { code: 'failed', message: 'The text didn\'t reach Claude\'s prompt.' };
 const NOT_WORKING: Refusal = { code: 'invalid', message: 'Claude isn\'t working.' };
+const WORKING: Refusal = { code: 'busy', message: 'Claude is working. Send it once Claude is done.' };
 const NO_MENU: Refusal = { code: 'invalid', message: 'No menu to close.' };
 const ESC = '\u001b';
 /** Control characters but newline and tab: a prompt types none of them. */
@@ -217,9 +218,11 @@ export class PhoneConversations {
 
   /**
    * Types `text` into Claude's empty prompt as one bracketed paste (as Atelier's scheduled prompts do), and Enter once
-   * a read shows the prompt holding that text and nothing else, within enterCapMs: Claude Code queues it while it
-   * works, as when typed there. Refused before the paste while the session waits, a dialog or a menu shows, the prompt
-   * isn't on screen or holds text, or a window typed in the terminal just now. No Enter after it once the session
+   * a read shows the prompt holding that text and nothing else, within enterCapMs. Refused before the paste while the
+   * session waits, a dialog or a menu shows, the prompt isn't on screen or holds text, a window typed in the terminal
+   * just now, or the screen shows Claude working, whatever the hooks say: a permission request can be drawn at any
+   * moment of a turn, and one drawn between the last read and the Enter would take that Enter as its "Yes", for a
+   * call nobody saw. Idle, Claude asks nothing before a model's answer. No Enter after the paste once the session
    * waits or a dialog shows (the text stays in the prompt), a window types, the session or the phone is gone, or the
    * prompt never shows the text.
    */
@@ -242,6 +245,7 @@ export class PhoneConversations {
     const state = promptState(view);
     if (state === 'none') return NO_PROMPT;
     if (state === 'typed') return TYPED;
+    if (claudeWorking(view)) return WORKING;
     // One input: within the 16 KiB a prompt may take, the paste needs no chunks.
     type(promptPaste(body).join(''));
     const clock = this.o.timing.now ?? Date.now;

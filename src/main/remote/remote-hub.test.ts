@@ -2416,6 +2416,7 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
   const MEANWHILE = refused('busy', 'Claude asked something meanwhile. Check the terminal.');
   const NOT_REACHED = refused('failed', 'The text didn\'t reach Claude\'s prompt.');
   const NOT_WORKING = refused('invalid', 'Claude isn\'t working.');
+  const WORKING = refused('busy', 'Claude is working. Send it once Claude is done.');
   const NO_MENU = refused('invalid', 'No menu to close.');
   const IN_TERMINAL = refused('invalid', 'Answer in the terminal');
   const GONE = refused('not-found', 'This session is not on this computer any more.');
@@ -2464,12 +2465,30 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     // A read before the paste, and one showing the text before the Enter.
     expect(t.terms.events).toEqual(['read', PASTE('fix the tests'), 'read', '\r']);
     expect(t.terms.answers).toEqual([['t2', PASTE('fix the tests')], ['t2', '\r']]);
-    // While Claude works Claude Code queues it, as typed there. Drawn a read later, its paste markers echoed.
-    t.terms.set(withSession(t.terms.list, 't2', claude('s')));
-    await shows(t, 't2', 'working', 'working', await prompted('working', '^[[200~fix the tests^[[201~'));
+    // Drawn a read later, its paste markers echoed.
+    await shows(t, 't2', 'idle', 'idle', await prompted('idle', '^[[200~fix the tests^[[201~'));
     t.terms.events = [];
     expect(await phone.say('t2', 'fix the tests')).toEqual(OK);
     expect(t.terms.events).toEqual(['read', PASTE('fix the tests'), 'read', 'read', '\r']);
+    sizeKept(t);
+  });
+
+  test('say: nothing while Claude works, whatever the hooks say: a request drawn between the last read and the Enter would take that Enter as its "Yes"', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', finished);
+    const { phone } = await paired(t);
+    // Its turn over by its hooks, working on screen (a prompt typed on the computer, its hook not here yet).
+    await shows(t, 't2', 'working', await prompted('working', 'fix the tests'));
+    expect(await phone.say('t2', 'fix the tests')).toEqual(WORKING);
+    // Working by its hooks too.
+    t.terms.set(withSession(t.terms.list, 't2', claude('s')));
+    await shows(t, 't2', 'working', await prompted('working', 'fix the tests'));
+    expect(await phone.say('t2', 'fix the tests')).toEqual(WORKING);
+    expect(t.terms.answers).toEqual([]);
+    // Its turn over on screen: the prompt goes.
+    await shows(t, 't2', 'idle', await prompted('idle', 'fix the tests'));
+    expect(await phone.say('t2', 'fix the tests')).toEqual(OK);
+    expect(keys(t)).toEqual([PASTE('fix the tests'), '\r']);
     sizeKept(t);
   });
 
@@ -2507,13 +2526,13 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     };
     const { phone } = await paired(t);
     for (const [n, shown] of [[2000, 'paste-line-2000'], [801, 'paste-line-801'], [800, 'paste-line-800']] as const) {
-      await shows(t, 't2', 'working', shown);
+      await shows(t, 't2', 'idle', shown);
       t.terms.answers = [];
       expect(await phone.say('t2', sentences(n))).toEqual(OK);
       expect(keys(t)).toEqual([PASTE(sentences(n)), '\r']);
     }
     // 800 characters are never folded: a stand-in there is another paste's.
-    await shows(t, 't2', 'working', 'paste-line-801');
+    await shows(t, 't2', 'idle', 'paste-line-801');
     t.terms.answers = [];
     expect(await phone.say('t2', sentences(800))).toEqual(NOT_REACHED);
     expect(keys(t)).toEqual([PASTE(sentences(800))]);
@@ -2529,7 +2548,7 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
       expect(await phone.say('t2', 'fix the tests')).toEqual(TYPED);
     }
     // A window typed in the terminal just now: what it typed may not be drawn yet.
-    await shows(t, 't2', 'working', await prompted('working', 'fix the tests'));
+    await shows(t, 't2', 'idle', await prompted('idle', 'fix the tests'));
     t.terms.windowInput.set('t2', Date.now() - 500);
     expect(await phone.say('t2', 'fix the tests')).toEqual(TYPED);
     // A window types while the screen is read.
@@ -2542,7 +2561,7 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     expect(await said).toEqual(TYPED);
     expect(t.terms.answers).toEqual([]);
     // A window types once the paste went: an Enter would send its keys too.
-    await shows(t, 't2', 'working', await prompted('working', 'fix the tests'));
+    await shows(t, 't2', 'idle', await prompted('idle', 'fix the tests'));
     t.terms.windowInput.set('t2', Date.now() - TYPED_RECENTLY_MS - 100);
     t.terms.onKey = (id, key) => { if (key.startsWith('\x1b[200~')) t.terms.windowInput.set(id, Date.now()); };
     expect(await phone.say('t2', 'fix the tests')).toEqual(TYPED);
@@ -2550,7 +2569,7 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     // Typed a while ago, nothing since: the prompt is the phone's.
     t.terms.onKey = null;
     t.terms.windowInput.set('t2', Date.now() - TYPED_RECENTLY_MS - 100);
-    await shows(t, 't2', 'working', await prompted('working', 'fix the tests'));
+    await shows(t, 't2', 'idle', await prompted('idle', 'fix the tests'));
     t.terms.answers = [];
     expect(await phone.say('t2', 'fix the tests')).toEqual(OK);
     expect(keys(t)).toEqual([PASTE('fix the tests'), '\r']);
@@ -2604,13 +2623,13 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     const { phone } = await paired(t);
     // A dialog or a menu drawn once the paste went: the text stays in Claude's prompt.
     for (const after of ['bash', 'model']) {
-      await shows(t, 't2', 'working', after);
+      await shows(t, 't2', 'idle', after);
       t.terms.answers = [];
       expect(await phone.say('t2', 'fix the tests')).toEqual(MEANWHILE);
       expect(keys(t)).toEqual([PASTE('fix the tests')]);
     }
     // The prompt shows the text, but the session waits now (its dialog not drawn yet).
-    await shows(t, 't2', 'working', await prompted('working', 'fix the tests'));
+    await shows(t, 't2', 'idle', await prompted('idle', 'fix the tests'));
     t.terms.onKey = (id, key) => { if (key.startsWith('\x1b[200~')) t.terms.set(withSession(t.terms.list, id, waiting('waiting: Bash npm test'))); };
     t.terms.answers = [];
     expect(await phone.say('t2', 'fix the tests')).toEqual(MEANWHILE);
@@ -2622,7 +2641,7 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     t.terms.list = withSession(t.terms.list, 't2', claude('s'));
     const { phone } = await paired(t);
     // The prompt stays empty: read again until the Enter's wait runs out.
-    await shows(t, 't2', 'working');
+    await shows(t, 't2', 'idle');
     t.terms.events = [];
     expect(await phone.say('t2', 'fix the tests')).toEqual(NOT_REACHED);
     expect(t.terms.events.slice(0, 2)).toEqual(['read', PASTE('fix the tests')]);
@@ -2630,9 +2649,9 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     expect(t.terms.events.length).toBeGreaterThan(4);
     // Other text there (typed as the paste went), the text and more, the text folded though it is one line, a screen
     // that can't be read.
-    const after = [await screen('working-typed'), await prompted('working', 'fix the tests and the build'), await prompted('working', '[Pasted text #1]'), new Error('no screen')];
+    const after = [await screen('working-typed'), await prompted('idle', 'fix the tests and the build'), await prompted('idle', '[Pasted text #1]'), new Error('no screen')];
     for (const v of after) {
-      await shows(t, 't2', 'working', v);
+      await shows(t, 't2', 'idle', v);
       t.terms.answers = [];
       expect(await phone.say('t2', 'fix the tests')).toEqual(NOT_REACHED);
       expect(keys(t)).toEqual([PASTE('fix the tests')]);
@@ -2642,7 +2661,7 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
   test('a phone removed while its prompt types: no Enter goes after the paste', async () => {
     const t = conversing();
     t.terms.list = withSession(t.terms.list, 't2', claude('s'));
-    await shows(t, 't2', 'working', await prompted('working', 'fix the tests'));
+    await shows(t, 't2', 'idle', await prompted('idle', 'fix the tests'));
     const { phone } = await paired(t);
     t.terms.onKey = (_id, key) => { if (key.startsWith('\x1b[200~')) t.hub.removeDevice(t.hub.devices.list()[0]!.id); };
     t.terms.events = [];
@@ -2735,9 +2754,12 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     // The command runs: Claude Code draws it working, the session waits under the same ask.
     await shows(t, 't2', 'working');
     expect(await phone.dialog('t2')).toEqual(ALREADY);
-    // A prompt goes through the usual checks; Claude Code queues it.
+    // A prompt waits for the turn's end, as anywhere; once the screen shows it over (the hooks still on the request
+    // answered), it goes through the usual checks.
     await shows(t, 't2', 'working', await prompted('working', 'run the build'));
     t.terms.answers = [];
+    expect(await phone.say('t2', 'run the build')).toEqual(WORKING);
+    await shows(t, 't2', 'idle', await prompted('idle', 'run the build'));
     expect(await phone.say('t2', 'run the build')).toEqual(OK);
     expect(keys(t)).toEqual([PASTE('run the build'), '\r']);
     await shows(t, 't2', 'working-typed');
@@ -2754,7 +2776,7 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     expect(await phone.say('t2', 'run the build')).toEqual(ANSWER_FIRST);
     expect(await phone.stop('t2')).toEqual(ANSWER_FIRST);
     // A screen read while the prompt waits for its Enter: the dialog drawn then gets no Enter.
-    await shows(t, 't2', 'working', 'bash-second');
+    await shows(t, 't2', 'idle', 'bash-second');
     expect(await phone.say('t2', 'run the build')).toEqual(MEANWHILE);
     expect(keys(t)).toEqual([PASTE('run the build')]);
   });
@@ -2856,7 +2878,7 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
   test('one typing request per session at a time, across phones', async () => {
     const t = conversing();
     t.terms.list = withSession(t.terms.list, 't2', claude('s'));
-    await shows(t, 't2', 'working', await prompted('working', 'fix the tests'));
+    await shows(t, 't2', 'idle', await prompted('idle', 'fix the tests'));
     const { phone } = await paired(t);
     const two = await another(t);
     // The first phone's prompt still reading the screen: every other typing is refused, and none of those frees the
