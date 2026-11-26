@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile, appendFile, symlink, mkdir } from 'node:fs/prom
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { READ_CHUNK, readJsonLines } from './transcript-lines';
+import { READ_CHUNK, openNoFollow, readJsonLines } from './transcript-lines';
 
 let dir: string;
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'tl-')); });
@@ -78,5 +78,19 @@ describe('readJsonLines', () => {
     await mkdir(join(dir, 'sub'));
     await expect(readJsonLines(join(dir, 'link.jsonl'), null, () => {})).rejects.toThrow();
     await expect(readJsonLines(join(dir, 'sub'), null, () => {})).rejects.toThrow();
+  });
+
+  it('with no O_NOFOLLOW to open with (Windows has none), a symlink is still refused; a regular file opens', async () => {
+    const f = join(dir, 't.jsonl');
+    await writeFile(f, '{}\n');
+    await symlink(f, join(dir, 'link.jsonl'));
+    await expect(openNoFollow(join(dir, 'link.jsonl'), 0)).rejects.toMatchObject({ code: 'ELOOP' });
+    // A link to nowhere too, as O_NOFOLLOW refuses it (a plain open says ENOENT); a missing file stays ENOENT.
+    await symlink(join(dir, 'nowhere.jsonl'), join(dir, 'dangling.jsonl'));
+    await expect(openNoFollow(join(dir, 'dangling.jsonl'), 0)).rejects.toMatchObject({ code: 'ELOOP' });
+    await expect(openNoFollow(join(dir, 'missing.jsonl'), 0)).rejects.toMatchObject({ code: 'ENOENT' });
+    const fh = await openNoFollow(f, 0);
+    expect((await fh.stat()).size).toBe(3);
+    await fh.close();
   });
 });

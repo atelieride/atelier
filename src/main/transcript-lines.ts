@@ -2,9 +2,36 @@
 // week-long file runs to tens of MB, so the first read goes through it once, in 4 MiB chunks; later ones read only what
 // was appended. A line still being written stays in `partial` until its newline arrives, never half-parsed.
 import { constants } from 'node:fs';
-import { open } from 'node:fs/promises';
+import { lstat, open, type FileHandle } from 'node:fs/promises';
 
 export const READ_CHUNK = 4 * 1024 * 1024;
+
+/**
+ * `file` opened to read, never through a symlink in its last component. `noFollow` is the system's O_NOFOLLOW: Node
+ * has none on Windows, where an open follows links, so there the path is checked once the file is open: no link, and
+ * still the very file the handle holds (a link swapped in before the open, or out after it, is refused). A link
+ * refused rejects ELOOP, as O_NOFOLLOW does, a link to nowhere included.
+ */
+export async function openNoFollow(file: string, noFollow: number = constants.O_NOFOLLOW ?? 0): Promise<FileHandle> {
+  const loop = () => Object.assign(new Error('a symbolic link'), { code: 'ELOOP' });
+  let fh: FileHandle;
+  try {
+    fh = await open(file, constants.O_RDONLY | noFollow);
+  } catch (e) {
+    // A plain open of a link to nowhere says ENOENT: the link itself may be there.
+    if (!noFollow && (e as NodeJS.ErrnoException).code === 'ENOENT' && (await lstat(file).catch(() => null))?.isSymbolicLink()) throw loop();
+    throw e;
+  }
+  if (noFollow) return fh;
+  try {
+    const [held, named] = await Promise.all([fh.stat({ bigint: true }), lstat(file, { bigint: true })]);
+    if (named.isSymbolicLink() || named.ino !== held.ino || named.dev !== held.dev) throw loop();
+    return fh;
+  } catch (e) {
+    await fh.close();
+    throw e;
+  }
+}
 
 /** Where a read stopped: the byte offset after the last whole line's end, the file size seen, and the unfinished line. */
 export interface LineCursor { offset: number; size: number; partial: string }
@@ -34,7 +61,7 @@ export async function readJsonLines(
   onChunk?: () => void,
   onStart?: (fromStart: boolean) => void,
 ): Promise<LineCursor & { fromStart: boolean }> {
-  const fh = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const fh = await openNoFollow(file);
   try {
     const st = await fh.stat();
     if (!st.isFile()) throw new Error('not a regular file');
