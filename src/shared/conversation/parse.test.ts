@@ -280,7 +280,20 @@ describe('ConversationParser rules', () => {
     const e = p.entries[0] as ToolEntry;
     expect(e.status).toBe('error');
     expect(e.detail!.endsWith('LAST')).toBe(true);
-    expect(e.detail!.split('\n').length).toBeLessThanOrEqual(80);
+    expect(e.detail!.split('\n')).toHaveLength(CAPS.outputLines);
+    expect(CAPS.outputLines).toBe(20);
+  });
+
+  test('a prompt holding many unclosed <system-reminder> tags is read in linear time', () => {
+    // Each unclosed tag sent a lazy match to the end of the text: quadratic, seconds of the main process for 1 MB.
+    const text = `look at this ${'<system-reminder>'.repeat(60000)} please`;
+    const started = performance.now();
+    const p = run(prompt(text));
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(p.entries).toHaveLength(1);
+    // Closed ones go, as before; an unclosed one stays.
+    const q = run(prompt('a <system-reminder>note</system-reminder>b <system-reminder>c</system-reminder> d <system-reminder>open'));
+    expect(q.entries).toMatchObject([{ k: 'prompt', text: 'a b  d <system-reminder>open' }]);
   });
 
   test('a rejection\'s feedback and a long target stay within their caps', () => {

@@ -127,3 +127,34 @@ describe('toolDone edge cases', () => {
     expect(toolCall('Read', { file_path: `/work/app/${'d/'.repeat(200)}f.ts` }, AT).target!.length).toBeLessThanOrEqual(160);
   });
 });
+
+describe('a secret cut by an early cut', () => {
+  /** A run redaction turns into "…": long hex, so text before or after a cut shrinks to almost nothing. */
+  const HEX = 'a1'.repeat(320);
+  const KEY = `ghp_${'Zq9Xw8Vu7Ts6Rq5Po4Nm'.repeat(2)}`;
+  /** Hex runs and spaces, `n` characters. */
+  const filler = (n: number) => `${HEX} `.repeat(Math.ceil(n / (HEX.length + 1))).slice(0, n);
+  const leaks = (s: string | undefined) => [KEY.slice(0, 8), KEY.slice(4, 12), KEY.slice(-8)].some((p) => s?.includes(p));
+
+  test('a Write\'s content: a token split by the first cut shows no piece of itself', () => {
+    // The token begins 19 characters before the content's first cut (8192): its piece is too short to look like one.
+    const content = `${filler(8192 - 20)} ${KEY} ${filler(2000)}`;
+    const detail = toolCall('Write', { file_path: '/work/app/a.txt', content }, AT).detail;
+    expect(detail).toBeDefined();
+    expect(leaks(detail)).toBe(false);
+  });
+
+  test('a command\'s output: a token split by the tail\'s cut shows no piece of itself', () => {
+    // The last 64 KiB begin 25 characters before the token's end.
+    const out = `${filler(1000)} ${KEY} ${filler(65536 - 26)}`;
+    const done = toolDone('Bash', { command: 'cat .env' }, '', { stdout: out, stderr: '' }, false, {});
+    expect(done.detail).toBeDefined();
+    expect(leaks(done.detail)).toBe(false);
+  });
+
+  test('a command or a label cut before its redaction (Ask\'s short values too): no piece of a token', () => {
+    const command = `${filler(4096 - 20)} ${KEY}`;
+    const call = toolCall('Bash', { command }, AT);
+    expect(leaks(call.target)).toBe(false);
+  });
+});

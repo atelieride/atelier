@@ -8,6 +8,7 @@
 // back: the next prompt is its sibling. Lines are never walked by their parents, which a transcript may lack.
 import { clean, commandParts, itemText, short, taskCreated, taskUpdate, tasksOf, todoItems, withoutAgentMeta, type ChatState } from '../companion/chat';
 import { oneLine } from '../companion/text';
+import { withoutReminders } from '../prompt-text';
 import { toolCall, toolDone, waitTargetOf, contentText } from './tools';
 import { CAPS, type AskedQuestion, type Entry } from './types';
 
@@ -250,7 +251,7 @@ export class ConversationParser {
 
   /** What a user line's text is: a prompt, a slash command, bash mode; or nothing (Claude Code's own messages). */
   private typed(text: string, at: number | null): void {
-    const raw = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim();
+    const raw = withoutReminders(text).trim();
     if (!raw) return;
     if (raw.startsWith(INTERRUPTED)) return INTERRUPT_LINE.test(raw) ? this.interrupt() : undefined;
     if (raw.startsWith(NOTIFICATION)) return this.notification(raw);

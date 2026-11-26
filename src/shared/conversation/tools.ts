@@ -2,7 +2,7 @@
 // makes of it (a summary, a detail, an error). Pure; every text is redacted before any cut.
 import { isInside, splitPath } from '../paths';
 import { redactSecrets } from '../session';
-import { clean, relPath, short } from '../companion/chat';
+import { clean, headToRedact, relPath, short, tailToRedact } from '../companion/chat';
 import { INVISIBLE, cutEnd, cutFront, oneLine } from '../companion/text';
 import { CAPS, type ToolStatus } from './types';
 
@@ -63,7 +63,7 @@ function head(text: string, lines: number, max: number): string {
 
 /** A command's or tool's output: redacted first, then its end kept (the last lines, at most `max` characters). */
 function tail(text: string): string {
-  const flat = verbatim(text.length > 65536 ? text.slice(-65536) : text).trimEnd();
+  const flat = verbatim(tailToRedact(text, 65536)).trimEnd();
   const lines = flat.split('\n');
   const kept = lines.slice(-CAPS.outputLines).join('\n');
   return cutFront(kept, CAPS.output);
@@ -93,7 +93,7 @@ export function toolCall(name: string, input: Record<string, unknown>, at: At): 
   if (name === 'Edit' || name === 'MultiEdit') detail = editDiff(input);
   else if (name === 'Write') {
     const content = typeof input.content === 'string' ? input.content : '';
-    if (content) detail = head(verbatim(diffLines('+', content.slice(0, CAPS.detail * 2)).join('\n')), CAPS.detailLines, CAPS.detail);
+    if (content) detail = head(verbatim(diffLines('+', headToRedact(content, CAPS.detail * 2)).join('\n')), CAPS.detailLines, CAPS.detail);
   } else if (name === 'ExitPlanMode') {
     const plan = str(input.plan);
     if (plan) detail = clean(plan, CAPS.plan);

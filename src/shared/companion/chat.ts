@@ -4,7 +4,7 @@
 // final reports, the questions asked, the task list, the compactions. Tool outputs are left out. Claude Code calls the
 // line format internal: anything not recognised is skipped. Pure.
 import { isInside, splitPath } from '../paths';
-import { promptText } from '../prompt-text';
+import { promptText, withoutReminders } from '../prompt-text';
 import { redactSecrets } from '../session';
 import { cutEnd, cutFront, hhmm, isHighSurrogate, isLowSurrogate, middleCut, oneLine, tidy, ymd } from './text';
 
@@ -62,16 +62,46 @@ const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? 
 const timeOf = (v: unknown): number | null => { const t = typeof v === 'string' ? Date.parse(v) : NaN; return Number.isFinite(t) ? t : null; };
 const firstLine = (s: string) => s.split('\n').find((l) => l.trim()) ?? '';
 
+/** What keys, tokens, hashes and base64 are made of (letters, digits, `+/=_.-`). */
+function tokenChar(c: number): boolean {
+  return (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 43 || c === 47 || c === 61 || c === 95 || c === 46 || c === 45;
+}
+const RUN_SEEN = 4096;
+/**
+ * Where `s` is cut at `at`, for redaction before a later cut: when the cut goes through a run of token characters
+ * that redaction would take (a key), where that run starts and ends (its piece on either side of the cut would be
+ * too short to be recognised); else null. Redaction looks at most RUN_SEEN characters each side of the cut: a key is
+ * far shorter, and redaction over a run of megabytes (a pasted log on one line) would overflow the regex's stack.
+ */
+function secretCut(s: string, at: number): { start: number; end: number } | null {
+  if (at <= 0 || at >= s.length || !tokenChar(s.charCodeAt(at - 1)) || !tokenChar(s.charCodeAt(at))) return null;
+  let start = at, end = at;
+  while (start > 0 && tokenChar(s.charCodeAt(start - 1))) start--;
+  while (end < s.length && tokenChar(s.charCodeAt(end))) end++;
+  const run = s.slice(Math.max(start, at - RUN_SEEN), Math.min(end, at + RUN_SEEN));
+  return redactSecrets(run) === run ? null : { start, end };
+}
+/** The first `n` characters of `s`, to redact: a key the cut goes through is left out whole. */
+export function headToRedact(s: string, n: number): string {
+  if (s.length <= n) return s;
+  return s.slice(0, secretCut(s, n)?.start ?? n);
+}
+/** The last `n` characters of `s`, to redact: a key the cut goes through is left out whole. */
+export function tailToRedact(s: string, n: number): string {
+  if (s.length <= n) return s;
+  return s.slice(secretCut(s, s.length - n)?.end ?? s.length - n);
+}
+
 /**
  * Text kept in an entry: tidied (an invisible character never hides a key from redaction), token-like runs redacted
  * (before any cut, which could leave a piece of a key too short to be recognised), then cut to `max` around its middle.
  */
 export function clean(text: string, max: number): string {
   if (text.length <= 2 * WIDE) return middleCut(redactSecrets(tidy(text)), max);
-  return middleCut(redactSecrets(tidy(`${text.slice(0, WIDE)}\n${text.slice(-WIDE)}`)), max, text.length - 2 * WIDE);
+  return middleCut(redactSecrets(tidy(`${headToRedact(text, WIDE)}\n${tailToRedact(text, WIDE)}`)), max, text.length - 2 * WIDE);
 }
 /** A short one-line value (a command, a pattern, a label, an answer): redacted, then cut at its end. */
-export const short = (s: string, max: number) => cutEnd(redactSecrets(oneLine(s.slice(0, 4096))), max);
+export const short = (s: string, max: number) => cutEnd(redactSecrets(oneLine(headToRedact(s, 4096))), max);
 
 /** `p` inside the project relative to it, `/`-separated (Windows' C:\… too: Ask cites forward slashes everywhere). */
 export function relPath(p: string, root: string): string {
@@ -271,7 +301,7 @@ function user(line: Obj, msg: Obj, at: number | null, st: ChatState): ChatEntry[
   if (Array.isArray(content) && content.some((c) => isObj(c) && c.type === 'tool_result')) {
     return content.flatMap((c) => (isObj(c) && c.type === 'tool_result' ? toolResult(c, line, at, st) : []));
   }
-  const raw = (typeof content === 'string' ? content : resultText(content)).replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim();
+  const raw = withoutReminders(typeof content === 'string' ? content : resultText(content)).trim();
   if (raw.startsWith(NOTIFICATION)) return notification(raw, at);
   // Claude Code's own messages (meta, the compaction summary, command output, scheduled prompts) are not prompts.
   if (line.isCompactSummary === true || line.isMeta === true) return [];
