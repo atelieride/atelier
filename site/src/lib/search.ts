@@ -60,13 +60,15 @@ export interface IndexSource {
 }
 
 export function buildIndex(src: IndexSource): SearchItem[] {
+  // "New in" shows the newest release with titled entries: a release of fixes only has none and would leave it out.
+  const newest = src.releases.find((r) => r.entries.length);
   const pages: [string, string][] = [['Overview', '/'], ['Features', '/features'], ['Changelog', '/changelog'], ['Download', '/download']];
   return [
     ...pages.map(([label, href]): SearchItem => ({ group: 'Pages', label, hint: href, href })),
     { group: 'Pages', label: 'Support Atelier', hint: '/support', href: '/support', terms: ['donate', 'donation', 'sponsor', 'tip', 'coffee', 'pay'] },
     { group: 'Pages', label: 'Source code', hint: 'GitHub', href: REPO_URL, terms: ['github', 'open source', 'mit', 'license', 'fork', 'repository', 'contribute', 'issues'] },
     ...src.rows.map((r): SearchItem => ({ group: 'Features', label: r.eyebrow, hint: r.title, href: `/features#${r.id}` })),
-    ...src.releases.flatMap((r, i) => r.entries.map((e): SearchItem => ({ group: 'Changelog', label: e.title, hint: r.version, href: `/changelog#${e.id}`, latest: i === 0 }))),
+    ...src.releases.flatMap((r) => r.entries.map((e): SearchItem => ({ group: 'Changelog', label: e.title, hint: r.version, href: `/changelog#${e.id}`, latest: r === newest }))),
     ...src.bento.map((b): SearchItem => ({ group: 'And more', label: b.title, hint: b.text, href: '/features#more' })),
     ...src.keys.map((k): SearchItem => ({ group: 'Shortcuts', label: k.label, hint: '', href: '/features#shortcuts', keys: k.keys }))
   ];

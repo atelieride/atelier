@@ -65,6 +65,19 @@ test('empty query: pages, features, what is new in the latest version, shortcuts
   ]);
 });
 
+test('empty query after a release of fixes only: what is new comes from the newest release with titled entries', () => {
+  const fixesOnly = buildIndex({
+    rows: [], bento: [], keys: [],
+    releases: [
+      { version: '0.2.0-beta.9', entries: [] },
+      { version: '0.2.0-beta.8', entries: [{ title: 'Worktrees in Changes', id: 'v0.2.0-beta.8-worktrees-in-changes' }] },
+      { version: '0.2.0-beta.6', entries: [{ title: 'Split view', id: 'v0.2.0-beta.6-split-view' }] }
+    ]
+  });
+  expect(labels(search(fixesOnly, '')).find(([title]) => String(title).startsWith('New in'))).toEqual(['New in 0.2.0-beta.8', ['Worktrees in Changes']]);
+  expect(fixesOnly.find((i) => i.label === 'Split view')).toMatchObject({ latest: false });
+});
+
 test('a query matches labels and hints, case-insensitive, groups ordered by their best hit', () => {
   expect(labels(search(index, 'SPLIT'))).toEqual([['Changelog', ['Split view']], ['Shortcuts', ['Split view']]]);
   // "side" is in a hint only: found, ranked below label hits.

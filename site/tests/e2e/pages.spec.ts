@@ -10,7 +10,10 @@ test('changelog: one card per published version, newest first, betas marked, mar
   await expect(cards).toHaveCount(releases.length);
   await expect(cards.first().locator('h2')).toHaveText(releases[0]!.version);
   if (releases[0]!.beta) await expect(cards.first().locator('.beta')).toBeVisible();
-  await expect(cards.first().locator('strong').first()).toBeVisible(); // **bold** became <strong>
+  // **bold** became <strong>, in the newest release that has any (a release of fixes only has none).
+  const bold = releases.findIndex((r) => /\*\*[^*\n]+\*\*/.test(r.body));
+  expect(bold).toBeGreaterThanOrEqual(0);
+  await expect(cards.nth(bold).locator('strong').first()).toBeVisible();
   await expect(page.locator('body')).not.toContainText('Not published');
 });
 
