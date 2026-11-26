@@ -96,6 +96,8 @@ const REVIEW = 'Review your answers';
 const EDITOR = 'ctrl+g to edit in Vim';
 /** A permission's hint while its cursor is in an amended option's field: no more "· Tab to amend". */
 const FIELD_HINT = 'Esc to cancel';
+/** What every dialog's hint row offers, at its end or alone. */
+const ESC_HINT = 'Esc to cancel';
 /** An amended option's label: its own word, a comma, then the feedback (or its placeholder). */
 const AMENDED = /^(?:Yes|No),/;
 const CHECKBOX = /^\[(?: |✔)\]/;
@@ -176,17 +178,19 @@ const lastRow = (lines: readonly string[]) => {
 /**
  * An option's label: its row's text, then each row right below it while the row before reached `cols − 20` columns
  * or more (Claude Code wrapped it), with no space where the next row's first character wouldn't have fit (a hard wrap,
- * inside a word). A numbered row is the next option however long this one is; a rule, an empty row or the plan's
- * feedback hint ends it too. With `until`, every row with text down to that one (the plan's feedback, which has no
- * description below it: it wraps anywhere and may hold blank rows). `end`: the label's last row.
+ * inside a word). A numbered row is the next option however long this one is; a rule, an empty row, the plan's
+ * feedback hint or the dialog's Esc hint ends it too. With `wraps`, an option with no description below it (a
+ * permission's, or a question's own answer: text typed there wraps at word ends, so a long word moves to the next row
+ * and leaves the one above short): every row down to one of those. With `until`, every row with text down to that one
+ * (the plan's feedback, which may hold blank rows). `end`: the label's last row.
  */
-function labelOf(lines: readonly string[], o: Row, cols: number, until: number | null): { label: string; end: number } {
+function labelOf(lines: readonly string[], o: Row, cols: number, until: number | null, wraps = false): { label: string; end: number } {
   let label = o.label;
   let end = o.line;
   for (let i = o.line + 1; i < (until ?? lines.length); i++) {
     const row = textOf(lines[i]);
     const before = reach(lines[end]);
-    if (until === null && (!row || before < cols - 20 || OPTION.test(row) || RULE.test(row) || row === FEEDBACK)) break;
+    if (until === null && (!row || (!wraps && before < cols - 20) || OPTION.test(row) || RULE.test(row) || row === FEEDBACK || row.includes(ESC_HINT))) break;
     if (!row) continue;
     label += (before + width(row) > cols - 1 ? '' : ' ') + row;
     end = i;
@@ -256,7 +260,9 @@ export function readDialog(view: ScreenView, wait: DialogWait | null): ScreenDia
   // A plan's wait may outlive its dialog (its hook lags the screen): only the plan dialog's own marks make it one, its
   // question or its feedback hint, never another dialog drawn there meanwhile (Bash's, its cursor maybe in a field).
   if (wait === 'plan' && field.hint === null && !flat(rows.join(' ')).includes(flat(PLAN_ASK))) return null;
-  const read = d.options.map((o) => ({ ...labelOf(lines, o, cols, o.n === field.n ? field.hint : null), row: o }));
+  // A checkbox list's own answer has its Submit row right below it (and is answered in the terminal anyway).
+  const wraps = (o: Row) => wait === 'permission' || (o.n === field.n && !CHECKBOX.test(o.label));
+  const read = d.options.map((o) => ({ ...labelOf(lines, o, cols, o.n === field.n ? field.hint : null, wraps(o)), row: o }));
   // The hint row: the last row below the options (none on a question's review page).
   let hint = '';
   for (let i = lines.length - 1; i > read.at(-1)!.end && !hint; i--) hint = textOf(lines[i]);

@@ -123,6 +123,24 @@ test('a field\'s text read whole wherever it wraps: wide characters take two col
   }
 });
 
+test('a permission\'s feedback and a question\'s own answer wrapped before a long word: the field holds the whole text, and the card names it whole', () => {
+  // Claude Code wraps a field at word ends: a path that doesn't fit moves to the next row, the row above ends short.
+  const path = 'src/main/remote/conversation-requests.ts';
+  const feedback = `do not create it; read ${path} and say ok`;
+  const no = readDialog(edited('bash-amend-typed', { 37: ' ❯ 4. No, do not create it; read' }, { before: 38, rows: [`      ${path} and say ok`] }), 'permission')!;
+  expect(no).toMatchObject({ focused: 4, inField: true, fieldText: feedback });
+  expect(no.options[3]!.label).toBe(`No, ${feedback}`);
+  expect(fieldHolds(no, 4, feedback)).toBe(true);
+  const answer = `Mango, as in notes/${'fruit/'.repeat(8)}mango.md`;
+  const own = readDialog(edited('question-field-typed', { 35: '❯ 3. Mango, as in' }, { before: 36, rows: [`     notes/${'fruit/'.repeat(8)}mango.md`] }), 'question')!;
+  expect(own).toMatchObject({ focused: 3, inField: true, fieldText: answer });
+  expect(own.options[2]).toEqual({ n: 3, label: answer, field: true });
+  // The other options keep their descriptions apart; Esc's hint below a field is no part of it.
+  expect(own.options.map((o) => o.label).slice(0, 2)).toEqual(['Apple', 'Pear']);
+  const hinted = readDialog(edited('bash-amend-typed', { 38: ' Esc to cancel' }), 'permission')!;
+  expect(hinted.options[3]!.label).toBe('No, do not create it, just say ok');
+});
+
 test('a field holds the text only from its start, its dim placeholder no text; a field holding text already is answered in the terminal', async () => {
   // Empty fields: their placeholders are dim, nothing typed.
   const question = readDialog(await ans('question-field'), 'question')!;
