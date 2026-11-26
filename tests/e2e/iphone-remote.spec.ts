@@ -4,7 +4,7 @@
 // it back when it closes, when its page reloads and when its window closes with it open. From main's news (its remote
 // handlers stood in for): the Allow / Deny question, the toast, the notices, the footer pill, the phone badge on the
 // tab and the row, the size note and Fit to Window, the paired phones' list and Remove. And with a fake phone on Atelier's own Noise code (tests/support/fake-phone.ts): pairing by
-// code, Allow, a phone typing in a terminal, access off and Remove dropping it. And the beta it is said to be, where
+// code, Allow, a phone typing in a terminal, the theme chosen here reaching it, access off and Remove dropping it. And the beta it is said to be, where
 // pairing starts.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import { basename } from 'node:path';
@@ -395,7 +395,7 @@ const sessionsOf = (s: Msg) => s.sessions as { id: string; project: string; titl
 const projectsOf = (s: Msg) => s.projects as { id: string; name: string; open: boolean }[];
 
 // The whole way with a phone: the real handshakes, the real hub, the real terminal.
-test('a phone pairs by code, Allow, types in a terminal; access off and Remove drop it', async () => {
+test('a phone pairs by code, Allow, types in a terminal, follows the theme chosen here; access off and Remove drop it', async () => {
   test.setTimeout(180_000);
   const relay = await startTestRelay();
   const { app, win, home, root } = await launch({ ATELIER_TEST_RELAY_URL: relay.url });
@@ -463,6 +463,12 @@ test('a phone pairs by code, Allow, types in a terminal; access off and Remove d
     // This window's own size again.
     await expect(rows.locator(':scope > div')).not.toHaveCount(12);
     await expect(win.locator('.footer')).not.toContainText('60×12');
+
+    // How this computer looks came with the first state; a theme chosen here reaches the connected phone at once.
+    expect(await phone.waitFor((m) => m.t === 'look', { ms: 10000 })).toMatchObject({ theme: 'aurora', terminalColors: 'theme' });
+    const before = phone.messages.length;
+    await setTheme(win, 'daylight');
+    expect(await phone.waitFor((m) => m.t === 'look', { since: before, ms: 10000 })).toMatchObject({ theme: 'daylight' });
 
     // Access off: the phone is told and dropped; nothing shows it any more.
     await openSection(app, win);

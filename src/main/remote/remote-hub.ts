@@ -4,10 +4,9 @@
 // settings), a terminal's screen and output, typing, sizes, new sessions, the actions on rows (Allow / Deny, rename,
 // close, resume, dismiss), on workspaces and activities (new, renamed, closed, a row moved in: applied by the
 // project's window, opened for it when closed) and on the project windows themselves (opened as a recent project
-// opens, closed as their own close does) — sends the push
-// notifications phones registered for, and runs pairing (the code, the Allow/Deny question to the windows). Off, no
-// relay connection exists at all. A phone only names what the state listed: opaque project ids, terminal, place and
-// account ids, never paths, commands, directories or profiles.
+// opens, closed as their own close does) — sends the push notifications phones registered for, and runs pairing (the
+// code, the Allow/Deny question to the windows). Off, no relay connection exists at all. A phone only names what the
+// state listed: opaque project ids, terminal, place and account ids, never paths, commands, directories or profiles.
 import { randomBytes } from 'node:crypto';
 import type { RemoteDeviceInfo, RemoteLayout, RemotePairingEvent, RemotePairingStart, RemotePlace, RemotePlaceOp, RemotePlaceResult, RemoteRelayState, RemoteRowsEvent, RemoteSized, RemoteStatus } from '@shared/remote';
 import { accountsFor } from '@shared/claude-accounts';

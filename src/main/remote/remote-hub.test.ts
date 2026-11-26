@@ -8,6 +8,7 @@ import type { UsageEntry } from '@shared/session';
 import type { PortsMap } from '@shared/ports';
 import type { RemoteLayout, RemotePairingEvent, RemotePlaceOp, RemotePlaceResult, RemoteRowsEvent, RemoteSized, RemoteStatus } from '@shared/remote';
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings';
+import { THEMES } from '@shared/themes';
 import { FakePhone, PhoneChannel, type Msg } from '../../../tests/support/fake-phone';
 import { startTestRelay, type TestRelay } from '../../../tests/support/test-relay';
 import { createSecretStore } from '../connectors/secret-store';
@@ -728,7 +729,7 @@ describe('how Atelier looks', () => {
     const look = await phone.waitFor((m) => m.t === 'look');
     expect(phone.messages.indexOf(look)).toBeGreaterThan(phone.messages.indexOf(state));
     expect(look).toMatchObject({ theme: 'ember', terminalColors: 'theme', terminal: { font: 'JetBrains Mono', size: 16, lineHeight: 1.2, cursor: 'block', blink: true } });
-    expect((look.themes as Msg[]).map((x) => x.id)).toEqual(['aurora', 'ember', 'tide', 'daylight', 'ink', 'paper', 'docsy', 'docsy-night']);
+    expect((look.themes as Msg[]).map((x) => x.id)).toEqual(THEMES.map((x) => x.id));
     expect(((look.themes as Msg[])[1]!.colors as Record<string, string>)['bg-0']).toMatch(/^#[0-9A-F]{6}$/);
   });
 
