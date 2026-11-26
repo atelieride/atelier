@@ -2715,6 +2715,32 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     expect(keys(t)).toEqual([PASTE('run the build')]);
   });
 
+  test('a question answered on its first page is no wait over: a frame with no dialog next reads as ever, and its next page shows; a plan\'s approval is one', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: question', { question: true }));
+    await shows(t, 't2', 'questions-first');
+    const { phone } = await paired(t);
+    const first = await phone.dialog('t2');
+    expect(await phone.choose('t2', first.ask as string, 2, 'Winter')).toEqual(OK);
+    // Between its pages, under the same ask: nothing to read yet, never "answered already".
+    await shows(t, 't2', 'working');
+    expect(await phone.dialog('t2')).toEqual(IN_TERMINAL);
+    expect(await phone.stop('t2')).toEqual(ANSWER_FIRST);
+    expect(await phone.say('t2', 'run the build')).toEqual(ANSWER_FIRST);
+    await shows(t, 't2', 'questions-second');
+    expect(await phone.dialog('t2')).toMatchObject({ kind: 'question', rows: expect.arrayContaining(['What is your favorite drink?']) });
+    // A plan approved from the phone: one answer ends that wait.
+    t.terms.set(withSession(t.terms.list, 't2', claude('s')));
+    t.terms.set(withSession(t.terms.list, 't2', waiting('waiting: plan approval', { updatedAt: 9 })));
+    await shows(t, 't2', 'plan');
+    const plan = await phone.dialog('t2');
+    expect(plan).toMatchObject({ kind: 'plan', ask: expect.not.stringContaining(first.ask as string) });
+    expect(await phone.choose('t2', plan.ask as string, 1, 'Yes, and use auto mode')).toEqual(OK);
+    await shows(t, 't2', 'working');
+    expect(await phone.dialog('t2')).toEqual(refused('busy', 'This request was answered already'));
+    expect(await phone.stop('t2')).toEqual(OK);
+  });
+
   test('a wait the row answered is answered alike; one answered on the computer, of which nothing tells this one, is refused as before', async () => {
     const t = conversing();
     t.terms.list = withSession(t.terms.list, 't2', waiting('waiting: Bash touch made-by-bash.txt'));

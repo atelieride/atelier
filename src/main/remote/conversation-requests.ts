@@ -197,11 +197,15 @@ export class PhoneConversations {
   }
 
   /**
-   * Whether a phone answered the wait session `t` is in (by its row or in its dialog). After "Yes" no hook comes until
-   * the tool has run, so the session waits under the same ask all that time while Claude works: with no dialog on
-   * screen, that wait is over. One answered on the computer can't be told from one still to answer.
+   * Whether a phone answered the wait session `t` is in, when one answer ends it: a permission (by its row or in its
+   * dialog) or a plan approval. After "Yes" no hook comes until the tool has run, so the session waits under the same
+   * ask all that time while Claude works: with no dialog on screen, that wait is over. Never a question: its next page
+   * keeps the ask, and a frame with no dialog between pages would hide that page. One answered on the computer can't
+   * be told from one still to answer.
    */
   private answered(t: TerminalInfo): boolean {
+    const wait = waitOf(t.session);
+    if (wait !== 'permission' && wait !== 'plan') return false;
     const ask = this.o.host.asks.keyOf(t);
     return ask !== null && this.o.host.answers.isAnswered(t.id, ask);
   }
