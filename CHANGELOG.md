@@ -3,6 +3,11 @@
 Release notes for Atelier. Each version has a `## <version>` section: the release workflow requires it and the app
 shows it in Settings › About and in "What's new".
 
+## 0.2.0-beta.36
+
+- Ask leaves a secret key out whole when it falls where a long message is cut, instead of showing a piece of it.
+- A long pasted prompt no longer holds the app for seconds while Ask or the Resume list reads it.
+
 ## 0.2.0-beta.35
 
 - **Atelier in motion**: at launch the mark opens into your workspace (a click or a key skips it; Settings ›
