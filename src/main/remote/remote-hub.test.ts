@@ -1475,7 +1475,7 @@ function conversing(o: { lingerMs?: number; chatMs?: number; bySession?: boolean
   // step. A rename over it would too, but Windows refuses that rename (EPERM) while the 20 ms poll has the file open.
   const moved = new Map<string, string>();
   let reads = () => 0;
-  const timing = { pollMs: 20, chatMs: o.chatMs ?? 20, keyMs: 5, enterMs: 5, enterCapMs: 150, retryMs: 5, slowMs: 20, now: () => reads() * 5, ...(o.lingerMs ? { lingerMs: o.lingerMs } : {}) };
+  const timing = { pollMs: 20, chatMs: o.chatMs ?? 20, keyMs: 5, enterMs: 5, enterCapMs: 150, retryMs: 5, slowMs: 20, staleMs: 400, now: () => reads() * 5, ...(o.lingerMs ? { lingerMs: o.lingerMs } : {}) };
   const transcriptOf = (x: TerminalInfo) => {
     if (!x.session) return null;
     const key = o.bySession ? x.session.sessionId : x.id;
@@ -2494,7 +2494,8 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     await until(() => t.terms.reads >= drafted + 2);
     expect(t.terms.answers).toEqual([]);
     // Idle with its prompt empty: both go as one prompt, a blank line apart.
-    await shows(t, 't2', 'idle', await prompted('idle', 'fix the tests', '', 'then run the build'));
+    // A look, then a read holding the terminal, before the paste.
+    await shows(t, 't2', 'idle', 'idle', await prompted('idle', 'fix the tests', '', 'then run the build'));
     await until(() => keys(t).length === 2);
     expect(keys(t)).toEqual([PASTE('fix the tests\n\nthen run the build'), '\r']);
     // Nothing waits any more: the screen is read no more.
@@ -2521,7 +2522,7 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     expect(await phone.say('t2', 'and commit')).toEqual(QUEUED);
     expect(t.terms.answers).toEqual([]);
     // Four line breaks: Claude Code folds the paste.
-    await shows(t, 't2', 'idle', await prompted('idle', '[Pasted text #1 +4 lines]'));
+    await shows(t, 't2', 'idle', 'idle', await prompted('idle', '[Pasted text #1 +4 lines]'));
     await until(() => keys(t).length === 2);
     expect(keys(t)).toEqual([PASTE('fix the tests\n\nrun the build\n\nand commit'), '\r']);
     // Within the size one prompt may take.
@@ -2543,8 +2544,9 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     expect(await phone.say('t2', 'fix the tests')).toEqual(QUEUED);
     // The first phone's app leaves (in the background); the second phone is unpaired.
     phone.drop();
+    await until(() => !t.hub.status().devices.find((d) => d.id === first)!.connected);
     t.hub.removeDevice(second);
-    await shows(t, 't2', 'idle', await prompted('idle', 'fix the tests'));
+    await shows(t, 't2', 'idle', 'idle', await prompted('idle', 'fix the tests'));
     await until(() => keys(t).length === 2);
     expect(keys(t)).toEqual([PASTE('fix the tests'), '\r']);
   });
@@ -2576,7 +2578,86 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     // A request drawn once the paste went: no Enter, and it isn't typed again.
     await shows(t, 't2', 'working');
     expect(await phone.say('t2', 'fix the tests')).toEqual(QUEUED);
-    await shows(t, 't2', 'idle', 'bash');
+    await shows(t, 't2', 'idle', 'idle', 'bash');
+    await until(() => keys(t).length === 1);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(keys(t)).toEqual([PASTE('fix the tests')]);
+  });
+
+  test('say: the rows count what waits; the same text sent twice waits once; a slash command goes alone; tries back off', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', claude('s'));
+    await shows(t, 't2', 'working');
+    const { phone } = await paired(t);
+    const rowOf = (s: Msg, id: string) => (s.sessions as Msg[]).find((x) => x.id === id);
+    /** The row once a state shows `n` waiting for it. */
+    const queued = async (n: number | undefined) => rowOf(await phone.state((s) => rowOf(s, 't2')?.queued === n), 't2');
+    expect(await phone.say('t2', 'fix the tests')).toEqual(QUEUED);
+    expect(await phone.say('t2', 'fix the tests')).toEqual(QUEUED);
+    expect(await phone.say('t2', '/compact')).toEqual(QUEUED);
+    expect(await phone.say('t2', 'then go on')).toEqual(QUEUED);
+    expect((await queued(3))?.queued).toBe(3);
+    // Working all along: a read every slowMs at most once backed off.
+    const reads = t.terms.reads;
+    await new Promise((r) => setTimeout(r, 300));
+    expect(t.terms.reads - reads).toBeLessThanOrEqual(300 / 20 + 2);
+    // Idle: the prompt before the command, then the command alone, then the rest.
+    await shows(t, 't2', 'idle', 'idle', await prompted('idle', 'fix the tests'));
+    await until(() => keys(t).length === 2);
+    await queued(2);
+    await shows(t, 't2', 'idle', 'idle', await prompted('idle', '/compact'));
+    await until(() => keys(t).length === 4);
+    await shows(t, 't2', 'idle', 'idle', await prompted('idle', 'then go on'));
+    await until(() => keys(t).length === 6);
+    expect(keys(t)).toEqual([PASTE('fix the tests'), '\r', PASTE('/compact'), '\r', PASTE('then go on'), '\r']);
+    expect(await queued(undefined)).toBeDefined();
+  });
+
+  test('say: what waits never goes into another Claude session in that terminal, nor after the computer kept it out too long', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', claude('s'));
+    await shows(t, 't2', 'working');
+    const { phone } = await paired(t);
+    expect(await phone.say('t2', 'yes, push it')).toEqual(QUEUED);
+    // A resume (`/resume`, or `/clear`'s next session): another session there, Claude in front all along.
+    t.terms.set(withSession(t.terms.list, 't2', { ...(claude('s-other') as object), state: 'done' }));
+    await shows(t, 't2', 'idle', 'idle', await prompted('idle', 'yes, push it'));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(t.terms.answers).toEqual([]);
+    // Text typed on the computer at the turn's end, for staleMs: dropped, though the prompt is empty later.
+    await shows(t, 't2', 'working');
+    expect(await phone.say('t2', 'yes, push it')).toEqual(QUEUED);
+    await shows(t, 't2', await prompted('idle', 'a draft'));
+    await new Promise((r) => setTimeout(r, 600));
+    await shows(t, 't2', 'idle', 'idle', await prompted('idle', 'yes, push it'));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(t.terms.answers).toEqual([]);
+  });
+
+  test('say: a try waiting for Claude looks at the screen without holding the terminal: a Stop meanwhile goes', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', claude('s'));
+    await shows(t, 't2', 'working');
+    const { phone } = await paired(t);
+    expect(await phone.say('t2', 'fix the tests')).toEqual(QUEUED);
+    // The try's read waits: a Stop now reads too, and goes.
+    const g = gate(t);
+    await g.reading();
+    const stopped = phone.stop('t2');
+    await until(() => t.terms.gated >= 2);
+    g.open();
+    expect(await stopped).toEqual(OK);
+    expect(keys(t)).toEqual([ESC]);
+  });
+
+  test('say: iPhone access turned off and on again while what waits is typed: no Enter for it', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', claude('s'));
+    await shows(t, 't2', 'working');
+    const { phone } = await paired(t);
+    expect(await phone.say('t2', 'fix the tests')).toEqual(QUEUED);
+    t.terms.onKey = (_id, key) => { if (key.startsWith('\x1b[200~')) { t.set({ remoteAccess: false }); t.set({ remoteAccess: true }); } };
+    await shows(t, 't2', 'idle', 'idle', await prompted('idle', 'fix the tests'));
     await until(() => keys(t).length === 1);
     await new Promise((r) => setTimeout(r, 100));
     expect(keys(t)).toEqual([PASTE('fix the tests')]);
@@ -2848,7 +2929,7 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     // request answered).
     t.terms.answers = [];
     expect(await phone.say('t2', 'run the build')).toEqual(QUEUED);
-    await shows(t, 't2', 'idle', await prompted('idle', 'run the build'));
+    await shows(t, 't2', 'idle', 'idle', await prompted('idle', 'run the build'));
     await until(() => keys(t).length === 2);
     expect(keys(t)).toEqual([PASTE('run the build'), '\r']);
     await shows(t, 't2', 'working-typed');
@@ -2982,7 +3063,7 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     expect(await two.say('t2', 'run the build')).toEqual(QUEUED);
     g.open();
     expect(await said).toEqual(OK);
-    await shows(t, 't2', 'idle', await prompted('idle', 'run the build'));
+    await shows(t, 't2', 'idle', 'idle', await prompted('idle', 'run the build'));
     await until(() => keys(t).length === 4);
     // Free again once it is done.
     await shows(t, 't2', 'working');

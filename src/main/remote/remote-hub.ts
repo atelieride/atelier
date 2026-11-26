@@ -161,9 +161,10 @@ const DEFAULT_SIZE: Size = { cols: 120, rows: 36 };
 const CHAT_TIMING: ConversationTiming = { chatMs: 100, keyMs: 300, enterMs: 400, enterCapMs: 2000 };
 /**
  * A prompt waiting for an idle Claude is tried this soon after it came or its session's hooks changed, then twice as
- * long after each try, up to every 5 s (each try reads the screen).
+ * long after each try, up to every 5 s (each try reads the screen); dropped once text typed on the computer has kept it
+ * out for 15 minutes.
  */
-const OUTBOX_TIMING: OutboxTiming = { retryMs: 400, slowMs: 5000 };
+const OUTBOX_TIMING: OutboxTiming = { retryMs: 400, slowMs: 5000, staleMs: 15 * 60_000 };
 /** While sessions are starting, the state is looked at again this often (a start that never came ends at 30 s). */
 const STARTING_RECHECK_MS = 5000;
 /** Channels still in their handshake (or waiting to be let in) at once, at most. */
@@ -711,9 +712,13 @@ export class RemoteHub {
     };
     this.outbox = new PromptOutbox({
       host: conversing, terms: d.terminals, timing: conversationTiming,
-      outbox: { retryMs: c.timing?.retryMs ?? OUTBOX_TIMING.retryMs, slowMs: c.timing?.slowMs ?? OUTBOX_TIMING.slowMs },
+      outbox: {
+        retryMs: c.timing?.retryMs ?? OUTBOX_TIMING.retryMs, slowMs: c.timing?.slowMs ?? OUTBOX_TIMING.slowMs,
+        staleMs: c.timing?.staleMs ?? OUTBOX_TIMING.staleMs
+      },
       // A prompt goes only for a phone still paired, with iPhone access on.
-      allowed: (device) => this.d.settings().remoteAccess && this.devices.byId(device) !== null
+      allowed: (device) => this.d.settings().remoteAccess && this.devices.byId(device) !== null,
+      changed: () => this.scheduleState()
     });
     this.host = {
       ...conversing,
@@ -903,8 +908,9 @@ export class RemoteHub {
     if (this.stateTimer) { clearTimeout(this.stateTimer); this.stateTimer = null; }
     if (this.usageTimer) { clearTimeout(this.usageTimer); this.usageTimer = null; }
     if (this.startingTimer) { clearTimeout(this.startingTimer); this.startingTimer = null; }
-    await this.shutDown('quitting', { flushMs: 500 });
+    // First: no prompt pasted while quitting, its Enter lost with the app.
     this.outbox.dispose();
+    await this.shutDown('quitting', { flushMs: 500 });
     this.book.dispose();
   }
 
@@ -1028,6 +1034,7 @@ export class RemoteHub {
       asks: this.asks,
       ports: (id) => of(ports, this.d.ports, id)?.[id],
       pr: (id) => of(prs, this.d.prs, id)?.[id],
+      queued: (id) => this.outbox.waiting(id),
       ...(this.d.realOf ? { realOf: this.d.realOf } : {}),
       ...(this.d.profileOf ? { profileOf: this.d.profileOf } : {}),
       ...(this.d.trees ? { trees: this.d.trees } : {})

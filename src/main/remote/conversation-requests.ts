@@ -191,7 +191,7 @@ export class PhoneConversations {
     }, (e: unknown) => {
       this.o.host.log(`conversations: a prompt in terminal ${id}: ${reasonOf(e)}`);
       this.error(rid, NOT_REACHED.code, NOT_REACHED.message);
-    });
+    }).catch((e: unknown) => this.o.host.log(`conversations: a prompt in terminal ${id}: ${reasonOf(e)}`));
   }
 
   private answered(t: TerminalInfo): boolean { return answered(this.o.host, t); }

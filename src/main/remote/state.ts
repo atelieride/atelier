@@ -62,6 +62,8 @@ export interface StateInput {
   ports?(id: string): readonly PortInfo[] | undefined;
   /** The pull request of a session's branch. */
   pr?(id: string): PrEntry | undefined;
+  /** How many prompts phones sent wait for a session to be idle. */
+  queued?(id: string): number;
   /** A path with its links resolved (a folder that is the project root under another name). */
   realOf?(p: string): string;
   /** The keys of the waits rows can answer, kept across states (a wait's key lasts the whole wait). */
@@ -185,6 +187,7 @@ export function remoteState(i: StateInput): RemoteState {
     const command = !s && !starting ? commandOf(t) : null;
     const ports = i.ports?.(t.id)?.map((p) => ({ port: p.port, ...(p.name ? { name: clip(p.name, 64) } : {}) }));
     const pr = s ? prOf(i.pr?.(t.id)) : null;
+    const queued = i.queued?.(t.id) ?? 0;
     const cost = s?.cost;
     return {
       id: t.id, project: projectIdOf(t.projectRoot), title: t.title, claude: s !== null || starting, state: shownState(t),
@@ -214,6 +217,7 @@ export function remoteState(i: StateInput): RemoteState {
       ...(command ? { command } : {}),
       ...(ports?.length ? { ports } : {}),
       ...(pr ? { pr } : {}),
+      ...(queued ? { queued } : {}),
       ...(cost ? { cost: { usd: cost.usd, added: cost.linesAdded, removed: cost.linesRemoved } } : {})
     };
   });

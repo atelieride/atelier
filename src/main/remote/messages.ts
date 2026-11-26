@@ -161,6 +161,8 @@ export interface RemoteSession {
   folder?: string;
   /** `folder` names a linked git worktree. */
   worktree?: true;
+  /** Prompts phones sent while Claude worked, waiting on this computer to go once Claude is idle. */
+  queued?: number;
   /** A plain terminal's foreground program, by name only. */
   command?: string;
   ports?: { port: number; name?: string }[];
