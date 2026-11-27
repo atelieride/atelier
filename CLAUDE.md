@@ -207,3 +207,7 @@ tile + white Λ).
   `tests/integration/motion-budget.test.ts` refuses a root `:has()`.
 - A size container (`container-type`) doesn't make a stacking context in Chromium: a `z-index: -1` layer inside one
   (the finished row's wave) needs `isolation: isolate` on its parent, or it paints under the parent's own fill.
+- Node has no `O_NOFOLLOW` on Windows: an open with it follows links there. Transcripts open through `openNoFollow`
+  (`src/main/transcript-lines.ts`), which checks the opened file is the named one and not a link.
+- On Windows a rename over a file another handle holds open fails with EPERM (a poll or an antivirus scan is enough):
+  tests swap a followed file by pointing at a new path, never by renaming over it.
