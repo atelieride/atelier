@@ -2,7 +2,7 @@
 // every screen row keeps its length. These tests pin the rewriting rules and guard the committed files.
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { describe, expect, test } from 'vitest';
 // @ts-expect-error: .mjs script without types
 import { check, fictional, generate, sanitize, SCREENS, TRANSCRIPTS } from '../../scripts/claude-capture-fixtures.mjs';
@@ -59,7 +59,8 @@ describe('generating', () => {
     writeFileSync(join(recording, `${source}.lines.txt`), ` ▝▝   ▝▝   /…${project.slice(20)}\n❯ [Image #1]\n`);
     writeFileSync(join(recording, `${source}.snapshot.ans`), `\x1b[?1049h /…${project.slice(20)}`);
     generate(recording, target, root, [name]);
-    expect(filesUnder(target).map((f) => f.slice(target.length + 1)).sort()).toEqual([`screens/${name}.ans`, `screens/${name}.txt`]);
+    // Compared with `/` whatever the OS separator is (Windows lists `screens\x`).
+    expect(filesUnder(target).map((f) => relative(target, f).split(sep).join('/')).sort()).toEqual([`screens/${name}.ans`, `screens/${name}.txt`]);
     const txt = readFileSync(join(target, 'screens', `${name}.txt`), 'utf8');
     expect(txt).not.toMatch(/private|someone|claude-777/);
     expect(txt).toContain('❯ [Image #1]');
