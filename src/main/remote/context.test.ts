@@ -29,7 +29,7 @@ function report(o: Partial<ContextReport> = {}): ContextReport {
     ],
     skills: [
       { kind: 'skill', source: 'user', plugin: null, count: 4, tokens: 1_200 },
-      { kind: 'skill', source: 'plugin', plugin: 'superpowers', count: 9, tokens: 1_500 },
+      { kind: 'skill', source: 'plugin', plugin: 'review-kit', count: 9, tokens: 1_500 },
       { kind: 'agent', source: 'built-in', plugin: null, count: 3, tokens: 300 }
     ],
     messages: { tools: [{ name: 'Read', tokens: 12_000 }, { name: 'Bash', tokens: 6_000 }], otherTools: 2_000, toolsTotal: 20_000, user: 4_000, assistant: 6_000, attachments: 1_000, other: 0 },
@@ -55,7 +55,7 @@ describe('what fills a session\'s context, as a phone gets it', () => {
       offline: 2,
       memory: [{ name: 'CLAUDE.md', type: 'Project', tokens: 5_000 }, { name: 'CLAUDE.md', type: 'User', tokens: 2_000 }],
       skills: [
-        { kind: 'skill', source: 'plugin', plugin: 'superpowers', count: 9, tokens: 1_500 },
+        { kind: 'skill', source: 'plugin', plugin: 'review-kit', count: 9, tokens: 1_500 },
         { kind: 'skill', source: 'user', count: 4, tokens: 1_200 },
         { kind: 'agent', source: 'built-in', count: 3, tokens: 300 }
       ],
