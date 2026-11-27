@@ -9,7 +9,8 @@ import { posixRel } from '../support/platform';
 const ALLOWED: Record<string, string> = {
   // Chromium's own profile (cookies, caches, local storage): only the GUI reads it.
   "src/main/index.ts:app.setPath('userData'": 'set to ATELIER_HOME/electron, outside AppData on Windows',
-  // Pasted images: macOS only; Windows keeps them under ATELIER_HOME (clipboardImageDir), Claude reads them.
+  // Pasted images, and those paired phones send: macOS only; Windows keeps them under ATELIER_HOME (clipboardImageDir),
+  // Claude reads them.
   "src/main/clipboard-ipc.ts:app.getPath('temp'": 'the macOS branch of clipboardImageDir',
   // The running executable: its bundle, for the app icon of Docsy's themes (macOS only). Read,
   // never a place to write files.

@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -12,6 +12,7 @@ import type { RemoteLayout, RemotePairingEvent, RemotePlaceOp, RemotePlaceResult
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings';
 import { THEMES } from '@shared/themes';
 import { FakePhone, PhoneChannel, type Msg } from '../../../tests/support/fake-phone';
+import { expectMode } from '../../../tests/support/platform';
 import { startTestRelay, type TestRelay } from '../../../tests/support/test-relay';
 import { createSecretStore } from '../connectors/secret-store';
 import { testSafeStorage } from '../connectors/test-safe-storage';
@@ -48,6 +49,8 @@ class FakeTerminals implements RemoteTerminals {
   screens = new Map<string, string[]>();
   /** Each terminal's screen rows with their dim text as spaces (its `screens` rows unless set). */
   dims = new Map<string, string[]>();
+  /** Whether each terminal's program asked for bracketed paste (as Claude Code and zsh do, unless set). */
+  pasteModes = new Map<string, boolean>();
   /** The terminals an Atelier window has open, and when a window last typed in each (ms). */
   windows = new Set<string>();
   windowInput = new Map<string, number>();
@@ -70,8 +73,11 @@ class FakeTerminals implements RemoteTerminals {
   set(list: TerminalInfo[]) { this.list = list; for (const cb of this.shown) cb(); }
   addRemoteViewer(v: RemoteViewer) { const k = this.next--; this.viewers.set(k, v); this.watching.set(k, new Set()); return k; }
   removeRemoteViewer(k: number) { this.viewers.delete(k); this.watching.delete(k); }
+  /** While set, attaches wait for it before the screen comes (an attach on its way). */
+  attachGate: Promise<void> | null = null;
   async remoteAttach(k: number, id: string, cols: number, rows: number, take = true) {
     if (!this.list.some((t) => t.id === id)) throw new Error('no such terminal');
+    if (this.attachGate) await this.attachGate;
     this.takes.push(take);
     this.watching.get(k)!.add(id);
     this.viewers.get(k)!.snapshot(id, `screen of ${id}\r\n$ `, { cols, rows });
@@ -123,7 +129,7 @@ class FakeTerminals implements RemoteTerminals {
       return v;
     }
     const lines = this.screens.get(id) ?? npmDialog(['❯ 1. Yes', '  2. Yes, and don\'t ask again for npm test commands', '  3. No, and tell Claude what to do differently (esc)']);
-    return { lines, undimmed: this.dims.get(id) ?? lines, cols: 120 };
+    return { lines, undimmed: this.dims.get(id) ?? lines, cols: 120, bracketedPaste: this.pasteModes.get(id) ?? true };
   }
   windowShows(id: string) { return this.windows.has(id); }
   lastWindowInput(id: string) { return this.windowInput.get(id) ?? 0; }
@@ -178,6 +184,8 @@ async function until(check: () => boolean, ms = 4000): Promise<void> {
 
 function setup(o: { settings?: Partial<Settings>; safe?: Parameters<typeof testSafeStorage>[0]; timing?: RemoteHubDeps['timing']; link?: RemoteHubDeps['link']; home?: string; deps?: Partial<RemoteHubDeps>; away?: () => boolean } = {}) {
   const home = o.home ?? mkdtempSync(join(tmpdir(), 'atl-remote-hub-'));
+  // Where Atelier keeps the images pasted into its terminals (its temp folder's on macOS): a phone's go there too.
+  const imageDir = join(home, 'clipboard');
   let settings: Settings = { ...DEFAULT_SETTINGS, remoteAccess: true, remoteRelay: relay.url, projectColors: { '/work/app': 4 }, ...o.settings };
   const terms = new FakeTerminals();
   terms.list = [term('t1', '/work/app'), term('t2', '/work/app', { createdAt: 2, session: { sessionId: 's', state: 'waiting', waitingFor: 'permission', title: null, activity: null, contextPct: null, unread: false, updatedAt: 0 } as never })];
@@ -186,7 +194,7 @@ function setup(o: { settings?: Partial<Settings>; safe?: Parameters<typeof testS
   const rows: [string, RemoteRowsEvent][] = [];
   let projects = { open: ['/work/app'], recent: ['/work/old'] };
   const hub = new RemoteHub({
-    home, secrets: createSecretStore(home, testSafeStorage(o.safe)), settings: () => settings, relayUrl: () => settings.remoteRelay,
+    home, imageDir, secrets: createSecretStore(home, testSafeStorage(o.safe)), settings: () => settings, relayUrl: () => settings.remoteRelay,
     terminals: terms, projects: () => projects, host: { name: 'Studio Mac', app: '0.3.0', platform: 'darwin' },
     emitStatus: (s) => statuses.push(s), emitPairing: (e) => pairing.push(e),
     defaultDir: () => '/home/.claude',
@@ -198,7 +206,7 @@ function setup(o: { settings?: Partial<Settings>; safe?: Parameters<typeof testS
   const phone = (opts: Partial<ConstructorParameters<typeof FakePhone>[0]> = {}) => { const p = new FakePhone({ relay: relay.url, ...opts }); phones.push(p); return p; };
   const set = (patch: Partial<Settings>) => { settings = { ...settings, ...patch }; hub.settingsChanged(); };
   const setProjects = (p: typeof projects) => { projects = p; hub.projectsChanged(); };
-  return { hub, home, terms, statuses, pairing, phone, set, setProjects, rows };
+  return { hub, home, imageDir, terms, statuses, pairing, phone, set, setProjects, rows };
 }
 
 /** Pairs a phone by code, answering Allow; the phone and its welcome. */
@@ -1466,22 +1474,23 @@ const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /**
  * A hub whose Claude sessions' transcripts are `<dir>/<terminal id>.jsonl` (`<session id>.jsonl` with `bySession`, as
  * Claude Code keeps one per session), read every 20 ms; keys typed into a session 5 ms apart, an Enter after a prompt
- * waited for 150 ms at most of a clock that moves 5 ms with each screen read: a slow machine reads no fewer times.
+ * waited for 150 ms at most, an image's marker 300 ms, a whole prompt's typing 500 ms, of a clock that moves 5 ms with
+ * each screen read: a slow machine reads no fewer times.
  */
-function conversing(o: { lingerMs?: number; chatMs?: number; bySession?: boolean } = {}) {
+function conversing(o: { lingerMs?: number; chatMs?: number; bySession?: boolean; imageMs?: number } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'atl-conversation-'));
   const file = (id: string) => join(dir, `${id}.jsonl`);
   // A transcript moved (as Claude Code moves one into a worktree's folder) swaps it for a file made beforehand in one
   // step. A rename over it would too, but Windows refuses that rename (EPERM) while the 20 ms poll has the file open.
   const moved = new Map<string, string>();
   let reads = () => 0;
-  const timing = { pollMs: 20, chatMs: o.chatMs ?? 20, keyMs: 5, enterMs: 5, enterCapMs: 150, retryMs: 5, slowMs: 20, staleMs: 400, now: () => reads() * 5, ...(o.lingerMs ? { lingerMs: o.lingerMs } : {}) };
+  const timing = { pollMs: 20, chatMs: o.chatMs ?? 20, keyMs: 5, enterMs: 5, enterCapMs: 150, imageCapMs: 300, typingCapMs: 500, retryMs: 5, slowMs: 20, staleMs: 400, now: () => reads() * 5, ...(o.lingerMs ? { lingerMs: o.lingerMs } : {}) };
   const transcriptOf = (x: TerminalInfo) => {
     if (!x.session) return null;
     const key = o.bySession ? x.session.sessionId : x.id;
     return moved.get(key) ?? file(key);
   };
-  const t = setup({ deps: { conversation: { transcriptOf, home: null, timing } } });
+  const t = setup({ deps: { conversation: { transcriptOf, home: null, timing } }, ...(o.imageMs ? { timing: { imageMs: o.imageMs } } : {}) });
   reads = () => t.terms.reads;
   return {
     ...t, dir, file,
@@ -2438,7 +2447,7 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
   const numberedTrust: ScreenView = (() => {
     const lines = [`╭${'─'.repeat(58)}╮`, framed('Do you trust the files in this folder?'), framed(''), framed('/work/app'), framed(''),
       framed('❯ 1. Yes, proceed'), framed('  2. No, exit'), framed(''), `╰${'─'.repeat(58)}╯`, '   Enter to confirm · Esc to exit'];
-    return { lines, undimmed: lines, cols: 120 };
+    return { lines, undimmed: lines, cols: 120, bracketedPaste: true };
   })();
   /** Screen reads wait from now until `open()`; `reading()` resolves once one waits. */
   const gate = (t: ReturnType<typeof setup>) => {
@@ -3093,5 +3102,323 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     expect(await stopped).toEqual(ANSWER_FIRST);
     expect(await two.answer('t2', next, 'allow')).toEqual(OK);
     expect(keys(t)).toEqual([PASTE('fix the tests'), '\r', PASTE('run the build'), '\r', ESC, '1', '1']);
+  });
+
+  // ── Prompts with images ──
+
+  /** A png's or a jpeg's first bytes, then `n` (each image its own bytes, to find its file by). */
+  const png = (n: number) => Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, n]);
+  const jpeg = (n: number) => Buffer.from([0xff, 0xd8, 0xff, 0xe0, n]);
+  const IMAGE_GONE = refused('invalid', 'The image isn\'t on the computer any more. Send it again.');
+  const IMAGE_NOT_REACHED = refused('failed', 'The image didn\'t reach Claude\'s prompt.');
+  /** Hands the computer an image for terminal `id`: its reference, and the file it was kept in. */
+  const sent = async (t: ReturnType<typeof setup>, phone: FakePhone, id: string, bytes: Buffer) => {
+    const r = await phone.image(id, bytes[0] === 0xff ? 'jpeg' : 'png', bytes);
+    if (r.t !== 'ok') throw new Error(String(r.message));
+    const path = readdirSync(t.imageDir).map((f) => join(t.imageDir, f)).find((p) => readFileSync(p).equals(bytes));
+    return { ref: r.image as string, path: path! };
+  };
+  /** `n` copies of a screen, one per read. */
+  const times = (n: number, v: ScreenView) => Array.from({ length: n }, () => v);
+
+  test('say with images: each one\'s path pasted alone until the prompt shows one more marker, then a space and the text, then Enter; used up once sent', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', finished);
+    const { phone } = await paired(t);
+    const one = await sent(t, phone, 't2', png(1));
+    const two = await sent(t, phone, 't2', jpeg(2));
+    expect(two.path.endsWith('.jpg')).toBe(true);
+    // The path drawn as text a moment before its marker; Claude Code's own numbers, whatever they are.
+    await shows(t, 't2', 'idle', await prompted('idle', one.path), await prompted('idle', '[Image #3]'), await prompted('idle', '[Image #3][Image #4]'),
+      await prompted('idle', '[Image #3][Image #4] What changed', 'between them?'));
+    t.terms.events = [];
+    expect(await phone.say('t2', 'What changed\nbetween them?', [one.ref, two.ref])).toEqual(OK);
+    expect(t.terms.events).toEqual(['read', PASTE(one.path), 'read', 'read', PASTE(two.path), 'read', PASTE(' What changed\nbetween them?'), 'read', '\r']);
+    // Sent: its images are used up.
+    t.terms.events = [];
+    expect(await phone.say('t2', 'again', [two.ref])).toEqual(IMAGE_GONE);
+    expect(t.terms.events).toEqual([]);
+    // On Claude Code's own screens: the marker, then the text after it.
+    const four = await sent(t, phone, 't2', png(4));
+    await shows(t, 't2', 'idle', 'image-pasted', 'image-text');
+    expect(await phone.say('t2', 'What color is this image?', [four.ref])).toEqual(OK);
+    expect(t.terms.events).toEqual(['read', PASTE(four.path), 'read', PASTE(' What color is this image?'), 'read', '\r']);
+    t.terms.events = [];
+    // Images alone: Enter once the prompt shows them, and nothing else.
+    const three = await sent(t, phone, 't2', png(3));
+    await shows(t, 't2', 'idle', await prompted('idle', '[Image #5]'));
+    expect(await phone.say('t2', '', [three.ref])).toEqual(OK);
+    expect(t.terms.events).toEqual(['read', PASTE(three.path), 'read', '\r']);
+    sizeKept(t);
+  });
+
+  test('say with images: no Enter once a marker never shows, a window types, or Claude asks something meanwhile; the images stay for a retry', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', claude('s'));
+    const { phone } = await paired(t);
+    const one = await sent(t, phone, 't2', png(1));
+    const two = await sent(t, phone, 't2', png(2));
+    // The path stays text (Claude Code couldn't read it): read for the image's own wait, longer than an Enter's (here
+    // 60 reads, not 30), then nothing more typed.
+    await shows(t, 't2', 'idle', await prompted('idle', one.path));
+    t.terms.events = [];
+    expect(await phone.say('t2', 'and these?', [one.ref])).toEqual(IMAGE_NOT_REACHED);
+    expect(keys(t)).toEqual([PASTE(one.path)]);
+    expect(t.terms.events.filter((e) => e === 'read').length).toBeGreaterThan(50);
+    // The second image never shows: no text, no Enter.
+    await shows(t, 't2', 'idle', await prompted('idle', '[Image #1]'));
+    t.terms.answers = [];
+    expect(await phone.say('t2', 'and these?', [one.ref, two.ref])).toEqual(IMAGE_NOT_REACHED);
+    expect(keys(t)).toEqual([PASTE(one.path), PASTE(two.path)]);
+    // The images then the text within a whole prompt's wait: here each image takes 55 reads of its 60, and the second
+    // runs past the 100 the whole prompt may take.
+    await shows(t, 't2', 'idle', ...times(54, await prompted('idle', one.path)), await prompted('idle', '[Image #1]'), ...times(54, await prompted('idle', '[Image #1]')),
+      await prompted('idle', '[Image #1][Image #2]'), await prompted('idle', '[Image #1][Image #2] and these?'));
+    t.terms.answers = [];
+    expect(await phone.say('t2', 'and these?', [one.ref, two.ref])).toEqual(IMAGE_NOT_REACHED);
+    expect(keys(t)).toEqual([PASTE(one.path), PASTE(two.path)]);
+    // A window types once the first image went: no more keys.
+    await shows(t, 't2', 'idle', await prompted('idle', '[Image #1]'));
+    t.terms.windowInput.set('t2', Date.now() - TYPED_RECENTLY_MS - 100);
+    t.terms.onKey = (id, key) => { if (key === PASTE(one.path)) t.terms.windowInput.set(id, Date.now()); };
+    t.terms.answers = [];
+    expect(await phone.say('t2', 'and these?', [one.ref, two.ref])).toEqual(TYPED);
+    expect(keys(t)).toEqual([PASTE(one.path)]);
+    // A dialog drawn once an image went.
+    t.terms.onKey = null;
+    t.terms.windowInput.set('t2', 0);
+    await shows(t, 't2', 'idle', 'bash');
+    t.terms.answers = [];
+    expect(await phone.say('t2', 'and these?', [one.ref])).toEqual(MEANWHILE);
+    expect(keys(t)).toEqual([PASTE(one.path)]);
+    // Refused every time: the images still go.
+    await shows(t, 't2', 'idle', await prompted('idle', '[Image #1]'), await prompted('idle', '[Image #1][Image #2]'));
+    t.terms.answers = [];
+    expect(await phone.say('t2', '', [one.ref, two.ref])).toEqual(OK);
+    expect(keys(t)).toEqual([PASTE(one.path), PASTE(two.path), '\r']);
+  });
+
+  test('say with images: refused before any key for an image not on the computer: never given, another terminal\'s, another phone\'s, run out', async () => {
+    const t = conversing({ imageMs: 300 });
+    t.terms.list = [...withSession(t.terms.list, 't2', finished), term('t3', '/work/app', { createdAt: 3, session: claude('s3') })];
+    await shows(t, 't2', 'idle', await prompted('idle', '[Image #1]'));
+    const { phone } = await paired(t);
+    const two = await another(t);
+    const mine = await sent(t, phone, 't2', png(1));
+    const theirs = await sent(t, two, 't2', png(2));
+    const t3s = await sent(t, phone, 't3', png(3));
+    expect(await phone.say('t2', 'x', ['n'.repeat(22)])).toEqual(IMAGE_GONE);
+    expect(await phone.say('t2', 'x', [mine.ref, t3s.ref])).toEqual(IMAGE_GONE);
+    expect(await phone.say('t2', 'x', [theirs.ref])).toEqual(IMAGE_GONE);
+    // Not a session listed, or not Claude's: refused as ever, first.
+    expect(await phone.say('gone', 'x', [mine.ref])).toEqual(GONE);
+    expect(await phone.say('t1', 'x', [mine.ref])).toEqual(NOT_CLAUDE);
+    expect(t.terms.answers).toEqual([]);
+    // Run out: 10 minutes for the computer, here a moment.
+    await pause(350);
+    expect(await phone.say('t2', '', [mine.ref])).toEqual(IMAGE_GONE);
+    expect(t.terms.answers).toEqual([]);
+  });
+
+  test('say with images while Claude works: kept on this computer (its images used up), and never joined with another prompt waiting', async () => {
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', claude('s'));
+    await shows(t, 't2', 'working');
+    const { phone } = await paired(t);
+    const one = await sent(t, phone, 't2', png(1));
+    const two = await sent(t, phone, 't2', png(2));
+    const rowOf = (s: Msg) => (s.sessions as Msg[]).find((x) => x.id === 't2');
+    expect(await phone.say('t2', 'fix the tests')).toEqual(QUEUED);
+    expect(await phone.say('t2', 'and this', [one.ref])).toEqual(QUEUED);
+    // Waiting, its images are used up: sent again, refused.
+    expect(await phone.say('t2', 'and this', [one.ref])).toEqual(IMAGE_GONE);
+    expect(await phone.say('t2', 'and this', [two.ref])).toEqual(QUEUED);
+    expect(rowOf(await phone.state((s) => rowOf(s)?.queued === 3))?.queued).toBe(3);
+    // Idle: the text alone, then each prompt with its images alone.
+    await shows(t, 't2', 'idle', 'idle', await prompted('idle', 'fix the tests'));
+    await until(() => keys(t).length === 2);
+    await shows(t, 't2', 'idle', 'idle', await prompted('idle', '[Image #1]'), await prompted('idle', '[Image #1] and this'));
+    await until(() => keys(t).length === 5);
+    await shows(t, 't2', 'idle', 'idle', await prompted('idle', '[Image #2]'), await prompted('idle', '[Image #2] and this'));
+    await until(() => keys(t).length === 8);
+    expect(keys(t)).toEqual([PASTE('fix the tests'), '\r', PASTE(one.path), PASTE(' and this'), '\r', PASTE(two.path), PASTE(' and this'), '\r']);
+    sizeKept(t);
+  });
+});
+
+describe('images from a phone', () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
+  const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16]);
+  const UNUSABLE = refused('invalid', 'This image can\'t be used.');
+  const IMAGE_GONE = refused('invalid', 'The image isn\'t on the computer any more. Send it again.');
+  const NOT_OPEN = refused('invalid', 'Open this terminal before typing into it.');
+  const ANSWER_FIRST = refused('busy', 'Answer Claude\'s request first.');
+  /** The files in the folder of pasted images. */
+  const kept = (t: ReturnType<typeof setup>) => { try { return readdirSync(t.imageDir).sort(); } catch { return []; } };
+  /** The file holding these bytes. */
+  const fileOf = (t: ReturnType<typeof setup>, bytes: Buffer) => kept(t).map((f) => join(t.imageDir, f)).find((p) => readFileSync(p).equals(bytes))!;
+  /** Screen reads wait from now until `open()`. */
+  const gate = (t: ReturnType<typeof setup>) => {
+    let open = () => {};
+    t.terms.screenGate = new Promise<void>((r) => { open = () => { t.terms.screenGate = null; r(); }; });
+    const before = t.terms.gated;
+    return { open, reading: () => until(() => t.terms.gated > before) };
+  };
+
+  test('image: kept in a private file where Atelier keeps its own pasted images, named by an opaque reference; for a listed terminal only', async () => {
+    const t = setup();
+    const { phone } = await paired(t);
+    // A Claude session: a prompt may carry it, attached or not.
+    const a = await phone.image('t2', 'png', PNG);
+    expect(a).toEqual({ t: 'ok', rid: expect.any(Number), image: expect.stringMatching(/^[A-Za-z0-9_-]{1,64}$/) });
+    expect(await phone.image('t2', 'jpeg', JPEG)).toMatchObject({ t: 'ok', image: expect.any(String) });
+    const files = kept(t);
+    expect(files).toHaveLength(2);
+    expect(files.map((f) => f.split('.').pop()).sort()).toEqual(['jpg', 'png']);
+    const png = join(t.imageDir, files.find((f) => f.endsWith('.png'))!);
+    expect(readFileSync(png)).toEqual(PNG);
+    expectMode(png, 0o600);
+    expectMode(t.imageDir, 0o700);
+    // A plain terminal only once the phone opened it (a paste is all it can take); a terminal not listed: not found.
+    expect(await phone.image('t1', 'png', PNG)).toEqual(NOT_OPEN);
+    await phone.attach('t1');
+    expect(await phone.image('t1', 'png', PNG)).toMatchObject({ t: 'ok' });
+    expect(await phone.image('gone', 'png', PNG)).toEqual(refused('not-found', 'This session is not on this computer any more.'));
+    // Not an image Atelier keeps: another type, the other type's bytes, too large, base64 rather than base64url, nothing.
+    const before = kept(t);
+    expect(await phone.image('t2', 'gif', PNG)).toEqual(UNUSABLE);
+    expect(await phone.image('t2', 'png', JPEG)).toEqual(UNUSABLE);
+    expect(await phone.image('t2', 'png', Buffer.concat([PNG, Buffer.alloc(2 * 1024 * 1024)]))).toEqual(UNUSABLE);
+    const plus = Buffer.concat([PNG, Buffer.from([0xfb, 0xff, 0xbf])]).toString('base64');
+    expect(plus).toMatch(/[+/]/);
+    expect(await phone.image('t2', 'png', plus)).toEqual(UNUSABLE);
+    expect(await phone.image('t2', 'png', '')).toEqual(UNUSABLE);
+    expect(kept(t)).toEqual(before);
+  });
+
+  test('image: at most 10 references held by a channel, a new one dropping the oldest', async () => {
+    const t = setup();
+    const { phone } = await paired(t);
+    const refs: string[] = [];
+    for (let i = 0; i < 11; i++) {
+      const r = await phone.image('t2', 'png', PNG);
+      expect(r).toMatchObject({ t: 'ok' });
+      refs.push(r.image as string);
+    }
+    // The first is gone; the second still names its image (the prompt is refused for the session's wait instead).
+    expect(await phone.say('t2', '', [refs[0]!])).toEqual(IMAGE_GONE);
+    expect(await phone.say('t2', '', [refs[1]!])).toEqual(ANSWER_FIRST);
+  });
+
+  test('image: for a terminal whose attach is on its way, as for one attached', async () => {
+    const t = setup();
+    const { phone } = await paired(t);
+    let open = () => {};
+    t.terms.attachGate = new Promise<void>((r) => { open = () => { t.terms.attachGate = null; r(); }; });
+    phone.send({ t: 'attach', rid: 900, id: 't1', cols: 80, rows: 24 });
+    expect(await phone.image('t1', 'png', PNG)).toMatchObject({ t: 'ok' });
+    open();
+    await phone.waitFor((m) => m.t === 'snapshot' && m.id === 't1');
+  });
+
+  test('image: a folder that can\'t be written is "could not be saved"', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'atl-remote-hub-'));
+    // A file where the folder should be.
+    const blocked = join(home, 'clipboard');
+    writeFileSync(blocked, 'x');
+    const t = setup({ home, deps: { imageDir: blocked } });
+    const { phone } = await paired(t);
+    expect(await phone.image('t2', 'png', PNG)).toEqual(refused('failed', 'The image could not be saved on the computer.'));
+  });
+
+  test('references die with their channel: the same phone connecting again holds none', async () => {
+    const t = setup();
+    const { phone } = await paired(t);
+    await phone.attach('t1');
+    const r = await phone.image('t1', 'png', PNG);
+    expect(await phone.connect()).toMatchObject({ t: 'welcome' });
+    await phone.attach('t1');
+    expect(await phone.paste('t1', r.image as string)).toEqual(IMAGE_GONE);
+    expect(await phone.say('t2', '', [r.image as string])).toEqual(IMAGE_GONE);
+  });
+
+  test('paste: the image\'s path typed into an attached terminal as Paste does, bracketed when the program asked; used up once typed', async () => {
+    const t = setup({ timing: { imageMs: 300 } });
+    const { phone } = await paired(t);
+    await phone.attach('t1');
+    const one = Buffer.concat([PNG, Buffer.from([1])]);
+    const two = Buffer.concat([PNG, Buffer.from([2])]);
+    const r1 = (await phone.image('t1', 'png', one)).image as string;
+    const r2 = (await phone.image('t1', 'png', two)).image as string;
+    expect(await phone.paste('t1', r1)).toEqual(OK);
+    // Typed: used up.
+    expect(await phone.paste('t1', r1)).toEqual(IMAGE_GONE);
+    // A shell that didn't ask for bracketed paste gets the path as it is.
+    t.terms.pasteModes.set('t1', false);
+    expect(await phone.paste('t1', r2)).toEqual(OK);
+    // Through the phone's input, as typing is (it takes the terminal's size there).
+    expect(t.terms.inputs).toEqual([['t1', `\x1b[200~${fileOf(t, one)}\x1b[201~`], ['t1', fileOf(t, two)]]);
+    // Not opened: refused as input is. Not an image of this terminal, of this channel, or not any more.
+    const claudes = (await phone.image('t2', 'png', PNG)).image as string;
+    expect(await phone.paste('t2', claudes)).toEqual(NOT_OPEN);
+    expect(await phone.paste('t1', claudes)).toEqual(IMAGE_GONE);
+    expect(await phone.paste('t1', 'n'.repeat(22))).toEqual(IMAGE_GONE);
+    const r3 = (await phone.image('t1', 'png', PNG)).image as string;
+    const two2 = await another(t);
+    await two2.attach('t1');
+    expect(await two2.paste('t1', r3)).toEqual(IMAGE_GONE);
+    await pause(350);
+    expect(await phone.paste('t1', r3)).toEqual(IMAGE_GONE);
+    expect(t.terms.inputs).toHaveLength(2);
+  });
+
+  test('paste: a screen that can\'t be read (how the program takes a paste is unknown) is "could not be pasted"; the image stays', async () => {
+    const t = setup();
+    const { phone } = await paired(t);
+    await phone.attach('t1');
+    const r = (await phone.image('t1', 'png', PNG)).image as string;
+    await shows(t, 't1', new Error('no screen'));
+    expect(await phone.paste('t1', r)).toEqual(refused('failed', 'The image could not be pasted.'));
+    expect(t.terms.inputs).toEqual([]);
+    t.terms.views.delete('t1');
+    expect(await phone.paste('t1', r)).toEqual(OK);
+  });
+
+  test('paste: the phone\'s input and pastes after it are typed after it, in order', async () => {
+    const t = setup();
+    const { phone } = await paired(t);
+    await phone.attach('t1');
+    const one = Buffer.concat([PNG, Buffer.from([1])]);
+    const two = Buffer.concat([PNG, Buffer.from([2])]);
+    const r1 = (await phone.image('t1', 'png', one)).image as string;
+    const r2 = (await phone.image('t1', 'png', two)).image as string;
+    // The paste reads the screen first: a key and another paste sent meanwhile wait for it.
+    const g = gate(t);
+    const pasted = phone.paste('t1', r1);
+    await g.reading();
+    phone.input('t1', 'x\r');
+    const second = phone.paste('t1', r2);
+    // An answer that comes once the hub has had both (it handles a phone's messages in order).
+    expect(await phone.image('t1', 'png', PNG)).toMatchObject({ t: 'ok' });
+    expect(t.terms.inputs).toEqual([]);
+    g.open();
+    expect(await pasted).toEqual(OK);
+    expect(await second).toEqual(OK);
+    expect(t.terms.inputs).toEqual([['t1', `\x1b[200~${fileOf(t, one)}\x1b[201~`], ['t1', 'x\r'], ['t1', `\x1b[200~${fileOf(t, two)}\x1b[201~`]]);
+    // Nothing waiting: input goes at once, as ever.
+    phone.input('t1', 'y');
+    await until(() => t.terms.inputs.length === 4);
+  });
+
+  test('Atelier starting prunes the images folder: a phone\'s images more than a day old go, as pasted ones do', async () => {
+    const t = setup();
+    mkdirSync(t.imageDir, { recursive: true });
+    const old = join(t.imageDir, 'clipboard-2026-10-08-090000-OLD.jpg');
+    const recent = join(t.imageDir, 'clipboard-2026-10-10-090000-NEW.png');
+    for (const f of [old, recent]) writeFileSync(f, 'x');
+    const twoDaysAgo = (Date.now() - 2 * 86_400_000) / 1000;
+    utimesSync(old, twoDaysAgo, twoDaysAgo);
+    t.hub.start();
+    expect(kept(t)).toEqual(['clipboard-2026-10-10-090000-NEW.png']);
   });
 });

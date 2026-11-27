@@ -11,7 +11,8 @@ const files = (d: string): string[] => readdirSync(d).flatMap((n) => {
 });
 const WRITE_API = /\b(writeFile(Sync)?|rename(Sync)?|mkdir(Sync)?|copyFile(Sync)?|cp(Sync)?|rm(Sync)?|rmdir(Sync)?|unlink(Sync)?|chmod(Sync)?|truncate(Sync)?|trashItem|writeFileAtomic|ensureDir)\s*\(/;
 // Exceptions outside the project, with folders fixed by the main process (never by the renderer):
-// - clipboard-image.ts: images pasted into the terminal, private pngs in the user's temp dir (ATELIER_HOME on Windows)
+// - clipboard-image.ts: images pasted into the terminal or sent by a paired phone, private pngs and jpgs in the user's
+//   temp dir (ATELIER_HOME on Windows)
 // - only in ATELIER_HOME: the folder and logs (index, daemon-launcher; also atelierd's launchd job plist, 0600 in run/,
 //   removed at once, through daemon/launchd.ts), ui-state.json (projects), preferences.json
 //   (settings-store; an unreadable one renamed aside, never overwritten), the updates folder (updates-ipc; also removes the `.Atelier-previous.app` rollback copy that its

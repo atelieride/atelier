@@ -49,7 +49,13 @@ dim text).
 | `paste-line-801`, `paste-line-1000`, `paste-line-2000` | one line of more than 800 characters, folded into `[Pasted text #1]` |
 | `paste-four-lines`, `paste-forty-lines`, `paste-forty-lines-typed` | more than 2 line breaks, folded into `[Pasted text #1 +3 lines]`, `+39 lines`, then a key typed after it |
 | `paste-two-long-lines`, `paste-three-long-lines` | more than 800 characters over 2 and 3 lines: `+1 lines`, `+2 lines` |
+| `image-pasted`, `image-text` | a PNG's path pasted alone into an empty prompt, drawn as `[Image #1]` (not dim); then ` What color is this image?` pasted after it, drawn right after the marker |
 
 The `paste-*` screens come from Claude Code started anew in a folder of its own for each paste, never sent (so no
 transcript): they show its start banner. The paste is one write, `ESC[200~`, the text with its newlines as CR,
 `ESC[201~`, as Atelier types a prompt.
+
+The `image-*` screens come from Claude Code started the same way, in a folder of its own, with none of its user
+settings but the full-screen renderer (`--setting-sources project --settings '{"tui":"fullscreen"}'`), and added with
+`node scripts/claude-capture-fixtures.mjs <recording out dir> <this folder> image-pasted image-text`. The image's
+path is one bracketed paste on its own, the text a second one; nothing is sent.

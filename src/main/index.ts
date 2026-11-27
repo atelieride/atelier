@@ -59,7 +59,7 @@ import { installTabsIpc, restoreGrants } from './tabs-ipc';
 import { GrantWatch, nodeWatch } from './grant-watch';
 import { OutsideFiles } from './outside-files';
 import { installShellCommandIpc, shellCommandDeps } from './shell-command-exec';
-import { installClipboardIpc } from './clipboard-ipc';
+import { installClipboardIpc, pastedImageDir } from './clipboard-ipc';
 import { installUpdates, type Updates } from './updates-ipc';
 import { DictationService } from './dictation/service';
 import { broadcastDictation, installDictationIpc } from './dictation/ipc';
@@ -1482,6 +1482,8 @@ if (!app.requestSingleInstanceLock()) {
     });
     remote = new RemoteHub({
       home: paths.home,
+      // A phone's images go where Atelier keeps the images pasted into its own terminals.
+      imageDir: pastedImageDir(paths.home),
       secrets: secretStoreFor(paths.home, safeStorage),
       settings: () => settings.get(),
       relayUrl: () => relayToDial(settings.get().remoteRelay, devEnv('ATELIER_TEST_RELAY_URL')),

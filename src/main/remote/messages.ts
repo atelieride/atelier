@@ -36,8 +36,12 @@ export const MAX_FIELD_BYTES = 4096;
 // eslint-disable-next-line no-control-regex
 const CONTROL_NOT_LINES = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u2028\u2029]/;
 const bytesAtMost = (max: number) => (s: string) => Buffer.byteLength(s, 'utf8') <= max;
-/** A prompt to type: not blank, lines and tabs allowed, no other control character. */
-const sayText = z.string().min(1).max(MAX_SAY_BYTES).refine(bytesAtMost(MAX_SAY_BYTES), 'text too large').refine((s) => s.trim().length > 0 && !CONTROL_NOT_LINES.test(s), 'text');
+/** A prompt to type: lines and tabs allowed, no other control character (not blank: see `say`). */
+const sayText = z.string().max(MAX_SAY_BYTES).refine(bytesAtMost(MAX_SAY_BYTES), 'text too large').refine((s) => !CONTROL_NOT_LINES.test(s), 'text');
+/** An image this computer kept for the phone, by the reference its `ok` gave. */
+const imageRef = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
+/** Images a prompt carries at most. */
+export const MAX_SAY_IMAGES = 5;
 /** Text for a dialog's field: one line, not blank. */
 const fieldText = z.string().min(1).max(MAX_FIELD_BYTES).refine(bytesAtMost(MAX_FIELD_BYTES), 'text too large').refine((s) => s.trim().length > 0 && !CONTROL.test(s), 'text');
 /**
@@ -93,16 +97,22 @@ export const deviceMessageSchema = z.discriminatedUnion('t', [
   // A Claude session's conversation, and answering what it asks.
   z.object({ t: z.literal('follow'), rid, id: terminalId, before: z.number().int().min(1).max(2 ** 31 - 1).optional() }).strict(),
   z.object({ t: z.literal('unfollow'), id: terminalId }).strict(),
-  z.object({ t: z.literal('say'), rid, id: terminalId, text: sayText }).strict(),
+  // A prompt's text is never blank, but may be empty when it carries images (pasted before it).
+  z.object({ t: z.literal('say'), rid, id: terminalId, text: sayText, images: z.array(imageRef).min(1).max(MAX_SAY_IMAGES).optional() }).strict()
+    .refine((m) => m.text.trim().length > 0 || (m.text === '' && m.images !== undefined), 'text'),
   z.object({ t: z.literal('stop'), rid, id: terminalId }).strict(),
   z.object({ t: z.literal('escape'), rid, id: terminalId }).strict(),
   z.object({ t: z.literal('dialog'), rid, id: terminalId }).strict(),
-  z.object({ t: z.literal('choose'), rid, id: terminalId, ask: dialogAsk, n: z.number().int().min(1).max(9), label: optionLabel, text: fieldText.optional() }).strict()
+  z.object({ t: z.literal('choose'), rid, id: terminalId, ask: dialogAsk, n: z.number().int().min(1).max(9), label: optionLabel, text: fieldText.optional() }).strict(),
+  // An image for a terminal, as base64 of its bytes: whether it is a png or a jpeg the hub can use is its own rule,
+  // answered in words (images.ts); here only its shape. Then its path typed into an attached terminal, as Paste does.
+  z.object({ t: z.literal('image'), rid, id: terminalId, type: z.string().max(16), data: z.string() }).strict(),
+  z.object({ t: z.literal('paste'), rid, id: terminalId, image: imageRef }).strict()
 ]);
 /** Reading a conversation or its dialog (answered `busy` past their shared limit). */
 export const CONVERSATION_READS: ReadonlySet<DeviceMessage['t']> = new Set(['follow', 'dialog']);
-/** Typing into, stopping or answering a session (answered `busy` past their shared limit). */
-export const CONVERSATION_TYPES: ReadonlySet<DeviceMessage['t']> = new Set(['say', 'stop', 'escape', 'choose']);
+/** Typing into, stopping or answering a session, or pasting an image (answered `busy` past their shared limit). */
+export const CONVERSATION_TYPES: ReadonlySet<DeviceMessage['t']> = new Set(['say', 'stop', 'escape', 'choose', 'paste']);
 /** The requests that change rows, places or windows (answered `busy` past their shared limit). */
 export const ROW_ACTIONS: ReadonlySet<DeviceMessage['t']> = new Set(['answer', 'rename', 'close', 'resume', 'dismiss', 'workspace', 'activity', 'renamePlace', 'move', 'closePlace', 'openWindow', 'closeWindow']);
 export type DeviceMessage = z.infer<typeof deviceMessageSchema>;
@@ -223,8 +233,11 @@ export type HostMessage =
   | { t: 'chat'; id: string; rid?: number; conversation: string; entries: Entry[]; start?: true; pending?: true }
   /** The dialog at the bottom of a session's screen, its rows and options as drawn (a field's label shows what it holds). */
   | { t: 'dialog'; rid: number; id: string; ask?: string; kind: DialogKind; rows: string[]; options: DialogOption[]; several?: true; entry?: number; trust?: true }
-  /** `queued`: a prompt (`say`) waiting on this computer while Claude works; it goes once Claude is idle. */
-  | { t: 'ok'; rid: number; queued?: true }
+  /**
+   * `queued`: a prompt (`say`) waiting on this computer while Claude works; it goes once Claude is idle. `image`: the
+   * reference an `image` is named by from then on, in a `say` or `paste` of its terminal on this channel.
+   */
+  | { t: 'ok'; rid: number; queued?: true; image?: string }
   | { t: 'created'; rid: number; id: string }
   /** rid 0: the refused message carried none (input, resize, detach). */
   | { t: 'error'; rid: number; code: ErrorCode; message: string }

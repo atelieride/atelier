@@ -401,6 +401,74 @@ describe('messages', () => {
     }
   });
 
+  test('images: image, paste and a say with images; strict shapes, the image\'s own rules left to the hub', async () => {
+    const o = await open();
+    const ref = 'r'.repeat(22);
+    const ok = [
+      { t: 'image', rid: 1, id: 't1', type: 'png', data: 'iVBORw0KGgo=' },
+      // What isn't an image is the hub's to answer, in its own words.
+      { t: 'image', rid: 2, id: 't1', type: 'gif', data: '' },
+      { t: 'paste', rid: 3, id: 't1', image: ref },
+      { t: 'paste', rid: 4, id: 't1', image: 'a-Z_9' },
+      { t: 'say', rid: 5, id: 't1', text: '', images: [ref] },
+      { t: 'say', rid: 6, id: 't1', text: 'What color is it?', images: [ref, 'b'.repeat(64), 'c', 'd', 'e'] }
+    ];
+    for (const m of ok) o.send(m);
+    expect(o.received).toEqual(ok);
+    const bad = [
+      { t: 'image', rid: 11, id: 't1', type: 'png' },
+      { t: 'image', rid: 12, id: 't1', data: 'iVBORw0KGgo=' },
+      { t: 'image', rid: 13, id: 't1', type: 'png', data: 'iVBORw0KGgo=', name: 'shot.png' },
+      { t: 'image', rid: 14, id: 't1', type: 'png', data: 7 },
+      { t: 'image', id: 't1', type: 'png', data: 'iVBORw0KGgo=' },
+      { t: 'paste', rid: 15, id: 't1' },
+      { t: 'paste', rid: 16, id: 't1', image: '' },
+      { t: 'paste', rid: 17, id: 't1', image: 'b'.repeat(65) },
+      { t: 'paste', rid: 18, id: 't1', image: '/tmp/x.png' },
+      { t: 'paste', rid: 19, id: 't1', image: ref, path: '/tmp/x.png' },
+      // No text without images; no list with none or more than five; a blank text with them; a reference that isn't one.
+      { t: 'say', rid: 20, id: 't1', text: '' },
+      { t: 'say', rid: 21, id: 't1', text: '', images: [] },
+      { t: 'say', rid: 22, id: 't1', text: '', images: [ref, ref, ref, ref, ref, ref] },
+      { t: 'say', rid: 23, id: 't1', text: '  ', images: [ref] },
+      { t: 'say', rid: 24, id: 't1', text: '', images: ['../x.png'] },
+      { t: 'say', rid: 25, id: 't1', text: 'a\x1bb', images: [ref] }
+    ];
+    for (const m of bad) o.send(m);
+    expect(o.received).toHaveLength(ok.length);
+    expect(o.got.filter((m) => m.t === 'error').map((m) => [m.rid, m.code])).toEqual(bad.map((m) => [m.rid ?? 0, 'invalid']));
+  });
+
+  test('limits: images 20 a minute and 12 MiB of them a minute; a paste, and a say with images, count with say', async () => {
+    let now = 0;
+    const o = await open({ now: () => now, limits: { imagesPerMin: 3, imageBytesPerMin: 300, typesPerMin: 1 } });
+    /** An image of `n` bytes, as base64url. */
+    const image = (rid: number, n: number) => ({ t: 'image', rid, id: 't', type: 'png', data: Buffer.alloc(n, 1).toString('base64url') });
+    o.send(image(1, 100));
+    o.send(image(2, 150));
+    // Past the bytes, though one more would fit the count (nothing is taken of either); then past the count.
+    o.send(image(3, 100));
+    o.send(image(4, 10));
+    o.send(image(5, 10));
+    // The typing budget (one here): the paste takes it, the says after it are refused.
+    o.send({ t: 'paste', rid: 6, id: 't', image: 'r' });
+    o.send({ t: 'say', rid: 7, id: 't', text: 'x', images: ['r'] });
+    o.send({ t: 'say', rid: 8, id: 't', text: 'y' });
+    expect(o.received.map((m) => ('rid' in m ? m.rid : 0))).toEqual([1, 2, 4, 6]);
+    const TOO_MANY = 'Too many images at once; try again in a minute.';
+    const CHANGES = 'Too many changes at once; try again in a minute.';
+    expect(o.got.filter((m) => m.t === 'error').map((m) => [m.rid, m.code, (m as { message?: string }).message])).toEqual([
+      [3, 'busy', TOO_MANY],
+      [5, 'busy', TOO_MANY],
+      [7, 'busy', CHANGES],
+      [8, 'busy', CHANGES]
+    ]);
+    now += 60_000;
+    o.send(image(9, 300));
+    o.send({ t: 'say', rid: 10, id: 't', text: 'x', images: ['r'] });
+    expect(o.received.slice(-2).map((m) => ('rid' in m ? m.rid : 0))).toEqual([9, 10]);
+  });
+
   test('limits: follow and dialog share 120 a minute; say, stop, escape and choose 30, apart from the row actions', async () => {
     let now = 0;
     const o = await open({ now: () => now, limits: { readsPerMin: 2, typesPerMin: 2, actionsPerMin: 1 } });

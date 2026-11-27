@@ -1,10 +1,11 @@
 // The Claude Code 2.1.332 fixtures are a recording of a real session, rewritten so that nothing personal stays and
 // every screen row keeps its length. These tests pin the rewriting rules and guard the committed files.
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
 // @ts-expect-error: .mjs script without types
-import { check, fictional, sanitize, TRANSCRIPTS } from '../../scripts/claude-capture-fixtures.mjs';
+import { check, fictional, generate, sanitize, SCREENS, TRANSCRIPTS } from '../../scripts/claude-capture-fixtures.mjs';
 
 const root = resolve(__dirname, '../..');
 const dir = join(root, 'tests/fixtures/claude-2.1.332');
@@ -46,6 +47,27 @@ describe('sanitising a recording', () => {
   });
 });
 
+describe('generating', () => {
+  test('only the screens named: from scenarios recorded in a folder of their own, sanitised; nothing else written', () => {
+    const base = mkdtempSync(join(tmpdir(), 'atl-capture-'));
+    const recording = join(base, 'recording');
+    const target = join(base, 'fixtures');
+    const [name, source] = Object.entries(SCREENS as Record<string, string>).find(([n]) => n === 'image-pasted')!;
+    const project = '/private/tmp/claude-777/-Users-someone-Dev/aaaa1111-bbbb-2222/scratchpad/rec/work';
+    mkdirSync(join(recording, source.split('/')[0]!), { recursive: true });
+    writeFileSync(join(recording, source.split('/')[0]!, 'project.txt'), `${project}\n`);
+    writeFileSync(join(recording, `${source}.lines.txt`), ` ▝▝   ▝▝   /…${project.slice(20)}\n❯ [Image #1]\n`);
+    writeFileSync(join(recording, `${source}.snapshot.ans`), `\x1b[?1049h /…${project.slice(20)}`);
+    generate(recording, target, root, [name]);
+    expect(filesUnder(target).map((f) => f.slice(target.length + 1)).sort()).toEqual([`screens/${name}.ans`, `screens/${name}.txt`]);
+    const txt = readFileSync(join(target, 'screens', `${name}.txt`), 'utf8');
+    expect(txt).not.toMatch(/private|someone|claude-777/);
+    expect(txt).toContain('❯ [Image #1]');
+    // A name the script doesn't know is refused.
+    expect(() => generate(recording, target, root, ['nope'])).toThrow();
+  });
+});
+
 describe('the committed fixtures', () => {
   test('hold nothing personal', () => {
     const files = filesUnder(dir);
@@ -65,7 +87,8 @@ describe('the committed fixtures', () => {
   test('include the transcript and the named screens', () => {
     const pastes = ['paste-three-lines', 'paste-three-lines-typed', 'paste-four-lines', 'paste-forty-lines', 'paste-forty-lines-typed',
       'paste-two-long-lines', 'paste-three-long-lines', 'paste-line-500', 'paste-line-800', 'paste-line-801', 'paste-line-1000', 'paste-line-2000'];
-    for (const n of ['trust', 'bash', 'bash-second', 'edit', 'plan', 'question', 'several', 'model', 'queued', 'idle', 'working', ...pastes]) {
+    const images = ['image-pasted', 'image-text'];
+    for (const n of ['trust', 'bash', 'bash-second', 'edit', 'plan', 'question', 'several', 'model', 'queued', 'idle', 'working', ...pastes, ...images]) {
       expect(statSync(join(dir, 'screens', `${n}.txt`)).isFile(), n).toBe(true);
       expect(statSync(join(dir, 'screens', `${n}.ans`)).isFile(), n).toBe(true);
     }

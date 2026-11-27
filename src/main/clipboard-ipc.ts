@@ -78,6 +78,11 @@ export function clipboardImageDir(platform: string, home: string, temp: string):
   return platform === 'win32' ? win32.join(home, 'clipboard') : posix.join(temp, 'atelier-clipboard');
 }
 
+/** This computer's folder for pasted images (clipboardImageDir): the images paired phones send go there too. */
+export function pastedImageDir(home: string): string {
+  return clipboardImageDir(currentPlatform(), home, app.getPath('temp'));
+}
+
 /** The png bytes of the image on the clipboard (Chromium exposes images as image/png), null if there is none. */
 async function clipboardPng(): Promise<Buffer | null> {
   for (const item of await clipboard.read()) {
@@ -108,7 +113,7 @@ export function installClipboardIpc(projectOf: (wcId: number) => string | null, 
     try {
       const png = await clipboardPng();
       if (png && png.length > MAX_IMAGE_BYTES) return { tooLarge: true };
-      const path = saveClipboardImage(png, clipboardImageDir(currentPlatform(), home, app.getPath('temp')));
+      const path = saveClipboardImage(png, pastedImageDir(home));
       return path ? { path } : null;
     } catch {
       return null;
