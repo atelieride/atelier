@@ -2,12 +2,13 @@
 // home folder, account folder and e-mail address is rewritten at the same length, so each screen row keeps its width
 // and a path Claude Code wrapped across two rows is still wrapped at the same column.
 //
-//   node scripts/claude-capture-fixtures.mjs <recording out dir> <fixture dir>
+//   node scripts/claude-capture-fixtures.mjs <recording out dir> <fixture dir> [screen name…]
 //
 // The recording folder holds one folder per scenario (`02-bash/01-dialog.lines.txt`, `….snapshot.ans`) and
 // `session/transcript.jsonl`. A scenario recorded in a folder of its own, where nothing was sent (so no transcript
 // names it), names that folder in its `project.txt`; a session recorded on its own keeps its transcript in its
-// scenario folder (TRANSCRIPTS). Nothing here names a person, account or folder of the machine
+// scenario folder (TRANSCRIPTS). With screen names, only those screens are written: a recording of just their
+// scenarios, each naming its folder in `project.txt`, adds them to the fixtures already there. Nothing here names a person, account or folder of the machine
 // that made the recording: the rewrites are generic patterns, and `check` refuses what is left.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -56,6 +57,8 @@ export const SCREENS = {
   'paste-four-lines': '11-paste/10-four-lines',
   'paste-three-long-lines': '11-paste/11-three-long-lines',
   'paste-two-long-lines': '11-paste/12-two-long-lines',
+  'image-pasted': '15-image/01-pasted',
+  'image-text': '15-image/02-text',
 };
 
 const MIN_FRAGMENT = 12;
@@ -147,26 +150,39 @@ function projectOf(transcript) {
   throw new Error('no cwd in the transcript');
 }
 
-function generate(recording, target, root) {
-  const transcript = readFileSync(join(recording, 'session', 'transcript.jsonl'), 'utf8');
-  const project = projectOf(transcript);
+/**
+ * Writes the fixtures from a recording: all of them, or with `only` just those screens (their scenarios each naming
+ * their folder, as no transcript is read then).
+ */
+export function generate(recording, target, root, only = []) {
+  const unknown = only.filter((n) => !Object.hasOwn(SCREENS, n));
+  if (unknown.length) throw new Error(`no such screen: ${unknown.join(', ')}`);
   const write = (name, text) => {
     check(text, root);
     const file = join(target, name);
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, text);
   };
-  write('transcript.jsonl', sanitize(transcript, { project }));
-  for (const [name, source] of Object.entries(TRANSCRIPTS)) {
-    const own = readFileSync(join(recording, source), 'utf8');
-    write(name, sanitize(own, { project: projectOf(own) }));
+  /** The session's folder, read from its transcript: never needed for only screens recorded on their own. */
+  let project = null;
+  if (only.length === 0) {
+    const transcript = readFileSync(join(recording, 'session', 'transcript.jsonl'), 'utf8');
+    project = projectOf(transcript);
+    write('transcript.jsonl', sanitize(transcript, { project }));
+    for (const [name, source] of Object.entries(TRANSCRIPTS)) {
+      const own = readFileSync(join(recording, source), 'utf8');
+      write(name, sanitize(own, { project: projectOf(own) }));
+    }
   }
   /** The folder a scenario's captures were made in: its own when it names one, else the session's. */
   const projectFor = (source) => {
     const own = join(recording, source.split('/')[0], 'project.txt');
-    return existsSync(own) ? readFileSync(own, 'utf8').trim() : project;
+    if (existsSync(own)) return readFileSync(own, 'utf8').trim();
+    if (project === null) throw new Error(`${source.split('/')[0]} names no folder in project.txt`);
+    return project;
   };
   for (const [name, source] of Object.entries(SCREENS)) {
+    if (only.length && !only.includes(name)) continue;
     const at = { project: projectFor(source) };
     write(`screens/${name}.txt`, sanitize(readFileSync(join(recording, `${source}.lines.txt`), 'utf8'), at));
     write(`screens/${name}.ans`, sanitize(readFileSync(join(recording, `${source}.snapshot.ans`), 'utf8'), at));
@@ -174,10 +190,10 @@ function generate(recording, target, root) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [recording, target] = process.argv.slice(2);
+  const [recording, target, ...only] = process.argv.slice(2);
   if (!recording || !target) {
-    console.error('usage: node scripts/claude-capture-fixtures.mjs <recording out dir> <fixture dir>');
+    console.error('usage: node scripts/claude-capture-fixtures.mjs <recording out dir> <fixture dir> [screen name…]');
     process.exit(2);
   }
-  generate(resolve(recording), resolve(target), resolve(dirname(fileURLToPath(import.meta.url)), '..'));
+  generate(resolve(recording), resolve(target), resolve(dirname(fileURLToPath(import.meta.url)), '..'), only);
 }

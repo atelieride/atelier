@@ -15,6 +15,7 @@ import type { AnswerBook } from './answers';
 import type { ConversationBook, ConversationSnapshot } from './conversations';
 import { chooseKeys, claudeWorking, fieldHolds, menuToClose, promptState, readDialog, type DialogWait, type ScreenDialog } from './dialog';
 import type { DeviceMessage, ErrorCode, HostMessage } from './messages';
+import { IMAGE_GONE, type PhoneImages } from './images';
 import { FILE_TOOLS, shows } from './prompt';
 import {
   ANSWER_FIRST, GONE, NOT_CLAUDE, NOT_REACHED, TYPED, TYPED_RECENTLY_MS, answered, sessionOf, waits,
@@ -74,6 +75,12 @@ export interface ConversationTiming {
   keyMs: number;
   enterMs: number;
   enterCapMs: number;
+  /**
+   * The longest a prompt's image waits for its marker (Claude Code reads and scales the file first), and a whole
+   * prompt's typing, its images and its text.
+   */
+  imageCapMs: number;
+  typingCapMs: number;
   /** The clock an Enter's wait is measured on (ms): Date.now unless given. */
   now?: () => number;
 }
@@ -120,6 +127,8 @@ export class PhoneConversations {
     /** Every phone's prompts, and this phone's paired id they go as. */
     outbox: PromptOutbox;
     device: string;
+    /** The images this phone's channel handed over, which its prompts name (and use up once sent or waiting). */
+    images: Pick<PhoneImages, 'pathsOf' | 'use'>;
   }) {}
 
   /** The sessions followed now. */
@@ -179,12 +188,17 @@ export class PhoneConversations {
 
   /**
    * A prompt, through the outbox: answered `ok` once sent, `ok` with `queued` once it waits on this computer for
-   * Claude to be idle (it goes then, the phone there or not), else why not.
+   * Claude to be idle (it goes then, the phone there or not), else why not. Its images are their files from the
+   * start: each must be one this channel handed over for this terminal and still names. Sent or waiting, they are
+   * used up; refused, they stay for a retry.
    */
   private say(m: Extract<ConversationRequest, { t: 'say' }>): void {
     const { rid, id } = m;
     if (!this.claudeSession(rid, id)) return;
-    this.o.outbox.say(this.o.device, id, m.text).then((r) => {
+    const images = m.images ? this.o.images.pathsOf(m.images, id) : [];
+    if (!images) { this.error(rid, 'invalid', IMAGE_GONE); return; }
+    this.o.outbox.say(this.o.device, id, m.text, images).then((r) => {
+      if ((r === 'sent' || r === 'queued') && m.images) this.o.images.use(m.images);
       if (r === 'sent') this.send({ t: 'ok', rid });
       else if (r === 'queued') this.send({ t: 'ok', rid, queued: true });
       else this.error(rid, r.code, r.message);

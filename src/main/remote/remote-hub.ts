@@ -2,9 +2,10 @@
 // serves each paired phone that connects through it — the state of its projects and sessions as their sidebar rows
 // show them, each project's sidebar arrangement, the accounts' limits, how Atelier looks (its theme and terminal
 // settings), a terminal's screen and output, a Claude session's conversation as data (followed with no terminal
-// attached), typing, sizes, new sessions, the actions on rows (Allow / Deny, rename, close, resume, dismiss), on
-// workspaces and activities (new, renamed, closed, a row moved in: applied by the project's window, opened for it when
-// closed) and on the project windows themselves (opened as a recent project opens, closed as their own close does) —
+// attached), typing, sizes, images handed over for a prompt or a paste, new sessions, the actions on rows (Allow /
+// Deny, rename, close, resume, dismiss), on workspaces and activities (new, renamed, closed, a row moved in: applied
+// by the project's window, opened for it when closed) and on the project windows themselves (opened as a recent
+// project opens, closed as their own close does) —
 // sends the push notifications phones registered for, and runs pairing (the code, the Allow/Deny question to the
 // windows). Off, no relay connection exists at all. A phone only names what the state listed: opaque project ids,
 // terminal, place and account ids, never paths, commands, directories or profiles. It sees paths and commands only
@@ -32,13 +33,15 @@ import { PushDecider, collapseKeyOf, noticeJson, type AttentionNews } from './pu
 import { pushKeyId, sealPush } from './push-seal';
 import { PushStore } from './push-store';
 import { THEME_BLOCKS } from '../theme-chrome';
+import { pruneClipboardImages } from '../clipboard-image';
 import { lookKey, remoteLook } from './look';
 import { CLOSE, placeNameProblem, type ByeReason, type DeviceMessage, type HostMessage, type RemoteAccount, type RemoteFeatures, type RemoteLook } from './messages';
 import { Pairing } from './pairing';
 import { RelayLink, type RelayLinkOptions } from './relay-link';
 import { AnswerBook } from './answers';
 import { PhoneConversations, type ConversationHost, type ConversationTiming } from './conversation-requests';
-import { PromptOutbox, type OutboxTiming } from './prompt-outbox';
+import { IMAGE_GONE, PhoneImages, imagePaste } from './images';
+import { GONE, PromptOutbox, type OutboxTiming } from './prompt-outbox';
 import { ConversationBook, type ConversationDeps } from './conversations';
 import { allowKey, denyKey, type ScreenView } from './prompt';
 import { WaitBook, anyWait } from './rows';
@@ -87,6 +90,11 @@ export type RemoteWindowResult = { ok: true } | { ok: false; code: 'not-found' |
 
 export interface RemoteHubDeps {
   home: string;
+  /**
+   * Where the images phones hand over are kept, for the programs in the terminals to read: the folder Atelier keeps
+   * the images pasted into its own terminals in (clipboardImageDir), pruned after a day.
+   */
+  imageDir: string;
   secrets: Pick<SecretStore, 'available' | 'read' | 'write' | 'remove'>;
   settings(): Settings;
   /** The relay to dial: the setting (or a test relay in development). */
@@ -129,14 +137,15 @@ export interface RemoteHubDeps {
   emitStatus(s: RemoteStatus): void;
   emitPairing(e: RemotePairingEvent): void;
   log?(message: string): void;
-  timing?: Partial<{ stateMs: number; usageMs: number; outMs: number; decideMs: number; codeTtlMs: number }>;
+  /** `imageMs`: how long an image's reference names it (10 minutes). */
+  timing?: Partial<{ stateMs: number; usageMs: number; outMs: number; decideMs: number; codeTtlMs: number; imageMs: number }>;
   link?: Pick<RelayLinkOptions, 'timing' | 'budget'>;
   /**
    * The conversations phones follow: where a session's transcript is (by default as Claude Code keeps it, in the
    * session's own account's folder), the home `~` stands for (the user's), and the timings, an Enter's wait measured on
    * `now` when given, and how soon a prompt waiting for an idle Claude is tried again.
    */
-  conversation?: Partial<ConversationDeps> & { timing?: { chatMs?: number; keyMs?: number; enterMs?: number; enterCapMs?: number; now?: () => number } & Partial<OutboxTiming> };
+  conversation?: Partial<ConversationDeps> & { timing?: Partial<ConversationTiming> & Partial<OutboxTiming> };
 }
 
 /** State goes out at most this often (coalesced), only when it changed. */
@@ -156,9 +165,10 @@ const SNAPSHOT_MAX = MAX_APP_MESSAGE - 64 * 1024;
 const DEFAULT_SIZE: Size = { cols: 120, rows: 36 };
 /**
  * A followed conversation's changes go at most this often; typing into a session pauses this long between keys and
- * before an Enter, and waits for an Enter at most this long.
+ * before an Enter, and waits for an Enter at most this long; a prompt's image waits for its marker longer (Claude
+ * Code reads and scales its file first), and a whole prompt's typing, up to 5 images and its text, is cut at 20 s.
  */
-const CHAT_TIMING: ConversationTiming = { chatMs: 100, keyMs: 300, enterMs: 400, enterCapMs: 2000 };
+const CHAT_TIMING: ConversationTiming = { chatMs: 100, keyMs: 300, enterMs: 400, enterCapMs: 2000, imageCapMs: 8000, typingCapMs: 20_000 };
 /**
  * A prompt waiting for an idle Claude is tried this soon after it came or its session's hooks changed, then twice as
  * long after each try, up to every 5 s (each try reads the screen); dropped once text typed on the computer has kept it
@@ -243,13 +253,27 @@ interface SessionHost extends ConversationHost {
   registerPush(deviceId: string, m: Extract<DeviceMessage, { t: 'push' }>): void;
   scheduleState(): void;
   outMs: number;
+  /** Where phones' images are kept, and how long a reference names one (its default when absent). */
+  imageDir: string;
+  imageMs?: number;
 }
+
+/** What a phone's input to a terminal it hasn't opened is told. */
+const NOT_OPEN = 'Open this terminal before typing into it.';
 
 /** One connected phone: the terminals it watches through TerminalHub, the conversations it follows, and what it is sent. */
 class PhoneSession implements RemoteViewer {
   readonly key: number;
   readonly attached = new Set<string>();
   readonly conversations: PhoneConversations;
+  /** The images this channel handed over, by their references. */
+  private readonly images: PhoneImages;
+  /**
+   * Per terminal, while a paste reads its screen: the phone's input and pastes that came after it, typed in order once
+   * it is typed.
+   */
+  private readonly behind = new Map<string, (() => Promise<void> | void)[]>();
+  private disposed = false;
   /** Attach requests waiting for their terminal's screen, by terminal. */
   private readonly waiting = new Map<string, number[]>();
   /** Output held back (coalescing, or a backlog at the relay link), by terminal, in arrival order. */
@@ -266,7 +290,49 @@ class PhoneSession implements RemoteViewer {
 
   constructor(readonly c: SecureChannel, readonly deviceId: string, private readonly host: SessionHost, private readonly terms: RemoteTerminals) {
     this.key = terms.addRemoteViewer(this);
-    this.conversations = new PhoneConversations({ send: (m) => this.send(m), host, terms, book: host.book, timing: host.conversationTiming, outbox: host.outbox, device: deviceId });
+    this.images = new PhoneImages({ dir: host.imageDir, ...(host.imageMs ? { ttlMs: host.imageMs } : {}) });
+    this.conversations = new PhoneConversations({ send: (m) => this.send(m), host, terms, book: host.book, timing: host.conversationTiming, outbox: host.outbox, device: deviceId, images: this.images });
+  }
+
+  /** The phone watches terminal `id`, or its attach is on its way. */
+  private watching(id: string): boolean { return this.attached.has(id) || this.waiting.has(id); }
+
+  /** Types into terminal `id` now, or after the paste under way there and what came before it, in order. */
+  private inOrder(id: string, step: () => Promise<void> | void): void {
+    const q = this.behind.get(id);
+    if (q) { q.push(step); return; }
+    this.behind.set(id, [step]);
+    this.next(id);
+  }
+
+  /** The next step waiting for terminal `id`: each that has to wait (a paste) runs the rest once it is over. */
+  private next(id: string): void {
+    const q = this.behind.get(id);
+    while (q && q.length > 0 && !this.disposed) {
+      const pending = q.shift()!();
+      if (pending) {
+        void pending.catch(() => this.host.log(`a phone's paste into terminal ${id} stopped`)).finally(() => this.next(id));
+        return;
+      }
+    }
+    this.behind.delete(id);
+  }
+
+  /**
+   * An image's path into an attached terminal, as Atelier's own Paste of an image: bracketed when the program asked
+   * for bracketed paste (read from the screen), typed as the phone's input is (it takes the terminal's size). Typed,
+   * the reference is used up; refused, it stays.
+   */
+  private async paste(m: Extract<DeviceMessage, { t: 'paste' }>): Promise<void> {
+    if (!this.watching(m.id)) { this.error(m.rid, 'invalid', NOT_OPEN); return; }
+    const path = this.images.pathOf(m.image, m.id);
+    if (!path) { this.error(m.rid, 'invalid', IMAGE_GONE); return; }
+    let view: ScreenView;
+    try { view = await this.terms.screenView(m.id); } catch { this.error(m.rid, 'failed', 'The image could not be pasted.'); return; }
+    if (this.disposed) return;
+    if (!this.terms.remoteInput(this.key, m.id, imagePaste(path, view.bracketedPaste))) { this.error(m.rid, 'invalid', NOT_OPEN); return; }
+    this.images.use([m.image]);
+    this.send({ t: 'ok', rid: m.rid });
   }
 
   send(msg: HostMessage): void {
@@ -334,7 +400,20 @@ class PhoneSession implements RemoteViewer {
         this.host.statusChanged();
         return;
       case 'input':
-        if (!this.terms.remoteInput(this.key, m.id, m.data)) this.error(0, 'invalid', 'Open this terminal before typing into it.');
+        // After a paste still on its way into that terminal, in order.
+        this.inOrder(m.id, () => { if (!this.terms.remoteInput(this.key, m.id, m.data)) this.error(0, 'invalid', NOT_OPEN); });
+        return;
+      case 'image': {
+        // For a prompt to a Claude session, or a paste into a terminal the phone opened.
+        if (!this.host.listed(m.id)) { this.error(m.rid, 'not-found', GONE); return; }
+        if (!this.host.claude(m.id) && !this.watching(m.id)) { this.error(m.rid, 'invalid', NOT_OPEN); return; }
+        const kept = this.images.keep(m.id, m.type, m.data);
+        if ('code' in kept) this.error(m.rid, kept.code, kept.message);
+        else this.send({ t: 'ok', rid: m.rid, image: kept.ref });
+        return;
+      }
+      case 'paste':
+        this.inOrder(m.id, () => this.paste(m));
         return;
       case 'resize':
         this.lastSize = { cols: m.cols, rows: m.rows };
@@ -580,6 +659,9 @@ class PhoneSession implements RemoteViewer {
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = null;
     this.held.clear();
+    this.disposed = true;
+    this.behind.clear();
+    this.images.clear();
     this.conversations.dispose();
     this.terms.removeRemoteViewer(this.key);
   }
@@ -709,6 +791,7 @@ export class RemoteHub {
     const conversationTiming: ConversationTiming = {
       chatMs: c.timing?.chatMs ?? CHAT_TIMING.chatMs, keyMs: c.timing?.keyMs ?? CHAT_TIMING.keyMs,
       enterMs: c.timing?.enterMs ?? CHAT_TIMING.enterMs, enterCapMs: c.timing?.enterCapMs ?? CHAT_TIMING.enterCapMs,
+      imageCapMs: c.timing?.imageCapMs ?? CHAT_TIMING.imageCapMs, typingCapMs: c.timing?.typingCapMs ?? CHAT_TIMING.typingCapMs,
       ...(c.timing?.now ? { now: c.timing.now } : {})
     };
     this.outbox = new PromptOutbox({
@@ -756,11 +839,17 @@ export class RemoteHub {
         else this.pushes.set(deviceId, { token: m.token.toLowerCase(), env: m.env, key: Buffer.from(m.key, 'base64url') });
       },
       scheduleState: () => this.scheduleState(),
-      outMs: d.timing?.outMs ?? OUT_MS
+      outMs: d.timing?.outMs ?? OUT_MS,
+      imageDir: d.imageDir,
+      ...(d.timing?.imageMs ? { imageMs: d.timing.imageMs } : {})
     };
   }
 
-  start(): void { this.apply(); }
+  /** Atelier started: images phones sent more than a day ago go (nothing else may save there for a while), then the rest. */
+  start(): void {
+    pruneClipboardImages(this.d.imageDir);
+    this.apply();
+  }
 
   /** Settings changed: remote access, the relay, the project colors, the accounts, the ports shown, the look. */
   settingsChanged(): void {

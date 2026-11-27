@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { SerializeAddon } from '@xterm/addon-serialize';
+import { Terminal as Headless } from '@xterm/headless';
 import { expect, test } from 'vitest';
+import { snapshotOf } from '../../daemon/snapshot-modes';
 import { dialogAtBottom, screenView } from './prompt';
 
 const SCREENS = join(__dirname, '../../../tests/fixtures/claude-2.1.332/screens');
@@ -22,6 +25,23 @@ test('screenView: the rows as screenLines reads them, and which of their text is
   const row = typed.lines.findLastIndex((l) => l.startsWith('❯'));
   expect(typed.undimmed[row]).toContain('What is 3+4? One word.');
   expect((await screenView('x', null)).cols).toBe(120);
+});
+
+test('screenView: whether the program asked for bracketed paste, as atelierd\'s snapshot of its screen says', async () => {
+  /** atelierd's snapshot of a screen the program wrote `data` to. */
+  const snapshot = async (data: string) => {
+    const screen = new Headless({ cols: 80, rows: 24, allowProposedApi: true });
+    const serializer = new SerializeAddon();
+    screen.loadAddon(serializer);
+    await new Promise<void>((done) => screen.write(data, done));
+    return snapshotOf(screen, serializer);
+  };
+  expect((await screenView(await snapshot('\x1b[?2004h$ '), SIZE)).bracketedPaste).toBe(true);
+  expect((await screenView(await snapshot('$ '), SIZE)).bracketedPaste).toBe(false);
+  // Asked for, then given back.
+  expect((await screenView(await snapshot('\x1b[?2004h$ vim\r\n\x1b[?2004l'), SIZE)).bracketedPaste).toBe(false);
+  // Claude Code asks for it.
+  expect((await screenView(ans('idle'), SIZE)).bracketedPaste).toBe(true);
 });
 
 test('dialogAtBottom: its options carry their indices into the untrimmed lines', () => {

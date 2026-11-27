@@ -4,6 +4,7 @@
 // limits answer `busy` beyond them, and a channel that keeps getting refused, fails to decrypt or doesn't parse is
 // closed. Whether a phone is let in at all (the allowlist, or the user's Allow) is the hub's call.
 import { TokenBucket } from './bucket';
+import { TOO_MANY_IMAGES } from './images';
 import { CLOSE, CONVERSATION_READS, CONVERSATION_TYPES, ROW_ACTIONS, deviceHelloSchema, deviceMessageSchema, type ByeReason, type DeniedReason, type DeviceHello, type DeviceMessage, type ErrorCode, type HostMessage } from './messages';
 import { NOISE_MAX_MESSAGE, NoiseHandshake, type KeyPair, type NoiseTransport } from './noise';
 import { MAX_APP_MESSAGE, Reassembler, b64url, fragments, prologue, protocolOf, type ChannelKind } from './wire';
@@ -27,10 +28,13 @@ export interface ChannelLimits {
   actionsPerMin: number;
   /** `follow` and `dialog` together. */
   readsPerMin: number;
-  /** `say`, `stop`, `escape` and `choose` together (apart from the row actions). */
+  /** `say`, `stop`, `escape`, `choose` and `paste` together (apart from the row actions). */
   typesPerMin: number;
   /** Push registrations. */
   pushesPerMin: number;
+  /** Images handed to this computer, and their bytes once decoded. */
+  imagesPerMin: number;
+  imageBytesPerMin: number;
   /** Refused messages (busy, invalid) tolerated within strikeWindowMs before the channel closes. */
   strikes: number;
   strikeWindowMs: number;
@@ -42,6 +46,7 @@ export interface ChannelLimits {
 
 const LIMITS: ChannelLimits = {
   messagesPerSec: 200, inputBytesPerSec: 1024 * 1024, createsPerMin: 10, actionsPerMin: 30, readsPerMin: 120, typesPerMin: 30, pushesPerMin: 5,
+  imagesPerMin: 20, imageBytesPerMin: 12 * 1024 * 1024,
   strikes: 50, strikeWindowMs: 10_000, handshakeMs: 30_000, maxMessages: 2 ** 32
 };
 
@@ -98,6 +103,8 @@ export class SecureChannel {
   private readonly reads: TokenBucket;
   private readonly types: TokenBucket;
   private readonly pushes: TokenBucket;
+  private readonly images: TokenBucket;
+  private readonly imageBytes: TokenBucket;
   private strikesAt: number[] = [];
   private readonly timer: ReturnType<typeof setTimeout>;
   private readonly now: () => number;
@@ -113,6 +120,8 @@ export class SecureChannel {
     this.reads = new TokenBucket(this.limits.readsPerMin, this.limits.readsPerMin / 60, this.now);
     this.types = new TokenBucket(this.limits.typesPerMin, this.limits.typesPerMin / 60, this.now);
     this.pushes = new TokenBucket(this.limits.pushesPerMin, this.limits.pushesPerMin / 60, this.now);
+    this.images = new TokenBucket(this.limits.imagesPerMin, this.limits.imagesPerMin / 60, this.now);
+    this.imageBytes = new TokenBucket(this.limits.imageBytesPerMin, this.limits.imageBytesPerMin / 60, this.now);
     this.timer = setTimeout(() => { if (this.state === 'hello' || this.state === 'auth') this.close(CLOSE.timeout); }, this.limits.handshakeMs);
     this.timer.unref?.();
   }
@@ -216,7 +225,16 @@ export class SecureChannel {
     if (CONVERSATION_READS.has(m.t) && 'rid' in m && !this.reads.tryTake(1)) { this.refuse(m.rid, 'busy', 'Too many requests; try again in a minute.'); return; }
     if (CONVERSATION_TYPES.has(m.t) && 'rid' in m && !this.types.tryTake(1)) { this.refuse(m.rid, 'busy', 'Too many changes at once; try again in a minute.'); return; }
     if (m.t === 'push' && !this.pushes.tryTake(1)) { this.refuse(m.rid, 'busy', 'Too many registrations; try again in a minute.'); return; }
+    if (m.t === 'image' && !this.imageBudget(Buffer.byteLength(m.data, 'base64url'))) { this.refuse(m.rid, 'busy', TOO_MANY_IMAGES); return; }
     this.d.message(this, m);
+  }
+
+  /** One more image of `bytes` (decoded) within both budgets: taken from both, or from neither. */
+  private imageBudget(bytes: number): boolean {
+    if (this.images.wait(1) > 0 || this.imageBytes.wait(bytes) > 0) return false;
+    this.images.take(1);
+    this.imageBytes.take(bytes);
+    return true;
   }
 
   /** An error answer that also counts against the phone: past the tolerated number, the channel closes. */

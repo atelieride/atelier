@@ -301,20 +301,44 @@ export function readDialog(view: ScreenView, wait: DialogWait | null): ScreenDia
 
 export type PromptState = 'empty' | 'typed' | 'none';
 
+/** Claude's prompt box on screen; null while a dialog shows or no box is found. */
+function promptAt(view: ScreenView): { from: number; to: number } | null {
+  return readDialog(view, null) ? null : promptBox(view.lines);
+}
+
+/** The prompt box's rows after its mark, from `rows` (the screen's lines, or its undimmed ones), one per line. */
+function boxText(rows: readonly string[], box: { from: number; to: number }): string {
+  const out: string[] = [];
+  for (let i = box.from; i < box.to; i++) {
+    const row = (rows[i] ?? '').replace(FRAME, '');
+    out.push(i === box.from ? row.replace(/^\s*[❯>]?/, '') : row);
+  }
+  return out.join('\n');
+}
+
 /**
  * What Claude's prompt box holds as typed: its rows after the mark, dim text as spaces (a placeholder or a suggestion
  * is no text), one per line; null while a dialog shows or no box is found.
  */
 function promptText(view: ScreenView): string | null {
-  if (readDialog(view, null)) return null;
-  const box = promptBox(view.lines);
-  if (!box) return null;
-  const rows: string[] = [];
-  for (let i = box.from; i < box.to; i++) {
-    const row = (view.undimmed[i] ?? '').replace(FRAME, '');
-    rows.push(i === box.from ? row.replace(/^\s*[❯>]?/, '') : row);
-  }
-  return rows.join('\n');
+  const box = promptAt(view);
+  return box ? boxText(view.undimmed, box) : null;
+}
+
+/**
+ * The marker Claude Code (2.1.332) draws in its prompt for an image pasted there as its file's path, spaces left out:
+ * `[Image #N]`, N from its own count of the session's images.
+ */
+const IMAGE_MARK = /\[Image#\d+\]/g;
+const marksIn = (flatText: string) => flatText.match(IMAGE_MARK)?.length ?? 0;
+
+/**
+ * How many image markers Claude's prompt box holds, dim or not (whatever the style it draws them in, each is an
+ * image an Enter sends); null while a dialog shows or no box is found.
+ */
+export function promptImages(view: ScreenView): number | null {
+  const box = promptAt(view);
+  return box ? marksIn(flat(boxText(view.lines, box))) : null;
 }
 
 /**
@@ -338,18 +362,21 @@ const FOLDED_PASTE = /^\[Pastedtext#\d+(?:\+(\d+)lines)?\]$/;
 const FOLD_CHARS = 800, FOLD_BREAKS = 2;
 
 /**
- * Whether Claude's prompt box holds `text` and nothing else, as typed: spaces mean nothing (a wrap adds one or none, a
- * tab is drawn as spaces), nor do the paste's markers echoed. A text Claude Code folds may show as its stand-in
- * instead, with the count of the text's line breaks; a text it draws whole never does. False while a dialog shows or
- * no box is found: Enter sends all the box holds.
+ * Whether Claude's prompt box holds `text`, `images` images pasted before it, and nothing else, as typed: spaces mean
+ * nothing (a wrap adds one or none, a tab is drawn as spaces), nor do the paste's markers echoed. The images are their
+ * markers, exactly that many (with any the text spells itself), left out of the text compared. A text Claude Code
+ * folds may show as its stand-in instead, with the count of the text's line breaks; a text it draws whole never does.
+ * False while a dialog shows or no box is found, and for an empty box with no image: Enter sends all the box holds.
  */
-export function promptHolds(view: ScreenView, text: string): boolean {
+export function promptHolds(view: ScreenView, text: string, images = 0): boolean {
   const held = promptText(view);
-  if (held === null) return false;
-  const bare = (s: string) => flat(s).replace(ECHOED_PASTE, '');
+  const marks = images + marksIn(flat(text));
+  if (held === null || promptImages(view) !== marks) return false;
+  const bare = (s: string) => flat(s).replace(ECHOED_PASTE, '').replace(IMAGE_MARK, '');
   const want = bare(text);
   const shown = bare(held);
-  if (want !== '' && shown === want) return true;
+  // An empty box holds nothing: markers (pasted images, or a text that spells them) count as something.
+  if ((want !== '' || marks > 0) && shown === want) return true;
   const breaks = text.split('\n').length - 1;
   const folded = FOLDED_PASTE.exec(shown);
   if (!folded || (text.length <= FOLD_CHARS && breaks <= FOLD_BREAKS)) return false;

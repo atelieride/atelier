@@ -1,9 +1,9 @@
 // A phone for tests: the iPhone app's side of iPhone access, in Node, on Atelier's own Noise and wire code. It pairs
 // by code (or QR text) through a relay, connects again as a paired device, and speaks the app messages: attach,
-// type, resize, create, follow a Claude session's conversation, with each terminal's screen and each conversation
-// kept as received. PhoneChannel is the device end of one Noise channel with no transport (the channel's unit tests
-// feed it bytes directly); FakePhone runs it over the test relay with the `ws` package. Used from vitest and
-// Playwright alike (no import.meta).
+// type, resize, create, follow a Claude session's conversation, send images for a prompt or a paste, with each
+// terminal's screen and each conversation kept as received. PhoneChannel is the device end of one Noise channel with
+// no transport (the channel's unit tests feed it bytes directly); FakePhone runs it over the test relay with the `ws`
+// package. Used from vitest and Playwright alike (no import.meta).
 import WebSocket from 'ws';
 import { deriveCode, normalizeCode, parsePairUrl } from '../../src/main/remote/code';
 import { NoiseHandshake, generateKeyPair, type KeyPair, type NoiseTransport } from '../../src/main/remote/noise';
@@ -250,7 +250,17 @@ export class FakePhone {
   /** The newest page of a session's conversation (or, with `before`, the page older than that entry): `chat` or `error`. */
   follow(id: string, before?: number): Promise<Msg> { return this.request({ t: 'follow', id, ...(before !== undefined ? { before } : {}) }); }
   unfollow(id: string): void { this.send({ t: 'unfollow', id }); }
-  say(id: string, text: string): Promise<Msg> { return this.request({ t: 'say', id, text }); }
+  /** A prompt, with the images of earlier `image` answers pasted before its text when given. */
+  say(id: string, text: string, images?: string[]): Promise<Msg> { return this.request({ t: 'say', id, text, ...(images ? { images } : {}) }); }
+  /**
+   * Hands the computer an image for a terminal (its bytes, sent as base64url without padding, or `data` as it is):
+   * `ok` with its reference, or `error`.
+   */
+  image(id: string, type: string, data: Buffer | string): Promise<Msg> {
+    return this.request({ t: 'image', id, type, data: typeof data === 'string' ? data : data.toString('base64url') });
+  }
+  /** Pastes an image an `image` answer named into an attached terminal: `ok` or `error`. */
+  paste(id: string, image: string): Promise<Msg> { return this.request({ t: 'paste', id, image }); }
   stop(id: string): Promise<Msg> { return this.request({ t: 'stop', id }); }
   escape(id: string): Promise<Msg> { return this.request({ t: 'escape', id }); }
   dialog(id: string): Promise<Msg> { return this.request({ t: 'dialog', id }); }

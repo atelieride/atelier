@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
-import { chooseKeys, claudeWorking, fieldHolds, MAX_ROW, menuToClose, promptHolds, promptState, readDialog, type ScreenDialog } from './dialog';
+import { chooseKeys, claudeWorking, fieldHolds, MAX_ROW, menuToClose, promptHolds, promptImages, promptState, readDialog, type ScreenDialog } from './dialog';
 import { screenView, type ScreenView } from './prompt';
 
 const SCREENS = join(__dirname, '../../../tests/fixtures/claude-2.1.332/screens');
 /** Rows as a screen shows them, with no dim text, 120 columns wide (as the recording). */
-const view = (lines: string[]): ScreenView => ({ lines, undimmed: lines, cols: 120 });
+const view = (lines: string[]): ScreenView => ({ lines, undimmed: lines, cols: 120, bracketedPaste: true });
 /** A recorded screen from its text rows. */
 const txt = (name: string): ScreenView => view(readFileSync(join(SCREENS, `${name}.txt`), 'utf8').split('\n'));
 /** A recorded screen from its snapshot, dim text included. */
@@ -384,6 +384,66 @@ test('promptHolds: the prompt box holds the text and nothing else, wrapped anywh
   expect(promptHolds(await ans('queued'), 'Press up to edit queued messages')).toBe(false);
   expect(promptHolds(view(['⏺ fix the tests']), 'fix the tests')).toBe(false);
   expect(promptHolds(view([RULE, '❯ fix the tests', RULE, 'Do you want to proceed?', '❯ 1. Yes', '  2. No', '', 'Esc to cancel']), 'fix the tests')).toBe(false);
+});
+
+test('promptImages: the [Image #N] markers in Claude\'s prompt box, whatever their numbers, dim or not; none without a box', () => {
+  const typed = (...rows: string[]) => edited('idle', { 37: `❯ ${rows[0]}` }, { before: 38, rows: rows.slice(1).map((r) => `  ${r}`) });
+  expect(promptImages(txt('idle'))).toBe(0);
+  expect(promptImages(typed('[Image #1]'))).toBe(1);
+  expect(promptImages(typed('[Image #3][Image #4] What color is it?'))).toBe(2);
+  // Wrapped across rows; text that only looks like one (no number, a word inside).
+  expect(promptImages(typed('[Image #1][Ima', 'ge #2]'))).toBe(2);
+  expect(promptImages(typed('[Image #] [Image one]'))).toBe(0);
+  // Drawn dim, it still counts.
+  const dim = typed('[Image #1]');
+  expect(promptImages({ ...dim, undimmed: dim.undimmed.map((r) => r.replace('[Image #1]', ' '.repeat(10))) })).toBe(1);
+  // No box, or a dialog at the bottom: none to count.
+  expect(promptImages(view(['⏺ [Image #1]']))).toBeNull();
+  expect(promptImages(view([RULE, '❯ [Image #1]', RULE, 'Do you want to proceed?', '❯ 1. Yes', '  2. No', '', 'Esc to cancel']))).toBeNull();
+});
+
+test('promptHolds with images: the text after its markers, and exactly that many markers; the text check leaves them out', () => {
+  const typed = (...rows: string[]) => edited('idle', { 37: `❯ ${rows[0]}` }, { before: 38, rows: rows.slice(1).map((r) => `  ${r}`) });
+  // Pasted right after the marker (no space), or after the space the computer pasted first; two images.
+  expect(promptHolds(typed('[Image #1]What color is it?'), ' What color is it?', 1)).toBe(true);
+  expect(promptHolds(typed('[Image #1] What color is it?'), ' What color is it?', 1)).toBe(true);
+  expect(promptHolds(typed('[Image #2][Image #3] Compare th', 'em.'), ' Compare them.', 2)).toBe(true);
+  // Images alone: the markers and nothing else.
+  expect(promptHolds(typed('[Image #1]'), '', 1)).toBe(true);
+  expect(promptHolds(typed('[Image #1][Image #2]'), '', 2)).toBe(true);
+  // One marker short or one too many, its path still drawn as text, text after it, nothing at all.
+  expect(promptHolds(typed('[Image #1]'), '', 2)).toBe(false);
+  expect(promptHolds(typed('[Image #1][Image #2]'), '', 1)).toBe(false);
+  expect(promptHolds(typed('[Image #1] /tmp/atelier-clipboard/clipboard-2.png'), '', 2)).toBe(false);
+  expect(promptHolds(typed('[Image #1] a draft'), '', 1)).toBe(false);
+  expect(promptHolds(txt('idle'), '', 1)).toBe(false);
+  expect(promptHolds(txt('idle'), '', 0)).toBe(false);
+  // Without images, a marker in the prompt is more than the text: an Enter would send that image too.
+  expect(promptHolds(typed('[Image #1]fix the tests'), 'fix the tests')).toBe(false);
+  // A text that names a marker itself counts it.
+  expect(promptHolds(typed('[Image #1] see [Image #1]'), ' see [Image #1]', 1)).toBe(true);
+  // A text that is only a marker's characters, with no image: typed as text, it is that text (as before images).
+  expect(promptHolds(typed('[Image #1]'), '[Image #1]')).toBe(true);
+  expect(promptHolds(typed('[Image #1][Image #2]'), '[Image #1] [Image #2]')).toBe(true);
+  // Folded after its marker, as a long paste is.
+  expect(promptHolds(typed('[Image #1][Pasted text #2 +40 lines]'), ` ${Array.from({ length: 41 }, (_, i) => `Line ${i}`).join('\n')}`, 1)).toBe(true);
+});
+
+test('on Claude Code\'s own screens: an image\'s path pasted alone is one marker, the text pasted after it holds with it', async () => {
+  const pasted = await ans('image-pasted');
+  const text = await ans('image-text');
+  expect(promptImages(pasted)).toBe(1);
+  expect(promptImages(text)).toBe(1);
+  // The marker is text in the box (an Enter would send it), drawn in plain text, not dim.
+  expect(promptState(pasted)).toBe('typed');
+  expect(promptHolds(pasted, '', 1)).toBe(true);
+  expect(promptHolds(pasted, '', 2)).toBe(false);
+  expect(promptHolds(pasted, '')).toBe(false);
+  // The text as pasted after it (a space first), and only with its image.
+  expect(promptHolds(text, ' What color is this image?', 1)).toBe(true);
+  expect(promptHolds(text, '', 1)).toBe(false);
+  expect(promptHolds(text, ' What color is this image?')).toBe(false);
+  expect(promptHolds(text, ' What color is this?', 1)).toBe(false);
 });
 
 /** A recorded paste's text: `n` characters of one sentence again and again, a last space made a full stop. */

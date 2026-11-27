@@ -189,12 +189,14 @@ export function screenLines(snapshot: string, size: { cols: number; rows: number
   });
 }
 
-/** A screen's rows, which of their text is dim, and the terminal's width. */
+/** A screen's rows, which of their text is dim, the terminal's width, and how the program wants a paste. */
 export interface ScreenView {
   lines: string[];
   /** `lines[i]` with each dim cell's characters as spaces (same indices). */
   undimmed: string[];
   cols: number;
+  /** The program asked for bracketed paste (`CSI ? 2004 h`): a paste goes between its markers. */
+  bracketedPaste: boolean;
 }
 
 /** The width a terminal is taken to have when its size is unknown. */
@@ -223,8 +225,9 @@ export function screenView(snapshot: string, size: { cols: number; rows: number 
         }
         undimmed.push(bright.trimEnd());
       }
+      const bracketedPaste = screen.modes.bracketedPasteMode;
       screen.dispose();
-      resolve({ lines, undimmed, cols: size?.cols || DEFAULT_COLS });
+      resolve({ lines, undimmed, cols: size?.cols || DEFAULT_COLS, bracketedPaste });
     });
   });
 }
