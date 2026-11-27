@@ -104,8 +104,9 @@ export const deviceMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('escape'), rid, id: terminalId }).strict(),
   z.object({ t: z.literal('dialog'), rid, id: terminalId }).strict(),
   z.object({ t: z.literal('choose'), rid, id: terminalId, ask: dialogAsk, n: z.number().int().min(1).max(9), label: optionLabel, text: fieldText.optional() }).strict(),
-  // An image for a terminal, as base64 of its bytes: whether it is a png or a jpeg the hub can use is its own rule,
-  // answered in words (images.ts); here only its shape. Then its path typed into an attached terminal, as Paste does.
+  // An image for a terminal, its bytes in base64url without padding: whether it is a png or a jpeg the hub can use is
+  // its own rule, answered in words (images.ts); here only its shape. Then its path typed into an attached terminal,
+  // as Paste does.
   z.object({ t: z.literal('image'), rid, id: terminalId, type: z.string().max(16), data: z.string() }).strict(),
   z.object({ t: z.literal('paste'), rid, id: terminalId, image: imageRef }).strict()
 ]);

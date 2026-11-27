@@ -128,7 +128,7 @@ export class PhoneConversations {
     outbox: PromptOutbox;
     device: string;
     /** The images this phone's channel handed over, which its prompts name (and use up once sent or waiting). */
-    images: Pick<PhoneImages, 'pathsOf' | 'use'>;
+    images: Pick<PhoneImages, 'take' | 'giveBack' | 'use'>;
   }) {}
 
   /** The sessions followed now. */
@@ -189,20 +189,25 @@ export class PhoneConversations {
   /**
    * A prompt, through the outbox: answered `ok` once sent, `ok` with `queued` once it waits on this computer for
    * Claude to be idle (it goes then, the phone there or not), else why not. Its images are their files from the
-   * start: each must be one this channel handed over for this terminal and still names. Sent or waiting, they are
-   * used up; refused, they stay for a retry.
+   * start: each must be one this channel handed over for this terminal and still names, taken by this prompt while it
+   * is on its way (named again meanwhile, by a tap twice or a paste, they are busy). Sent or waiting, they are used
+   * up; refused, they are given back for a retry.
    */
   private say(m: Extract<ConversationRequest, { t: 'say' }>): void {
     const { rid, id } = m;
     if (!this.claudeSession(rid, id)) return;
-    const images = m.images ? this.o.images.pathsOf(m.images, id) : [];
+    const refs = m.images ?? [];
+    const images = refs.length > 0 ? this.o.images.take(refs, id) : [];
     if (!images) { this.error(rid, 'invalid', IMAGE_GONE); return; }
+    if (!Array.isArray(images)) { this.error(rid, images.code, images.message); return; }
     this.o.outbox.say(this.o.device, id, m.text, images).then((r) => {
-      if ((r === 'sent' || r === 'queued') && m.images) this.o.images.use(m.images);
+      if (r === 'sent' || r === 'queued') this.o.images.use(refs);
+      else this.o.images.giveBack(refs);
       if (r === 'sent') this.send({ t: 'ok', rid });
       else if (r === 'queued') this.send({ t: 'ok', rid, queued: true });
       else this.error(rid, r.code, r.message);
     }, (e: unknown) => {
+      this.o.images.giveBack(refs);
       this.o.host.log(`conversations: a prompt in terminal ${id}: ${reasonOf(e)}`);
       this.error(rid, NOT_REACHED.code, NOT_REACHED.message);
     }).catch((e: unknown) => this.o.host.log(`conversations: a prompt in terminal ${id}: ${reasonOf(e)}`));

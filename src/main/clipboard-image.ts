@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { chmodSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 // An image on the clipboard (screenshot, copy from an app) pasted into the terminal becomes a png file whose path is
 // pasted instead: Claude Code recognizes an image path and attaches it as [Image #N]. An image a paired phone sends
@@ -32,6 +32,15 @@ export function pruneClipboardImages(dir: string, now = new Date()): void {
     const p = join(dir, f);
     try { if (now.getTime() - statSync(p).mtimeMs > KEEP_MS) unlinkSync(p); } catch { /* already gone */ }
   }
+}
+
+/**
+ * Removes one image kept here that no program was ever given (a phone's image whose reference went unused): only a
+ * file named as the images kept here are.
+ */
+export function removeClipboardImage(path: string): void {
+  if (!NAME.test(basename(path))) return;
+  try { unlinkSync(path); } catch { /* already gone */ }
 }
 
 /**

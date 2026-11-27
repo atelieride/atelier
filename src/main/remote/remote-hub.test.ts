@@ -3244,6 +3244,96 @@ describe('typing into a Claude session from a phone: a prompt, an interrupt, a m
     expect(keys(t)).toEqual([PASTE('fix the tests'), '\r', PASTE(one.path), PASTE(' and this'), '\r', PASTE(two.path), PASTE(' and this'), '\r']);
     sizeKept(t);
   });
+
+  test('say: nothing more typed once Claude starts a turn by itself while the prompt types (its hooks say so, or its screen); what went stays in the prompt', async () => {
+    const STARTED = refused('busy', 'Claude started working meanwhile. Check the terminal.');
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', finished);
+    const { phone } = await paired(t);
+    const one = await sent(t, phone, 't2', png(1));
+    const two = await sent(t, phone, 't2', png(2));
+    // A turn starts once the first image went (a background task's notice): its hooks say so, while the screen still
+    // shows the marker in the prompt (text in the prompt takes the place of "esc to interrupt").
+    await shows(t, 't2', 'idle', await prompted('idle', '[Image #1]'));
+    const starts = (after: string) => { t.terms.onKey = (id, key) => { if (key === after) t.terms.list = withSession(t.terms.list, id, claude('s')); }; };
+    starts(PASTE(one.path));
+    expect(await phone.say('t2', 'and these?', [one.ref, two.ref])).toEqual(STARTED);
+    expect(keys(t)).toEqual([PASTE(one.path)]);
+    // Its screen says so: "esc to interrupt" under the box, the hooks not (yet).
+    t.terms.onKey = null;
+    t.terms.list = withSession(t.terms.list, 't2', finished);
+    t.terms.answers = [];
+    await shows(t, 't2', 'idle', await prompted('working', '[Image #1]'));
+    expect(await phone.say('t2', 'and these?', [one.ref])).toEqual(STARTED);
+    expect(keys(t)).toEqual([PASTE(one.path)]);
+    // A text alone: no Enter into the turn.
+    t.terms.answers = [];
+    await shows(t, 't2', 'idle', await prompted('idle', 'fix the tests'));
+    starts(PASTE('fix the tests'));
+    expect(await phone.say('t2', 'fix the tests')).toEqual(STARTED);
+    expect(keys(t)).toEqual([PASTE('fix the tests')]);
+    // Hooks that said Claude worked from the start (an interrupt leaves them so): the screen alone tells.
+    t.terms.onKey = null;
+    t.terms.answers = [];
+    await shows(t, 't2', 'idle', await prompted('idle', 'fix the tests'));
+    expect(await phone.say('t2', 'fix the tests')).toEqual(OK);
+    expect(keys(t)).toEqual([PASTE('fix the tests'), '\r']);
+  });
+
+  test('say with images: an image on its way (a tap twice, a prompt and a paste) is taken by one of them only; the other is told', async () => {
+    const IMAGE_BUSY = refused('busy', 'This image is on its way to the terminal already.');
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', finished);
+    const { phone } = await paired(t);
+    await phone.attach('t2');
+    const one = await sent(t, phone, 't2', png(1));
+    await shows(t, 't2', 'idle', 'idle', await prompted('idle', '[Image #1]'), await prompted('idle', '[Image #1] look'));
+    t.terms.answers = [];
+    // The first reads the screen before any key: the second, and a paste of the same image, come meanwhile.
+    const g = gate(t);
+    const first = phone.say('t2', 'look', [one.ref]);
+    await g.reading();
+    expect(await phone.say('t2', 'look', [one.ref])).toEqual(IMAGE_BUSY);
+    g.open();
+    expect(await first).toEqual(OK);
+    expect(keys(t)).toEqual([PASTE(one.path), PASTE(' look'), '\r']);
+    // A paste on its way holds it the same: a prompt naming it meanwhile is told.
+    const two = await sent(t, phone, 't2', png(2));
+    const g2 = gate(t);
+    const pasted = phone.paste('t2', two.ref);
+    await g2.reading();
+    expect(await phone.say('t2', '', [two.ref])).toEqual(IMAGE_BUSY);
+    g2.open();
+    expect(await pasted).toEqual(OK);
+    expect(t.terms.inputs.map(([, d]) => d)).toEqual([`\x1b[200~${two.path}\x1b[201~`]);
+    // One refused gives it back, for a retry.
+    const three = await sent(t, phone, 't2', png(3));
+    await shows(t, 't2', new Error('no screen'));
+    expect(await phone.paste('t2', three.ref)).toEqual(refused('failed', 'The image could not be pasted.'));
+    t.terms.views.delete('t2');
+    expect(await phone.paste('t2', three.ref)).toEqual(OK);
+  });
+
+  test('say with images while Claude works: the same image sent again (a resend whose answer was lost: a new reference, a new file) waits once; images wait 10 at most', async () => {
+    const FULL = refused('busy', 'Too much is waiting for Claude already. Send it once Claude is done.');
+    const t = conversing();
+    t.terms.list = withSession(t.terms.list, 't2', claude('s'));
+    await shows(t, 't2', 'working');
+    const { phone } = await paired(t);
+    const rowOf = (s: Msg) => (s.sessions as Msg[]).find((x) => x.id === 't2');
+    const first = await sent(t, phone, 't2', png(1));
+    expect(await phone.say('t2', 'and this', [first.ref])).toEqual(QUEUED);
+    const again = (await phone.image('t2', 'png', png(1))).image as string;
+    expect(await phone.say('t2', 'and this', [again])).toEqual(QUEUED);
+    expect(rowOf(await phone.state((s) => rowOf(s)?.queued === 1))?.queued).toBe(1);
+    // Up to 10 images waiting: one more is refused, and stays for later.
+    const five = async (from: number) => { const refs: string[] = []; for (let n = from; n < from + 5; n++) refs.push((await sent(t, phone, 't2', png(n))).ref); return refs; };
+    expect(await phone.say('t2', '', await five(10))).toEqual(QUEUED);
+    const more = await five(20);
+    expect(await phone.say('t2', '', [more[0]!, more[1]!, more[2]!, more[3]!])).toEqual(QUEUED);
+    expect(await phone.say('t2', 'too many', [more[4]!])).toEqual(FULL);
+    expect(rowOf(await phone.state((s) => rowOf(s)?.queued === 3))?.queued).toBe(3);
+  });
 });
 
 describe('images from a phone', () => {

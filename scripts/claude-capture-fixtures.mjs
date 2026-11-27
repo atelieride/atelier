@@ -8,8 +8,9 @@
 // `session/transcript.jsonl`. A scenario recorded in a folder of its own, where nothing was sent (so no transcript
 // names it), names that folder in its `project.txt`; a session recorded on its own keeps its transcript in its
 // scenario folder (TRANSCRIPTS). With screen names, only those screens are written: a recording of just their
-// scenarios, each naming its folder in `project.txt`, adds them to the fixtures already there. Nothing here names a person, account or folder of the machine
-// that made the recording: the rewrites are generic patterns, and `check` refuses what is left.
+// scenarios, each naming its folder in `project.txt`, adds them to the fixtures already there. Nothing here names a
+// person, account or folder of the machine that made the recording: the rewrites are generic patterns, and `check`
+// refuses what is left.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

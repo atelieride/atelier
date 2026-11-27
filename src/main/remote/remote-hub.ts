@@ -35,7 +35,7 @@ import { PushStore } from './push-store';
 import { THEME_BLOCKS } from '../theme-chrome';
 import { pruneClipboardImages } from '../clipboard-image';
 import { lookKey, remoteLook } from './look';
-import { CLOSE, placeNameProblem, type ByeReason, type DeviceMessage, type HostMessage, type RemoteAccount, type RemoteFeatures, type RemoteLook } from './messages';
+import { CLOSE, placeNameProblem, type ByeReason, type DeviceMessage, type ErrorCode, type HostMessage, type RemoteAccount, type RemoteFeatures, type RemoteLook } from './messages';
 import { Pairing } from './pairing';
 import { RelayLink, type RelayLinkOptions } from './relay-link';
 import { AnswerBook } from './answers';
@@ -320,17 +320,20 @@ class PhoneSession implements RemoteViewer {
 
   /**
    * An image's path into an attached terminal, as Atelier's own Paste of an image: bracketed when the program asked
-   * for bracketed paste (read from the screen), typed as the phone's input is (it takes the terminal's size). Typed,
-   * the reference is used up; refused, it stays.
+   * for bracketed paste (read from the screen), typed as the phone's input is (it takes the terminal's size). The
+   * reference is taken while the paste is on its way (a prompt naming it meanwhile is told it is busy): typed, it is
+   * used up; refused, it is given back.
    */
   private async paste(m: Extract<DeviceMessage, { t: 'paste' }>): Promise<void> {
     if (!this.watching(m.id)) { this.error(m.rid, 'invalid', NOT_OPEN); return; }
-    const path = this.images.pathOf(m.image, m.id);
-    if (!path) { this.error(m.rid, 'invalid', IMAGE_GONE); return; }
+    const taken = this.images.take([m.image], m.id);
+    if (!taken) { this.error(m.rid, 'invalid', IMAGE_GONE); return; }
+    if (!Array.isArray(taken)) { this.error(m.rid, taken.code, taken.message); return; }
+    const refused = (code: ErrorCode, message: string) => { this.images.giveBack([m.image]); this.error(m.rid, code, message); };
     let view: ScreenView;
-    try { view = await this.terms.screenView(m.id); } catch { this.error(m.rid, 'failed', 'The image could not be pasted.'); return; }
+    try { view = await this.terms.screenView(m.id); } catch { refused('failed', 'The image could not be pasted.'); return; }
     if (this.disposed) return;
-    if (!this.terms.remoteInput(this.key, m.id, imagePaste(path, view.bracketedPaste))) { this.error(m.rid, 'invalid', NOT_OPEN); return; }
+    if (!this.terms.remoteInput(this.key, m.id, imagePaste(taken[0]!.path, view.bracketedPaste))) { refused('invalid', NOT_OPEN); return; }
     this.images.use([m.image]);
     this.send({ t: 'ok', rid: m.rid });
   }

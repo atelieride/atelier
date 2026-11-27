@@ -42,7 +42,7 @@ function setup(opts: { chatMs?: number } = {}) {
   const c = new PhoneConversations({
     send: (m) => { if (o.refuse && m.t === 'chat') throw new Error('message too large'); sent.push(m); },
     host, terms: {} as RemoteTerminals, book, timing: { chatMs: opts.chatMs ?? 0, keyMs: 0, enterMs: 0, enterCapMs: 0, imageCapMs: 0, typingCapMs: 0 },
-    outbox: {} as PromptOutbox, device: 'phone', images: { pathsOf: () => null, use: () => {} }
+    outbox: {} as PromptOutbox, device: 'phone', images: { take: () => null, giveBack: () => {}, use: () => {} }
   });
   return { c, sent, reads, changes, log, o, statusChanged, setList: (l: TerminalInfo[]) => { list = l; c.terminalsChanged(l); } };
 }

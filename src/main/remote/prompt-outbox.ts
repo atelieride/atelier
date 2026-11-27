@@ -16,6 +16,7 @@ import { isClaudeProcess } from '@shared/shells';
 import type { ConversationHost, ConversationTiming } from './conversation-requests';
 import { claudeWorking, promptHolds, promptState, readDialog } from './dialog';
 import { MAX_SAY_BYTES, type ErrorCode } from './messages';
+import type { PhoneImage } from './images';
 import type { ScreenView } from './prompt';
 import type { RemoteTerminals } from './remote-hub';
 import { waitOf } from './rows';
@@ -33,11 +34,18 @@ export const NOT_REACHED: Refusal = { code: 'failed', message: 'The text didn\'t
 /** An image's path pasted that never showed as its marker (Claude Code couldn't read it, or took too long). */
 const IMAGE_NOT_REACHED: Refusal = { code: 'failed', message: 'The image didn\'t reach Claude\'s prompt.' };
 const MEANWHILE: Refusal = { code: 'busy', message: 'Claude asked something meanwhile. Check the terminal.' };
+/**
+ * A turn Claude started by itself while a prompt was being typed (a background task's notice, a scheduled prompt):
+ * nothing more goes, what went stays in the prompt.
+ */
+const STARTED: Refusal = { code: 'busy', message: 'Claude started working meanwhile. Check the terminal.' };
 /** Claude working on screen: the prompt waits for the turn's end. Never sent to a phone. */
 const WORKING: Refusal = { code: 'busy', message: 'Claude is working.' };
 /** A text typed on the computer, or no prompt on screen: the computer keeps the prompt out. */
 const HELD = new Set([TYPED, NO_PROMPT]);
 const FULL: Refusal = { code: 'busy', message: 'Too much is waiting for Claude already. Send it once Claude is done.' };
+/** Images waiting for one session at most, in all its prompts: each holds the terminal for its paste. */
+export const MAX_WAITING_IMAGES = 10;
 /** Between two prompts that go together. */
 const SEPARATOR = '\n\n';
 /** Control characters but newline and tab: a prompt types none of them. */
@@ -99,10 +107,10 @@ export interface OutboxTiming {
 export type Said = 'sent' | 'queued' | Refusal;
 
 /**
- * A prompt waiting for an idle Claude (its text, and the paths of the images pasted before it), and the phone that
- * sent it; `dropped` once it may go no more.
+ * A prompt waiting for an idle Claude (its text, and the images pasted before it), and the phone that sent it;
+ * `dropped` once it may go no more.
  */
-interface Waiting { device: string; text: string; images: readonly string[]; dropped?: true }
+interface Waiting { device: string; text: string; images: readonly PhoneImage[]; dropped?: true }
 
 /** The prompts waiting for one session, oldest first. */
 interface Queue {
@@ -165,7 +173,7 @@ export class PromptOutbox {
    * answer is on its way into the terminal, or after prompts already waiting there; else refused as typing it found
    * the session.
    */
-  async say(device: string, id: string, text: string, images: readonly string[] = []): Promise<Said> {
+  async say(device: string, id: string, text: string, images: readonly PhoneImage[] = []): Promise<Said> {
     const body = text.replace(CONTROL, '');
     if (this.disposed || (!body.trim() && images.length === 0)) return NOT_REACHED;
     // After the prompts already waiting, in order.
@@ -227,19 +235,22 @@ export class PromptOutbox {
     for (const [id, q] of [...this.queues]) this.end(id, q, null);
   }
 
-  private enqueue(device: string, id: string, text: string, images: readonly string[], first: boolean): Said {
+  private enqueue(device: string, id: string, text: string, images: readonly PhoneImage[], first: boolean): Said {
     if (this.disposed) return NOT_REACHED;
     const t = this.o.host.terminal(id);
     const q = this.queues.get(id) ?? {
       items: [], session: t?.session?.sessionId ?? null, timer: null, due: 0, gap: this.o.outbox.retryMs, busy: false, seen: doing(t), heldSince: null
     };
     // The same text and images from the same phone, sent again (a tap twice, a resend with no answer): it waits once.
-    const same = (p: Waiting) => p.device === device && p.text === text && p.images.join('\n') === images.join('\n') && !p.dropped;
+    // An image sent again is a new file under a new reference: the same image by its bytes' digest.
+    const sums = (list: readonly PhoneImage[]) => list.map((i) => i.sum).join(' ');
+    const same = (p: Waiting) => p.device === device && p.text === text && sums(p.images) === sums(images) && !p.dropped;
     if (first) q.items = q.items.filter((p) => !same(p));
     else if (q.items.some(same)) return 'queued';
-    // What waits goes in prompts within the size one may take.
+    // What waits goes in prompts within the size one may take, and pastes MAX_WAITING_IMAGES images at most.
     const size = q.items.reduce((n, p) => n + bytes(p.text) + bytes(SEPARATOR), bytes(text));
     if (size > MAX_SAY_BYTES) return FULL;
+    if (images.length > 0 && q.items.reduce((n, p) => n + p.images.length, images.length) > MAX_WAITING_IMAGES) return FULL;
     if (first) q.items.unshift({ device, text, images });
     else q.items.push({ device, text, images });
     this.queues.set(id, q);
@@ -378,26 +389,27 @@ export class PromptOutbox {
    * when images came first, which Claude Code puts right after the last marker), and Enter once a read shows the
    * prompt holding the images and that text and nothing else. A marker waits imageCapMs at most, the text enterCapMs,
    * all of it typingCapMs (the terminal is held all that time). Nothing more is typed once the session waits or a
-   * dialog shows (what was typed stays in the prompt), a window types, the session is gone or `off()` says the prompt
-   * goes no more, or the prompt never shows what was pasted.
+   * dialog shows, Claude starts a turn by itself (what was typed stays in the prompt), a window types, the session is
+   * gone or `off()` says the prompt goes no more, or the prompt never shows what was pasted.
    */
-  private async typePrompt(id: string, text: string, images: readonly string[], type: (key: string) => void, off: () => boolean): Promise<Refusal | null> {
+  private async typePrompt(id: string, text: string, images: readonly PhoneImage[], type: (key: string) => void, off: () => boolean): Promise<Refusal | null> {
     const started = Date.now();
     const not = await this.look(id, started, off);
     if (not) return not;
+    const from = { started, doing: doing(this.o.host.terminal(id)) };
     const clock = this.o.timing.now ?? Date.now;
     const by = clock() + this.o.timing.typingCapMs;
     for (let i = 0; i < images.length; i++) {
-      type(promptPaste(images[i]!).join(''));
+      type(promptPaste(images[i]!.path).join(''));
       const n = i + 1;
-      const r = await this.shows(id, started, off, (v) => promptHolds(v, '', n), { capMs: this.o.timing.imageCapMs, by, late: IMAGE_NOT_REACHED });
+      const r = await this.shows(id, from, off, (v) => promptHolds(v, '', n), { capMs: this.o.timing.imageCapMs, by, late: IMAGE_NOT_REACHED });
       if (r) return r;
     }
     if (text !== '') {
       const pasted = images.length > 0 ? ` ${text}` : text;
       // One input: within the 16 KiB a prompt may take, the paste needs no chunks.
       type(promptPaste(pasted).join(''));
-      const r = await this.shows(id, started, off, (v) => promptHolds(v, pasted, images.length), { capMs: this.o.timing.enterCapMs, by, late: NOT_REACHED });
+      const r = await this.shows(id, from, off, (v) => promptHolds(v, pasted, images.length), { capMs: this.o.timing.enterCapMs, by, late: NOT_REACHED });
       if (r) return r;
     }
     type('\r');
@@ -405,11 +417,15 @@ export class PromptOutbox {
   }
 
   /**
-   * After a paste into terminal `id`'s prompt: reads its screen until `holds` says the prompt shows what was pasted
-   * (null), for `capMs` after the paste and until `by` at most (then `late`); else why nothing more may be typed (see
-   * typePrompt).
+   * After a paste into terminal `id`'s prompt, typed since `from.started` with the session's hooks saying `from.doing`:
+   * reads its screen until `holds` says the prompt shows what was pasted (null), for `capMs` after the paste and until
+   * `by` at most (then `late`); else why nothing more may be typed (see typePrompt). A turn Claude started meanwhile
+   * shows on screen as "esc to interrupt" only while its prompt is empty (text there takes the hint's place), so its
+   * hooks tell too: running now, not when the typing began (an interrupt leaves them running, then the screen alone
+   * tells).
    */
-  private async shows(id: string, started: number, off: () => boolean, holds: (view: ScreenView) => boolean, wait: { capMs: number; by: number; late: Refusal }): Promise<Refusal | null> {
+  private async shows(id: string, from: { started: number; doing: string }, off: () => boolean, holds: (view: ScreenView) => boolean, wait: { capMs: number; by: number; late: Refusal }): Promise<Refusal | null> {
+    const { started } = from;
     const clock = this.o.timing.now ?? Date.now;
     const pasted = clock();
     const until = Math.min(pasted + wait.capMs, wait.by);
@@ -420,6 +436,7 @@ export class PromptOutbox {
       if ('code' in t) return t;
       if (this.disposed || off()) return NOT_REACHED;
       if (waits(this.o.host, t) || readDialog(shown, null)) return MEANWHILE;
+      if (claudeWorking(shown) || (from.doing !== 'running' && doing(t) === 'running')) return STARTED;
       // What a window typed may be in the prompt with the text: Enter would send it too.
       if (this.o.terms.lastWindowInput(id) >= started) return TYPED;
       if (holds(shown)) return null;

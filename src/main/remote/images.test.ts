@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +10,8 @@ const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46]);
 const b64 = (b: Buffer) => b.toString('base64url');
 const UNUSABLE = { code: 'invalid', message: 'This image can\'t be used.' };
+const IMAGE_BUSY = { code: 'busy', message: 'This image is on its way to the terminal already.' };
+const sumOf = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 
 test('imageOf: a png or a jpeg whose bytes start with its own signature, 1 byte to 2 MiB once decoded', () => {
   expect(imageOf('png', b64(PNG))).toEqual({ bytes: PNG, ext: 'png' });
@@ -69,8 +72,10 @@ test('keep: a private file in the folder (png or jpg), and an opaque reference t
   // Another terminal's, a reference never given, every reference of a list or none.
   expect(s.images.pathOf(a.ref, 't2')).toBeNull();
   expect(s.images.pathOf('x'.repeat(22), 't1')).toBeNull();
-  expect(s.images.pathsOf([b.ref, a.ref], 't1')).toEqual([s.images.pathOf(b.ref, 't1'), pa]);
-  expect(s.images.pathsOf([a.ref, 'nope'], 't1')).toBeNull();
+  expect(s.images.take([b.ref, a.ref], 't1')).toEqual([{ path: s.images.pathOf(b.ref, 't1'), sum: sumOf(JPEG) }, { path: pa, sum: sumOf(PNG) }]);
+  s.images.giveBack([b.ref, a.ref]);
+  expect(s.images.take([a.ref, 'nope'], 't1')).toBeNull();
+  expect(s.images.take([a.ref], 't2')).toBeNull();
   // An image that can't be used is never kept.
   expect(s.images.keep('t1', 'png', b64(JPEG))).toEqual(UNUSABLE);
   expect(readdirSync(s.dir)).toHaveLength(2);
@@ -99,11 +104,63 @@ test('use: references used up name nothing any more; the others stay', () => {
   const [a, b, c] = [0, 1, 2].map(() => { const r = s.images.keep('t1', 'png', b64(PNG)); if ('code' in r) throw new Error('refused'); return r.ref; });
   s.images.use([a!, b!]);
   expect(s.images.pathOf(a!, 't1')).toBeNull();
-  expect(s.images.pathsOf([b!], 't1')).toBeNull();
+  expect(s.images.take([b!], 't1')).toBeNull();
   expect(s.images.pathOf(c!, 't1')).not.toBeNull();
   // Used up again, or never given: nothing happens.
   s.images.use([a!, 'nope']);
   expect(s.images.pathOf(c!, 't1')).not.toBeNull();
+});
+
+test('take: references taken for a prompt or a paste are out of reach of any other until given back (refused) or used up', () => {
+  const s = store();
+  const [a, b] = [1, 2].map((n) => { const r = s.images.keep('t1', 'png', b64(Buffer.concat([PNG, Buffer.from([n])]))); if ('code' in r) throw new Error('refused'); return r.ref; });
+  expect(s.images.take([a!], 't1')).toHaveLength(1);
+  // A tap twice, or the same image in a prompt and a paste: one of them is on its way already.
+  expect(s.images.take([a!], 't1')).toEqual(IMAGE_BUSY);
+  expect(s.images.take([b!, a!], 't1')).toEqual(IMAGE_BUSY);
+  // Nothing was taken by a refusal: b is free.
+  expect(s.images.take([b!], 't1')).toHaveLength(1);
+  // Given back (the prompt refused), each names its image again; used up, it names nothing.
+  s.images.giveBack([a!]);
+  s.images.use([b!]);
+  expect(s.images.take([a!], 't1')).toHaveLength(1);
+  expect(s.images.take([b!], 't1')).toBeNull();
+});
+
+test('sum: the same bytes sent again have the same digest, other bytes another', () => {
+  const s = store();
+  const refs = [PNG, PNG, JPEG].map((bytes) => { const r = s.images.keep('t1', bytes === JPEG ? 'jpeg' : 'png', b64(bytes)); if ('code' in r) throw new Error('refused'); return r.ref; });
+  const [a, b, c] = s.images.take(refs, 't1') as { path: string; sum: string }[];
+  expect(a!.path).not.toBe(b!.path);
+  expect(a!.sum).toBe(b!.sum);
+  expect(c!.sum).not.toBe(a!.sum);
+});
+
+test('the file of a reference never used goes with it: dropped for a newer one, run out, or with the channel; taken or used, it stays', () => {
+  const s = store();
+  const ref = (n: number) => { const r = s.images.keep('t1', 'png', b64(Buffer.concat([PNG, Buffer.from([n])]))); if ('code' in r) throw new Error('refused'); return r.ref; };
+  const fileOf = (n: number) => readdirSync(s.dir).map((f) => join(s.dir, f)).find((p) => readFileSync(p).equals(Buffer.concat([PNG, Buffer.from([n])])));
+  const taken = ref(0);
+  const used = ref(1);
+  s.images.take([taken], 't1');
+  s.images.take([used], 't1');
+  s.images.use([used]);
+  for (let n = 2; n < 2 + MAX_HELD_IMAGES; n++) { ref(n); s.later(1000); }
+  // The oldest one never used made room: 2's file went; the taken one stayed, held past the limit while on its way.
+  expect(fileOf(2)).toBeUndefined();
+  expect(fileOf(0)).toBeDefined();
+  expect(fileOf(1)).toBeDefined();
+  expect(fileOf(3)).toBeDefined();
+  // Run out: their files go, the taken one's stays.
+  s.later(IMAGE_TTL_MS);
+  ref(20);
+  expect(fileOf(3)).toBeUndefined();
+  expect(fileOf(0)).toBeDefined();
+  // The channel ended: the files of the references never used go with them.
+  s.images.clear();
+  expect(fileOf(20)).toBeUndefined();
+  expect(fileOf(0)).toBeDefined();
+  expect(fileOf(1)).toBeDefined();
 });
 
 test('a folder that can\'t be written: failed, no reference', () => {
