@@ -1505,6 +1505,11 @@ if (!app.requestSingleInstanceLock()) {
       // What a phone does to a project's workspaces and activities: applied in its main window.
       places: (root, op) => places.apply(root, op),
       windows: { open: (root) => phoneWindows.open(root), close: (root, sessions) => phoneWindows.close(root, sessions) },
+      // What fills a session's context, for a phone: the same private copy Context Usage analyses, in its own project.
+      context: (id, onProgress) => {
+        const t = hub.allTerminals().find((x) => x.id === id);
+        return t ? contextUsage.analyze(t.projectRoot, id, onProgress) : Promise.resolve({ ok: false, kind: 'no-session', message: 'gone' });
+      },
       // Away from this computer: idle for 2 minutes, or its screen locked (tests: ATELIER_TEST_REMOTE_AWAY 1 or 0).
       away: () => {
         const test = devEnv('ATELIER_TEST_REMOTE_AWAY');
