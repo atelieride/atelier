@@ -317,7 +317,8 @@ class PhoneSession implements RemoteViewer {
         if (!this.host.listed(m.id)) { this.error(m.rid, 'not-found', 'This terminal is not on this computer any more.'); return; }
         this.lastSize = { cols: m.cols, rows: m.rows };
         this.waiting.set(m.id, [...(this.waiting.get(m.id) ?? []), m.rid]);
-        // Fitted to a Claude session a window has open, the phone leaves it its size: it takes it once it types.
+        // Fitted to a Claude session a window has open, the phone leaves it the window's size and takes it once it
+        // types. A size Atelier doesn't know can't be kept: TerminalHub.remoteAttach gives the phone its own then.
         const keep = m.fit === true && this.host.claude(m.id) && this.terms.windowShows(m.id);
         this.terms.remoteAttach(this.key, m.id, m.cols, m.rows, !keep).catch(() => {
           const rids = this.waiting.get(m.id) ?? [];

@@ -338,7 +338,8 @@ export class TerminalHub {
           void this.attachFor(w, wcId, id).catch(() => {});
         }
       }
-      // A phone too, with a new screen; its size only if it owned it (a reconnection is nobody taking the size).
+      // A phone too, with a new screen. A reconnection is nobody taking the size: the phone keeps it if it owned it, and
+      // leaves it otherwise, unless no view's size is known any more (remoteAttach then gives the terminal the phone's).
       for (const [key, v] of this.remotes) {
         for (const id of this.attachments.terminalsOf(key)) {
           const size = this.sizes.asked(key, id);
@@ -1024,16 +1025,19 @@ export class TerminalHub {
   private readonly detachAfter = new Set<string>();
 
   /**
-   * The viewer starts watching a listed terminal at its size (taking the size unless `take` is false): the terminal is
-   * resized first, then atelierd sends its screen (the viewer's snapshot), then output. Resolves once the screen is in.
-   * A terminal already watched is asked again: atelierd keeps one listener per terminal, and the stream the windows get
-   * goes on without a gap.
+   * The viewer starts watching a listed terminal at its size (taking the size unless `take` is false and the size the
+   * terminal has is known here): the terminal is resized first, then atelierd sends its screen (the viewer's snapshot),
+   * then output. Resolves once the screen is in. A terminal already watched is asked again: atelierd keeps one listener
+   * per terminal, and the stream the windows get goes on without a gap.
    */
   remoteAttach(key: number, id: string, cols: number, rows: number, take = true): Promise<void> {
     if (!this.remotes.has(key)) return Promise.reject(new Error('viewer gone'));
     if (!this.terminals.some((t) => t.id === id)) return Promise.reject(new Error('no such terminal'));
     this.detachAfter.delete(`${key} ${id}`);
-    this.applySize(id, this.sizes.ask(key, id, { cols, rows }, take), key);
+    // The viewer draws the screen at the size its snapshot names. A size no view gave since Atelier started (a tab never
+    // shown) or since atelierd came back can't be named: the viewer takes the size then, as when no window shows it.
+    const keep = !take && this.sizeOf(id) !== null;
+    this.applySize(id, this.sizes.ask(key, id, { cols, rows }, !keep), key);
     this.attachments.begin(key, id);
     return new Promise<void>((resolve, reject) => {
       let done = false;

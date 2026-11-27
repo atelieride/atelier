@@ -872,8 +872,11 @@ describe('the artifacts a session published', () => {
 describe('remote viewers (a paired phone): watched like a window, with one size per terminal', () => {
   beforeEach(() => { fake.windows.clear(); });
 
-  /** A hub with one window attached to terminal 'a' at 120×40, and a phone viewer recording what it gets. */
-  async function withWindow(o: { windowAttached?: boolean } = {}) {
+  /**
+   * A hub with one window attached to terminal 'a' at 120×40, and a phone viewer recording what it gets. `windowSized:
+   * false`: the window attached it without ever giving it its size (a tab not shown since Atelier started).
+   */
+  async function withWindow(o: { windowAttached?: boolean; windowSized?: boolean } = {}) {
     const { hub, register, client } = setup();
     const { ipcMain } = await import('electron');
     vi.mocked(ipcMain.handle).mockClear(); vi.mocked(ipcMain.on).mockClear();
@@ -893,7 +896,7 @@ describe('remote viewers (a paired phone): watched like a window, with one size 
       await Promise.resolve();
       client.emit('snapshot', 'a', 'win screen');
       await p;
-      winResize(120, 40);
+      if (o.windowSized !== false) winResize(120, 40);
     }
     const got: unknown[][] = [];
     const key = hub.addRemoteViewer({
@@ -1039,6 +1042,20 @@ describe('remote viewers (a paired phone): watched like a window, with one size 
     expect(t.hub.remoteInput(t.key, 'a', 'x')).toBe(true);
     expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 60, rows: 30 }, { t: 'input', id: 'a', data: 'x' }]);
     expect(t.hub.remoteSized()).toEqual([{ id: 'a', cols: 60, rows: 30 }]);
+  });
+
+  test('an attach that leaves the size, to a terminal whose size Atelier doesn\'t know (a tab not shown since it started): the phone takes it, so its screen comes at the size the terminal has', async () => {
+    const t = await withWindow({ windowSized: false });
+    await t.phoneAttach('a', 60, 30, false);
+    // A screen with no size would be drawn at the phone's own: the program's output, written at the terminal's real
+    // width, then lands in a narrower one. The terminal gets the phone's size instead.
+    expect(t.sent()).toEqual([{ t: 'resize', id: 'a', cols: 60, rows: 30 }]);
+    expect(t.got.at(-1)).toEqual(['snapshot', 'a', 'screen of a', { cols: 60, rows: 30 }]);
+    expect(t.hub.remoteSized()).toEqual([{ id: 'a', cols: 60, rows: 30 }]);
+    // Shown, the window gives it its size again, and the phone is told.
+    t.winResize(120, 40);
+    expect(t.got.at(-1)).toEqual(['size', 'a', 120, 40]);
+    expect(t.hub.remoteSized()).toEqual([]);
   });
 
   test('the last viewer: a phone alone detaches atelierd when it leaves; a window leaving while the phone watches does not', async () => {

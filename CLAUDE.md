@@ -194,6 +194,10 @@ tile + white Λ).
 - A view that draws a terminal at a size other than its program's breaks the shell's redraws (zsh moves up by the
   rows its prompt took at the program's width) and wipes output: while a phone owns a terminal's size, the window
   draws it at the phone's size.
+- TerminalHub knows a terminal's size only once a view gave it one in this run (`sizeOf`): a tab not shown since
+  Atelier started, or any terminal after atelierd reconnected with no owner, has none. A phone's fitted attach then
+  takes the size, so its snapshot names the size the screen was drawn at. A phone's `input` takes the size only when
+  it types something (`typesSomething`): the phone sends `resize` before its other keys.
 - Claude Code's selection lists take a digit as the choice: answering from the phone presses the digit of the option
   labelled "Yes", read from the screen, never Enter (a moved cursor would pick another row). Enter goes only into a
   field a fresh read shows holding exactly the phone's text, and after a phone's prompt only while Claude is idle (one
