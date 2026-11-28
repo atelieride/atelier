@@ -3,18 +3,18 @@
 // remote hub feeds it the terminals, the open windows, the recent projects, the settings and what the other hubs know
 // (ports, pull requests), and sends the result whenever it changes.
 import { createHash } from 'node:crypto';
-import { effectiveState, workCounts, type BackgroundWork } from '@shared/background';
+import { effectiveState, workCounts, type BackgroundWork, type InspectorEntry } from '@shared/background';
 import { accountOf, accountsFor, type ClaudeAccounts } from '@shared/claude-accounts';
 import type { PortInfo } from '@shared/ports';
 import type { PrEntry } from '@shared/pr';
 import { projectColorOf, type ProjectColors } from '@shared/project-color';
 import type { Resumable, TerminalInfo } from '@shared/protocol';
-import type { UsageEntry, UsageWindow } from '@shared/session';
-import { isLimitPaused, modeBadge, waitKind } from '@shared/session-view';
+import type { SessionInfo, UsageEntry, UsageWindow } from '@shared/session';
+import { isLimitPaused, isWaiting, modeBadge, waitKind } from '@shared/session-view';
 import { selfPacedLoop } from '@shared/loop';
 import { isShell } from '@shared/shells';
 import { isBelow, samePath } from '@shared/paths';
-import type { RemoteAccount, RemoteFeatures, RemoteProject, RemoteResumable, RemoteSession } from './messages';
+import type { RemoteAccount, RemoteBackground, RemoteFeatures, RemoteProject, RemoteResumable, RemoteSession } from './messages';
 import { WaitBook, detailOf, permissionOf, sectionOf } from './rows';
 
 /** b64url(SHA-256(root)), its first 16 characters: stable for a project, and nothing of its path. */
@@ -127,6 +127,67 @@ function wakeOf(w: BackgroundWork | undefined): { scheduled?: number; wakeAt?: n
   return { scheduled: crons.length, ...(!fired && timed.length > 0 ? { wakeAt: Math.min(...timed) } : {}) };
 }
 
+/** At most this many items and wake-ups per session reach the phone, and labels and commands this long. */
+const MAX_ITEMS = 20, MAX_WAKES = 10, LABEL_CHARS = 120, COMMAND_CHARS = 200;
+const graphemes = new Intl.Segmenter('en', { granularity: 'grapheme' });
+/**
+ * Cut at `max` code points, the last one an ellipsis: whole characters only (an emoji made of several code points is
+ * kept whole or left out), no space before the ellipsis.
+ */
+const clipText = (s: string, max: number) => {
+  if (Array.from(s).length <= max) return s;
+  let out = '', n = 0;
+  for (const { segment } of graphemes.segment(s)) {
+    const size = Array.from(segment).length;
+    if (n + size > max - 1) break;
+    out += segment;
+    n += size;
+  }
+  return `${out.trimEnd()}…`;
+};
+/** A subagent the count knows beyond its items (`backgroundWork`): its `since` is the session's last update. */
+const countedOnly = (id: string) => /^subagent-\d+$/.test(id);
+
+/**
+ * The session's background one item at a time, in the desktop popover's order: each agent followed by the items it
+ * launched, then shells, monitors and other tasks. Never an agent's last event: it changes with each of its tool calls,
+ * and every change would send the phone a new state.
+ */
+function backgroundOf(w: BackgroundWork | undefined, s: SessionInfo): RemoteBackground | null {
+  const entries = w?.entries ?? [];
+  const crons = w?.crons ?? [];
+  if (entries.length === 0 && crons.length === 0) return null;
+  const agents = new Set(entries.filter((e) => e.kind === 'agent').map((e) => e.id));
+  const nested = (e: InspectorEntry) => e.kind !== 'agent' && !!e.owner && agents.has(e.owner);
+  const item = (e: InspectorEntry, under: boolean): RemoteBackground['items'][number] => ({
+    kind: e.kind,
+    label: clipText(e.label, LABEL_CHARS),
+    // A shell with no description of its own is labelled by its command: no second copy of it.
+    ...(e.display && e.display !== e.label ? { command: clipText(e.display, COMMAND_CHARS) } : {}),
+    ...(countedOnly(e.id) ? {} : { since: e.since }),
+    state: e.server ? 'server' : e.counted ? 'running' : e.watcher ? 'watcher' : 'idle',
+    ...(e.server ? { ports: e.server.ports } : {}),
+    ...(under ? { nested: true as const } : {}),
+    ...(e.waiting ? { waiting: true as const } : {})
+  });
+  const items = [
+    ...entries.filter((e) => e.kind === 'agent').flatMap((a) => [item(a, false), ...entries.filter((e) => nested(e) && e.owner === a.id).map((e) => item(e, true))]),
+    ...(['shell', 'monitor', 'other'] as const).flatMap((kind) => entries.filter((e) => e.kind === kind && !nested(e)).map((e) => item(e, false)))
+  ];
+  // A loop's fired wake-up is being checked while Claude itself works or waits on the person (as the desktop's
+  // popover says): the session's own state, not the one background work turns to running.
+  const checking = s.state === 'running' || isWaiting(s);
+  const wakes = crons.map((c) => {
+    const loop = selfPacedLoop(c.label, c.recurring);
+    const label = loop ? (loop.autonomous ? 'Autonomous loop' : loop.task) : c.label;
+    return {
+      label: clipText(label, LABEL_CHARS), ...(loop ? { loop: true as const } : {}), ...(c.recurring ? { recurring: true as const } : {}), next: c.next,
+      ...(loop && c.next === null && checking ? { checking: true as const } : {})
+    };
+  });
+  return { items: items.slice(0, MAX_ITEMS), wakes: wakes.slice(0, MAX_WAKES) };
+}
+
 /** A profile's label without the folder that tells two shells of one name apart ("bash (/opt/homebrew/bin)"): no paths. */
 function profileName(label: string): string {
   return label.replace(/\s*\([^)]*[/\\][^)]*\)\s*$/, '');
@@ -182,6 +243,7 @@ export function remoteState(i: StateInput): RemoteState {
     const folder = worktree ?? plainFolder;
     const work = s ? workOf(t.work) : null;
     const wake = s ? wakeOf(t.work) : {};
+    const background = s ? backgroundOf(t.work, s) : null;
     const label = i.profileOf?.(t);
     const profile = label ? profileName(label) : null;
     const command = !s && !starting ? commandOf(t) : null;
@@ -210,6 +272,7 @@ export function remoteState(i: StateInput): RemoteState {
       ...(t.work ? (work?.agents ? { agents: work.agents } : {}) : s?.subagents ? { agents: s.subagents } : {}),
       ...(work ? { work } : {}),
       ...wake,
+      ...(background ? { background } : {}),
       ...(profile ? { profile: clip(profile, 40) } : {}),
       ...(account ? { account } : {}),
       ...(folder ? { folder } : {}),

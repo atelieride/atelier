@@ -166,6 +166,8 @@ export interface RemoteSession {
   scheduled?: number;
   /** The soonest wake-up that has a time (ms); absent when none has one, or while a self-paced loop's has fired. */
   wakeAt?: number;
+  /** What runs in the background and the wake-ups, one by one, as the desktop's Background popover lists them. */
+  background?: RemoteBackground;
   /** The terminal profile's label when not the default one (≤ 40 characters), never a folder. */
   profile?: string;
   /** An account's id (as `usage` lists it), only when not the default one. */
@@ -181,6 +183,31 @@ export interface RemoteSession {
   ports?: { port: number; name?: string }[];
   pr?: { number: number; title: string; state: 'open' | 'draft' | 'merged' | 'closed'; checks?: 'pass' | 'fail' | 'pending' };
   cost?: { usd: number; added: number; removed: number };
+}
+/**
+ * A session's background, item by item: agents (each followed by what it launched, `nested`), then shells, monitors and
+ * other tasks, servers among them; then the wake-ups. `since` is absent for a subagent only the count knows. Its
+ * `state`: running (counts as work), idle (past its cap: runs, no longer counted), watcher (lasts the whole session),
+ * server (listens on `ports`).
+ */
+export interface RemoteBackground {
+  items: {
+    kind: 'agent' | 'shell' | 'monitor' | 'other';
+    label: string;
+    /** A shell's or monitor's command (redacted) when the label is a description of it. */
+    command?: string;
+    since?: number;
+    state: 'running' | 'idle' | 'watcher' | 'server';
+    ports?: number[];
+    nested?: true;
+    /** An agent done with its own turn, waiting on work it launched. */
+    waiting?: true;
+  }[];
+  /**
+   * `loop`: a self-paced /loop, by its task. `next`: ms, null when it has no time (a loop's wake-up that fired).
+   * `checking`: a loop's fired wake-up Claude is on now (it works or waits on the person), else that wake-up passed.
+   */
+  wakes: { label: string; loop?: true; recurring?: true; next: number | null; checking?: true }[];
 }
 /** A session Atelier offers to resume. */
 export interface RemoteResumable { id: string; project: string; title: string; color: string; endedAt: number; lastMessageAt?: number; account?: string }
