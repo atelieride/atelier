@@ -108,7 +108,9 @@ export const deviceMessageSchema = z.discriminatedUnion('t', [
   // its own rule, answered in words (images.ts); here only its shape. Then its path typed into an attached terminal,
   // as Paste does.
   z.object({ t: z.literal('image'), rid, id: terminalId, type: z.string().max(16), data: z.string() }).strict(),
-  z.object({ t: z.literal('paste'), rid, id: terminalId, image: imageRef }).strict()
+  z.object({ t: z.literal('paste'), rid, id: terminalId, image: imageRef }).strict(),
+  // What fills a Claude session's context, analysed as Atelier's Context Usage does (a private copy of the session).
+  z.object({ t: z.literal('context'), rid, id: terminalId }).strict()
 ]);
 /** Reading a conversation or its dialog (answered `busy` past their shared limit). */
 export const CONVERSATION_READS: ReadonlySet<DeviceMessage['t']> = new Set(['follow', 'dialog']);
@@ -216,6 +218,39 @@ export interface RemoteLook {
   themes: RemoteTheme[];
 }
 
+/**
+ * What fills a Claude session's context, as Claude Code counts it (Atelier's Context Usage): names and token counts
+ * only, never a path, a server's config or the tools it loaded. Each list keeps its largest 40 rows.
+ */
+export interface RemoteContextReport {
+  /** When it was analysed (ms). */
+  at: number;
+  model?: string;
+  total: number;
+  max: number;
+  /** The total where auto-compact runs; absent while it is off. */
+  autoCompactAt?: number;
+  /** Kept free for auto-compact. */
+  buffer: number;
+  free: number;
+  /** The copy read the session's conversation; false: analysed without it, Messages not counted. */
+  resumed: boolean;
+  groups: { system: number; messages: number; mcp: number; memory: number; skills: number };
+  /** The System group's parts. */
+  system: { name: string; tokens: number }[];
+  /** Tokens waiting outside the context until Claude searches for them. */
+  deferred: { mcp: number; system: number };
+  /** Connected MCP servers: what each costs now, its tools loaded and waiting. */
+  servers: { name: string; scope?: string; inContext: number; loaded: number; deferred: number; deferredTokens: number }[];
+  /** Servers not connected: they cost nothing. */
+  offline: number;
+  /** CLAUDE.md files and auto memory, by file name. */
+  memory: { name: string; type: string; tokens: number }[];
+  skills: { kind: 'skill' | 'agent'; source: string; plugin?: string; count: number; tokens: number }[];
+  /** Tool calls with their results, the five largest by tool; the prompts, the replies and the rest. */
+  messages: { tools: { name: string; tokens: number }[]; otherTools: number; toolsTotal: number; user: number; assistant: number; attachments: number; other: number };
+}
+
 export type ErrorCode = 'not-found' | 'invalid' | 'busy' | 'failed';
 export type DeniedReason = 'declined' | 'expired' | 'unknown-device' | 'disabled';
 export type ByeReason = 'revoked' | 'disabled' | 'quitting';
@@ -240,6 +275,9 @@ export type HostMessage =
    */
   | { t: 'ok'; rid: number; queued?: true; image?: string }
   | { t: 'created'; rid: number; id: string }
+  /** A `context` request's progress (none when it joined an analysis already running), then its answer. */
+  | { t: 'contextStep'; rid: number; id: string; phase: 'start' | 'mcp' | 'count'; connected?: number; total?: number }
+  | { t: 'context'; rid: number; id: string; report: RemoteContextReport }
   /** rid 0: the refused message carried none (input, resize, detach). */
   | { t: 'error'; rid: number; code: ErrorCode; message: string }
   | { t: 'bye'; reason: ByeReason };

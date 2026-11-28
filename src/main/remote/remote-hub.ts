@@ -19,6 +19,7 @@ import type { Settings } from '@shared/settings';
 import type { PortsMap } from '@shared/ports';
 import type { PrEntry } from '@shared/pr';
 import type { Resumable, TerminalInfo } from '@shared/protocol';
+import type { ContextErrorKind, ContextProgress, ContextResult } from '@shared/context-usage';
 import type { UsageEntry } from '@shared/session';
 import { waitTarget } from '@shared/session-view';
 import { sessionTranscript } from '../claude-history';
@@ -35,13 +36,14 @@ import { PushStore } from './push-store';
 import { THEME_BLOCKS } from '../theme-chrome';
 import { pruneClipboardImages } from '../clipboard-image';
 import { lookKey, remoteLook } from './look';
+import { phoneContextReport } from './context';
 import { CLOSE, placeNameProblem, type ByeReason, type DeviceMessage, type ErrorCode, type HostMessage, type RemoteAccount, type RemoteFeatures, type RemoteLook } from './messages';
 import { Pairing } from './pairing';
 import { RelayLink, type RelayLinkOptions } from './relay-link';
 import { AnswerBook } from './answers';
 import { PhoneConversations, type ConversationHost, type ConversationTiming } from './conversation-requests';
 import { IMAGE_GONE, PhoneImages, imagePaste } from './images';
-import { GONE, PromptOutbox, type OutboxTiming } from './prompt-outbox';
+import { GONE, NOT_CLAUDE, PromptOutbox, type OutboxTiming } from './prompt-outbox';
 import { ConversationBook, type ConversationDeps } from './conversations';
 import { allowKey, denyKey, type ScreenView } from './prompt';
 import { WaitBook, anyWait } from './rows';
@@ -132,6 +134,11 @@ export interface RemoteHubDeps {
     open(root: string): Promise<RemoteWindowResult>;
     close(root: string, sessions?: 'keep' | 'stop'): Promise<RemoteWindowResult>;
   };
+  /**
+   * What fills a Claude session's context, analysed as Atelier's Context Usage does (a private copy of the session,
+   * nothing sent to Claude); its progress while it runs. Without it every `context` is `failed`.
+   */
+  context?(terminalId: string, onProgress: (p: ContextProgress) => void): Promise<ContextResult>;
   /** The user is away from this computer (idle for 2 minutes, or its screen locked): phones may ring. */
   away?(): boolean;
   emitStatus(s: RemoteStatus): void;
@@ -179,6 +186,8 @@ const OUTBOX_TIMING: OutboxTiming = { retryMs: 400, slowMs: 5000, staleMs: 15 * 
 const STARTING_RECHECK_MS = 5000;
 /** Channels still in their handshake (or waiting to be let in) at once, at most. */
 const MAX_HANDSHAKES = 16;
+/** Phones' context analyses running at once, at most, whichever phones and sessions. */
+const MAX_ANALYSES = 2;
 
 /** What a phone's state is compared by: equal, it isn't sent again. */
 const stateKey = (st: RemoteState): string => JSON.stringify([st.projects, st.sessions, st.resumables, st.features]);
@@ -256,10 +265,24 @@ interface SessionHost extends ConversationHost {
   /** Where phones' images are kept, and how long a reference names one (its default when absent). */
   imageDir: string;
   imageMs?: number;
+  /**
+   * What fills a Claude session's context (RemoteHubDeps.context); null while phones' analyses already run at the
+   * most at once.
+   */
+  context(id: string, onProgress: (p: ContextProgress) => void): Promise<ContextResult> | null;
 }
 
 /** What a phone's input to a terminal it hasn't opened is told. */
 const NOT_OPEN = 'Open this terminal before typing into it.';
+/** Why a session's context couldn't be analysed, in a phone's words. */
+const CONTEXT_ERRORS: Record<ContextErrorKind, string> = {
+  'no-session': 'Claude isn\'t running in this session now.',
+  'not-found': 'Claude Code wasn\'t found on the computer.',
+  account: 'This session runs on a Claude account Atelier doesn\'t know.',
+  unsupported: 'This version of Claude Code doesn\'t report its context.',
+  timeout: 'Claude Code didn\'t answer in time.',
+  exit: 'The session couldn\'t be analyzed.'
+};
 
 /** One connected phone: the terminals it watches through TerminalHub, the conversations it follows, and what it is sent. */
 class PhoneSession implements RemoteViewer {
@@ -336,6 +359,34 @@ class PhoneSession implements RemoteViewer {
     if (!this.terms.remoteInput(this.key, m.id, imagePaste(taken[0]!.path, view.bracketedPaste))) { refused('invalid', NOT_OPEN); return; }
     this.images.use([m.image]);
     this.send({ t: 'ok', rid: m.rid });
+  }
+
+  /**
+   * What fills a Claude session's context: its progress as `contextStep`, then `context` with the report, or the
+   * reason it couldn't be analysed in the phone's words. Nothing goes to a phone that left meanwhile.
+   */
+  private async analyze(m: Extract<DeviceMessage, { t: 'context' }>): Promise<void> {
+    if (!this.host.listed(m.id)) { this.error(m.rid, 'not-found', GONE); return; }
+    if (!this.host.claude(m.id)) { this.error(m.rid, 'invalid', NOT_CLAUDE); return; }
+    // A step goes only when it says something new (the copy reports its servers every few hundred ms).
+    let last = '';
+    const run = this.host.context(m.id, (p) => {
+      const step: HostMessage = { t: 'contextStep', rid: m.rid, id: m.id, phase: p.phase, ...(p.connected !== undefined ? { connected: p.connected } : {}), ...(p.total !== undefined ? { total: p.total } : {}) };
+      const key = JSON.stringify(step);
+      if (this.disposed || key === last) return;
+      last = key;
+      this.send(step);
+    });
+    if (!run) { this.error(m.rid, 'busy', 'The computer is analyzing other sessions; try again in a moment.'); return; }
+    let r: ContextResult;
+    try {
+      r = await run;
+    } catch {
+      r = { ok: false, kind: 'exit', message: 'threw' };
+    }
+    if (this.disposed) return;
+    if (r.ok) this.send({ t: 'context', rid: m.rid, id: m.id, report: phoneContextReport(r.report) });
+    else this.error(m.rid, r.kind === 'no-session' ? 'invalid' : 'failed', CONTEXT_ERRORS[r.kind]);
   }
 
   send(msg: HostMessage): void {
@@ -417,6 +468,9 @@ class PhoneSession implements RemoteViewer {
       }
       case 'paste':
         this.inOrder(m.id, () => this.paste(m));
+        return;
+      case 'context':
+        void this.analyze(m);
         return;
       case 'resize':
         this.lastSize = { cols: m.cols, rows: m.rows };
@@ -752,6 +806,8 @@ export class RemoteHub {
   private readonly offShown: () => void;
   private readonly stateMs: number;
   private readonly host: SessionHost;
+  /** Phones' context analyses running now. */
+  private analyses = 0;
 
   constructor(private readonly d: RemoteHubDeps) {
     this.identities = new IdentityStore(d.secrets);
@@ -844,7 +900,14 @@ export class RemoteHub {
       scheduleState: () => this.scheduleState(),
       outMs: d.timing?.outMs ?? OUT_MS,
       imageDir: d.imageDir,
-      ...(d.timing?.imageMs ? { imageMs: d.timing.imageMs } : {})
+      ...(d.timing?.imageMs ? { imageMs: d.timing.imageMs } : {}),
+      context: (id, onProgress) => {
+        // Each analysis is a private copy of a session with its MCP servers: phones run a few at once, never more.
+        if (this.analyses >= MAX_ANALYSES) return null;
+        this.analyses++;
+        const run = this.d.context?.(id, onProgress) ?? Promise.resolve<ContextResult>({ ok: false, kind: 'exit', message: 'unavailable' });
+        return run.finally(() => { this.analyses--; });
+      }
     };
   }
 

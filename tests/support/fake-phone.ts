@@ -13,7 +13,7 @@ export type Msg = Record<string, unknown> & { t: string };
 
 export interface PhoneHello { name: string; model: string; app: string }
 /** The messages that answer a request, by its `rid`. */
-const ANSWERS = new Set(['ok', 'created', 'chat', 'dialog', 'error']);
+const ANSWERS = new Set(['ok', 'created', 'chat', 'dialog', 'context', 'error']);
 const HELLO: PhoneHello = { name: 'Test iPhone', model: 'iPhone17,1', app: '1.0.0' };
 
 export interface PhoneChannelOptions {
@@ -238,7 +238,7 @@ export class FakePhone {
     return this.request({ t: 'create', project, kind, ...o });
   }
 
-  /** A request with the next rid; resolves with its answer: `ok`, `created`, `chat`, `dialog` or `error`. */
+  /** A request with the next rid; resolves with its answer: `ok`, `created`, `chat`, `dialog`, `context` or `error`. */
   request(msg: Record<string, unknown> & { t: string }, ms?: number): Promise<Msg> {
     const since = this.messages.length;
     const rid = ++this.rid;
@@ -264,6 +264,8 @@ export class FakePhone {
   stop(id: string): Promise<Msg> { return this.request({ t: 'stop', id }); }
   escape(id: string): Promise<Msg> { return this.request({ t: 'escape', id }); }
   dialog(id: string): Promise<Msg> { return this.request({ t: 'dialog', id }); }
+  /** What fills a session's context: `context` with its report (its `contextStep`s before it), or `error`. */
+  context(id: string, ms?: number): Promise<Msg> { return this.request({ t: 'context', id }, ms); }
   choose(id: string, ask: string, n: number, label: string, text?: string): Promise<Msg> {
     return this.request({ t: 'choose', id, ask, n, label, ...(text !== undefined ? { text } : {}) });
   }

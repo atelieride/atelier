@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import WebSocket from 'ws';
 import { PAGE_BYTES, WRAPPER_BYTES } from '@shared/conversation/pages';
 import { encodeProjectPath } from '@shared/history';
+import type { ContextReport, ContextResult } from '@shared/context-usage';
 import type { Resumable, TerminalInfo } from '@shared/protocol';
 import type { UsageEntry } from '@shared/session';
 import type { PortsMap } from '@shared/ports';
@@ -3510,5 +3511,103 @@ describe('images from a phone', () => {
     utimesSync(old, twoDaysAgo, twoDaysAgo);
     t.hub.start();
     expect(kept(t)).toEqual(['clipboard-2026-10-10-090000-NEW.png']);
+  });
+});
+
+describe('what fills a session\'s context, for a phone', () => {
+  const REPORT: ContextReport = {
+    at: 1_000, model: 'claude-opus-5-5', total: 50_000, max: 200_000, autoCompactAt: 167_000, apiTotal: 49_000, resumed: true,
+    groups: { system: 14_000, messages: 30_000, mcp: 2_000, memory: 3_000, skills: 1_000 },
+    system: [{ name: 'System prompt', tokens: 3_000 }], deferred: { mcp: 9_000, system: 4_000 }, buffer: 33_000, free: 117_000,
+    servers: [{ name: 'Tasks', key: 'Tasks', scope: 'user', instructions: 100, loaded: [{ name: 'list', tokens: 400 }], deferredCount: 6, deferredTokens: 3_000, inContext: 500, configFile: '/home/.claude.json', configShown: '~/.claude.json' }],
+    offline: [], memory: [{ path: '/work/app/CLAUDE.md', shown: '/work/app/CLAUDE.md', type: 'Project', tokens: 3_000 }], skills: [],
+    messages: { tools: [{ name: 'Read', tokens: 20_000 }], otherTools: 0, toolsTotal: 20_000, user: 4_000, assistant: 6_000, attachments: 0, other: 0 }
+  };
+
+  test('context: its progress as contextStep, then the report as names and numbers; for a listed Claude session only', async () => {
+    const asked: string[] = [];
+    const t = setup({
+      deps: {
+        context: async (id, onProgress) => {
+          asked.push(id);
+          onProgress({ terminalId: id, phase: 'start' });
+          onProgress({ terminalId: id, phase: 'mcp', connected: 1, total: 3 });
+          onProgress({ terminalId: id, phase: 'count' });
+          return { ok: true, report: REPORT };
+        }
+      }
+    });
+    const { phone } = await paired(t);
+    const since = phone.messages.length;
+    const answer = await phone.context('t2');
+    expect(answer).toMatchObject({ t: 'context', id: 't2', report: { total: 50_000, max: 200_000, memory: [{ name: 'CLAUDE.md', type: 'Project', tokens: 3_000 }], servers: [{ name: 'Tasks', loaded: 1, deferred: 6 }] } });
+    expect(JSON.stringify(answer)).not.toContain('/work/');
+    const steps = phone.messages.slice(since).filter((m) => m.t === 'contextStep');
+    expect(steps).toEqual([
+      { t: 'contextStep', rid: answer.rid, id: 't2', phase: 'start' },
+      { t: 'contextStep', rid: answer.rid, id: 't2', phase: 'mcp', connected: 1, total: 3 },
+      { t: 'contextStep', rid: answer.rid, id: 't2', phase: 'count' }
+    ]);
+    // A plain terminal, a terminal not listed: refused as `follow` is, nothing analysed.
+    expect(await phone.context('t1')).toEqual(refused('invalid', 'This is not a Claude session.'));
+    expect(await phone.context('gone')).toEqual(refused('not-found', 'This session is not on this computer any more.'));
+    expect(asked).toEqual(['t2']);
+  });
+
+  test('context: why it couldn\'t be analysed, in the phone\'s words; a computer that can\'t analyse says so', async () => {
+    const results: (ContextResult | Error)[] = [
+      { ok: false, kind: 'no-session', message: 'This terminal runs no Claude session' },
+      { ok: false, kind: 'not-found', message: 'Claude Code was not found' },
+      { ok: false, kind: 'account', message: 'unknown' },
+      { ok: false, kind: 'unsupported', message: 'unreadable' },
+      { ok: false, kind: 'timeout', message: 'slow' },
+      { ok: false, kind: 'exit', message: 'stopped' },
+      new Error('boom')
+    ];
+    const t = setup({ deps: { context: async () => { const r = results.shift()!; if (r instanceof Error) throw r; return r; } } });
+    const { phone } = await paired(t);
+    expect(await phone.context('t2')).toEqual(refused('invalid', 'Claude isn\'t running in this session now.'));
+    expect(await phone.context('t2')).toEqual(refused('failed', 'Claude Code wasn\'t found on the computer.'));
+    expect(await phone.context('t2')).toEqual(refused('failed', 'This session runs on a Claude account Atelier doesn\'t know.'));
+    expect(await phone.context('t2')).toEqual(refused('failed', 'This version of Claude Code doesn\'t report its context.'));
+    expect(await phone.context('t2')).toEqual(refused('failed', 'Claude Code didn\'t answer in time.'));
+    expect(await phone.context('t2')).toEqual(refused('failed', 'The session couldn\'t be analyzed.'));
+    // Past six analyses a minute, the seventh is refused before anything runs.
+    expect(await phone.context('t2')).toEqual(refused('busy', 'Too many analyses at once; try again in a minute.'));
+    expect(results).toHaveLength(1);
+
+    const bare = setup();
+    const { phone: other } = await paired(bare);
+    expect(await other.context('t2')).toEqual(refused('failed', 'The session couldn\'t be analyzed.'));
+  });
+
+  test('context: a step goes once per change; phones run two analyses at once, a third is refused until one ends', async () => {
+    const release: (() => void)[] = [];
+    const t = setup({
+      deps: {
+        context: (id, onProgress) => new Promise<ContextResult>((resolve) => {
+          // The copy reports its servers again and again while they connect.
+          for (let i = 0; i < 3; i++) onProgress({ terminalId: id, phase: 'mcp', connected: 0, total: 2 });
+          onProgress({ terminalId: id, phase: 'mcp', connected: 1, total: 2 });
+          release.push(() => resolve({ ok: true, report: REPORT }));
+        })
+      }
+    });
+    const { phone } = await paired(t);
+    const since = phone.messages.length;
+    const first = phone.context('t2');
+    const second = phone.context('t2');
+    const steps = () => phone.messages.slice(since).filter((m) => m.t === 'contextStep').map((m) => m.connected);
+    await until(() => release.length === 2 && steps().length >= 4);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(steps()).toEqual([0, 1, 0, 1]);
+    expect(await phone.context('t2')).toEqual(refused('busy', 'The computer is analyzing other sessions; try again in a moment.'));
+    release.shift()!();
+    expect(await first).toMatchObject({ t: 'context' });
+    const third = phone.context('t2');
+    await until(() => release.length === 2);
+    for (const r of release.splice(0)) r();
+    expect(await second).toMatchObject({ t: 'context' });
+    expect(await third).toMatchObject({ t: 'context' });
   });
 });
