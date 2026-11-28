@@ -4,9 +4,11 @@
 // terminal fitted leaves the window that size until it types. A permission dialog read from the screen and answered
 // with its own digit; a choice for a dialog no longer on screen refused. The live check's sequence
 // (tests/e2e/iphone-live.manual.ts) with the fake phone: follow, a prompt, a permission asked on cue and chosen, the
-// terminal opened fitted, the stand-in for Claude Code recording its terminal's size all along.
+// terminal opened fitted, the stand-in for Claude Code recording its terminal's size all along. What fills a session's
+// context, asked by the phone: the private copy Context Usage runs (tests/e2e/fake-claude-context.mjs), its steps and
+// its report as the phone gets it.
 import { expect, test, type ElectronApplication, type Locator } from '@playwright/test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { look } from './shots';
@@ -20,7 +22,7 @@ const launch = (extra: Record<string, string>) => launchWithPhone({
   ATELIER_CLAUDE_BIN: resolve('tests/e2e/fake-claude.pl'), ATELIER_FAKE_UUID_SESSIONS: '1', ATELIER_FAKE_LINGER: '120', ...extra
 }, { size: [1280, 800] });
 
-type Row = { id: string; state: string; ask?: string; wait?: string; waitingFor?: string };
+type Row = { id: string; state: string; claude?: boolean; starting?: boolean; ask?: string; wait?: string; waitingFor?: string };
 const rowsOf = (s: Msg) => s.sessions as Row[];
 const rowOf = (s: Msg, id: string) => rowsOf(s).find((x) => x.id === id);
 
@@ -257,6 +259,37 @@ test('the live check\'s sequence: follow, a prompt and its reply, a permission a
     // Typing on the phone takes the size: the stand-in records it (what the checks above would have seen).
     phone.input(id, 'x');
     await expect.poll(() => sizes().at(-1), { timeout: 10000 }).toBe('60x30');
+  } finally {
+    await close(l);
+  }
+});
+
+test('a phone asks what fills a Claude session\'s context: the private copy runs in the session\'s folder; its steps, then the report without a path or a server\'s config', async () => {
+  test.setTimeout(180_000);
+  const log = join(mkdtempSync(join(tmpdir(), 'atl-ctx-')), 'context.log');
+  writeFileSync(log, '');
+  const l = await launch({ ATELIER_TEST_CONTEXT_CLAUDE: resolve('tests/e2e/fake-claude-context.mjs'), CTX_FAKE_LOG: log });
+  const { phone } = l;
+  try {
+    const id = await newSession(l);
+    // Claude Code has told Atelier its session (no longer starting): there is one to analyse.
+    await phone.state((s) => rowOf(s, id)?.claude === true && !rowOf(s, id)?.starting, 30000);
+    const since = phone.messages.length;
+    const answer = await phone.context(id, 30000);
+    expect(answer, JSON.stringify(answer)).toMatchObject({
+      t: 'context', id,
+      report: { total: 103_300, max: 1_000_000, memory: expect.arrayContaining([expect.objectContaining({ name: 'CLAUDE.md', type: 'Project' })]), servers: expect.arrayContaining([expect.objectContaining({ name: 'shop-docs' })]) }
+    });
+    // Names and numbers only: neither the session's folder nor a server's URL reaches the phone.
+    expect(JSON.stringify(answer)).not.toContain(l.root);
+    expect(JSON.stringify(answer)).not.toContain('e2e-secret');
+    const phases = phone.messages.slice(since).filter((m) => m.t === 'contextStep' && m.rid === answer.rid).map((m) => m.phase);
+    expect(phases[0]).toBe('start');
+    expect(phases).toContain('mcp');
+    expect(phases.at(-1)).toBe('count');
+    // One private copy, in the session's own folder, as Context Usage starts it.
+    const runs = readFileSync(log, 'utf8').split('\n').filter(Boolean).map((x) => JSON.parse(x) as { cwd: string; entrypoint: string | null });
+    expect(runs).toEqual([expect.objectContaining({ cwd: l.root, entrypoint: 'atelier-context' })]);
   } finally {
     await close(l);
   }
