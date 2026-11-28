@@ -186,7 +186,7 @@ const OUTBOX_TIMING: OutboxTiming = { retryMs: 400, slowMs: 5000, staleMs: 15 * 
 const STARTING_RECHECK_MS = 5000;
 /** Channels still in their handshake (or waiting to be let in) at once, at most. */
 const MAX_HANDSHAKES = 16;
-/** Phones' context analyses running at once, at most, whichever phones and sessions. */
+/** Sessions phones have analysed at once, at most, whichever phones asked. */
 const MAX_ANALYSES = 2;
 
 /** What a phone's state is compared by: equal, it isn't sent again. */
@@ -806,8 +806,8 @@ export class RemoteHub {
   private readonly offShown: () => void;
   private readonly stateMs: number;
   private readonly host: SessionHost;
-  /** Phones' context analyses running now. */
-  private analyses = 0;
+  /** Phones' context analyses running now: the requests waiting on each terminal's. */
+  private readonly analyses = new Map<string, number>();
 
   constructor(private readonly d: RemoteHubDeps) {
     this.identities = new IdentityStore(d.secrets);
@@ -902,11 +902,16 @@ export class RemoteHub {
       imageDir: d.imageDir,
       ...(d.timing?.imageMs ? { imageMs: d.timing.imageMs } : {}),
       context: (id, onProgress) => {
-        // Each analysis is a private copy of a session with its MCP servers: phones run a few at once, never more.
-        if (this.analyses >= MAX_ANALYSES) return null;
-        this.analyses++;
+        // Each analysis is a private copy of a session with its MCP servers: phones run a few at once, never more. A
+        // terminal already being analysed takes no other turn: Context Usage joins its run, one copy per terminal.
+        if (!this.analyses.has(id) && this.analyses.size >= MAX_ANALYSES) return null;
+        this.analyses.set(id, (this.analyses.get(id) ?? 0) + 1);
         const run = this.d.context?.(id, onProgress) ?? Promise.resolve<ContextResult>({ ok: false, kind: 'exit', message: 'unavailable' });
-        return run.finally(() => { this.analyses--; });
+        return run.finally(() => {
+          const left = (this.analyses.get(id) ?? 1) - 1;
+          if (left > 0) this.analyses.set(id, left);
+          else this.analyses.delete(id);
+        });
       }
     };
   }

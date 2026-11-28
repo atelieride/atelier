@@ -3581,11 +3581,13 @@ describe('what fills a session\'s context, for a phone', () => {
     expect(await other.context('t2')).toEqual(refused('failed', 'The session couldn\'t be analyzed.'));
   });
 
-  test('context: a step goes once per change; phones run two analyses at once, a third is refused until one ends', async () => {
+  test('context: a step goes once per change; phones analyse two sessions at once, a third is refused until one ends', async () => {
     const release: (() => void)[] = [];
+    const asked: string[] = [];
     const t = setup({
       deps: {
         context: (id, onProgress) => new Promise<ContextResult>((resolve) => {
+          asked.push(id);
           // The copy reports its servers again and again while they connect.
           for (let i = 0; i < 3; i++) onProgress({ terminalId: id, phase: 'mcp', connected: 0, total: 2 });
           onProgress({ terminalId: id, phase: 'mcp', connected: 1, total: 2 });
@@ -3593,21 +3595,31 @@ describe('what fills a session\'s context, for a phone', () => {
         })
       }
     });
+    const claude = t.terms.list[1]!.session;
+    t.terms.list = [...t.terms.list, term('t3', '/work/app', { createdAt: 3, session: claude }), term('t4', '/work/app', { createdAt: 4, session: claude })];
     const { phone } = await paired(t);
     const since = phone.messages.length;
     const first = phone.context('t2');
-    const second = phone.context('t2');
+    const second = phone.context('t3');
     const steps = () => phone.messages.slice(since).filter((m) => m.t === 'contextStep').map((m) => m.connected);
     await until(() => release.length === 2 && steps().length >= 4);
     await new Promise((r) => setTimeout(r, 50));
     expect(steps()).toEqual([0, 1, 0, 1]);
-    expect(await phone.context('t2')).toEqual(refused('busy', 'The computer is analyzing other sessions; try again in a moment.'));
+    expect(await phone.context('t4')).toEqual(refused('busy', 'The computer is analyzing other sessions; try again in a moment.'));
+    // A session already being analysed: Context Usage joins its run (one private copy), so it takes no other turn.
+    const again = phone.context('t2');
+    await until(() => release.length === 3);
+    expect(asked).toEqual(['t2', 't3', 't2']);
+    const [endFirst, endSecond, endAgain] = release.splice(0);
+    endFirst!();
+    endAgain!();
+    expect(await first).toMatchObject({ t: 'context', id: 't2' });
+    expect(await again).toMatchObject({ t: 'context', id: 't2' });
+    const third = phone.context('t4');
+    await until(() => release.length === 1);
+    endSecond!();
     release.shift()!();
-    expect(await first).toMatchObject({ t: 'context' });
-    const third = phone.context('t2');
-    await until(() => release.length === 2);
-    for (const r of release.splice(0)) r();
-    expect(await second).toMatchObject({ t: 'context' });
-    expect(await third).toMatchObject({ t: 'context' });
+    expect(await second).toMatchObject({ t: 'context', id: 't3' });
+    expect(await third).toMatchObject({ t: 'context', id: 't4' });
   });
 });
