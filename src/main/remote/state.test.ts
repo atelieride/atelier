@@ -241,6 +241,94 @@ test('a self-paced loop whose wake-up fired is happening now: no time, as the ro
   expect(plain.wakeAt).toBe(NOW + 3_600_000);
 });
 
+// ── What runs, one by one, as the desktop's Background popover lists it ──
+
+const entry = (id: string, kind: 'agent' | 'shell' | 'monitor' | 'other', o: object = {}) => ({ id, kind, label: `${kind} ${id}`, since: NOW - 60_000, counted: true, ...o });
+const background = (work: object) => remoteState(full({ terminals: [withWork({ items: [], entries: [], ...work })] })).sessions[0]!.background;
+
+test('sends each background item: agents with what they launched under them, then shells, monitors, other tasks', () => {
+  const b = background({
+    entries: [
+      entry('a1', 'agent', { label: 'Explore the code', waiting: true, lastEvent: NOW }),
+      entry('s1', 'shell', { label: 'Run the tests', display: 'npm test -- --watch=false' }),
+      entry('s2', 'shell', { label: 'npm run e2e', display: 'npm run e2e', owner: 'a1' }),
+      entry('m1', 'monitor', { counted: false, watcher: true }),
+      entry('srv', 'shell', { label: 'Dev server', counted: false, server: { ports: [5173] } }),
+      entry('o1', 'other', { counted: false, since: NOW - 40 * 60_000 })
+    ]
+  });
+  expect(b?.items).toEqual([
+    { kind: 'agent', label: 'Explore the code', since: NOW - 60_000, state: 'running', waiting: true },
+    // A shell with no description of its own is named by its command: no second copy.
+    { kind: 'shell', label: 'npm run e2e', since: NOW - 60_000, state: 'running', nested: true },
+    { kind: 'shell', label: 'Run the tests', command: 'npm test -- --watch=false', since: NOW - 60_000, state: 'running' },
+    { kind: 'shell', label: 'Dev server', since: NOW - 60_000, state: 'server', ports: [5173] },
+    { kind: 'monitor', label: 'monitor m1', since: NOW - 60_000, state: 'watcher' },
+    { kind: 'other', label: 'other o1', since: NOW - 40 * 60_000, state: 'idle' }
+  ]);
+  // An agent's last event changes all the time: it never reaches the phone, which would hear every tool call.
+  expect(JSON.stringify(b)).not.toContain('lastEvent');
+});
+
+test('a subagent only the count knows has no start of its own: none is sent', () => {
+  const b = background({ entries: [entry('subagent-1', 'agent', { label: 'Subagent' })] });
+  expect(b?.items).toEqual([{ kind: 'agent', label: 'Subagent', state: 'running' }]);
+});
+
+test('sends the wake-ups: a self-paced loop by its task, an ordinary cron by its label, each with its next time', () => {
+  const b = background({
+    crons: [
+      { id: 'l', label: '/loop check the build', schedule: '', recurring: false, next: null },
+      { id: 'auto', label: '<<autonomous-loop-dynamic>>', schedule: '', recurring: false, next: NOW + 600_000 },
+      { ...cron(NOW + 3_600_000), label: 'Nightly report' }
+    ]
+  });
+  expect(b?.wakes).toEqual([
+    { label: 'check the build', loop: true, next: null },
+    { label: 'Autonomous loop', loop: true, next: NOW + 600_000 },
+    { label: 'Nightly report', recurring: true, next: NOW + 3_600_000 }
+  ]);
+});
+
+test('a loop whose wake-up fired is being checked while Claude itself works or waits, not while only its background does', () => {
+  const fired = { id: 'l', label: '/loop check the build', schedule: '', recurring: false, next: null };
+  const wakes = (s: Partial<SessionInfo>, counting: boolean) => remoteState(full({
+    terminals: [term('w', '/a', { session: session(s), work: { counting, items: [], entries: [], crons: [fired] } as never })]
+  })).sessions[0]!.background?.wakes;
+  expect(wakes({ state: 'running' }, false)).toEqual([{ label: 'check the build', loop: true, next: null, checking: true }]);
+  expect(wakes({ state: 'waiting', waitingFor: 'question' } as never, false)?.[0]?.checking).toBe(true);
+  // Idle, its shell still counting: the phone reads the session as running, the loop's check has passed.
+  expect(wakes({ state: 'idle' }, true)).toEqual([{ label: 'check the build', loop: true, next: null }]);
+});
+
+test('long labels and commands are cut, and a session runs at most 20 items and 10 wake-ups on the phone', () => {
+  const long = 'x'.repeat(500);
+  const b = background({
+    entries: Array.from({ length: 25 }, (_, n) => entry(`s${n}`, 'shell', { label: long, display: `${long} ${n}` })),
+    crons: Array.from({ length: 12 }, (_, n) => ({ ...cron(NOW + n), label: long }))
+  });
+  expect(b?.items).toHaveLength(20);
+  expect(b?.wakes).toHaveLength(10);
+  expect([...b!.items[0]!.label]).toHaveLength(120);
+  expect([...b!.items[0]!.command!]).toHaveLength(200);
+  expect([...b!.wakes[0]!.label]).toHaveLength(120);
+});
+
+test('a cut never splits an emoji made of several code points, nor leaves a space before its ellipsis', () => {
+  const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}';
+  const label = `${'a'.repeat(118)}${family}${family}`;
+  const b = background({ entries: [entry('s', 'shell', { label, display: `${'b'.repeat(198)} ccc` })] });
+  // 119 code points before the ellipsis: the family's five don't fit after the 118 letters, so it is left out whole.
+  expect(b?.items[0]?.label).toBe(`${'a'.repeat(118)}…`);
+  expect(b?.items[0]?.command).toBe(`${'b'.repeat(198)}…`);
+});
+
+test('no background without items or wake-ups, nor for a plain terminal', () => {
+  expect(background({})).toBeUndefined();
+  const plain = remoteState(full({ terminals: [term('t', '/a', { work: { counting: false, crons: [], items: [], entries: [entry('s', 'shell')] } as never })] })).sessions[0]!;
+  expect('background' in plain).toBe(false);
+});
+
 test('resumables of the listed projects, newest first, with their account; never another project\'s', () => {
   const r = (id: string, projectRoot: string, endedAt: number, o: object = {}) => ({ id, projectRoot, cwd: projectRoot, title: `R ${id}`, color: '#F28FAD', sessionId: `s-${id}`, endedAt, ...o });
   const s = remoteState(full({
